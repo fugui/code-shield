@@ -46,6 +46,7 @@ func main() {
 		
 		api.GET("/teams", handlers.GetTeams)
 		api.POST("/teams", handlers.CreateTeam)
+		api.POST("/teams/import", handlers.ImportTeams)
 		api.PATCH("/teams/:id", handlers.UpdateTeam)
 		api.DELETE("/teams/:id", handlers.DeleteTeam)
 

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useToast } from '../components/Toast';
 
 function TeamsTab() {
   const [teams, setTeams] = useState<any[]>([]);
@@ -6,6 +7,8 @@ function TeamsTab() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ name: '', leader_id: '' });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
     fetchTeams();
@@ -63,11 +66,56 @@ function TeamsTab() {
     setShowModal(true);
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/teams/import', {
+      method: 'POST',
+      body: formData,
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showToast(`导入失败: ${data.error}`, 'error');
+        } else {
+          showToast(data.message || '导入成功', 'success');
+          fetchTeams();
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('导入请求出错', 'error');
+      })
+      .finally(() => {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      });
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h3 style={{ margin: 0 }}>组织架构列表</h3>
-        <button className="btn" onClick={openAdd}>新增部门</button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <input 
+            type="file" 
+            accept=".csv" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            style={{ display: 'none' }} 
+          />
+          <button 
+            className="btn" 
+            style={{ background: 'var(--bg-color)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            批量导入(CSV)
+          </button>
+          <button className="btn" onClick={openAdd}>新增部门</button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
