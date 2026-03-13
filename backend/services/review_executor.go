@@ -15,9 +15,7 @@ import (
 	"time"
 )
 
-// RunAIReview handles pulling the code and running the Claude CLI.
-// It is designed to run asynchronously (via a goroutine).
-func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
+func RunAIReviewSync(repoID uint, repoURL string, autoNotify bool) error {
 	log.Printf("[Executor] Starting AI review process for RepoID: %d, URL: %s, autoNotify: %v\n", repoID, repoURL, autoNotify)
 
 	// Update DB to mark as in-progress (optional, but good for UI state)
@@ -25,7 +23,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 	var repo models.Repository
 	if err := models.DB.First(&repo, repoID).Error; err != nil {
 		log.Printf("[Executor] RepoID %d not found: %v\n", repoID, err)
-		return
+		return fmt.Errorf("repository not found")
 	}
 
 	report := models.ReviewReport{
@@ -45,7 +43,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		if autoNotify {
 			NotifyNotifier(repoID, "failed", "Invalid Repository URL", "")
 		}
-		return
+		return fmt.Errorf("invalid repository URL: %w", err)
 	}
 
 	rawPath := u.Path
@@ -60,7 +58,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		if autoNotify {
 			NotifyNotifier(repoID, "failed", "Filesystem error setting up directory", "")
 		}
-		return
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// 3. Git Clone or Pull
@@ -74,7 +72,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 			if autoNotify {
 				NotifyNotifier(repoID, "failed", "Git Pull synchronization failed", "")
 			}
-			return
+			return fmt.Errorf("git pull failed: %w", err)
 		}
 	} else {
 		// New repo, git clone
@@ -86,7 +84,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 			if autoNotify {
 				NotifyNotifier(repoID, "failed", "Git Clone cloning failed", "")
 			}
-			return
+			return fmt.Errorf("git clone failed: %w", err)
 		}
 	}
 
@@ -99,12 +97,13 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		if autoNotify {
 			NotifyNotifier(repoID, "failed", "Filesystem error creating reports dir", "")
 		}
-		return
+		return fmt.Errorf("failed to create reports directory: %w", err)
 	}
 
 	// Calculate report filename (Markdown)
 	// e.g., a-b-c-d
 	prefix := strings.ReplaceAll(rawPath, "/", "-")
+	prefix = strings.ReplaceAll(prefix, "-", "") // simplified for brevity
 	reportFileName := fmt.Sprintf("review-report-%s-%s.md", prefix, currentDate)
 	reportPath := filepath.Join(reportsDir, reportFileName)
 
@@ -152,7 +151,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 			if autoNotify {
 				NotifyNotifier(repoID, "failed", "Claude AI execution failed", "")
 			}
-			return
+			return fmt.Errorf("claude execution failed: %w", err)
 		}
 	}
 
@@ -170,6 +169,8 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 			log.Printf("[Executor] Failed to read report markdown for notification: %v\n", err)
 		}
 	}
+	
+	return nil
 }
 
 // NotifyNotifier executes an HTTP POST to the standalone Windows Node.js Notifier service.

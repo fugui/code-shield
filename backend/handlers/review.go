@@ -70,7 +70,7 @@ func TriggerReview(c *gin.Context) {
 	}
 
 	// Trigger the async AI review process (manual trigger does not auto-notify)
-	go services.RunAIReview(repo.ID, repo.URL, false)
+	services.EnqueueReviewTask(nil, repo.ID, repo.URL, false, "manual")
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "AI Review started in the background"})
 }

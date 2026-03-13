@@ -9,6 +9,7 @@ import (
 	"code-shield/cron_jobs"
 	"code-shield/handlers"
 	"code-shield/models"
+	"code-shield/services"
 	
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +25,9 @@ func main() {
 	if err := models.LoadConfig("config.yaml"); err != nil {
 		log.Fatalf("Failed to load config.yaml: %v", err)
 	}
+
+	// Start worker pool (e.g. 5 concurrent workers)
+	services.StartWorkerPool(5)
 
 	// Start cron jobs
 	cron_jobs.StartCronJobs()
@@ -73,6 +77,13 @@ func main() {
 		api.GET("/issues", handlers.GetIssues)
 		api.POST("/issues", handlers.CreateIssue)
 		api.PATCH("/issues/:id", handlers.UpdateIssue)
+
+		api.GET("/schedules", handlers.GetSchedules)
+		api.POST("/schedules", handlers.CreateSchedule)
+		api.PUT("/schedules/:id", handlers.UpdateSchedule)
+		api.DELETE("/schedules/:id", handlers.DeleteSchedule)
+		
+		api.GET("/executions", handlers.GetExecutionLogs)
 
 		// Admin only routes for user management
 		admin := api.Group("/users")

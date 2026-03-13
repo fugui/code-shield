@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+	
+	"gorm.io/datatypes"
 )
 
 type Member struct {
@@ -75,4 +77,30 @@ type KeyIssue struct {
 type SystemConfig struct {
 	ID         uint `gorm:"primaryKey" json:"id"` // Always 1
 	AutoNotify bool `gorm:"default:false" json:"auto_notify"`
+}
+
+type ScheduleConfig struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	Name         string         `gorm:"not null" json:"name"`
+	CronExpr     string         `gorm:"not null" json:"cron_expr"`
+	TargetMode   string         `gorm:"not null" json:"target_mode"` // "all", "service_group", "team", "specific"
+	TargetValues datatypes.JSON `json:"target_values"` // JSON array of strings or ints depending on TargetMode
+	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"` // Notify automatically after review finishes
+	IsActive     bool           `gorm:"default:true" json:"is_active"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+type TaskExecutionLog struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	ScheduleID   *uint          `json:"schedule_id"` // Nullable, if triggered manually
+	Schedule     *ScheduleConfig`gorm:"foreignKey:ScheduleID" json:"schedule"`
+	RepoID       uint           `json:"repo_id"`
+	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TriggerType  string         `gorm:"not null" json:"trigger_type"` // "cron", "manual", "webhook"
+	Status       string         `gorm:"default:pending" json:"status"` // "pending", "running", "success", "failed"
+	ErrorMessage string         `json:"error_message"`
+	StartTime    time.Time      `json:"start_time"`
+	EndTime      *time.Time     `json:"end_time"` // Nullable until finished
+	CreatedAt    time.Time      `json:"created_at"`
 }

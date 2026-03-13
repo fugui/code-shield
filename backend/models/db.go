@@ -27,6 +27,8 @@ func InitDB() {
 		&ReviewReport{},
 		&KeyIssue{},
 		&SystemConfig{},
+		&ScheduleConfig{},
+		&TaskExecutionLog{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)

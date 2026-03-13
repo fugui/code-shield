@@ -6,6 +6,7 @@ import KeyIssues from './pages/KeyIssues';
 import Configuration from './pages/Configuration';
 import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
+import ExecutionLogs from './pages/ExecutionLogs';
 import { ToastProvider } from './components/Toast';
 
 // Setup global fetch interceptor to inject JWT token
@@ -185,10 +186,11 @@ function Sidebar() {
   
   const navItems = [
     { path: '/', label: '代码仓管理', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
-    { path: '/reviews', label: '检视任务', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
+    { path: '/reviews', label: '巡检报告', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
+    { path: '/executions', label: '检视任务历史', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     { path: '/issues', label: '核心问题', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
     { path: '/teams', label: '团队管理', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
-    { path: '/config', label: '配置管理', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' }
+    { path: '/config', label: '系统管理', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' }
   ];
 
   return (
@@ -240,7 +242,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
           <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
-            {location.pathname === '/' ? '代码仓清单大盘' : location.pathname === '/reviews' ? '项目检视任务' : location.pathname === '/config' ? '系统配置管理' : location.pathname === '/teams' ? '团队组织架构与人员库' : '核心问题追踪'}
+            {location.pathname === '/' ? '代码仓清单大盘' : location.pathname === '/reviews' ? '项目检视报告' : location.pathname === '/executions' ? '检视任务执行历史' : location.pathname === '/config' ? '系统管理' : location.pathname === '/teams' ? '团队组织架构与人员库' : '核心问题追踪'}
           </h1>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
             <AuthHeader />
@@ -265,6 +267,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<PrivateRoute><Repositories /></PrivateRoute>} />
             <Route path="/reviews" element={<PrivateRoute><ReviewReports /></PrivateRoute>} />
+            <Route path="/executions" element={<PrivateRoute><ExecutionLogs /></PrivateRoute>} />
             <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
             <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
             <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
