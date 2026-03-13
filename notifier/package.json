@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "body-parser": "^2.2.2",
-    "express": "^4.22.1"
+    "express": "^4.22.1",
+    "html-to-docx": "^1.8.0",
+    "marked": "^17.0.4"
   }
 }

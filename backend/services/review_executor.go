@@ -43,7 +43,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		log.Printf("[Executor] Failed to parse URL %s: %v\n", repoURL, err)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Invalid Repository URL")
+			NotifyNotifier(repoID, "failed", "Invalid Repository URL", "")
 		}
 		return
 	}
@@ -58,7 +58,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		log.Printf("[Executor] Failed to create dir %s: %v\n", filepath.Dir(codesPath), err)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Filesystem error setting up directory")
+			NotifyNotifier(repoID, "failed", "Filesystem error setting up directory", "")
 		}
 		return
 	}
@@ -72,7 +72,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 			log.Printf("[Executor] git pull failed: %v\nOutput: %s\n", err, output)
 			updateStatus(report.ID, "failed")
 			if autoNotify {
-				NotifyNotifier(repoID, "failed", "Git Pull synchronization failed")
+				NotifyNotifier(repoID, "failed", "Git Pull synchronization failed", "")
 			}
 			return
 		}
@@ -84,7 +84,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 			log.Printf("[Executor] git clone failed: %v\nOutput: %s\n", err, output)
 			updateStatus(report.ID, "failed")
 			if autoNotify {
-				NotifyNotifier(repoID, "failed", "Git Clone cloning failed")
+				NotifyNotifier(repoID, "failed", "Git Clone cloning failed", "")
 			}
 			return
 		}
@@ -97,7 +97,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		log.Printf("[Executor] Failed to create reports dir %s: %v\n", reportsDir, err)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Filesystem error creating reports dir")
+			NotifyNotifier(repoID, "failed", "Filesystem error creating reports dir", "")
 		}
 		return
 	}
@@ -150,7 +150,7 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 		} else {
 			updateStatus(report.ID, "failed")
 			if autoNotify {
-				NotifyNotifier(repoID, "failed", "Claude AI execution failed")
+				NotifyNotifier(repoID, "failed", "Claude AI execution failed", "")
 			}
 			return
 		}
@@ -163,16 +163,50 @@ func RunAIReview(repoID uint, repoURL string, autoNotify bool) {
 	})
 
 	if autoNotify {
-		NotifyNotifier(repoID, "success", "Code review completed: " + absReportPath)
+		mdContent, err := os.ReadFile(absReportPath)
+		if err == nil {
+			NotifyNotifier(repoID, "success", "Code review completed: " + absReportPath, string(mdContent))
+		} else {
+			log.Printf("[Executor] Failed to read report markdown for notification: %v\n", err)
+		}
 	}
 }
 
 // NotifyNotifier executes an HTTP POST to the standalone Windows Node.js Notifier service.
-func NotifyNotifier(repoID uint, status string, message string) {
+func NotifyNotifier(repoID uint, status string, message string, markdownContent string) {
+	// Only send real notification on success.
+	if status != "success" {
+		log.Printf("[Notifier API] Skipping email notification for status: %s\n", status)
+		return
+	}
+
+	// Retrieve the full repository, owner, and team leader information
+	var repo models.Repository
+	if err := models.DB.Preload("Owner").Preload("Team.Leader").First(&repo, repoID).Error; err != nil {
+		log.Printf("[Notifier API] Failed to load RepoID %d: %v\n", repoID, err)
+		return
+	}
+
+	toEmails := []string{}
+	if repo.Owner.Email != "" {
+		toEmails = append(toEmails, repo.Owner.Email)
+	}
+	
+	ccEmails := []string{}
+	if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
+		ccEmails = append(ccEmails, repo.Team.Leader.Email)
+	}
+
 	payload := map[string]interface{}{
-		"repo_id": repoID,
-		"status":  status,
-		"message": message,
+		"task_id":          fmt.Sprintf("rev-%d-%d", repo.ID, time.Now().Unix()),
+		"repo_name":        repo.Name,
+		"branch":           repo.Branch,
+		"recipients": map[string]interface{}{
+			"to": toEmails,
+			"cc": ccEmails,
+		},
+		"subject":          fmt.Sprintf("[Code-Shield] 项目 %s 自动检视报告", repo.Name),
+		"markdown_content": markdownContent,
 	}
 	
 	payloadBytes, err := json.Marshal(payload)
@@ -181,9 +215,15 @@ func NotifyNotifier(repoID uint, status string, message string) {
 		return
 	}
 	
-	resp, err := http.Post("http://localhost:8081/api/notify", "application/json", bytes.NewBuffer(payloadBytes))
+	targetURL := models.AppConfig.Notifier.URL
+	if targetURL == "" {
+		log.Println("[Notifier API] Warning: Notifier URL is not configured in config.yaml, skipping webhook.")
+		return
+	}
+
+	resp, err := http.Post(targetURL, "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		log.Printf("[Notifier API] Failed to send webhook to Windows Node.js Notifier: %v\n", err)
+		log.Printf("[Notifier API] Failed to send webhook to Windows Node.js Notifier (%s): %v\n", targetURL, err)
 		return
 	}
 	defer resp.Body.Close()

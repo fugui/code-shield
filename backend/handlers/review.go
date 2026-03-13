@@ -92,8 +92,16 @@ func TriggerManualNotification(c *gin.Context) {
 		msg = "Review failed."
 	}
 	
+	mdContent := ""
+	if report.Status == "success" && report.ReportPath != "" {
+		contentBytes, err := os.ReadFile(report.ReportPath)
+		if err == nil {
+			mdContent = string(contentBytes)
+		}
+	}
+
 	// Send the payload to the Windows Node.js service
-	services.NotifyNotifier(report.Repo.ID, report.Status, msg)
+	services.NotifyNotifier(report.Repo.ID, report.Status, msg, mdContent)
 	
 	c.JSON(http.StatusOK, gin.H{"message": "Notification dispatched."})
 }

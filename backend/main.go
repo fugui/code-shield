@@ -20,6 +20,11 @@ func main() {
 	// Initialize database
 	models.InitDB()
 
+	// Load global configuration
+	if err := models.LoadConfig("config.yaml"); err != nil {
+		log.Fatalf("Failed to load config.yaml: %v", err)
+	}
+
 	// Start cron jobs
 	cron_jobs.StartCronJobs()
 
@@ -112,8 +117,12 @@ func main() {
 	}
 
 	// Start server
-	log.Println("Starting server on :8080...")
-	if err := r.Run(":8080"); err != nil {
+	port := models.AppConfig.Server.Port
+	if port == "" {
+		port = ":8080"
+	}
+	log.Printf("Starting server on %s...\n", port)
+	if err := r.Run(port); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
