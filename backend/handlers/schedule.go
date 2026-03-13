@@ -73,7 +73,7 @@ func UpdateSchedule(c *gin.Context) {
 
 func DeleteSchedule(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	if err := models.DB.Delete(&models.ScheduleConfig{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete schedule"})
 		return

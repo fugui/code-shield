@@ -16,7 +16,7 @@ func StartCronJobs() {
 	globalCron = cron.New()
 	globalCron.Start()
 	log.Println("[Cron] Cron scheduler started.")
-	
+
 	SyncSchedules()
 }
 
@@ -43,13 +43,13 @@ func SyncSchedules() {
 	for _, schedule := range schedules {
 		// Create a copy of the schedule for the closure
 		sched := schedule
-		
+
 		_, err := globalCron.AddFunc(sched.CronExpr, func() {
 			log.Printf("[Cron] Triggering schedule: %s (ID: %d)\n", sched.Name, sched.ID)
-			
+
 			// Determine which repos to run against based on TargetMode
 			query := models.DB.Model(&models.Repository{}).Where("is_active = ?", true)
-			
+
 			switch sched.TargetMode {
 			case "all":
 				// no additional filters

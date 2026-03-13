@@ -97,8 +97,7 @@ function TeamsTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ margin: 0 }}>组织架构列表</h3>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input 
             type="file" 
@@ -109,10 +108,10 @@ function TeamsTab() {
           />
           <button 
             className="btn" 
-            style={{ background: 'var(--bg-color)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}
+            style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
             onClick={() => fileInputRef.current?.click()}
           >
-            批量导入(CSV)
+            批量导入
           </button>
           <button className="btn" onClick={openAdd}>新增部门</button>
         </div>

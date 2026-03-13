@@ -78,7 +78,7 @@ func TriggerReview(c *gin.Context) {
 // TriggerManualNotification sends the notification webhook explicitly for a specific review report
 func TriggerManualNotification(c *gin.Context) {
 	reportID := c.Param("id")
-	
+
 	var report models.ReviewReport
 	if err := models.DB.Preload("Repo").First(&report, reportID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Review report not found"})
@@ -91,7 +91,7 @@ func TriggerManualNotification(c *gin.Context) {
 	} else if report.Status == "failed" {
 		msg = "Review failed."
 	}
-	
+
 	mdContent := ""
 	if report.Status == "success" && report.ReportPath != "" {
 		contentBytes, err := os.ReadFile(report.ReportPath)
@@ -102,6 +102,6 @@ func TriggerManualNotification(c *gin.Context) {
 
 	// Send the payload to the Windows Node.js service
 	services.NotifyNotifier(report.Repo.ID, report.Status, msg, mdContent)
-	
+
 	c.JSON(http.StatusOK, gin.H{"message": "Notification dispatched."})
 }

@@ -10,7 +10,7 @@ import (
 	"code-shield/handlers"
 	"code-shield/models"
 	"code-shield/services"
-	
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,7 +47,7 @@ func main() {
 	{
 		api.GET("/me", handlers.GetMe)
 		api.PATCH("/password", handlers.UpdatePassword)
-		
+
 		api.GET("/teams", handlers.GetTeams)
 		api.POST("/teams", handlers.CreateTeam)
 		api.POST("/teams/import", handlers.ImportTeams)
@@ -82,7 +82,7 @@ func main() {
 		api.POST("/schedules", handlers.CreateSchedule)
 		api.PUT("/schedules/:id", handlers.UpdateSchedule)
 		api.DELETE("/schedules/:id", handlers.DeleteSchedule)
-		
+
 		api.GET("/executions", handlers.GetExecutionLogs)
 
 		// Admin only routes for user management
@@ -104,7 +104,7 @@ func main() {
 		httpFS := http.FS(distFS)
 		r.NoRoute(func(c *gin.Context) {
 			path := c.Request.URL.Path
-			
+
 			// DO NOT serve frontend index.html for API routes
 			if len(path) >= 4 && path[:4] == "/api" {
 				c.JSON(http.StatusNotFound, gin.H{"error": "API route not found"})

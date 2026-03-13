@@ -8,6 +8,7 @@ import (
 
 type ReviewTask struct {
 	RepoID     uint
+	ReportID   uint
 	RepoURL    string
 	AutoNotify bool
 	LogID      uint // ID of TaskExecutionLog
@@ -33,14 +34,28 @@ func EnqueueReviewTask(scheduleID *uint, repoID uint, repoURL string, autoNotify
 		Status:      "pending",
 		StartTime:   time.Now(),
 	}
-	
+
 	if err := models.DB.Create(&execLog).Error; err != nil {
 		log.Printf("[WorkerPool] Failed to create TaskExecutionLog for Repo %d: %v\n", repoID, err)
 		return
 	}
 
+	// 2. Create the initial queued ReviewReport
+	report := models.ReviewReport{
+		RepoID:      repoID,
+		BaseCommit:  "HEAD~1",
+		HeadCommit:  "HEAD",
+		Status:      "queued",
+		CloneStatus: "pending",
+	}
+	if err := models.DB.Create(&report).Error; err != nil {
+		log.Printf("[WorkerPool] Failed to create ReviewReport for Repo %d: %v\n", repoID, err)
+		return
+	}
+
 	task := ReviewTask{
 		RepoID:     repoID,
+		ReportID:   report.ID,
 		RepoURL:    repoURL,
 		AutoNotify: autoNotify,
 		LogID:      execLog.ID,
@@ -58,15 +73,16 @@ func EnqueueReviewTask(scheduleID *uint, repoID uint, repoURL string, autoNotify
 func worker(id int) {
 	for task := range TaskQueue {
 		log.Printf("[Worker %d] Picked up task for Repo %d (LogID: %d)\n", id, task.RepoID, task.LogID)
-		
+
 		// Update status to running
 		UpdateTaskExecutionLog(task.LogID, "running", "")
-		
+		models.DB.Model(&models.ReviewReport{}).Where("id = ?", task.ReportID).Update("status", "running")
+
 		// Wait for completion, pass the context or logger if needed. But for now we just wrap RunAIReview
 		// We can change RunAIReview to return an error/status string synchronously since it's now called from within our worker pool wrapper.
 		// Right now RunAIReview runs completely independently. Let's make it block so the worker is occupied.
-		err := RunAIReviewSync(task.RepoID, task.RepoURL, task.AutoNotify)
-		
+		err := RunAIReviewSync(task.ReportID, task.RepoURL, task.AutoNotify)
+
 		now := time.Now()
 		if err != nil {
 			log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
@@ -96,6 +112,6 @@ func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 	if status == "success" || status == "failed" {
 		updates["end_time"] = &now
 	}
-	
+
 	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", logID).Updates(updates)
 }

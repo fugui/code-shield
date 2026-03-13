@@ -28,7 +28,7 @@ function TeamManagement() {
             marginBottom: '-1px'
           }}
         >
-          人员名册管理
+          人员管理
         </button>
       </div>
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -17,9 +18,49 @@ import (
 )
 
 func GetRepos(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+	teamID := c.Query("team_id")
+	serviceGroup := c.Query("service_group")
+	owner := c.Query("owner")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 15
+	}
+
+	query := models.DB.Model(&models.Repository{})
+
+	if teamID != "" {
+		query = query.Where("team_id = ?", teamID)
+	}
+	if serviceGroup != "" {
+		query = query.Where("service_group LIKE ?", "%"+serviceGroup+"%")
+	}
+	if owner != "" {
+		// Search by owner name or owner ID
+		query = query.Joins("LEFT JOIN members ON repositories.owner_id = members.id").
+			Where("members.name LIKE ? OR repositories.owner_id LIKE ?", "%"+owner+"%", "%"+owner+"%")
+	}
+
+	var total int64
+	query.Count(&total)
+
 	var repos []models.Repository
-	models.DB.Preload("Team").Preload("Owner").Find(&repos)
-	c.JSON(http.StatusOK, repos)
+	offset := (page - 1) * pageSize
+	query.Preload("Team").Preload("Owner").Offset(offset).Limit(pageSize).Find(&repos)
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":      repos,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"totalPages": totalPages,
+	})
 }
 
 func CreateRepo(c *gin.Context) {
@@ -117,7 +158,7 @@ func ImportRepos(c *gin.Context) {
 		if len(record) == 0 {
 			continue
 		}
-		
+
 		// Safely get string from record based on header map, handle potentially truncated rows
 		getField := func(key string) string {
 			idx, ok := headerMap[key]
@@ -143,7 +184,7 @@ func ImportRepos(c *gin.Context) {
 
 		// Use a transaction for safer operations? GORM does not strictly require here unless we want to rollback per line.
 		// For simplicity, handle directly.
-		
+
 		// Find or Create Member (Owner) based purely on name parsing
 		var member models.Member
 		if err := models.DB.Where("id = ?", ownerName).First(&member).Error; err != nil {

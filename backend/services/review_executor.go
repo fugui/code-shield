@@ -11,28 +11,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-func RunAIReviewSync(repoID uint, repoURL string, autoNotify bool) error {
-	log.Printf("[Executor] Starting AI review process for RepoID: %d, URL: %s, autoNotify: %v\n", repoID, repoURL, autoNotify)
+func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
+	log.Printf("[Executor] Starting AI review process for ReportID: %d, URL: %s, autoNotify: %v\n", reportID, repoURL, autoNotify)
 
-	// Update DB to mark as in-progress (optional, but good for UI state)
-	// We could create a new ReviewReport here with status "pending"
+	var report models.ReviewReport
+	if err := models.DB.First(&report, reportID).Error; err != nil {
+		log.Printf("[Executor] ReportID %d not found: %v\n", reportID, err)
+		return fmt.Errorf("report not found")
+	}
+	repoID := report.RepoID
+
 	var repo models.Repository
 	if err := models.DB.First(&repo, repoID).Error; err != nil {
 		log.Printf("[Executor] RepoID %d not found: %v\n", repoID, err)
 		return fmt.Errorf("repository not found")
 	}
-
-	report := models.ReviewReport{
-		RepoID:     repo.ID,
-		BaseCommit: "HEAD~1", // Simplification. In reality, get from Git.
-		HeadCommit: "HEAD",
-		Status:     "pending",
-	}
-	models.DB.Create(&report)
 
 	// 1. Parse URL to get the target path
 	// Example: http://my.reposerver.com/a/b/c/d.git -> /a/b/c/d.git -> a/b/c/d
@@ -69,6 +68,7 @@ func RunAIReviewSync(repoID uint, repoURL string, autoNotify bool) error {
 		if output, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("[Executor] git pull failed: %v\nOutput: %s\n", err, output)
 			updateStatus(report.ID, "failed")
+			models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
 			if autoNotify {
 				NotifyNotifier(repoID, "failed", "Git Pull synchronization failed", "")
 			}
@@ -81,12 +81,15 @@ func RunAIReviewSync(repoID uint, repoURL string, autoNotify bool) error {
 		if output, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("[Executor] git clone failed: %v\nOutput: %s\n", err, output)
 			updateStatus(report.ID, "failed")
+			models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
 			if autoNotify {
 				NotifyNotifier(repoID, "failed", "Git Clone cloning failed", "")
 			}
 			return fmt.Errorf("git clone failed: %w", err)
 		}
 	}
+
+	models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Update("clone_status", "success")
 
 	// 4. Setup Reports Directory
 	currentDate := time.Now().Format("2006-01-02")
@@ -127,24 +130,24 @@ func RunAIReviewSync(repoID uint, repoURL string, autoNotify bool) error {
 	absJsonPath, _ := filepath.Abs(jsonPath)
 
 	log.Printf("[Executor] Executing Claude AI Review. Report target: %s, JSON target: %s\n", absReportPath, absJsonPath)
-	
-	// Command: 
+
+	// Command:
 	// cd <codesPath> && cat <absPromptPath> | claude -p "请执行代码检视任务，并输出检视文档到 <absReportPath>" --output-format json > <absJsonPath>
-	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行代码检视任务，并输出检视文档到 %s' --output-format json > %s", 
+	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行代码检视任务，并输出检视文档到 %s' --output-format json > %s",
 		codesPath, absPromptPath, absReportPath, absJsonPath)
 
 	log.Printf("[Executor] Command executing: %s\n", cliCmd)
 	cmd := exec.Command("bash", "-c", cliCmd)
 	cmd.Dir = "." // Run in project root where code-review-prompt.md is
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("[Executor] Claude CLI execution failed (this is expected if 'claude' isn't installed).\nError: %v\nOutput: %s\n", err, output)
-		
+
 		// Fallback for simulation if claude CLI is not installed
 		if strings.Contains(string(output), "command not found") {
 			log.Printf("[Executor] Simulating success since claude CLI block failed.")
-			os.WriteFile(absJsonPath, []byte(`{"status": "simulated_success", "issues": []}`), 0644)
+			os.WriteFile(absJsonPath, []byte(`{"status": "simulated_success", "issues": [{"severity":"critical", "issue_type":"Security"}, {"severity":"major", "issue_type":"Memory"}, {"severity":"minor", "issue_type":"Style"}]}`), 0644)
 			os.WriteFile(absReportPath, []byte("# Simulated Markdown Report\nEverything looks good!"), 0644)
 		} else {
 			updateStatus(report.ID, "failed")
@@ -156,20 +159,74 @@ func RunAIReviewSync(repoID uint, repoURL string, autoNotify bool) error {
 	}
 
 	log.Printf("[Executor] AI Review completed successfully for %s.\n", repoURL)
+
+	issueCount := 0
+	criticalIssues := 0
+	majorIssues := 0
+	minorIssues := 0
+
+	aiSummary := ""
+
+	if jsonBytes, err := os.ReadFile(absJsonPath); err == nil {
+		var summary struct {
+			Type   string `json:"type"`
+			Result string `json:"result"`
+			Error  bool   `json:"is_error"`
+		}
+		if err := json.Unmarshal(jsonBytes, &summary); err == nil {
+			if summary.Result != "" {
+				aiSummary = summary.Result
+				if idx := strings.Index(summary.Result, "## 检视结果概要"); idx != -1 {
+					aiSummary = strings.TrimSpace(summary.Result[idx:])
+				}
+
+				// Parse issue counts using regex from markdown table
+				// e.g. | **高** | 2 |
+				re := regexp.MustCompile(`\|\s*\*\*([高中低])\*\*\s*\|\s*(\d+)\s*\|`)
+				matches := re.FindAllStringSubmatch(summary.Result, -1)
+
+				for _, match := range matches {
+					if len(match) >= 3 {
+						level := match[1]
+						count, _ := strconv.Atoi(match[2])
+						issueCount += count
+
+						if level == "高" {
+							criticalIssues += count
+						} else if level == "中" {
+							majorIssues += count
+						} else if level == "低" {
+							minorIssues += count
+						}
+					}
+				}
+			}
+		} else {
+			log.Printf("[Executor] Failed to parse JSON summary: %v\n", err)
+		}
+	} else {
+		log.Printf("[Executor] Failed to read JSON summary: %v\n", err)
+	}
+
 	models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
-		"status":      "success",
-		"report_path": absReportPath,
+		"status":          "success",
+		"report_path":     absReportPath,
+		"ai_summary":      aiSummary,
+		"issue_count":     issueCount,
+		"critical_issues": criticalIssues,
+		"major_issues":    majorIssues,
+		"minor_issues":    minorIssues,
 	})
 
 	if autoNotify {
 		mdContent, err := os.ReadFile(absReportPath)
 		if err == nil {
-			NotifyNotifier(repoID, "success", "Code review completed: " + absReportPath, string(mdContent))
+			NotifyNotifier(repoID, "success", "Code review completed: "+absReportPath, string(mdContent))
 		} else {
 			log.Printf("[Executor] Failed to read report markdown for notification: %v\n", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -192,16 +249,16 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 	if repo.Owner.Email != "" {
 		toEmails = append(toEmails, repo.Owner.Email)
 	}
-	
+
 	ccEmails := []string{}
 	if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
 		ccEmails = append(ccEmails, repo.Team.Leader.Email)
 	}
 
 	payload := map[string]interface{}{
-		"task_id":          fmt.Sprintf("rev-%d-%d", repo.ID, time.Now().Unix()),
-		"repo_name":        repo.Name,
-		"branch":           repo.Branch,
+		"task_id":   fmt.Sprintf("rev-%d-%d", repo.ID, time.Now().Unix()),
+		"repo_name": repo.Name,
+		"branch":    repo.Branch,
 		"recipients": map[string]interface{}{
 			"to": toEmails,
 			"cc": ccEmails,
@@ -209,13 +266,13 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 		"subject":          fmt.Sprintf("[Code-Shield] 项目 %s 自动检视报告", repo.Name),
 		"markdown_content": markdownContent,
 	}
-	
+
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("[Notifier API] Failed to marshal payload: %v\n", err)
 		return
 	}
-	
+
 	targetURL := models.AppConfig.Notifier.URL
 	if targetURL == "" {
 		log.Println("[Notifier API] Warning: Notifier URL is not configured in config.yaml, skipping webhook.")
@@ -228,7 +285,7 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	log.Printf("[Notifier API] Successfully sent webhook for RepoID %d (Status Code: %d)\n", repoID, resp.StatusCode)
 }
 

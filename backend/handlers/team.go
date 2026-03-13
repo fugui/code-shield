@@ -136,7 +136,7 @@ func ImportTeams(c *gin.Context) {
 		if len(record) == 0 {
 			continue
 		}
-		
+
 		getField := func(key string) string {
 			idx, ok := headerMap[key]
 			if ok && idx < len(record) {
@@ -170,7 +170,7 @@ func ImportTeams(c *gin.Context) {
 			if leaderID != "" {
 				team.LeaderID = leaderID
 			}
-			
+
 			if err := models.DB.Save(&team).Error; err == nil {
 				successCount++
 			}

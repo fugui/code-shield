@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -18,12 +19,42 @@ import (
 
 // GetMembers returns all members from the system.
 func GetMembers(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+	search := c.Query("search")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 15
+	}
+
+	query := models.DB.Model(&models.Member{})
+
+	if search != "" {
+		query = query.Where("name LIKE ? OR id LIKE ? OR department LIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
+	}
+
+	var total int64
+	query.Count(&total)
+
 	var members []models.Member
-	if err := models.DB.Order("name asc").Find(&members).Error; err != nil {
+	offset := (page - 1) * pageSize
+	if err := query.Order("name asc").Offset(offset).Limit(pageSize).Find(&members).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve members"})
 		return
 	}
-	c.JSON(http.StatusOK, members)
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":      members,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"totalPages": totalPages,
+	})
 }
 
 // CreateMember creates a new member
@@ -83,7 +114,7 @@ func UpdateMember(c *gin.Context) {
 // DeleteMember drops a member if no constraints block it
 func DeleteMember(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	// Optional: Block if the member still owns something, or let GORM cascade/restrict naturally.
 	if err := models.DB.Delete(&models.Member{}, "id = ?", id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete member"})
@@ -153,7 +184,7 @@ func ImportMembers(c *gin.Context) {
 		if len(record) == 0 {
 			continue
 		}
-		
+
 		getField := func(key string) string {
 			idx, ok := headerMap[key]
 			if ok && idx < len(record) {
@@ -198,7 +229,7 @@ func ImportMembers(c *gin.Context) {
 			if department != "" {
 				member.Department = department
 			}
-			
+
 			if err := models.DB.Save(&member).Error; err == nil {
 				successCount++
 			}

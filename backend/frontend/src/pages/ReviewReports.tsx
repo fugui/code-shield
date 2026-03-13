@@ -68,19 +68,48 @@ function ReviewReports() {
           <div key={review.id} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
               <div>
-                <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-color)' }}>{review.repo?.name || '未知代码仓'}</h3>
+                <h3 style={{ margin: '0 0 0.25rem 0', color: 'var(--text-color)' }}>
+                  {review.repo?.name || '未知代码仓'}
+                </h3>
+                <div style={{ color: '#64748b', fontSize: '0.8rem', margin: '0 0 0.5rem 0' }}>
+                  <a href={review.repo?.url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-color)', textDecoration: 'none' }}>{review.repo?.url}</a>
+                </div>
                 <div style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
                   对比区段: <span style={{ fontFamily: 'monospace', background: 'var(--bg-color)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>{review.base_commit}...{review.head_commit}</span>
                 </div>
               </div>
-              <span className={`badge ${review.status === 'success' ? 'success' : (review.status === 'failed' ? 'danger' : 'warning')}`}>
-                {review.status === 'success' ? '已完成 (Success)' : review.status === 'failed' ? '任务失败 (Failed)' : review.status === 'pending' ? '检视中... (Pending)' : review.status}
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                <span className={`badge ${review.status === 'success' ? 'success' : (review.status === 'failed' ? 'danger' : review.status === 'queued' ? '' : 'warning')}`}>
+                  {review.status === 'success' ? '已完成 (Success)' : review.status === 'failed' ? '任务失败 (Failed)' : review.status === 'queued' ? '排队中... (Queued)' : review.status === 'running' ? '执行中... (Running)' : review.status === 'pending' ? '准备中...' : review.status}
+                </span>
+                
+                {review.status !== 'queued' && review.status !== 'pending' && review.clone_status && (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: review.clone_status === 'success' ? '#dcfce7' : review.clone_status === 'failed' ? '#fee2e2' : '#f8fafc', color: review.clone_status === 'success' ? '#166534' : review.clone_status === 'failed' ? '#991b1b' : '#64748b', border: '1px solid #e2e8f0' }}>
+                    Git Clone: {review.clone_status}
+                  </span>
+                )}
+              </div>
             </div>
             
-            {review.status === 'pending' && (
+            {review.status === 'queued' && (
+              <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                <span className="spinner"></span> 任务正在排队等待执行...
+              </div>
+            )}
+            
+            {review.status === 'running' && (
               <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 <span className="spinner"></span> AI正在后台检视代码，请稍候...
+              </div>
+            )}
+
+            {review.status === 'success' && review.ai_summary && (
+              <div style={{ padding: '1.5rem', background: '#f8fafc', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #e2e8f0' }}>
+                <div className="markdown-body" style={{ background: 'transparent', fontSize: '0.9rem' }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {review.ai_summary}
+                  </ReactMarkdown>
+                </div>
               </div>
             )}
 
@@ -103,11 +132,6 @@ function ReviewReports() {
               </div>
             )}
 
-            {review.ai_summary && (
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '6px', borderLeft: '4px solid var(--primary-color)', lineHeight: '1.5', marginTop: '1rem' }}>
-                {review.ai_summary}
-              </div>
-            )}
           </div>
         ))}
       </div>

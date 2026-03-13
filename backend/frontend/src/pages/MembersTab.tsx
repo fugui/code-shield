@@ -7,15 +7,36 @@ function MembersTab() {
   const [formData, setFormData] = useState({ id: '', name: '', email: '', department: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [page, setPage] = useState<number>(1);
+  const [pageSize] = useState<number>(15);
+  const [totalItems, setTotalItems] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(0);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
   useEffect(() => {
     fetchMembers();
-  }, []);
+  }, [page, searchQuery]);
 
   const fetchMembers = () => {
-    fetch('/api/members')
+    const params = new URLSearchParams({
+      page: page.toString(),
+      pageSize: pageSize.toString(),
+    });
+    if (searchQuery) params.append('search', searchQuery);
+
+    fetch(`/api/members?${params.toString()}`)
       .then(res => res.json())
-      .then(data => setMembers(data || []))
+      .then(data => {
+        setMembers(data.items || []);
+        setTotalItems(data.total || 0);
+        setTotalPages(data.totalPages || 0);
+      })
       .catch(console.error);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setPage(1);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -92,11 +113,17 @@ function MembersTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ margin: 0 }}>组织名单集</h3>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <input 
+            type="text" 
+            placeholder="搜索姓名、工号或部门..." 
+            value={searchQuery} 
+            onChange={e => handleSearchChange(e.target.value)} 
+            style={{ padding: '0.4rem 0.8rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} 
+          />
           <input type="file" accept=".csv" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
-          <button className="btn" style={{ background: 'var(--border-color)', color: 'white', marginRight: '0.5rem' }} onClick={() => fileInputRef.current?.click()}>批量导入(CSV)</button>
+          <button className="btn" style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }} onClick={() => fileInputRef.current?.click()}>批量导入</button>
           <button className="btn" onClick={openAdd}>新增人员</button>
         </div>
       </div>
@@ -130,6 +157,30 @@ function MembersTab() {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem', background: 'white', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <span style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>
+            共 {totalItems} 条记录，当前第 {page} / {totalPages} 页
+          </span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button 
+              className="btn" 
+              disabled={page === 1} 
+              onClick={() => setPage(page - 1)}
+              style={{ background: page === 1 ? '#f1f5f9' : 'white', color: page === 1 ? '#94a3b8' : 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+              上一页
+            </button>
+            <button 
+              className="btn" 
+              disabled={page >= totalPages} 
+              onClick={() => setPage(page + 1)}
+              style={{ background: page >= totalPages ? '#f1f5f9' : 'white', color: page >= totalPages ? '#94a3b8' : 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>

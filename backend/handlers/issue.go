@@ -11,7 +11,7 @@ func GetIssues(c *gin.Context) {
 	var issues []models.KeyIssue
 	repoID := c.Query("repo_id")
 	issueType := c.Query("issue_type")
-	
+
 	query := models.DB.Preload("Repo").Preload("Report").Preload("Assignee")
 	if repoID != "" {
 		query = query.Where("repo_id = ?", repoID)
@@ -20,7 +20,7 @@ func GetIssues(c *gin.Context) {
 		query = query.Where("issue_type = ?", issueType)
 	}
 	query.Order("created_at desc").Find(&issues)
-	
+
 	c.JSON(http.StatusOK, issues)
 }
 
