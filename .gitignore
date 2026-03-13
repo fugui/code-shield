@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build artifacts
+dist/
+build/
+backend/frontend/dist/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Database & generated data
+*.db
+backend/code_reporter.db
+backend/code_shield.db
+backend/codes/
+backend/review-reports/
+
+# Binary executables
+backend/code-reporter-server
+backend/code-shield-server
+backend/*.exe
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

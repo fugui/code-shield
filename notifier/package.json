@@ -1,0 +1,14 @@
+{
+  "name": "code-shield-notifier",
+  "version": "1.0.0",
+  "description": "Windows COM Native Object Notifier for Code Reporter System",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.2",
+    "express": "^4.22.1"
+  }
+}
