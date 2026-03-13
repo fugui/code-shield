@@ -1,10 +1,19 @@
 package handlers
 
 import (
+	"bytes"
 	"code-shield/models"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 func GetTeams(c *gin.Context) {
