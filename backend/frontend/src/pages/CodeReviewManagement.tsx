@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import ReviewOverviewTab from './ReviewOverviewTab';
 import ReviewReports from './ReviewReports';
+import ExecutionLogs from './ExecutionLogs';
 
 function CodeReviewManagement() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'activity'>('overview');
 
   return (
     <div>
@@ -30,11 +31,23 @@ function CodeReviewManagement() {
         >
           检视任务
         </button>
+        <button 
+          onClick={() => setActiveTab('activity')}
+          style={{ 
+            background: 'transparent', border: 'none', padding: '0.75rem 0', fontWeight: 600, fontSize: '1rem',
+            cursor: 'pointer', color: activeTab === 'activity' ? 'var(--primary-color)' : 'var(--text-color)',
+            borderBottom: activeTab === 'activity' ? '2px solid var(--primary-color)' : '2px solid transparent',
+            marginBottom: '-1px'
+          }}
+        >
+          检视活动
+        </button>
       </div>
 
       <div style={{ minHeight: '500px' }}>
         {activeTab === 'overview' && <ReviewOverviewTab setActiveTab={setActiveTab} />}
         {activeTab === 'tasks' && <ReviewReports />}
+        {activeTab === 'activity' && <ExecutionLogs />}
       </div>
     </div>
   );
