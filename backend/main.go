@@ -68,6 +68,7 @@ func main() {
 		api.GET("/config", handlers.GetConfig)
 		api.PATCH("/config", handlers.UpdateConfig)
 
+		api.GET("/reviews/overview", handlers.GetReviewOverview)
 		api.GET("/reviews", handlers.GetReviews)
 		api.POST("/reviews/trigger", handlers.TriggerReview)
 		api.POST("/reviews/:id/notify", handlers.TriggerManualNotification)

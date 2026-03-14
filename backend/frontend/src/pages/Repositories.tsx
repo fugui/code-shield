@@ -152,8 +152,7 @@ function Repositories() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2>代码仓清单</h2>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', gap: '1rem' }}>
           <input 
             type="file" 
@@ -205,7 +204,6 @@ function Repositories() {
                 <td><span className="badge" style={{ background: 'var(--border-color)', color: 'white' }}>{repo.branch}</span></td>
                 <td>{repo.service_group}</td>
                 <td style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn" onClick={() => triggerReview(repo.id)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem' }}>检视</button>
                   <button className="btn" onClick={() => handleDeleteRepo(repo.id, repo.name)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem', background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>删除</button>
                 </td>
               </tr>

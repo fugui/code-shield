@@ -60,7 +60,6 @@ function ReviewReports() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: '1.5rem' }}>代码检视任务</h2>
       <div style={{ display: 'grid', gap: '1rem' }}>
         {reviews.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem' }}>暂未生成任何检视报告</div>

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import TeamsTab from './TeamsTab';
 import MembersTab from './MembersTab';
+import Repositories from './Repositories';
 
 function TeamManagement() {
-  const [activeTab, setActiveTab] = useState<'departments' | 'members'>('departments');
+  const [activeTab, setActiveTab] = useState<'departments' | 'members' | 'repositories'>('departments');
 
   return (
     <div>
@@ -30,10 +31,23 @@ function TeamManagement() {
         >
           人员管理
         </button>
+        <button 
+          onClick={() => setActiveTab('repositories')}
+          style={{ 
+            background: 'transparent', border: 'none', padding: '0.75rem 0', fontWeight: 600, fontSize: '1rem',
+            cursor: 'pointer', color: activeTab === 'repositories' ? 'var(--primary-color)' : 'var(--text-color)',
+            borderBottom: activeTab === 'repositories' ? '2px solid var(--primary-color)' : '2px solid transparent',
+            marginBottom: '-1px'
+          }}
+        >
+          代码仓管理
+        </button>
       </div>
 
       <div style={{ minHeight: '500px' }}>
-        {activeTab === 'departments' ? <TeamsTab /> : <MembersTab />}
+        {activeTab === 'departments' && <TeamsTab />}
+        {activeTab === 'members' && <MembersTab />}
+        {activeTab === 'repositories' && <Repositories />}
       </div>
     </div>
   );
