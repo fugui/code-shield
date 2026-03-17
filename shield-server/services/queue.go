@@ -2,9 +2,14 @@ package services
 
 import (
 	"code-shield/models"
+	"errors"
 	"log"
 	"time"
 )
+
+// ErrNoRecentCommits is returned when a repo has no commits in the past 7 days.
+// The worker treats this as a skip, not a failure.
+var ErrNoRecentCommits = errors.New("no recent commits in the past 7 days")
 
 type ReviewTask struct {
 	RepoID     uint
@@ -14,7 +19,7 @@ type ReviewTask struct {
 	LogID      uint // ID of TaskExecutionLog
 }
 
-var TaskQueue = make(chan ReviewTask, 100)
+var TaskQueue = make(chan ReviewTask, 300)
 
 // StartWorkerPool starts the background workers
 func StartWorkerPool(workers int) {
@@ -84,7 +89,14 @@ func worker(id int) {
 		err := RunAIReviewSync(task.ReportID, task.RepoURL, task.AutoNotify)
 
 		now := time.Now()
-		if err != nil {
+		if errors.Is(err, ErrNoRecentCommits) {
+			log.Printf("[Worker %d] Skipping Repo %d — no commits in the past 7 days.\n", id, task.RepoID)
+			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
+				"status":        "skipped",
+				"error_message": "最近 7 天内无新提交，跳过检视",
+				"end_time":      &now,
+			})
+		} else if err != nil {
 			log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
 				"status":        "failed",

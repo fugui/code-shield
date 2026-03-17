@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"code-shield/models"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,6 +17,9 @@ import (
 	"strings"
 	"time"
 )
+
+// ClaudeReviewTimeout is the maximum time allowed for a single Claude AI review.
+const ClaudeReviewTimeout = 30 * time.Minute
 
 func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 	log.Printf("[Executor] Starting AI review process for ReportID: %d, URL: %s, autoNotify: %v\n", reportID, repoURL, autoNotify)
@@ -91,6 +95,16 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 
 	models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Update("clone_status", "success")
 
+	// 3.5 Check for recent commits — skip if no activity in the past 7 days
+	gitLogCmd := exec.Command("git", "-C", codesPath, "log", "--since=7 days ago", "--oneline")
+	gitLogOutput, gitLogErr := gitLogCmd.Output()
+	if gitLogErr == nil && strings.TrimSpace(string(gitLogOutput)) == "" {
+		log.Printf("[Executor] Repo %s has no commits in the past 7 days — skipping review.\n", repoURL)
+		// Clean up the placeholder report we created in EnqueueReviewTask
+		models.DB.Delete(&models.ReviewReport{}, report.ID)
+		return ErrNoRecentCommits
+	}
+
 	// 4. Setup Reports Directory
 	currentDate := time.Now().Format("2006-01-02")
 	reportsDir := filepath.Join("review-reports", currentDate)
@@ -136,11 +150,21 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行代码检视任务，并输出检视文档到 %s' --output-format json > %s",
 		codesPath, absPromptPath, absReportPath, absJsonPath)
 
-	log.Printf("[Executor] Command executing: %s\n", cliCmd)
-	cmd := exec.Command("bash", "-c", cliCmd)
+	log.Printf("[Executor] Command executing (timeout: %v): %s\n", ClaudeReviewTimeout, cliCmd)
+	ctx, cancel := context.WithTimeout(context.Background(), ClaudeReviewTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", "-c", cliCmd)
 	cmd.Dir = "." // Run in project root where code-review-prompt.md is
 
 	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		log.Printf("[Executor] Claude CLI timed out after %v for ReportID %d\n", ClaudeReviewTimeout, reportID)
+		updateStatus(report.ID, "failed")
+		if autoNotify {
+			NotifyNotifier(repoID, "failed", "Code review timed out", "")
+		}
+		return fmt.Errorf("claude execution timed out after %v", ClaudeReviewTimeout)
+	}
 	if err != nil {
 		log.Printf("[Executor] Claude CLI execution failed (this is expected if 'claude' isn't installed).\nError: %v\nOutput: %s\n", err, output)
 
