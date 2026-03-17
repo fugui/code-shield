@@ -78,8 +78,8 @@ function ReviewReports() {
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
-                <span className={`badge ${review.status === 'success' ? 'success' : (review.status === 'failed' ? 'danger' : review.status === 'queued' ? '' : 'warning')}`}>
-                  {review.status === 'success' ? '已完成 (Success)' : review.status === 'failed' ? '任务失败 (Failed)' : review.status === 'queued' ? '排队中... (Queued)' : review.status === 'running' ? '执行中... (Running)' : review.status === 'pending' ? '准备中...' : review.status}
+                <span className={`badge ${review.status === 'success' ? 'success' : (review.status === 'failed' ? 'danger' : review.status === 'skipped' ? 'info' : review.status === 'queued' ? '' : 'warning')}`}>
+                  {review.status === 'success' ? '已完成' : review.status === 'failed' ? '任务失败' : review.status === 'skipped' ? '无代码变更' : review.status === 'queued' ? '排队中...' : review.status === 'running' ? '执行中...' : review.status === 'pending' ? '准备中...' : review.status}
                 </span>
                 
                 {review.status !== 'queued' && review.status !== 'pending' && review.clone_status && (
@@ -99,6 +99,12 @@ function ReviewReports() {
             {review.status === 'running' && (
               <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 <span className="spinner"></span> AI正在后台检视代码，请稍候...
+              </div>
+            )}
+
+            {review.status === 'skipped' && review.ai_summary && (
+              <div style={{ padding: '1rem 1.5rem', background: '#f0f9ff', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #bae6fd', color: '#0369a1', fontSize: '0.875rem' }}>
+                ℹ️ {review.ai_summary}
               </div>
             )}
 

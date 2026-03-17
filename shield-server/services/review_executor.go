@@ -99,9 +99,12 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 	gitLogCmd := exec.Command("git", "-C", codesPath, "log", "--since=7 days ago", "--oneline")
 	gitLogOutput, gitLogErr := gitLogCmd.Output()
 	if gitLogErr == nil && strings.TrimSpace(string(gitLogOutput)) == "" {
-		log.Printf("[Executor] Repo %s has no commits in the past 7 days — skipping review.\n", repoURL)
-		// Clean up the placeholder report we created in EnqueueReviewTask
-		models.DB.Delete(&models.ReviewReport{}, report.ID)
+		log.Printf("[Executor] Repo %s has no commits in the past 7 days — marking as skipped.\n", repoURL)
+		skipMsg := "过去 7 天内无代码提交，已完成检视确认，无需生成报告。"
+		models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
+			"status":     "skipped",
+			"ai_summary": skipMsg,
+		})
 		return ErrNoRecentCommits
 	}
 
