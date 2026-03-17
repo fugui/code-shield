@@ -1,6 +1,24 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
 
+/** Convert SSH git URL to a browser-openable HTTPS URL.
+ *  Handles:
+ *    git@github.com:user/repo.git  →  https://github.com/user/repo
+ *    ssh://git@host/path/repo.git  →  https://host/path/repo
+ *    http(s)://...                 →  unchanged
+ */
+function sshToHttps(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  // ssh://git@host/path or ssh://host/path
+  const sshProto = url.match(/^ssh:\/\/(?:[^@]+@)?([^/]+)\/(.+?)(?:\.git)?$/);
+  if (sshProto) return `https://${sshProto[1]}/${sshProto[2]}`;
+  // git@host:path/repo.git
+  const sshScp = url.match(/^(?:[^@]+@)?([^:]+):(.+?)(?:\.git)?$/);
+  if (sshScp) return `https://${sshScp[1]}/${sshScp[2]}`;
+  return url;
+}
+
 function Repositories() {
   const { showToast } = useToast();
   const [repos, setRepos] = useState<any[]>([]);
@@ -211,9 +229,36 @@ function Repositories() {
               <tr><td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无匹配的记录或未录入任何代码仓</td></tr>
             ) : repos.map(repo => (
               <tr key={repo.id}>
-                <td style={{ fontWeight: 500, color: 'var(--primary-color)' }}>{repo.name}</td>
+                <td style={{ fontWeight: 500 }}>
+                  {repo.url ? (
+                    <a
+                      href={sshToHttps(repo.url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: 'var(--primary-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                      onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                      onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                      title={repo.url}
+                    >
+                      {repo.name}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, flexShrink: 0 }}>
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--primary-color)' }}>{repo.name}</span>
+                  )}
+                </td>
                 <td>{repo.team?.name || '未知'}</td>
-                <td>{repo.owner ? `${repo.owner.name} (${repo.owner.id})` : repo.owner_id}</td>
+                <td>
+                  {repo.owner ? (
+                    <span title={repo.owner.id}>{repo.owner.name}<span style={{ color: '#94a3b8', fontSize: '0.8rem', marginLeft: '0.3rem' }}>({repo.owner.id})</span></span>
+                  ) : (
+                    <span style={{ color: '#94a3b8' }}>{repo.owner_id || '-'}</span>
+                  )}
+                </td>
                 <td><span className="badge" style={{ background: 'var(--border-color)', color: 'white' }}>{repo.branch}</span></td>
                 <td>{repo.service_group}</td>
                 <td style={{ display: 'flex', gap: '0.5rem' }}>
@@ -260,7 +305,7 @@ function Repositories() {
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>代码仓地址 (URL)</label>
-                <input required type="url" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <input required type="text" placeholder="https://... 或 git@host:path/repo.git" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>项目责任人</label>
