@@ -6,7 +6,7 @@ node_modules/
 # Build artifacts
 dist/
 build/
-backend/frontend/dist/
+shield-server/frontend/dist/
 
 # Logs
 logs/
@@ -16,15 +16,15 @@ yarn-debug.log*
 
 # Database & generated data
 *.db
-backend/code_reporter.db
-backend/code_shield.db
-backend/codes/
-backend/review-reports/
+shield-server/code_reporter.db
+shield-server/code_shield.db
+shield-server/codes/
+shield-server/review-reports/
 
 # Binary executables
-backend/code-reporter-server
-backend/code-shield-server
-backend/*.exe
+shield-server/code-reporter-server
+shield-server/code-shield-server
+shield-server/*.exe
 
 # Environment variables
 .env

@@ -17,7 +17,7 @@ An intelligent, autonomous AI-assisted code review and key-issue tracking system
 ## Getting Started
 ```bash
 # 1. Install necessary JS dependencies
-cd backend/frontend && npm install
+cd shield-server/frontend && npm install
 cd ../../notifier && npm install
 
 # 2. Build frontend assets and run the full stack
