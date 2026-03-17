@@ -191,46 +191,48 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 
 	aiSummary := ""
 
-	if jsonBytes, err := os.ReadFile(absJsonPath); err == nil {
-		var summary struct {
-			Type   string `json:"type"`
-			Result string `json:"result"`
-			Error  bool   `json:"is_error"`
+	// Read the Markdown report file directly (written by Claude as part of the task).
+	// This is more reliable than parsing the CLI's JSON wrapper (absJsonPath),
+	// because the prompt constraints apply to the Markdown file, not the JSON result field.
+	if mdBytes, err := os.ReadFile(absReportPath); err == nil {
+		mdContent := string(mdBytes)
+
+		// Extract the 检视结果概要 section as the AI summary stored in DB.
+		if idx := strings.Index(mdContent, "## 检视结果概要"); idx != -1 {
+			aiSummary = strings.TrimSpace(mdContent[idx:])
+		} else {
+			aiSummary = mdContent
 		}
-		if err := json.Unmarshal(jsonBytes, &summary); err == nil {
-			if summary.Result != "" {
-				aiSummary = summary.Result
-				if idx := strings.Index(summary.Result, "## 检视结果概要"); idx != -1 {
-					aiSummary = strings.TrimSpace(summary.Result[idx:])
-				}
 
-				// Parse issue counts using regex from markdown table
-				// e.g. | **高** | 2 |
-				re := regexp.MustCompile(`\|\s*\*\*([高中低])\*\*\s*\|\s*(\d+)\s*\|`)
-				matches := re.FindAllStringSubmatch(summary.Result, -1)
+		// Parse the single-line summary format:
+		// 阻塞：N，严重：N，主要：N，提示：N，建议：N
+		// Mapping: 高(critical) = 阻塞 + 严重, 中(major) = 主要, 低(minor) = 提示 + 建议
+		re := regexp.MustCompile(`(阻塞|严重|主要|提示|建议)[：:]\s*(\d+)`)
+		matches := re.FindAllStringSubmatch(mdContent, -1)
 
-				for _, match := range matches {
-					if len(match) >= 3 {
-						level := match[1]
-						count, _ := strconv.Atoi(match[2])
-						issueCount += count
+		for _, match := range matches {
+			if len(match) >= 3 {
+				level := match[1]
+				count, _ := strconv.Atoi(match[2])
+				issueCount += count
 
-						if level == "高" {
-							criticalIssues += count
-						} else if level == "中" {
-							majorIssues += count
-						} else if level == "低" {
-							minorIssues += count
-						}
-					}
+				switch level {
+				case "阻塞", "严重":
+					criticalIssues += count
+				case "主要":
+					majorIssues += count
+				case "提示", "建议":
+					minorIssues += count
 				}
 			}
-		} else {
-			log.Printf("[Executor] Failed to parse JSON summary: %v\n", err)
 		}
+
+		log.Printf("[Executor] Parsed issue counts from Markdown — total: %d, critical: %d, major: %d, minor: %d\n",
+			issueCount, criticalIssues, majorIssues, minorIssues)
 	} else {
-		log.Printf("[Executor] Failed to read JSON summary: %v\n", err)
+		log.Printf("[Executor] Failed to read Markdown report for parsing: %v\n", err)
 	}
+
 
 	models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
 		"status":          "success",
