@@ -182,18 +182,31 @@ func ImportRepos(c *gin.Context) {
 			branch = "main" // Default branch
 		}
 
-		// Use a transaction for safer operations? GORM does not strictly require here unless we want to rollback per line.
-		// For simplicity, handle directly.
-
-		// Find or Create Member (Owner) based purely on name parsing
+		// Resolve owner: try ID match → name match → auto-create
 		var member models.Member
-		if err := models.DB.Where("id = ?", ownerName).First(&member).Error; err != nil {
+		ownerResolved := false
+		// 1. Try exact ID match
+		if ownerName != "" {
+			if err := models.DB.Where("id = ?", ownerName).First(&member).Error; err == nil {
+				ownerResolved = true
+			}
+		}
+		// 2. Try name match
+		if !ownerResolved && ownerName != "" {
+			if err := models.DB.Where("name = ?", ownerName).First(&member).Error; err == nil {
+				ownerResolved = true
+			}
+		}
+		// 3. Create new member if not found
+		if !ownerResolved && ownerName != "" {
 			member = models.Member{
 				ID:   ownerName,
 				Name: ownerName,
 			}
 			if err := models.DB.Create(&member).Error; err != nil {
 				log.Printf("Line %d: Failed to auto-create member %s: %v", lineNum+2, ownerName, err)
+				// Use the value as-is, repo will still be created with raw ownerName as ID
+				member.ID = ownerName
 			}
 		}
 
@@ -202,7 +215,7 @@ func ImportRepos(c *gin.Context) {
 		if err := models.DB.Where("name = ?", departmentName).First(&team).Error; err != nil {
 			team = models.Team{
 				Name:     departmentName,
-				LeaderID: ownerName,
+				LeaderID: member.ID,
 			}
 			if err := models.DB.Create(&team).Error; err != nil {
 				log.Printf("Line %d: Failed to create team %s: %v", lineNum+2, departmentName, err)
@@ -217,7 +230,7 @@ func ImportRepos(c *gin.Context) {
 				TeamID:       team.ID,
 				Name:         repoName,
 				URL:          repoURL,
-				OwnerID:      ownerName, // Using the string ID
+				OwnerID:      member.ID,
 				Branch:       branch,
 				ServiceGroup: serviceGroup,
 				IsActive:     true,
@@ -230,7 +243,7 @@ func ImportRepos(c *gin.Context) {
 			// Update existing
 			repo.TeamID = team.ID
 			repo.URL = repoURL
-			repo.OwnerID = ownerName
+			repo.OwnerID = member.ID
 			repo.Branch = branch
 			repo.ServiceGroup = serviceGroup
 			if err := models.DB.Save(&repo).Error; err != nil {
@@ -239,6 +252,7 @@ func ImportRepos(c *gin.Context) {
 			}
 		}
 		successCount++
+
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Successfully imported %d repositories", successCount)})
