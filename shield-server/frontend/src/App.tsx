@@ -100,13 +100,13 @@ function AuthHeader() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <button 
+      <button
         onClick={(e) => {
           e.stopPropagation();
           setShowDropdown(!showDropdown);
         }}
-        style={{ 
-          display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'transparent', 
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'transparent',
           border: 'none', cursor: 'pointer', padding: '0.5rem', borderRadius: '8px',
           transition: 'background-color 0.2s'
         }}
@@ -126,13 +126,13 @@ function AuthHeader() {
       </button>
 
       {showDropdown && (
-        <div style={{ 
-          position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem', width: '200px', 
-          background: 'white', borderRadius: '8px', border: '1px solid var(--border-color)', 
-          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', overflow: 'hidden', zIndex: 100 
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem', width: '200px',
+          background: 'white', borderRadius: '8px', border: '1px solid var(--border-color)',
+          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', overflow: 'hidden', zIndex: 100
         }}>
           <div style={{ padding: '0.5rem' }}>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); setShowDropdown(false); setShowPasswordModal(true); }}
               style={{ width: '100%', textAlign: 'left', padding: '0.75rem 1rem', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--text-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: '4px' }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-color)'}
@@ -142,7 +142,7 @@ function AuthHeader() {
               修改密码
             </button>
             <div style={{ height: '1px', background: 'var(--border-color)', margin: '0.25rem 0' }}></div>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); handleLogout(); }}
               style={{ width: '100%', textAlign: 'left', padding: '0.75rem 1rem', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: '4px' }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
@@ -162,11 +162,11 @@ function AuthHeader() {
             <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>当前密码</label>
-                <input required type="password" value={passwordForm.oldPassword} onChange={e => setPasswordForm({...passwordForm, oldPassword: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <input required type="password" value={passwordForm.oldPassword} onChange={e => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>新密码</label>
-                <input required type="password" value={passwordForm.newPassword} onChange={e => setPasswordForm({...passwordForm, newPassword: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <input required type="password" value={passwordForm.newPassword} onChange={e => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
                 <button type="button" onClick={() => setShowPasswordModal(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.5rem 1rem' }}>取消</button>
@@ -182,7 +182,7 @@ function AuthHeader() {
 
 function Sidebar() {
   const location = useLocation();
-  
+
   const navItems = [
     { path: '/reviews', label: '代码检视', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
     { path: '/issues', label: '核心问题', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
@@ -193,22 +193,22 @@ function Sidebar() {
 
   return (
     <aside style={{ width: '260px', background: 'var(--card-bg)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0 }}>
-      <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <img src="/madun-logo.png" alt="码盾" style={{ width: '36px', height: '36px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
+      <div style={{ height: '70px', padding: '0 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem', boxSizing: 'border-box' }}>
+        <img src="/madun-logo.png" alt="码盾" style={{ width: '34px', height: '34px', objectFit: 'contain', flexShrink: 0 }} />
         <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-          <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-color)', letterSpacing: '0.5px', fontWeight: 700 }}>码盾</h2>
+          <h2 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-color)', letterSpacing: '0.5px', fontWeight: 700 }}>码盾，守护代码质量</h2>
           <span style={{ fontSize: '0.7rem', color: '#94a3b8', letterSpacing: '0.3px' }}>Code Shield</span>
         </div>
       </div>
-      
+
       <nav style={{ padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
-        
+
         {navItems.map(item => {
           const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
           return (
-            <Link key={item.path} to={item.path} style={{ 
-              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', 
-              borderRadius: '8px', textDecoration: 'none', 
+            <Link key={item.path} to={item.path} style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
+              borderRadius: '8px', textDecoration: 'none',
               color: isActive ? 'var(--primary-color)' : '#64748b',
               background: isActive ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
               fontWeight: isActive ? 600 : 500,
