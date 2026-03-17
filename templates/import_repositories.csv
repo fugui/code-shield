@@ -1,3 +1,3 @@
-代码仓名称,GitURL,田主名,主干分支,归属部门
-code-shield-ui,https://github.com/example/ui.git,zhangsan,main,前端架构组
-backend-service,https://github.com/example/api.git,lisi,master,后端测试组
+代码仓,RepoURL,田主,分支,部门名称,服务组
+code-shield-ui,https://github.com/example/ui.git,zhangsan,main,前端架构组,web-platform
+backend-service,https://github.com/example/api.git,lisi,master,后端测试组,core-api

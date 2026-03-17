@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 interface ReviewOverviewTabProps {
-  setActiveTab: (tab: 'overview' | 'tasks') => void;
+  setActiveTab: (tab: 'overview' | 'tasks' | 'activity') => void;
 }
 
 function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {

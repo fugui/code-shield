@@ -1,45 +1,43 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import TeamsTab from './TeamsTab';
 import MembersTab from './MembersTab';
 import Repositories from './Repositories';
 
+type TeamTab = 'departments' | 'members' | 'repositories';
+
 function TeamManagement() {
-  const [activeTab, setActiveTab] = useState<'departments' | 'members' | 'repositories'>('departments');
+  const { tab } = useParams<{ tab: TeamTab }>();
+  const navigate = useNavigate();
+
+  const activeTab: TeamTab = (tab as TeamTab) || 'departments';
+
+  const setActiveTab = (t: TeamTab) => {
+    navigate(`/teams/${t}`, { replace: true });
+  };
+
+  const tabStyle = (t: TeamTab) => ({
+    background: 'transparent',
+    border: 'none',
+    padding: '0.75rem 0',
+    fontWeight: 600,
+    fontSize: '1rem',
+    cursor: 'pointer',
+    color: activeTab === t ? 'var(--primary-color)' : 'var(--text-color)',
+    borderBottom: activeTab === t ? '2px solid var(--primary-color)' : '2px solid transparent',
+    marginBottom: '-1px',
+  } as React.CSSProperties);
 
   return (
     <div>
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
-        <button 
-          onClick={() => setActiveTab('departments')}
-          style={{ 
-            background: 'transparent', border: 'none', padding: '0.75rem 0', fontWeight: 600, fontSize: '1rem',
-            cursor: 'pointer', color: activeTab === 'departments' ? 'var(--primary-color)' : 'var(--text-color)',
-            borderBottom: activeTab === 'departments' ? '2px solid var(--primary-color)' : '2px solid transparent',
-            marginBottom: '-1px'
-          }}
-        >
+        <button onClick={() => setActiveTab('departments')} style={tabStyle('departments')}>
           部门管理
         </button>
-        <button 
-          onClick={() => setActiveTab('members')}
-          style={{ 
-            background: 'transparent', border: 'none', padding: '0.75rem 0', fontWeight: 600, fontSize: '1rem',
-            cursor: 'pointer', color: activeTab === 'members' ? 'var(--primary-color)' : 'var(--text-color)',
-            borderBottom: activeTab === 'members' ? '2px solid var(--primary-color)' : '2px solid transparent',
-            marginBottom: '-1px'
-          }}
-        >
+        <button onClick={() => setActiveTab('members')} style={tabStyle('members')}>
           人员管理
         </button>
-        <button 
-          onClick={() => setActiveTab('repositories')}
-          style={{ 
-            background: 'transparent', border: 'none', padding: '0.75rem 0', fontWeight: 600, fontSize: '1rem',
-            cursor: 'pointer', color: activeTab === 'repositories' ? 'var(--primary-color)' : 'var(--text-color)',
-            borderBottom: activeTab === 'repositories' ? '2px solid var(--primary-color)' : '2px solid transparent',
-            marginBottom: '-1px'
-          }}
-        >
+        <button onClick={() => setActiveTab('repositories')} style={tabStyle('repositories')}>
           代码仓管理
         </button>
       </div>

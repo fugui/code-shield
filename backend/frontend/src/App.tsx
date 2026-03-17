@@ -205,7 +205,7 @@ function Sidebar() {
       <nav style={{ padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
         
         {navItems.map(item => {
-          const isActive = location.pathname === item.path;
+          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
           return (
             <Link key={item.path} to={item.path} style={{ 
               display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', 
@@ -240,7 +240,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
           <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
-            {location.pathname === '/' || location.pathname === '/reviews' ? '代码检视' : location.pathname === '/opensource' ? '开源管理' : location.pathname === '/config' ? '系统管理' : location.pathname === '/teams' ? '团队组织架构与代码仓配置' : '核心问题追踪'}
+            {location.pathname.startsWith('/reviews') ? '代码检视' : location.pathname === '/opensource' ? '开源管理' : location.pathname === '/config' ? '系统管理' : location.pathname.startsWith('/teams') ? '团队组织架构与代码仓配置' : '核心问题追踪'}
           </h1>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
             <AuthHeader />
@@ -265,9 +265,11 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/reviews" replace />} />
             <Route path="/reviews" element={<PrivateRoute><CodeReviewManagement /></PrivateRoute>} />
+            <Route path="/reviews/:tab" element={<PrivateRoute><CodeReviewManagement /></PrivateRoute>} />
             <Route path="/opensource" element={<PrivateRoute><OpenSourceManagement /></PrivateRoute>} />
             <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
             <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
+            <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
             <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
           </Routes>
         </MainLayout>

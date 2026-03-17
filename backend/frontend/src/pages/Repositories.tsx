@@ -5,7 +5,7 @@ function Repositories() {
   const { showToast } = useToast();
   const [repos, setRepos] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: '', url: '', owner_id: '', branch: 'main', team_id: 1, service_group: '' });
+  const [formData, setFormData] = useState({ name: '', url: '', owner_id: '', branch: 'main', team_id: 0, service_group: '' });
   const [teams, setTeams] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [filterTeam, setFilterTeam] = useState<string>('');
@@ -26,13 +26,26 @@ function Repositories() {
   useEffect(() => {
     fetch('/api/teams')
       .then(res => res.json())
-      .then(data => setTeams(data || []))
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.items || []);
+        setTeams(list);
+        if (list.length > 0) {
+          setFormData(prev => ({ ...prev, team_id: prev.team_id === 0 ? list[0].id : prev.team_id }));
+        }
+      })
       .catch(console.error);
-    fetch('/api/members')
+    fetch('/api/members?pageSize=1000')
       .then(res => res.json())
-      .then(data => setMembers(data || []))
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.items || []);
+        setMembers(list);
+        if (list.length > 0) {
+          setFormData(prev => ({ ...prev, owner_id: prev.owner_id === '' ? list[0].id : prev.owner_id }));
+        }
+      })
       .catch(console.error);
   }, []);
+
 
   const fetchRepos = () => {
     const params = new URLSearchParams({
@@ -88,7 +101,7 @@ function Repositories() {
     .then(res => {
       if (res.ok) {
         setShowModal(false);
-        setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 1, service_group: '' });
+        setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 0, service_group: '' });
         fetchRepos();
         showToast('成功录入代码仓', 'success');
       } else {
