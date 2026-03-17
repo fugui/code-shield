@@ -1,6 +1,6 @@
-# Code-Shield 🛡️
+# 码盾 · Code-Shield 🛡️
 
-An intelligent, autonomous AI-assisted code review and key-issue tracking system designed to guard your code quality. Code-Shield operates as a guardian (like a digital Code Gardener), dynamically scanning branches, employing LLMs for deep architectural reviews, and distributing proactive notifications to the responsible individuals.
+**码盾**（Code Shield）是一套 AI 驱动的代码质量自动看护系统，支持定向代码巡检、核心问题追踪与通知推送。
 
 ## Core Features
 - **Repository & Team Management**: Centralized dual-tab management system for defining departments, personnel, and assigning Git repositories to owners.
