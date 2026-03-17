@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { sshToHttps } from '../utils/urlUtils';
 
 interface ReviewOverviewTabProps {
   setActiveTab: (tab: 'overview' | 'tasks' | 'activity') => void;
@@ -119,7 +120,7 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden', fontSize: '0.875rem' }}>
         <table className="table">
           <thead>
             <tr>
@@ -145,20 +146,35 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
             ) : items.map((item, idx) => (
               <tr key={item.repo.id || idx}>
                 <td style={{ fontWeight: 500 }}>
-                  <a 
-                    href={item.repo.url} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
-                    onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                    onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
-                    title="点击在新标签页访问此代码仓"
-                  >
-                    {item.repo.name}
-                  </a>
+                  {item.repo.url ? (
+                    <a
+                      href={sshToHttps(item.repo.url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: 'var(--primary-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                      onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                      onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                      title={item.repo.url}
+                    >
+                      {item.repo.name}
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, flexShrink: 0 }}>
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--primary-color)' }}>{item.repo.name}</span>
+                  )}
                 </td>
                 <td>{item.repo.team?.name || '未知'}</td>
-                <td>{item.repo.owner ? `${item.repo.owner.name}` : item.repo.owner_id}</td>
+                <td>
+                  {item.repo.owner ? (
+                    <span title={item.repo.owner.id}>{item.repo.owner.name}<span style={{ color: '#94a3b8', fontSize: '0.8rem', marginLeft: '0.3rem' }}>({item.repo.owner.id})</span></span>
+                  ) : (
+                    <span style={{ color: '#94a3b8' }}>{item.repo.owner_id || '-'}</span>
+                  )}
+                </td>
                 <td>
                   {item.latest_review_time ? (
                     <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{item.latest_review_time}</span>
