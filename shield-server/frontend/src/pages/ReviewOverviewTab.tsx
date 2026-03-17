@@ -124,7 +124,7 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
         <table className="table">
           <thead>
             <tr>
-              <th>代码仓</th>
+              <th style={{ maxWidth: '160px', width: '160px' }}>代码仓</th>
               <th>归属部门</th>
               <th>负责人</th>
               <th 
@@ -145,27 +145,30 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
               <tr><td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓或检视数据</td></tr>
             ) : items.map((item, idx) => (
               <tr key={item.repo.id || idx}>
-                <td style={{ fontWeight: 500 }}>
-                  {item.repo.url ? (
-                    <a
-                      href={sshToHttps(item.repo.url)}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: 'var(--primary-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                      onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                      onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
-                      title={item.repo.url}
-                    >
-                      {item.repo.name}
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, flexShrink: 0 }}>
-                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-                        <polyline points="15 3 21 3 21 9"/>
-                        <line x1="10" y1="14" x2="21" y2="3"/>
-                      </svg>
-                    </a>
-                  ) : (
-                    <span style={{ color: 'var(--primary-color)' }}>{item.repo.name}</span>
-                  )}
+                <td style={{ fontWeight: 500, maxWidth: '160px', width: '160px' }}>
+                  {(() => {
+                    const shortName = item.repo.name?.includes(':') ? item.repo.name.split(':').pop() : item.repo.name;
+                    return item.repo.url ? (
+                      <a
+                        href={sshToHttps(item.repo.url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: 'var(--primary-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', maxWidth: '100%' }}
+                        onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                        onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                        title={item.repo.name + (item.repo.url ? '\n' + item.repo.url : '')}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortName}</span>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, flexShrink: 0 }}>
+                          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                          <polyline points="15 3 21 3 21 9"/>
+                          <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                      </a>
+                    ) : (
+                      <span style={{ color: 'var(--primary-color)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{shortName}</span>
+                    );
+                  })()}
                 </td>
                 <td>{item.repo.team?.name || '未知'}</td>
                 <td>
