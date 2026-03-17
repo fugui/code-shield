@@ -1,4 +1,4 @@
-# Code-Shield 🛡️ (formerly Code-Reporter)
+# Code-Shield 🛡️
 
 An intelligent, autonomous AI-assisted code review and key-issue tracking system designed to guard your code quality. Code-Shield operates as a guardian (like a digital Code Gardener), dynamically scanning branches, employing LLMs for deep architectural reviews, and distributing proactive notifications to the responsible individuals.
 

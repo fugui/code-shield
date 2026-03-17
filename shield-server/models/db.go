@@ -12,12 +12,12 @@ var DB *gorm.DB
 
 func InitDB() {
 	var err error
-	DB, err = gorm.Open(sqlite.Open("code_reporter.db"), &gorm.Config{})
+	DB, err = gorm.Open(sqlite.Open("code_shield.db"), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
 	}
 
-	log.Println("AutoMigrating database schema (creates code_reporter.db if it does not exist)...")
+	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
 	// Auto Migrate
 	err = DB.AutoMigrate(
 		&User{},

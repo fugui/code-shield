@@ -16,13 +16,11 @@ yarn-debug.log*
 
 # Database & generated data
 *.db
-shield-server/code_reporter.db
 shield-server/code_shield.db
 shield-server/codes/
 shield-server/review-reports/
 
 # Binary executables
-shield-server/code-reporter-server
 shield-server/code-shield-server
 shield-server/*.exe
 
