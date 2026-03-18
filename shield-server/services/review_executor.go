@@ -200,11 +200,20 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 	if mdBytes, err := os.ReadFile(absReportPath); err == nil {
 		mdContent := string(mdBytes)
 
-		// Extract the 检视结果概要 section as the AI summary stored in DB.
-		if idx := strings.Index(mdContent, "## 检视结果概要"); idx != -1 {
+		// Extract the 检视摘要 section (300-word prose summary) as the AI summary stored in DB.
+		// The prompt instructs Claude to output this section separately from the issue count line.
+		if idx := strings.Index(mdContent, "## 检视摘要"); idx != -1 {
+			// Advance past the heading line itself
+			sectionStart := idx + len("## 检视摘要")
+			rest := mdContent[sectionStart:]
+			// Truncate at the next ## heading so we only capture this section
+			if nextIdx := strings.Index(rest, "\n## "); nextIdx != -1 {
+				rest = rest[:nextIdx]
+			}
+			aiSummary = strings.TrimSpace(rest)
+		} else if idx := strings.Index(mdContent, "## 检视结果概要"); idx != -1 {
+			// Fallback: old format — use the entire section (may include the count line)
 			aiSummary = strings.TrimSpace(mdContent[idx:])
-		} else {
-			aiSummary = mdContent
 		}
 
 		// Parse issue counts from Markdown

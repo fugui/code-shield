@@ -85,6 +85,7 @@ func main() {
 		api.DELETE("/schedules/:id", handlers.DeleteSchedule)
 
 		api.GET("/executions", handlers.GetExecutionLogs)
+		api.DELETE("/executions/completed", handlers.ClearCompletedExecutionLogs)
 
 		// Admin only routes for user management
 		admin := api.Group("/users")

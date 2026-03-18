@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useToast } from '../components/Toast';
 
 function ExecutionLogs() {
   const [logs, setLogs] = useState<any[]>([]);
+  const { showToast } = useToast();
 
   const fetchLogs = async () => {
     try {
@@ -11,6 +13,22 @@ function ExecutionLogs() {
       }
     } catch (err) {
       console.error('Failed to fetch execution logs:', err);
+    }
+  };
+
+  const clearCompleted = async () => {
+    if (!window.confirm('确认清除所有已完成（成功/失败/已跳过）的执行记录？进行中的任务不受影响。')) return;
+    try {
+      const res = await fetch('/api/executions/completed', { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`已清除 ${data.deleted} 条记录`, 'success');
+        fetchLogs();
+      } else {
+        showToast('清除失败，请稍后重试', 'error');
+      }
+    } catch (err) {
+      showToast('请求失败，请检查网络连接', 'error');
     }
   };
 
@@ -41,9 +59,14 @@ function ExecutionLogs() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2 style={{ margin: 0 }}>检视任务执行历史</h2>
-        <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
-          刷新列表
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+            刷新列表
+          </button>
+          <button className="btn" onClick={clearCompleted} style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>
+            清除已完成
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
@@ -100,3 +123,4 @@ function ExecutionLogs() {
 }
 
 export default ExecutionLogs;
+

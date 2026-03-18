@@ -102,3 +102,19 @@ func GetExecutionLogs(c *gin.Context) {
 	query.Order("created_at desc").Limit(100).Find(&logs)
 	c.JSON(http.StatusOK, logs)
 }
+
+// ClearCompletedExecutionLogs deletes all finished (success / failed / skipped) logs,
+// leaving any pending or running records untouched.
+func ClearCompletedExecutionLogs(c *gin.Context) {
+	result := models.DB.
+		Where("status IN ?", []string{"success", "failed", "skipped"}).
+		Delete(&models.TaskExecutionLog{})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear logs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
+}
+
