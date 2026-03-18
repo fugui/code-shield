@@ -207,28 +207,14 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 			aiSummary = mdContent
 		}
 
-		// Parse the single-line summary format:
-		// 阻塞：N，严重：N，主要：N，提示：N，建议：N
+		// Parse issue counts from Markdown
+		blockingCount, criticalCount, majorCount, hintCount, suggestionCount := parseIssueCounts(mdContent)
+
 		// Mapping: 高(critical) = 阻塞 + 严重, 中(major) = 主要, 低(minor) = 提示 + 建议
-		re := regexp.MustCompile(`(阻塞|严重|主要|提示|建议)[：:]\s*(\d+)`)
-		matches := re.FindAllStringSubmatch(mdContent, -1)
-
-		for _, match := range matches {
-			if len(match) >= 3 {
-				level := match[1]
-				count, _ := strconv.Atoi(match[2])
-				issueCount += count
-
-				switch level {
-				case "阻塞", "严重":
-					criticalIssues += count
-				case "主要":
-					majorIssues += count
-				case "提示", "建议":
-					minorIssues += count
-				}
-			}
-		}
+		criticalIssues = blockingCount + criticalCount
+		majorIssues = majorCount
+		minorIssues = hintCount + suggestionCount
+		issueCount = blockingCount + criticalCount + majorCount + hintCount + suggestionCount
 
 		log.Printf("[Executor] Parsed issue counts from Markdown — total: %d, critical: %d, major: %d, minor: %d\n",
 			issueCount, criticalIssues, majorIssues, minorIssues)
@@ -284,6 +270,12 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 		ccEmails = append(ccEmails, repo.Team.Leader.Email)
 	}
 
+	// 从 Markdown 内容解析各级别 issue 数量
+	blockingCount, criticalCount, majorCount, hintCount, suggestionCount := parseIssueCounts(markdownContent)
+
+	subject := fmt.Sprintf("【Code-Shield】%s 周合入代码检视报告：阻塞 %d，严重 %d，主要 %d，提示 %d，建议 %d",
+		repo.Name, blockingCount, criticalCount, majorCount, hintCount, suggestionCount)
+
 	payload := map[string]interface{}{
 		"task_id":   fmt.Sprintf("rev-%d-%d", repo.ID, time.Now().Unix()),
 		"repo_name": repo.Name,
@@ -292,7 +284,7 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 			"to": toEmails,
 			"cc": ccEmails,
 		},
-		"subject":          fmt.Sprintf("[Code-Shield] 项目 %s 自动检视报告", repo.Name),
+		"subject":          subject,
 		"markdown_content": markdownContent,
 	}
 
@@ -320,4 +312,31 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 
 func updateStatus(reportID uint, status string) {
 	models.DB.Model(&models.ReviewReport{}).Where("id = ?", reportID).Update("status", status)
+}
+
+// parseIssueCounts 从 Markdown 内容中解析各级别 issue 数量
+// 格式：阻塞：N，严重：N，主要：N，提示：N，建议：N
+func parseIssueCounts(content string) (blocking, critical, major, hint, suggestion int) {
+	re := regexp.MustCompile(`(阻塞|严重|主要|提示|建议)[：:]\s*(\d+)`)
+	matches := re.FindAllStringSubmatch(content, -1)
+
+	for _, match := range matches {
+		if len(match) >= 3 {
+			level := match[1]
+			count, _ := strconv.Atoi(match[2])
+			switch level {
+			case "阻塞":
+				blocking = count
+			case "严重":
+				critical = count
+			case "主要":
+				major = count
+			case "提示":
+				hint = count
+			case "建议":
+				suggestion = count
+			}
+		}
+	}
+	return
 }
