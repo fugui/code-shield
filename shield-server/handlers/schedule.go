@@ -87,7 +87,7 @@ func DeleteSchedule(c *gin.Context) {
 
 func GetExecutionLogs(c *gin.Context) {
 	var logs []models.TaskExecutionLog
-	query := models.DB.Preload("Schedule").Preload("Repo")
+	query := models.DB.Preload("Schedule").Preload("Repo").Preload("ReviewReport")
 
 	// Optional filters
 	scheduleID := c.Query("schedule_id")

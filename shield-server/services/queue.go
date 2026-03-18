@@ -66,6 +66,9 @@ func EnqueueReviewTask(scheduleID *uint, repoID uint, repoURL string, autoNotify
 		LogID:      execLog.ID,
 	}
 
+	// Link the execution log to its review report in the DB
+	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Update("review_report_id", report.ID)
+
 	select {
 	case TaskQueue <- task:
 		log.Printf("[WorkerPool] Enqueued Repo %d. Queue size: %d\n", repoID, len(TaskQueue))

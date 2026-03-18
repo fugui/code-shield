@@ -1,10 +1,9 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReviewOverviewTab from './ReviewOverviewTab';
-import ReviewReports from './ReviewReports';
 import ExecutionLogs from './ExecutionLogs';
 
-type ReviewTab = 'overview' | 'tasks' | 'activity';
+type ReviewTab = 'overview' | 'activity';
 
 function CodeReviewManagement() {
   const { tab } = useParams<{ tab: ReviewTab }>();
@@ -34,9 +33,6 @@ function CodeReviewManagement() {
         <button onClick={() => setActiveTab('overview')} style={tabStyle('overview')}>
           检视概览
         </button>
-        <button onClick={() => setActiveTab('tasks')} style={tabStyle('tasks')}>
-          检视任务
-        </button>
         <button onClick={() => setActiveTab('activity')} style={tabStyle('activity')}>
           检视活动
         </button>
@@ -44,7 +40,6 @@ function CodeReviewManagement() {
 
       <div style={{ minHeight: '500px' }}>
         {activeTab === 'overview' && <ReviewOverviewTab setActiveTab={setActiveTab} />}
-        {activeTab === 'tasks' && <ReviewReports />}
         {activeTab === 'activity' && <ExecutionLogs />}
       </div>
     </div>

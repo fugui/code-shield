@@ -97,13 +97,15 @@ type ScheduleConfig struct {
 }
 
 type TaskExecutionLog struct {
-	ID           uint            `gorm:"primaryKey" json:"id"`
-	ScheduleID   *uint           `json:"schedule_id"` // Nullable, if triggered manually
-	Schedule     *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule"`
-	RepoID       uint            `json:"repo_id"`
-	Repo         Repository      `gorm:"foreignKey:RepoID" json:"repo"`
+	ID             uint          `gorm:"primaryKey" json:"id"`
+	ScheduleID     *uint         `json:"schedule_id"` // Nullable, if triggered manually
+	Schedule       *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule"`
+	RepoID         uint          `json:"repo_id"`
+	Repo           Repository    `gorm:"foreignKey:RepoID" json:"repo"`
+	ReviewReportID *uint         `json:"review_report_id"` // Nullable FK to ReviewReport
+	ReviewReport   *ReviewReport `gorm:"foreignKey:ReviewReportID" json:"review_report"`
 	TriggerType  string          `gorm:"not null" json:"trigger_type"`  // "cron", "manual", "webhook"
-	Status       string          `gorm:"default:pending" json:"status"` // "pending", "running", "success", "failed"
+	Status       string          `gorm:"default:pending" json:"status"` // "pending", "running", "success", "failed", "skipped"
 	ErrorMessage string          `json:"error_message"`
 	StartTime    time.Time       `json:"start_time"`
 	EndTime      *time.Time      `json:"end_time"` // Nullable until finished
