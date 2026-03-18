@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
+import { useToast } from '../components/Toast';
 
 function Configuration() {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'tasks'>('users');
   const [teams, setTeams] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
@@ -90,7 +92,7 @@ function Configuration() {
         fetchTeams();
       } else {
         const error = await res.json();
-        alert('新建部门失败: ' + error.error);
+        showToast('新建部门失败: ' + error.error, 'error');
       }
     } catch (err) {
       console.error('Error creating team:', err);
@@ -115,7 +117,7 @@ function Configuration() {
         fetchUsers();
       } else {
         const error = await res.json();
-        alert('新建用户失败: ' + error.error);
+        showToast('新建用户失败: ' + error.error, 'error');
       }
     } catch (err) {
       console.error('Error creating user:', err);
@@ -136,7 +138,7 @@ function Configuration() {
       if (res.ok) fetchUsers();
       else {
         const d = await res.json();
-        alert('更新失败: ' + d.error);
+        showToast('更新失败: ' + d.error, 'error');
       }
     } catch (err) { console.error(err); }
   };
@@ -151,7 +153,7 @@ function Configuration() {
       if (res.ok) fetchUsers();
       else {
         const d = await res.json();
-        alert('删除失败: ' + d.error);
+        showToast('删除失败: ' + d.error, 'error');
       }
     } catch (err) { console.error(err); }
   };
@@ -167,14 +169,14 @@ function Configuration() {
       });
       
       if (res.ok) {
-        alert('已成功向 AI 助手下发该代码检视任务！');
+        showToast('已成功向 AI 助手下发该代码检视任务！', 'success');
       } else {
         const data = await res.json();
-        alert(`触发检视任务失败: ${data.error}`);
+        showToast(`触发检视任务失败: ${data.error}`, 'error');
       }
     } catch (error) {
       console.error('Error triggering review:', error);
-      alert('网络异常，触发检视失败');
+      showToast('网络异常，触发检视失败', 'error');
     }
   };
 
@@ -193,7 +195,7 @@ function Configuration() {
         fetchSchedules();
       } else {
         const d = await res.json();
-        alert((editingSchedule ? '更新' : '新建') + '调度失败: ' + d.error);
+        showToast((editingSchedule ? '更新' : '新建') + '调度失败: ' + d.error, 'error');
       }
     } catch (err) { console.error(err); }
   };

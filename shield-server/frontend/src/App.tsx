@@ -6,7 +6,7 @@ import Configuration from './pages/Configuration';
 import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
 import OpenSourceManagement from './pages/OpenSourceManagement';
-import { ToastProvider } from './components/Toast';
+import { ToastProvider, useToast } from './components/Toast';
 
 // Setup global fetch interceptor to inject JWT token
 const originalFetch = window.fetch;
@@ -33,6 +33,7 @@ const PrivateRoute = ({ children }: { children: JSX.Element }) => {
 };
 
 function AuthHeader() {
+  const { showToast } = useToast();
   const [user, setUser] = useState<any>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '' });
@@ -84,15 +85,15 @@ function AuthHeader() {
       });
       const data = await res.json();
       if (res.ok) {
-        alert('密码修改成功，请重新登录。');
+        showToast('密码修改成功，即将退出登录…', 'success');
         setShowPasswordModal(false);
-        handleLogout();
+        setTimeout(handleLogout, 1500);
       } else {
-        alert(data.error || '修改密码失败');
+        showToast(data.error || '修改密码失败', 'error');
       }
     } catch (err) {
       console.error(err);
-      alert('发生网络错误');
+      showToast('发生网络错误', 'error');
     }
   };
 

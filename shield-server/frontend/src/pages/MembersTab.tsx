@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useToast } from '../components/Toast';
 
 function MembersTab() {
+  const { showToast } = useToast();
   const [members, setMembers] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -54,7 +56,7 @@ function MembersTab() {
         setShowModal(false);
         fetchMembers();
       } else {
-        res.json().then(err => alert(err.error || '保存失败'));
+        res.json().then(err => showToast(err.error || '保存失败', 'error'));
       }
     })
     .catch(console.error);
@@ -65,7 +67,7 @@ function MembersTab() {
       fetch(`/api/members/${id}`, { method: 'DELETE' })
         .then(res => {
           if (res.ok) fetchMembers();
-          else alert('删除失败，Ta可能是某些代码仓的责任人。');
+          else showToast('删除失败，Ta可能是某些代码仓的责任人。', 'error');
         })
         .catch(console.error);
     }
@@ -96,15 +98,15 @@ function MembersTab() {
     })
     .then(res => res.json())
     .then(data => {
-      if (data.error) alert(`导入失败: ${data.error}`);
+      if (data.error) showToast(`导入失败: ${data.error}`, 'error');
       else {
-        alert(data.message || '导入成功');
+        showToast(data.message || '导入成功', 'success');
         fetchMembers();
       }
     })
     .catch(err => {
       console.error(err);
-      alert('网络或发生未知错误');
+      showToast('网络或发生未知错误', 'error');
     })
     .finally(() => {
       if (fileInputRef.current) fileInputRef.current.value = '';

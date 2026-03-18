@@ -107,6 +107,21 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
     }
   };
 
+  const handleNotify = async (reportId: number) => {
+    try {
+      const res = await fetch(`/api/reviews/${reportId}/notify`, { method: 'POST' });
+      if (res.ok) {
+        showToast('通知已成功发送！', 'success');
+      } else {
+        const data = await res.json();
+        showToast(`发送通知失败: ${data.error || '未知错误'}`, 'error');
+      }
+    } catch (err) {
+      console.error('Failed to send notification:', err);
+      showToast('网络异常，发送失败', 'error');
+    }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -226,13 +241,25 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
                   )}
                 </td>
                 <td>
-                  <button 
-                    className="btn" 
-                    onClick={() => triggerReview(item.repo.id)} 
-                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)' }}
-                  >
-                    检视
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap' }}>
+                    {item.latest_review_status === 'success' && item.latest_review_id && (
+                      <button
+                        className="btn"
+                        onClick={() => handleNotify(item.latest_review_id)}
+                        title="手动发送检视报告通知给相关责任人"
+                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid #10b981', color: '#10b981', whiteSpace: 'nowrap' }}
+                      >
+                        通知
+                      </button>
+                    )}
+                    <button 
+                      className="btn" 
+                      onClick={() => triggerReview(item.repo.id)} 
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}
+                    >
+                      检视
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

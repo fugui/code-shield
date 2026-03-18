@@ -37,7 +37,7 @@ function TeamsTab() {
         setShowModal(false);
         fetchTeams();
       } else {
-        res.json().then(err => alert(err.error || '保存失败'));
+        res.json().then(err => showToast(err.error || '保存失败', 'error'));
       }
     })
     .catch(console.error);
@@ -48,7 +48,7 @@ function TeamsTab() {
       fetch(`/api/teams/${id}`, { method: 'DELETE' })
         .then(res => {
           if (res.ok) fetchTeams();
-          else alert('删除失败，此部门下可能挂靠了代码仓。');
+          else showToast('删除失败，此部门下可能挂靠了代码仓。', 'error');
         })
         .catch(console.error);
     }

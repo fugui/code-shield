@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useToast } from '../components/Toast';
 
 function ReviewReports() {
+  const { showToast } = useToast();
   const [reviews, setReviews] = useState<any[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
@@ -17,18 +19,16 @@ function ReviewReports() {
 
   const handleNotify = async (reportId: number) => {
     try {
-      const res = await fetch(`/api/reviews/${reportId}/notify`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/reviews/${reportId}/notify`, { method: 'POST' });
       if (res.ok) {
-        alert('已经成功发出通知！');
+        showToast('通知已成功发送！', 'success');
       } else {
         const data = await res.json();
-        alert(`发送通知失败: ${data.error}`);
+        showToast(`发送通知失败: ${data.error || '未知错误'}`, 'error');
       }
     } catch (err) {
       console.error('Failed to manually notify:', err);
-      alert('网络异常，发送失败');
+      showToast('网络异常，发送失败', 'error');
     }
   };
 
@@ -108,15 +108,7 @@ function ReviewReports() {
               </div>
             )}
 
-            {review.status === 'success' && review.ai_summary && (
-              <div style={{ padding: '1.5rem', background: '#f8fafc', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #e2e8f0' }}>
-                <div className="markdown-body" style={{ background: 'transparent', fontSize: '0.9rem' }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {review.ai_summary}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            )}
+
 
             {review.status === 'success' && (
               <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
