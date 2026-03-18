@@ -231,6 +231,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		"critical_issues": criticalIssues,
 		"major_issues":    majorIssues,
 		"minor_issues":    minorIssues,
+		"created_at":      time.Now(),
 	})
 
 	if autoNotify {

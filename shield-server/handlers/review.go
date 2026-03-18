@@ -153,6 +153,10 @@ func GetReviewOverview(c *gin.Context) {
 		query = query.Order("latest_review_time DESC NULLS LAST, repositories.id DESC")
 	} else if sort == "latest_review_time_asc" {
 		query = query.Order("latest_review_time ASC NULLS LAST, repositories.id ASC")
+	} else if sort == "status_desc" {
+		query = query.Order("latest_review_status DESC NULLS LAST, repositories.id DESC")
+	} else if sort == "status_asc" {
+		query = query.Order("latest_review_status ASC NULLS LAST, repositories.id ASC")
 	} else {
 		query = query.Order("repositories.id DESC")
 	}

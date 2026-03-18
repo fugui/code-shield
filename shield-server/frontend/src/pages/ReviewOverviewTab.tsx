@@ -22,7 +22,7 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
   
-  const [sortOrder, setSortOrder] = useState<'latest_review_time_desc' | 'latest_review_time_asc'>('latest_review_time_desc');
+  const [sortOrder, setSortOrder] = useState<'latest_review_time_desc' | 'latest_review_time_asc' | 'status_desc' | 'status_asc'>('latest_review_time_desc');
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
@@ -64,9 +64,27 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
     setPage(1);
   };
 
-  const toggleSortOrder = () => {
-    setSortOrder(prev => prev === 'latest_review_time_desc' ? 'latest_review_time_asc' : 'latest_review_time_desc');
+  const toggleSort = (field: 'latest_review_time' | 'status') => {
+    setSortOrder(prev => {
+      if (field === 'latest_review_time') {
+        return prev === 'latest_review_time_desc' ? 'latest_review_time_asc' : 'latest_review_time_desc';
+      } else {
+        return prev === 'status_desc' ? 'status_asc' : 'status_desc';
+      }
+    });
     setPage(1);
+  };
+
+  const getSortIcon = (field: 'latest_review_time' | 'status') => {
+    if (field === 'latest_review_time') {
+      if (sortOrder === 'latest_review_time_desc') return ' ↓';
+      if (sortOrder === 'latest_review_time_asc') return ' ↑';
+      return '';
+    } else {
+      if (sortOrder === 'status_desc') return ' ↓';
+      if (sortOrder === 'status_asc') return ' ↑';
+      return '';
+    }
   };
 
   const triggerReview = (repoId: number) => {
@@ -142,15 +160,22 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
               <th style={{ width: '320px' }}>代码仓</th>
               <th style={{ width: '160px' }}>归属部门</th>
               <th>负责人</th>
-              <th 
-                onClick={toggleSortOrder} 
-                style={{ cursor: 'pointer', userSelect: 'none', color: 'var(--primary-color)' }}
+              <th
+                onClick={() => toggleSort('latest_review_time')}
+                style={{ cursor: 'pointer', userSelect: 'none', color: sortOrder.startsWith('latest_review_time') ? 'var(--primary-color)' : 'inherit' }}
                 title="点击切换排序方式"
               >
-                最近检视时间 
-                {sortOrder === 'latest_review_time_desc' ? ' ↓' : ' ↑'}
+                最近检视时间
+                {getSortIcon('latest_review_time')}
               </th>
-              <th>状态</th>
+              <th
+                onClick={() => toggleSort('status')}
+                style={{ cursor: 'pointer', userSelect: 'none', color: sortOrder.startsWith('status') ? 'var(--primary-color)' : 'inherit' }}
+                title="点击切换排序方式"
+              >
+                状态
+                {getSortIcon('status')}
+              </th>
               <th>发现问题</th>
               <th>操作</th>
             </tr>
