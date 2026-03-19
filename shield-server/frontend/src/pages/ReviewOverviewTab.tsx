@@ -4,11 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { sshToHttps } from '../utils/urlUtils';
 
-interface ReviewOverviewTabProps {
-  setActiveTab: (tab: 'overview' | 'activity') => void;
-}
 
-function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
+function ReviewOverviewTab() {
   const { showToast } = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
@@ -95,7 +92,6 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
     }).then(res => {
       if (res.ok) {
         showToast('已成功触发检视任务！', 'success');
-        setActiveTab('activity');
       } else {
         showToast('触发检视任务失败', 'error');
       }
@@ -234,7 +230,7 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
                      <span style={{ color: '#aaa', fontSize: '0.875rem' }}>未检视</span>
                   ) : (
                     <span className={`badge ${item.latest_review_status === 'success' ? 'success' : (item.latest_review_status === 'failed' ? 'danger' : item.latest_review_status === 'queued' ? '' : 'warning')}`}>
-                      {item.latest_review_status === 'success' ? '已完成' : item.latest_review_status === 'failed' ? '失败' : item.latest_review_status === 'queued' ? '排队中' : item.latest_review_status === 'running' ? '执行中' : item.latest_review_status}
+                      {item.latest_review_status === 'success' ? '完成' : item.latest_review_status === 'failed' ? '失败' : item.latest_review_status === 'queued' ? '排队中' : item.latest_review_status === 'running' ? '执行中' : item.latest_review_status}
                     </span>
                   )}
                 </td>
@@ -247,18 +243,32 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
                         <span style={{ color: '#eab308', fontWeight: 600, fontSize: '0.875rem' }}>低: {item.minor_issues}</span>
                       </div>
                       {item.latest_review_id && (
-                        <button 
-                          onClick={() => handleOpenReport(item.latest_review_id)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: 'var(--primary-color)' }}
-                          title="查看详细报告"
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                          </svg>
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          <button 
+                            onClick={() => handleOpenReport(item.latest_review_id)}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: 'var(--primary-color)' }}
+                            title="查看详细报告"
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="11" cy="11" r="8"></circle>
+                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                          </button>
+                          <button 
+                            onClick={() => handleNotify(item.latest_review_id)}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#10b981' }}
+                            title="手动发送检视报告通知给相关责任人"
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                              <polyline points="2,4 12,13 22,4"></polyline>
+                            </svg>
+                          </button>
+                        </div>
                       )}
                     </div>
                   ) : (
@@ -266,25 +276,13 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
                   )}
                 </td>
                 <td>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap' }}>
-                    {item.latest_review_status === 'success' && item.latest_review_id && (
-                      <button
-                        className="btn"
-                        onClick={() => handleNotify(item.latest_review_id)}
-                        title="手动发送检视报告通知给相关责任人"
-                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid #10b981', color: '#10b981', whiteSpace: 'nowrap' }}
-                      >
-                        通知
-                      </button>
-                    )}
-                    <button 
-                      className="btn" 
-                      onClick={() => triggerReview(item.repo.id)} 
-                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}
-                    >
-                      检视
-                    </button>
-                  </div>
+                  <button 
+                    className="btn" 
+                    onClick={() => triggerReview(item.repo.id)} 
+                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}
+                  >
+                    检视
+                  </button>
                 </td>
               </tr>
             ))}

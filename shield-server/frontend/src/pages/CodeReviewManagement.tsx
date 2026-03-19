@@ -39,7 +39,7 @@ function CodeReviewManagement() {
       </div>
 
       <div style={{ minHeight: '500px' }}>
-        {activeTab === 'overview' && <ReviewOverviewTab setActiveTab={setActiveTab} />}
+        {activeTab === 'overview' && <ReviewOverviewTab />}
         {activeTab === 'activity' && <ExecutionLogs />}
       </div>
     </div>
