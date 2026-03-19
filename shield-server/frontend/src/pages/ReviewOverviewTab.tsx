@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,6 +8,7 @@ import { sshToHttps } from '../utils/urlUtils';
 
 function ReviewOverviewTab() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   
@@ -173,12 +175,13 @@ function ReviewOverviewTab() {
                 {getSortIcon('status')}
               </th>
               <th>发现问题</th>
+              <th>历史报告</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓或检视数据</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓或检视数据</td></tr>
             ) : items.map((item, idx) => (
               <tr key={item.repo.id || idx}>
                 <td style={{ fontWeight: 500, width: '320px', maxWidth: '320px' }}>
@@ -274,6 +277,26 @@ function ReviewOverviewTab() {
                   ) : (
                     <span style={{ color: '#aaa', fontSize: '0.875rem' }}>-</span>
                   )}
+                </td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: item.report_count > 0 ? 'var(--text-color)' : '#aaa' }}>
+                      {item.report_count}
+                    </span>
+                    {item.report_count > 0 && (
+                      <button
+                        onClick={() => navigate(`/reviews/repo/${item.repo.id}`)}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem', borderRadius: '4px', color: 'var(--primary-color)' }}
+                        title="查看历史检视报告"
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 18l6-6-6-6"></path>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </td>
                 <td>
                   <button 

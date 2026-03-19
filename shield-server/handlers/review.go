@@ -11,14 +11,38 @@ import (
 )
 
 func GetReviews(c *gin.Context) {
-	var reviews []models.ReviewReport
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
 	repoID := c.Query("repo_id")
-	query := models.DB.Preload("Repo")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 15
+	}
+
+	query := models.DB.Model(&models.ReviewReport{})
 	if repoID != "" {
 		query = query.Where("repo_id = ?", repoID)
 	}
-	query.Order("created_at desc").Find(&reviews)
-	c.JSON(http.StatusOK, reviews)
+
+	var total int64
+	query.Count(&total)
+
+	var reviews []models.ReviewReport
+	offset := (page - 1) * pageSize
+	query.Preload("Repo").Order("created_at desc").Offset(offset).Limit(pageSize).Find(&reviews)
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":      reviews,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"totalPages": totalPages,
+	})
 }
 
 func GetReviewDetails(c *gin.Context) {
@@ -144,10 +168,16 @@ func GetReviewOverview(c *gin.Context) {
 		Select("MAX(id)").
 		Group("repo_id")
 
-	// Main query joining repositories with latest review report
+	// Subquery to count all review reports per repository
+	countSubQuery := models.DB.Model(&models.ReviewReport{}).
+		Select("repo_id, COUNT(*) as cnt").
+		Group("repo_id")
+
+	// Main query joining repositories with latest review report and report count
 	query = query.
-		Select("repositories.*, rr.id as latest_review_id, rr.status as latest_review_status, rr.created_at as latest_review_time, rr.critical_issues, rr.major_issues, rr.minor_issues").
-		Joins("LEFT JOIN review_reports rr ON rr.id IN (?) AND rr.repo_id = repositories.id", subQuery)
+		Select("repositories.*, rr.id as latest_review_id, rr.status as latest_review_status, rr.created_at as latest_review_time, rr.critical_issues, rr.major_issues, rr.minor_issues, COALESCE(rc.cnt, 0) as report_count").
+		Joins("LEFT JOIN review_reports rr ON rr.id IN (?) AND rr.repo_id = repositories.id", subQuery).
+		Joins("LEFT JOIN (?) rc ON rc.repo_id = repositories.id", countSubQuery)
 
 	if sort == "latest_review_time_desc" {
 		query = query.Order("latest_review_time DESC NULLS LAST, repositories.id DESC")
@@ -169,6 +199,7 @@ func GetReviewOverview(c *gin.Context) {
 		CriticalIssues     *int
 		MajorIssues        *int
 		MinorIssues        *int
+		ReportCount        int
 	}
 
 	var results []ResultItem
@@ -185,12 +216,14 @@ func GetReviewOverview(c *gin.Context) {
 		CriticalIssues     int               `json:"critical_issues"`
 		MajorIssues        int               `json:"major_issues"`
 		MinorIssues        int               `json:"minor_issues"`
+		ReportCount        int               `json:"report_count"`
 	}
 
 	var items []OverviewItem
 	for _, res := range results {
 		item := OverviewItem{
-			Repo: res.Repository,
+			Repo:        res.Repository,
+			ReportCount: res.ReportCount,
 		}
 		
 		if res.LatestReviewStatus != nil {
@@ -199,12 +232,9 @@ func GetReviewOverview(c *gin.Context) {
 			}
 			item.LatestReviewStatus = *res.LatestReviewStatus
 			if res.LatestReviewTime != nil {
-				// We need to parse and format the string. In SQLite, datetime is string.
-				// The gorm Find might parse it to string directly if the struct type is string.
-				// Format it if needed, but since it's already a string, we can just use it, or substring it.
 				t := *res.LatestReviewTime
 				if len(t) > 19 {
-					t = t[:19] // Keep only "YYYY-MM-DD HH:MM:SS"
+					t = t[:19]
 				}
 				item.LatestReviewTime = t
 			}

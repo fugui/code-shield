@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import CodeReviewManagement from './pages/CodeReviewManagement';
+import RepoReviewHistory from './pages/RepoReviewHistory';
 import KeyIssues from './pages/KeyIssues';
 import Configuration from './pages/Configuration';
 import Login from './pages/Login';
@@ -266,6 +267,7 @@ function App() {
             <Route path="/" element={<Navigate to="/reviews" replace />} />
             <Route path="/reviews" element={<PrivateRoute><CodeReviewManagement /></PrivateRoute>} />
             <Route path="/reviews/:tab" element={<PrivateRoute><CodeReviewManagement /></PrivateRoute>} />
+            <Route path="/reviews/repo/:repoId" element={<PrivateRoute><RepoReviewHistory /></PrivateRoute>} />
             <Route path="/opensource" element={<PrivateRoute><OpenSourceManagement /></PrivateRoute>} />
             <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
             <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
