@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { sshToHttps } from '../utils/urlUtils';
 
 interface ReviewOverviewTabProps {
-  setActiveTab: (tab: 'overview' | 'tasks' | 'activity') => void;
+  setActiveTab: (tab: 'overview' | 'activity') => void;
 }
 
 function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
@@ -95,7 +95,7 @@ function ReviewOverviewTab({ setActiveTab }: ReviewOverviewTabProps) {
     }).then(res => {
       if (res.ok) {
         showToast('已成功触发检视任务！', 'success');
-        setActiveTab('tasks');
+        setActiveTab('activity');
       } else {
         showToast('触发检视任务失败', 'error');
       }
