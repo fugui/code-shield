@@ -44,7 +44,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		log.Printf("[Executor] Failed to parse URL %s: %v\n", repoURL, err)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Invalid Repository URL", "")
+			NotifyNotifier(repoID, "failed", "Invalid Repository URL", "", "")
 		}
 		return fmt.Errorf("invalid repository URL: %w", err)
 	}
@@ -59,7 +59,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		log.Printf("[Executor] Failed to create dir %s: %v\n", filepath.Dir(codesPath), err)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Filesystem error setting up directory", "")
+			NotifyNotifier(repoID, "failed", "Filesystem error setting up directory", "", "")
 		}
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -74,7 +74,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 			updateStatus(report.ID, "failed")
 			models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
 			if autoNotify {
-				NotifyNotifier(repoID, "failed", "Git Pull synchronization failed", "")
+				NotifyNotifier(repoID, "failed", "Git Pull synchronization failed", "", "")
 			}
 			return fmt.Errorf("git pull failed: %w", err)
 		}
@@ -87,7 +87,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 			updateStatus(report.ID, "failed")
 			models.DB.Model(&models.ReviewReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
 			if autoNotify {
-				NotifyNotifier(repoID, "failed", "Git Clone cloning failed", "")
+				NotifyNotifier(repoID, "failed", "Git Clone cloning failed", "", "")
 			}
 			return fmt.Errorf("git clone failed: %w", err)
 		}
@@ -115,7 +115,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		log.Printf("[Executor] Failed to create reports dir %s: %v\n", reportsDir, err)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Filesystem error creating reports dir", "")
+			NotifyNotifier(repoID, "failed", "Filesystem error creating reports dir", "", "")
 		}
 		return fmt.Errorf("failed to create reports directory: %w", err)
 	}
@@ -164,7 +164,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		log.Printf("[Executor] Claude CLI timed out after %v for ReportID %d\n", ClaudeReviewTimeout, reportID)
 		updateStatus(report.ID, "failed")
 		if autoNotify {
-			NotifyNotifier(repoID, "failed", "Code review timed out", "")
+			NotifyNotifier(repoID, "failed", "Code review timed out", "", "")
 		}
 		return fmt.Errorf("claude execution timed out after %v", ClaudeReviewTimeout)
 	}
@@ -179,7 +179,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		} else {
 			updateStatus(report.ID, "failed")
 			if autoNotify {
-				NotifyNotifier(repoID, "failed", "Claude AI execution failed", "")
+				NotifyNotifier(repoID, "failed", "Claude AI execution failed", "", "")
 			}
 			return fmt.Errorf("claude execution failed: %w", err)
 		}
@@ -246,7 +246,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 	if autoNotify {
 		mdContent, err := os.ReadFile(absReportPath)
 		if err == nil {
-			NotifyNotifier(repoID, "success", "Code review completed: "+absReportPath, string(mdContent))
+			NotifyNotifier(repoID, "success", "Code review completed: "+absReportPath, string(mdContent), aiSummary)
 		} else {
 			log.Printf("[Executor] Failed to read report markdown for notification: %v\n", err)
 		}
@@ -256,7 +256,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 }
 
 // NotifyNotifier executes an HTTP POST to the standalone Windows Node.js Notifier service.
-func NotifyNotifier(repoID uint, status string, message string, markdownContent string) {
+func NotifyNotifier(repoID uint, status string, message string, markdownContent string, aiSummary string) {
 	// Only send real notification on success.
 	if status != "success" {
 		log.Printf("[Notifier API] Skipping email notification for status: %s\n", status)
@@ -295,6 +295,7 @@ func NotifyNotifier(repoID uint, status string, message string, markdownContent 
 			"cc": ccEmails,
 		},
 		"subject":          subject,
+		"body":             aiSummary,
 		"markdown_content": markdownContent,
 	}
 

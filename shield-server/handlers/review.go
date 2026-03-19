@@ -102,7 +102,7 @@ func TriggerManualNotification(c *gin.Context) {
 	}
 
 	// Send the payload to the Windows Node.js service
-	services.NotifyNotifier(report.Repo.ID, report.Status, msg, mdContent)
+	services.NotifyNotifier(report.Repo.ID, report.Status, msg, mdContent, report.AISummary)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Notification dispatched."})
 }
