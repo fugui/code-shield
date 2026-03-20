@@ -13,6 +13,9 @@ type Config struct {
 	Notifier struct {
 		URL string `yaml:"url"`
 	} `yaml:"notifier"`
+	Review struct {
+		NotifyThreshold int `yaml:"notify_threshold"`
+	} `yaml:"review"`
 }
 
 var AppConfig Config

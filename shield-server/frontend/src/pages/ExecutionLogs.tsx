@@ -187,7 +187,7 @@ function ExecutionLogs() {
                               { label: '阻塞+严重', value: report.critical_issues, color: '#dc2626' },
                               { label: '主要',     value: report.major_issues,    color: '#d97706' },
                               { label: '提示+建议', value: report.minor_issues,    color: '#2563eb' },
-                              { label: '合计',     value: report.issue_count,     color: '#475569' },
+                              { label: '得分',     value: report.issue_count,     color: '#475569' },
                             ].map(item => (
                               <div key={item.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: `1px solid ${item.color}22`, borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px' }}>
                                 <span style={{ fontSize: '1.25rem', fontWeight: 700, color: item.color }}>{item.value ?? 0}</span>

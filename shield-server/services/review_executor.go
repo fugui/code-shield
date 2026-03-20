@@ -223,7 +223,7 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 		criticalIssues = blockingCount + criticalCount
 		majorIssues = majorCount
 		minorIssues = hintCount + suggestionCount
-		issueCount = blockingCount + criticalCount + majorCount + hintCount + suggestionCount
+		issueCount = blockingCount*5 + criticalCount*4 + majorCount*3 + hintCount*2 + suggestionCount
 
 		log.Printf("[Executor] Parsed issue counts from Markdown — total: %d, critical: %d, major: %d, minor: %d\n",
 			issueCount, criticalIssues, majorIssues, minorIssues)
@@ -244,11 +244,20 @@ func RunAIReviewSync(reportID uint, repoURL string, autoNotify bool) error {
 	})
 
 	if autoNotify {
-		mdContent, err := os.ReadFile(absReportPath)
-		if err == nil {
-			NotifyNotifier(repoID, "success", "Code review completed: "+absReportPath, string(mdContent), aiSummary)
+		threshold := models.AppConfig.Review.NotifyThreshold
+		if threshold <= 0 {
+			threshold = 20 // 默认值
+		}
+		if issueCount >= threshold {
+			mdContent, err := os.ReadFile(absReportPath)
+			if err == nil {
+				NotifyNotifier(repoID, "success", "Code review completed: "+absReportPath, string(mdContent), aiSummary)
+			} else {
+				log.Printf("[Executor] Failed to read report markdown for notification: %v\n", err)
+			}
 		} else {
-			log.Printf("[Executor] Failed to read report markdown for notification: %v\n", err)
+			log.Printf("[Executor] Issue score %d is below threshold %d — skipping auto-notification for RepoID %d\n",
+				issueCount, threshold, repoID)
 		}
 	}
 
