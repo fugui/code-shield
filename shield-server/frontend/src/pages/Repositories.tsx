@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
+import MemberSearchSelect from '../components/MemberSearchSelect';
 
 const inputStyle: React.CSSProperties = { width: '100%', padding: '0.625rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box', fontSize: '0.875rem', transition: 'border-color 0.2s' };
 const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.375rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 500 };
@@ -391,12 +392,7 @@ function Repositories() {
               </div>
               <div>
                 <label style={labelStyle}>项目责任人</label>
-                <select required value={formData.owner_id} onChange={e => setFormData({...formData, owner_id: e.target.value})} style={inputStyle}>
-                  <option value="" disabled>选择挂靠责任人</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
-                  ))}
-                </select>
+                <MemberSearchSelect value={formData.owner_id} onChange={id => setFormData({...formData, owner_id: id})} />
               </div>
               <div>
                 <label style={labelStyle}>主干分支</label>
