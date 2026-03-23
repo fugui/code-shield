@@ -85,6 +85,63 @@ func DeleteRepo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Repository correctly deleted"})
 }
 
+func UpdateRepo(c *gin.Context) {
+	id := c.Param("id")
+
+	var repo models.Repository
+	if err := models.DB.First(&repo, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Repository not found"})
+		return
+	}
+
+	var input struct {
+		Name         *string `json:"name"`
+		URL          *string `json:"url"`
+		OwnerID      *string `json:"owner_id"`
+		Branch       *string `json:"branch"`
+		TeamID       *uint   `json:"team_id"`
+		ServiceGroup *string `json:"service_group"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if input.Name != nil {
+		updates["name"] = *input.Name
+	}
+	if input.URL != nil {
+		updates["url"] = *input.URL
+	}
+	if input.OwnerID != nil {
+		updates["owner_id"] = *input.OwnerID
+	}
+	if input.Branch != nil {
+		updates["branch"] = *input.Branch
+	}
+	if input.TeamID != nil {
+		updates["team_id"] = *input.TeamID
+	}
+	if input.ServiceGroup != nil {
+		updates["service_group"] = *input.ServiceGroup
+	}
+
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+		return
+	}
+
+	if err := models.DB.Model(&repo).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update repository"})
+		return
+	}
+
+	// Reload with associations
+	models.DB.Preload("Team").Preload("Owner").First(&repo, id)
+	c.JSON(http.StatusOK, repo)
+}
+
 func ImportRepos(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {

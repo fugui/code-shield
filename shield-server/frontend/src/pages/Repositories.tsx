@@ -2,10 +2,14 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 
+const inputStyle: React.CSSProperties = { width: '100%', padding: '0.625rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box', fontSize: '0.875rem', transition: 'border-color 0.2s' };
+const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.375rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 500 };
+
 function Repositories() {
   const { showToast } = useToast();
   const [repos, setRepos] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<'add' | 'edit' | null>(null);
+  const [editingRepoId, setEditingRepoId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ name: '', url: '', owner_id: '', branch: 'main', team_id: 0, service_group: '' });
   const [teams, setTeams] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
@@ -47,7 +51,6 @@ function Repositories() {
       .catch(console.error);
   }, []);
 
-
   const fetchRepos = () => {
     const params = new URLSearchParams({
       page: page.toString(),
@@ -69,7 +72,7 @@ function Repositories() {
 
   const handleFilterChange = (setter: React.Dispatch<React.SetStateAction<string>>, value: string) => {
     setter(value);
-    setPage(1); // Reset to first page whenever filter changes
+    setPage(1);
   };
 
   const triggerReview = (repoId: number) => {
@@ -85,8 +88,40 @@ function Repositories() {
     });
   };
 
-  const handleAddRepo = (e: React.FormEvent) => {
+  const openAddDrawer = () => {
+    setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 0, service_group: '' });
+    setEditingRepoId(null);
+    setDrawerMode('add');
+  };
+
+  const openEditDrawer = (repo: any) => {
+    setFormData({
+      name: repo.name || '',
+      url: repo.url || '',
+      owner_id: repo.owner_id || '',
+      branch: repo.branch || 'main',
+      team_id: repo.team_id || (teams.length > 0 ? teams[0].id : 0),
+      service_group: repo.service_group || ''
+    });
+    setEditingRepoId(repo.id);
+    setDrawerMode('edit');
+  };
+
+  const closeDrawer = () => {
+    setDrawerMode(null);
+    setEditingRepoId(null);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (drawerMode === 'edit' && editingRepoId) {
+      handleEditRepo();
+    } else {
+      handleAddRepo();
+    }
+  };
+
+  const handleAddRepo = () => {
     fetch('/api/repos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -101,8 +136,7 @@ function Repositories() {
     })
     .then(res => {
       if (res.ok) {
-        setShowModal(false);
-        setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 0, service_group: '' });
+        closeDrawer();
         fetchRepos();
         showToast('成功录入代码仓', 'success');
       } else {
@@ -112,6 +146,34 @@ function Repositories() {
     .catch(err => {
       console.error(err);
       showToast('网络错误，录入失败', 'error');
+    });
+  };
+
+  const handleEditRepo = () => {
+    fetch(`/api/repos/${editingRepoId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: formData.name,
+        url: formData.url,
+        owner_id: formData.owner_id,
+        branch: formData.branch,
+        team_id: Number(formData.team_id),
+        service_group: formData.service_group
+      })
+    })
+    .then(res => {
+      if (res.ok) {
+        closeDrawer();
+        fetchRepos();
+        showToast('代码仓信息已更新', 'success');
+      } else {
+        showToast('更新代码仓失败', 'error');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      showToast('网络错误，更新失败', 'error');
     });
   };
 
@@ -182,7 +244,7 @@ function Repositories() {
           >
             批量导入(CSV)
           </button>
-          <button className="btn" onClick={() => setShowModal(true)}>录入代码仓</button>
+          <button className="btn" onClick={openAddDrawer}>录入代码仓</button>
         </div>
       </div>
 
@@ -245,6 +307,7 @@ function Repositories() {
                 <td><span className="badge" style={{ background: 'var(--border-color)', color: 'white' }}>{repo.branch}</span></td>
                 <td>{repo.service_group}</td>
                 <td style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn" onClick={() => openEditDrawer(repo)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem', background: 'transparent', color: 'var(--primary-color)', border: '1px solid var(--primary-color)' }}>编辑</button>
                   <button className="btn" onClick={() => handleDeleteRepo(repo.id, repo.name)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem', background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>删除</button>
                 </td>
               </tr>
@@ -277,22 +340,58 @@ function Repositories() {
         </div>
       )}
 
-      {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div className="card" style={{ width: '400px', maxWidth: '90%' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '1.5rem' }}>新增代码仓</h3>
-            <form onSubmit={handleAddRepo} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {/* Right-side Drawer */}
+      {drawerMode && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={closeDrawer}
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 999,
+              animation: 'fadeIn 0.2s ease'
+            }}
+          />
+          {/* Drawer panel */}
+          <div style={{
+            position: 'fixed', top: 0, right: 0, bottom: 0, width: '420px', maxWidth: '90vw',
+            background: 'var(--card-bg)', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+            zIndex: 1000, display: 'flex', flexDirection: 'column',
+            animation: 'slideInRight 0.25s ease'
+          }}>
+            {/* Drawer header */}
+            <div style={{
+              padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>
+                {drawerMode === 'edit' ? '编辑代码仓' : '新增代码仓'}
+              </h3>
+              <button
+                onClick={closeDrawer}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.25rem', borderRadius: '4px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-color)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Drawer body */}
+            <form onSubmit={handleSubmit} style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>代码仓名称 / ID</label>
-                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <label style={labelStyle}>代码仓名称 / ID</label>
+                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={inputStyle} />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>代码仓地址 (URL)</label>
-                <input required type="text" placeholder="https://... 或 git@host:path/repo.git" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <label style={labelStyle}>代码仓地址 (URL)</label>
+                <input required type="text" placeholder="https://... 或 git@host:path/repo.git" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} style={inputStyle} />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>项目责任人</label>
-                <select required value={formData.owner_id} onChange={e => setFormData({...formData, owner_id: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }}>
+                <label style={labelStyle}>项目责任人</label>
+                <select required value={formData.owner_id} onChange={e => setFormData({...formData, owner_id: e.target.value})} style={inputStyle}>
                   <option value="" disabled>选择挂靠责任人</option>
                   {members.map(m => (
                     <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
@@ -300,12 +399,12 @@ function Repositories() {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>主干分支</label>
-                <input required type="text" value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <label style={labelStyle}>主干分支</label>
+                <input required type="text" value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} style={inputStyle} />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>归属部门</label>
-                <select required value={formData.team_id} onChange={e => setFormData({...formData, team_id: Number(e.target.value)})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }}>
+                <label style={labelStyle}>归属部门</label>
+                <select required value={formData.team_id} onChange={e => setFormData({...formData, team_id: Number(e.target.value)})} style={inputStyle}>
                   {teams.length === 0 && <option value="" disabled>无可用部门</option>}
                   {teams.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
@@ -313,16 +412,34 @@ function Repositories() {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)' }}>服务组 (最长30字符)</label>
-                <input required type="text" maxLength={30} value={formData.service_group} onChange={e => setFormData({...formData, service_group: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <label style={labelStyle}>服务组 (最长30字符)</label>
+                <input required type="text" maxLength={30} value={formData.service_group} onChange={e => setFormData({...formData, service_group: e.target.value})} style={inputStyle} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
-                <button type="button" onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.5rem 1rem' }}>取消</button>
-                <button type="submit" className="btn">确认录入</button>
+
+              {/* Spacer to push button to bottom */}
+              <div style={{ flex: 1 }} />
+
+              {/* Drawer footer */}
+              <div style={{ display: 'flex', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                <button type="button" onClick={closeDrawer} style={{ flex: 1, padding: '0.625rem', border: '1px solid var(--border-color)', background: 'white', borderRadius: '6px', cursor: 'pointer', fontSize: '0.875rem', color: '#64748b' }}>取消</button>
+                <button type="submit" className="btn" style={{ flex: 1, padding: '0.625rem', fontSize: '0.875rem' }}>
+                  {drawerMode === 'edit' ? '保存修改' : '确认录入'}
+                </button>
               </div>
             </form>
           </div>
-        </div>
+
+          <style>{`
+            @keyframes slideInRight {
+              from { transform: translateX(100%); }
+              to { transform: translateX(0); }
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+          `}</style>
+        </>
       )}
     </div>
   );

@@ -62,6 +62,7 @@ func main() {
 
 		api.GET("/repos", handlers.GetRepos)
 		api.POST("/repos", handlers.CreateRepo)
+		api.PATCH("/repos/:id", handlers.UpdateRepo)
 		api.DELETE("/repos/:id", handlers.DeleteRepo)
 		api.POST("/repos/import", handlers.ImportRepos)
 
