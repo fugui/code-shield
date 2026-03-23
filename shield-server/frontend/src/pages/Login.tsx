@@ -33,7 +33,9 @@ function Login() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0f172a', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#0b1120', overflow: 'hidden', position: 'relative' }}>
+      {/* Centered container */}
+      <div style={{ display: 'flex', width: '100%', maxWidth: '1100px', minHeight: '640px', maxHeight: '90vh', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 60px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
       {/* CSS Animations */}
       <style>{`
         @keyframes gradientShift {
@@ -87,8 +89,9 @@ function Login() {
       {/* Left Panel — Branding & Features */}
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        padding: '4rem', position: 'relative', overflow: 'hidden',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
+        padding: '3rem', position: 'relative', overflow: 'hidden',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
+        borderRadius: '16px 0 0 16px'
       }}>
         {/* Animated floating orbs */}
         <div style={{ position: 'absolute', top: '10%', left: '15%', width: '300px', height: '300px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)', animation: 'float1 20s ease-in-out infinite', pointerEvents: 'none' }} />
@@ -161,8 +164,8 @@ function Login() {
 
         {/* Bottom stats bar */}
         <div style={{
-          position: 'absolute', bottom: '2rem', left: '4rem', right: '4rem',
-          display: 'flex', gap: '2rem', animation: 'fadeInUp 1.2s ease'
+          position: 'relative', zIndex: 1, marginTop: '2.5rem',
+          display: 'flex', gap: '1rem', animation: 'fadeInUp 1.2s ease'
         }}>
           {[
             { num: '200+', label: '代码仓覆盖' },
@@ -305,6 +308,7 @@ function Login() {
             <span style={{ color: '#4ade80', fontSize: '0.75rem', fontWeight: 500 }}>端到端加密 · 安全登录</span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
