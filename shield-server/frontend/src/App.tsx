@@ -256,9 +256,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
             {children}
-          </div>
         </main>
       </div>
     </div>
