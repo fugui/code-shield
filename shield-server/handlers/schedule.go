@@ -10,7 +10,7 @@ import (
 
 func GetSchedules(c *gin.Context) {
 	var schedules []models.ScheduleConfig
-	models.DB.Order("created_at desc").Find(&schedules)
+	models.DB.Preload("TaskType").Order("created_at desc").Find(&schedules)
 	c.JSON(http.StatusOK, schedules)
 }
 
@@ -25,6 +25,15 @@ func CreateSchedule(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Validate task type exists
+	if req.TaskTypeID > 0 {
+		var tt models.TaskType
+		if err := models.DB.First(&tt, req.TaskTypeID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "指定的任务类型不存在"})
+			return
+		}
 	}
 
 	if err := models.DB.Create(&req).Error; err != nil {
@@ -55,6 +64,7 @@ func UpdateSchedule(c *gin.Context) {
 	// Update fields
 	schedule.Name = req.Name
 	schedule.CronExpr = req.CronExpr
+	schedule.TaskTypeID = req.TaskTypeID
 	schedule.TargetMode = req.TargetMode
 	schedule.TargetValues = req.TargetValues
 	schedule.AutoNotify = req.AutoNotify
@@ -87,7 +97,7 @@ func DeleteSchedule(c *gin.Context) {
 
 func GetExecutionLogs(c *gin.Context) {
 	var logs []models.TaskExecutionLog
-	query := models.DB.Preload("Schedule").Preload("Repo").Preload("ReviewReport")
+	query := models.DB.Preload("Schedule").Preload("Repo").Preload("TaskReport").Preload("TaskType")
 
 	// Optional filters
 	scheduleID := c.Query("schedule_id")
@@ -98,13 +108,16 @@ func GetExecutionLogs(c *gin.Context) {
 	if repoID != "" {
 		query = query.Where("repo_id = ?", repoID)
 	}
+	taskTypeID := c.Query("task_type_id")
+	if taskTypeID != "" {
+		query = query.Where("task_type_id = ?", taskTypeID)
+	}
 
 	query.Order("created_at desc").Limit(100).Find(&logs)
 	c.JSON(http.StatusOK, logs)
 }
 
-// ClearCompletedExecutionLogs deletes all finished (success / failed / skipped) logs,
-// leaving any pending or running records untouched.
+// ClearCompletedExecutionLogs deletes all finished logs
 func ClearCompletedExecutionLogs(c *gin.Context) {
 	result := models.DB.
 		Where("status IN ?", []string{"success", "failed", "skipped"}).
@@ -117,4 +130,3 @@ func ClearCompletedExecutionLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
 }
-

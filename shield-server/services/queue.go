@@ -7,19 +7,19 @@ import (
 	"time"
 )
 
-// ErrNoRecentCommits is returned when a repo has no commits in the past 7 days.
-// The worker treats this as a skip, not a failure.
-var ErrNoRecentCommits = errors.New("no recent commits in the past 7 days")
+// ErrSkipped is returned when a task is skipped due to precondition (e.g., no recent commits).
+var ErrSkipped = errors.New("task skipped by precondition")
 
-type ReviewTask struct {
+type Task struct {
 	RepoID     uint
 	ReportID   uint
 	RepoURL    string
+	TaskTypeID uint
 	AutoNotify bool
 	LogID      uint // ID of TaskExecutionLog
 }
 
-var TaskQueue = make(chan ReviewTask, 300)
+var TaskQueue = make(chan Task, 300)
 
 // StartWorkerPool starts the background workers
 func StartWorkerPool(workers int) {
@@ -29,12 +29,13 @@ func StartWorkerPool(workers int) {
 	}
 }
 
-// EnqueueReviewTask adds a new task to the queue and creates a pending TaskExecutionLog
-func EnqueueReviewTask(scheduleID *uint, repoID uint, repoURL string, autoNotify bool, triggerType string) {
+// EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
+func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string) {
 	// 1. Create a pending execution log
 	execLog := models.TaskExecutionLog{
 		ScheduleID:  scheduleID,
 		RepoID:      repoID,
+		TaskTypeID:  taskTypeID,
 		TriggerType: triggerType,
 		Status:      "pending",
 		StartTime:   time.Now(),
@@ -45,33 +46,35 @@ func EnqueueReviewTask(scheduleID *uint, repoID uint, repoURL string, autoNotify
 		return
 	}
 
-	// 2. Create the initial queued ReviewReport
-	report := models.ReviewReport{
+	// 2. Create the initial queued TaskReport
+	report := models.TaskReport{
 		RepoID:      repoID,
+		TaskTypeID:  taskTypeID,
 		BaseCommit:  "HEAD~1",
 		HeadCommit:  "HEAD",
 		Status:      "queued",
 		CloneStatus: "pending",
 	}
 	if err := models.DB.Create(&report).Error; err != nil {
-		log.Printf("[WorkerPool] Failed to create ReviewReport for Repo %d: %v\n", repoID, err)
+		log.Printf("[WorkerPool] Failed to create TaskReport for Repo %d: %v\n", repoID, err)
 		return
 	}
 
-	task := ReviewTask{
+	task := Task{
 		RepoID:     repoID,
 		ReportID:   report.ID,
 		RepoURL:    repoURL,
+		TaskTypeID: taskTypeID,
 		AutoNotify: autoNotify,
 		LogID:      execLog.ID,
 	}
 
-	// Link the execution log to its review report in the DB
-	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Update("review_report_id", report.ID)
+	// Link the execution log to its task report
+	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Update("task_report_id", report.ID)
 
 	select {
 	case TaskQueue <- task:
-		log.Printf("[WorkerPool] Enqueued Repo %d. Queue size: %d\n", repoID, len(TaskQueue))
+		log.Printf("[WorkerPool] Enqueued Repo %d (TaskType %d). Queue size: %d\n", repoID, taskTypeID, len(TaskQueue))
 	default:
 		log.Printf("[WorkerPool] Queue is full! Dropping task for Repo %d\n", repoID)
 		UpdateTaskExecutionLog(execLog.ID, "failed", "Queue is full")
@@ -80,23 +83,20 @@ func EnqueueReviewTask(scheduleID *uint, repoID uint, repoURL string, autoNotify
 
 func worker(id int) {
 	for task := range TaskQueue {
-		log.Printf("[Worker %d] Picked up task for Repo %d (LogID: %d)\n", id, task.RepoID, task.LogID)
+		log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d)\n", id, task.RepoID, task.TaskTypeID, task.LogID)
 
 		// Update status to running
 		UpdateTaskExecutionLog(task.LogID, "running", "")
-		models.DB.Model(&models.ReviewReport{}).Where("id = ?", task.ReportID).Update("status", "running")
+		models.DB.Model(&models.TaskReport{}).Where("id = ?", task.ReportID).Update("status", "running")
 
-		// Wait for completion, pass the context or logger if needed. But for now we just wrap RunAIReview
-		// We can change RunAIReview to return an error/status string synchronously since it's now called from within our worker pool wrapper.
-		// Right now RunAIReview runs completely independently. Let's make it block so the worker is occupied.
-		err := RunAIReviewSync(task.ReportID, task.RepoURL, task.AutoNotify)
+		err := RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify)
 
 		now := time.Now()
-		if errors.Is(err, ErrNoRecentCommits) {
-			log.Printf("[Worker %d] Skipping Repo %d — no commits in the past 7 days.\n", id, task.RepoID)
+		if errors.Is(err, ErrSkipped) {
+			log.Printf("[Worker %d] Skipping Repo %d — precondition not met.\n", id, task.RepoID)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
 				"status":        "skipped",
-				"error_message": "最近 7 天内无新提交，跳过检视",
+				"error_message": "前置条件未满足，跳过执行",
 				"end_time":      &now,
 			})
 		} else if err != nil {

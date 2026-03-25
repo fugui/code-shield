@@ -12,7 +12,7 @@ function TeamsTab() {
 
   useEffect(() => {
     fetchTeams();
-    fetch('/api/members').then(res => res.json()).then(data => setMembers(data || [])).catch(console.error);
+    fetch('/api/members?pageSize=1000').then(res => res.json()).then(data => setMembers(Array.isArray(data) ? data : (data.items || []))).catch(console.error);
   }, []);
 
   const fetchTeams = () => {

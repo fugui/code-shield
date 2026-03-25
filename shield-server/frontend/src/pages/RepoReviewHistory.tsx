@@ -31,7 +31,7 @@ function RepoReviewHistory() {
         page: page.toString(),
         pageSize: pageSize.toString(),
       });
-      const res = await fetch(`/api/reviews?${params.toString()}`);
+      const res = await fetch(`/api/tasks?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setReviews(data.items || []);
@@ -65,7 +65,7 @@ function RepoReviewHistory() {
     setLoadingMarkdown(true);
     setCurrentMarkdown('');
     try {
-      const res = await fetch(`/api/reviews/${reportId}/report`);
+      const res = await fetch(`/api/tasks/${reportId}/report`);
       if (res.ok) {
         setCurrentMarkdown(await res.text());
       } else {
@@ -81,7 +81,7 @@ function RepoReviewHistory() {
 
   const handleNotify = async (reportId: number) => {
     try {
-      const res = await fetch(`/api/reviews/${reportId}/notify`, { method: 'POST' });
+      const res = await fetch(`/api/tasks/${reportId}/notify`, { method: 'POST' });
       if (res.ok) {
         showToast('通知已成功发送！', 'success');
       } else {
@@ -110,7 +110,7 @@ function RepoReviewHistory() {
       {/* Header with back button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <button
-          onClick={() => navigate('/reviews/overview')}
+          onClick={() => navigate('/tasks/overview')}
           style={{
             background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px',
             cursor: 'pointer', padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -126,7 +126,7 @@ function RepoReviewHistory() {
         </button>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>
-            <span style={{ color: '#64748b', fontWeight: 400 }}>历史检视报告</span>
+            <span style={{ color: '#64748b', fontWeight: 400 }}>历史任务报告</span>
             <span style={{ margin: '0 0.5rem', color: '#cbd5e1' }}>|</span>
             <span title={repoName}>{shortName || `仓库 #${repoId}`}</span>
           </h2>
@@ -140,17 +140,17 @@ function RepoReviewHistory() {
             <tr>
               <th style={{ width: '60px' }}>报告 ID</th>
               <th>状态</th>
-              <th>检视时间</th>
+              <th>执行时间</th>
               <th>Base Commit</th>
               <th>Head Commit</th>
-              <th>发现问题</th>
+              <th>评分</th>
               <th>AI 摘要</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {reviews.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无检视报告数据</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
             ) : reviews.map((r) => {
               const st = statusLabel(r.status);
               return (
@@ -174,11 +174,9 @@ function RepoReviewHistory() {
                   </td>
                   <td>
                     {r.status === 'success' ? (
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <span style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.8rem' }}>高:{r.critical_issues}</span>
-                        <span style={{ color: '#f59e0b', fontWeight: 600, fontSize: '0.8rem' }}>中:{r.major_issues}</span>
-                        <span style={{ color: '#eab308', fontWeight: 600, fontSize: '0.8rem' }}>低:{r.minor_issues}</span>
-                      </div>
+                      <span style={{ fontWeight: 700, fontSize: '1rem', color: r.score >= 20 ? '#ef4444' : r.score >= 10 ? '#f59e0b' : '#22c55e' }}>
+                        {r.score ?? 0}
+                      </span>
                     ) : (
                       <span style={{ color: '#aaa' }}>-</span>
                     )}
@@ -213,7 +211,7 @@ function RepoReviewHistory() {
                         <button
                           onClick={() => handleNotify(r.id)}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#10b981' }}
-                          title="发送检视报告通知"
+                          title="发送报告通知"
                           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'}
                           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
@@ -268,7 +266,7 @@ function RepoReviewHistory() {
         }}
       >
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>定向代码巡检报告</h3>
+          <h3 style={{ margin: 0 }}>任务报告详情</h3>
           <button onClick={() => setSidebarOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)' }}>&times;</button>
         </div>
         <div style={{ padding: '2rem', overflowY: 'auto', flex: 1, backgroundColor: '#ffffff' }}>

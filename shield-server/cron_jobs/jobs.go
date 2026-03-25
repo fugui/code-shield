@@ -45,7 +45,7 @@ func SyncSchedules() {
 		sched := schedule
 
 		_, err := globalCron.AddFunc(sched.CronExpr, func() {
-			log.Printf("[Cron] Triggering schedule: %s (ID: %d)\n", sched.Name, sched.ID)
+			log.Printf("[Cron] Triggering schedule: %s (ID: %d, TaskTypeID: %d)\n", sched.Name, sched.ID, sched.TaskTypeID)
 
 			// Determine which repos to run against based on TargetMode
 			query := models.DB.Model(&models.Repository{}).Where("is_active = ?", true)
@@ -82,7 +82,7 @@ func SyncSchedules() {
 			log.Printf("[Cron] Schedule %d found %d repositories to scan.\n", sched.ID, len(repos))
 			for _, repo := range repos {
 				schedID := sched.ID // Create local copy for pointer
-				services.EnqueueReviewTask(&schedID, repo.ID, repo.URL, sysConfig.AutoNotify, "cron")
+				services.EnqueueTask(&schedID, repo.ID, repo.URL, sched.TaskTypeID, sysConfig.AutoNotify, "cron")
 			}
 		})
 

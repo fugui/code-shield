@@ -4,3 +4,5 @@ notifier:
   url: "http://127.0.0.1:8081/api/notify/email"
 review:
   notify_threshold: 20
+workspace:
+  home: "/home/fugui/test_root"  # 工作目录，下设 codes/ 和 reports/ 子目录

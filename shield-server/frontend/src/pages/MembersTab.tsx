@@ -8,6 +8,7 @@ function MembersTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ id: '', name: '', email: '', department: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [teams, setTeams] = useState<any[]>([]);
 
   const [page, setPage] = useState<number>(1);
   const [pageSize] = useState<number>(15);
@@ -17,6 +18,7 @@ function MembersTab() {
 
   useEffect(() => {
     fetchMembers();
+    fetch('/api/teams').then(res => res.json()).then(data => setTeams(Array.isArray(data) ? data : (data.items || []))).catch(console.error);
   }, [page, searchQuery]);
 
   const fetchMembers = () => {
@@ -199,7 +201,12 @@ function MembersTab() {
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>所属部门</label>
-                <input type="text" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }} />
+                <select value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }}>
+                  <option value="">请选择部门</option>
+                  {teams.map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>邮箱 (可选)</label>

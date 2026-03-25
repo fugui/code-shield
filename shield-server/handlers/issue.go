@@ -12,7 +12,7 @@ func GetIssues(c *gin.Context) {
 	repoID := c.Query("repo_id")
 	issueType := c.Query("issue_type")
 
-	query := models.DB.Preload("Repo").Preload("Report").Preload("Assignee")
+	query := models.DB.Preload("Repo").Preload("TaskReport").Preload("Assignee")
 	if repoID != "" {
 		query = query.Where("repo_id = ?", repoID)
 	}

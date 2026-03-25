@@ -41,7 +41,7 @@ function ExecutionLogs() {
     setLoadingMarkdown(true);
     setCurrentMarkdown('');
     try {
-      const res = await fetch(`/api/reviews/${reportId}/report`);
+      const res = await fetch(`/api/tasks/${reportId}/report`);
       if (res.ok) {
         setCurrentMarkdown(await res.text());
       } else {
@@ -57,7 +57,7 @@ function ExecutionLogs() {
 
   const handleNotify = async (reportId: number) => {
     try {
-      const res = await fetch(`/api/reviews/${reportId}/notify`, { method: 'POST' });
+      const res = await fetch(`/api/tasks/${reportId}/notify`, { method: 'POST' });
       if (res.ok) {
         showToast('通知已成功发送！', 'success');
       } else {
@@ -111,7 +111,7 @@ function ExecutionLogs() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2 style={{ margin: 0 }}>检视任务执行历史</h2>
+        <h2 style={{ margin: 0 }}>任务执行历史</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
             刷新列表
@@ -129,6 +129,7 @@ function ExecutionLogs() {
               <th style={{ padding: '1rem', fontWeight: 600, width: '2rem' }}></th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>任务 ID</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>所属代码仓</th>
+              <th style={{ padding: '1rem', fontWeight: 600 }}>任务类型</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>触发方式</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>关联调度策略</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>开始时间</th>
@@ -139,11 +140,11 @@ function ExecutionLogs() {
           <tbody>
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
+                <td colSpan={9} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
               </tr>
             ) : logs.map(log => {
               const expanded = expandedIds.has(log.id);
-              const report = log.review_report;
+              const report = log.task_report;
               const hasReport = !!report;
 
               return (
@@ -157,6 +158,11 @@ function ExecutionLogs() {
                     </td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>#{log.id}</td>
                     <td style={{ padding: '1rem', fontWeight: 500 }}>{log.repo?.name || `Repo ${log.repo_id}`}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
+                        {log.task_type?.display_name || '-'}
+                      </span>
+                    </td>
                     <td style={{ padding: '1rem' }}>
                       <span style={{ textTransform: 'capitalize', display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
                         {log.trigger_type}
@@ -179,21 +185,14 @@ function ExecutionLogs() {
 
                   {expanded && hasReport && (
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td colSpan={8} style={{ padding: '0 1rem 1.25rem 3.5rem', background: 'var(--bg-color)' }}>
-                        {/* Issue counts */}
+                      <td colSpan={9} style={{ padding: '0 1rem 1.25rem 3.5rem', background: 'var(--bg-color)' }}>
+                        {/* Score */}
                         {report.status === 'success' && (
                           <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                            {[
-                              { label: '阻塞+严重', value: report.critical_issues, color: '#dc2626' },
-                              { label: '主要',     value: report.major_issues,    color: '#d97706' },
-                              { label: '提示+建议', value: report.minor_issues,    color: '#2563eb' },
-                              { label: '得分',     value: report.issue_count,     color: '#475569' },
-                            ].map(item => (
-                              <div key={item.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: `1px solid ${item.color}22`, borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px' }}>
-                                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: item.color }}>{item.value ?? 0}</span>
-                                <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>{item.label}</span>
-                              </div>
-                            ))}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: '1px solid #47556922', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px' }}>
+                              <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? '#ef4444' : report.score >= 10 ? '#f59e0b' : '#22c55e' }}>{report.score ?? 0}</span>
+                              <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>综合评分</span>
+                            </div>
                           </div>
                         )}
 
@@ -236,7 +235,7 @@ function ExecutionLogs() {
       {/* Markdown Sidebar */}
       <div style={{ position: 'fixed', top: 0, right: sidebarOpen ? 0 : '-50vw', width: '50vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', transition: 'right 0.3s ease-in-out', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>定向代码巡检报告</h3>
+          <h3 style={{ margin: 0 }}>任务报告详情</h3>
           <button onClick={() => setSidebarOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)' }}>&times;</button>
         </div>
         <div style={{ padding: '2rem', overflowY: 'auto', flex: 1, backgroundColor: '#ffffff' }}>

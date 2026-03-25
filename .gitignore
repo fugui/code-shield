@@ -32,3 +32,4 @@ shield-server/*.exe
 .vscode/
 .idea/
 .DS_Store
+shield-server/task-reports/

@@ -158,27 +158,6 @@ function Configuration() {
     } catch (err) { console.error(err); }
   };
 
-  const triggerReview = async (repoId: number) => {
-    try {
-      const res = await fetch('/api/reviews/trigger', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ repo_id: repoId }),
-      });
-      
-      if (res.ok) {
-        showToast('已成功向 AI 助手下发该代码检视任务！', 'success');
-      } else {
-        const data = await res.json();
-        showToast(`触发检视任务失败: ${data.error}`, 'error');
-      }
-    } catch (error) {
-      console.error('Error triggering review:', error);
-      showToast('网络异常，触发检视失败', 'error');
-    }
-  };
 
   const handleSaveSchedule = async (form: ScheduleFormData) => {
     try {
@@ -319,7 +298,7 @@ function Configuration() {
       {activeTab === 'tasks' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h3 style={{ margin: 0 }}>自动巡检策略配置</h3>
+            <h3 style={{ margin: 0 }}>定时任务策略配置</h3>
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
               <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }}>
                 + 新增定时策略
@@ -331,6 +310,7 @@ function Configuration() {
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left' }}>
                 <th style={{ padding: '1rem 0' }}>策略名称</th>
+                <th style={{ padding: '1rem 0' }}>任务类型</th>
                 <th style={{ padding: '1rem 0' }}>Cron 表达式</th>
                 <th style={{ padding: '1rem 0' }}>目标代码仓</th>
                 <th style={{ padding: '1rem 0' }}>状态</th>
@@ -340,12 +320,17 @@ function Configuration() {
             <tbody>
               {schedules.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>暂无可用的定时检视策略，点击右上方分配。</td>
+                  <td colSpan={6} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>暂无可用的定时任务策略，点击右上方新增。</td>
                 </tr>
               ) : (
                 schedules.map(sched => (
                   <tr key={sched.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '1rem 0', fontWeight: 500 }}>{sched.name}</td>
+                    <td style={{ padding: '1rem 0' }}>
+                      <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
+                        {sched.task_type?.display_name || '-'}
+                      </span>
+                    </td>
                     <td style={{ padding: '1rem 0', fontFamily: 'monospace' }}>{sched.cron_expr}</td>
                     <td style={{ padding: '1rem 0' }}>
                       <span style={{ background: 'var(--bg-color)', padding: '0.25rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--border-color)', textTransform: 'capitalize' }}>

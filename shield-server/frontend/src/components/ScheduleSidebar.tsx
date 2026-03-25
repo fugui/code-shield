@@ -13,6 +13,7 @@ interface ScheduleSidebarProps {
 export interface ScheduleFormData {
   name: string;
   cron_expr: string;
+  task_type_id: number;
   target_mode: string;
   target_values: any[];
   auto_notify: boolean;
@@ -66,19 +67,33 @@ function parseCronToHuman(expr: string): string {
 
 function getTargetSummary(mode: string): string {
   switch (mode) {
-    case 'all': return '将对系统中所有已激活的代码仓执行检视';
-    case 'service_group': return '仅对所选服务组内的代码仓执行检视';
-    case 'team': return '仅对所选团队名下的代码仓执行检视';
-    case 'specific': return '仅对手动选定的代码仓执行检视';
+    case 'all': return '将对系统中所有已激活的代码仓执行任务';
+    case 'service_group': return '仅对所选服务组内的代码仓执行任务';
+    case 'team': return '仅对所选团队名下的代码仓执行任务';
+    case 'specific': return '仅对手动选定的代码仓执行任务';
     default: return '';
   }
 }
 
 export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedule, teams, repos }: ScheduleSidebarProps) {
   const [form, setForm] = useState<ScheduleFormData>({
-    name: '', cron_expr: '0 2 * * *', target_mode: 'all', target_values: [], auto_notify: true, is_active: true
+    name: '', cron_expr: '0 2 * * *', task_type_id: 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true
   });
   const [closing, setClosing] = useState(false);
+  const [taskTypes, setTaskTypes] = useState<any[]>([]);
+
+  // Fetch task types
+  useEffect(() => {
+    fetch('/api/task-types?active_only=true')
+      .then(res => res.json())
+      .then(data => {
+        setTaskTypes(data || []);
+        if (!form.task_type_id && data && data.length > 0) {
+          setForm(prev => ({ ...prev, task_type_id: data[0].id }));
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   // Populate form when editing
   useEffect(() => {
@@ -86,13 +101,14 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
       setForm({
         name: editingSchedule.name || '',
         cron_expr: editingSchedule.cron_expr || '0 2 * * *',
+        task_type_id: editingSchedule.task_type_id || (taskTypes.length > 0 ? taskTypes[0].id : 0),
         target_mode: editingSchedule.target_mode || 'all',
         target_values: editingSchedule.target_values || [],
         auto_notify: editingSchedule.auto_notify ?? true,
         is_active: editingSchedule.is_active ?? true,
       });
     } else {
-      setForm({ name: '', cron_expr: '0 2 * * *', target_mode: 'all', target_values: [], auto_notify: true, is_active: true });
+      setForm({ name: '', cron_expr: '0 2 * * *', task_type_id: taskTypes.length > 0 ? taskTypes[0].id : 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true });
     }
   }, [editingSchedule, isOpen]);
 
@@ -163,6 +179,18 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 placeholder="例如：每日核心服务全量巡检"
               />
+
+              <label className="sidebar-label" style={{ marginTop: '1rem' }}>任务类型</label>
+              <select
+                className="sidebar-input"
+                value={form.task_type_id}
+                onChange={e => setForm({ ...form, task_type_id: Number(e.target.value) })}
+                style={{ cursor: 'pointer' }}
+              >
+                {taskTypes.map(tt => (
+                  <option key={tt.id} value={tt.id}>{tt.display_name}</option>
+                ))}
+              </select>
               <div style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <input
                   type="checkbox"
@@ -172,7 +200,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
                   style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary-color)' }}
                 />
                 <label htmlFor="autoNotify" style={{ fontSize: '0.875rem', color: 'var(--text-color)', cursor: 'pointer', fontWeight: 500 }}>
-                  检视完成后自动发消息通知相关责任人
+                  任务完成后自动发消息通知相关责任人
                 </label>
               </div>
             </div>

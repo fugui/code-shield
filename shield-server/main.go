@@ -69,12 +69,20 @@ func main() {
 		api.GET("/config", handlers.GetConfig)
 		api.PATCH("/config", handlers.UpdateConfig)
 
-		api.GET("/reviews/overview", handlers.GetReviewOverview)
-		api.GET("/reviews", handlers.GetReviews)
-		api.POST("/reviews/trigger", handlers.TriggerReview)
-		api.POST("/reviews/:id/notify", handlers.TriggerManualNotification)
-		api.GET("/reviews/:id", handlers.GetReviewDetails)
-		api.GET("/reviews/:id/report", handlers.GetReviewReportMarkdown)
+		// Task routes (generic, replaces /reviews/*)
+		api.GET("/tasks/overview", handlers.GetTaskOverview)
+		api.GET("/tasks", handlers.GetTasks)
+		api.POST("/tasks/trigger", handlers.TriggerTask)
+		api.POST("/tasks/:id/notify", handlers.TriggerManualNotification)
+		api.GET("/tasks/:id", handlers.GetTaskDetails)
+		api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
+
+		// Task type management
+		api.GET("/task-types", handlers.GetTaskTypes)
+		api.GET("/task-types/:id", handlers.GetTaskType)
+		api.POST("/task-types", handlers.CreateTaskType)
+		api.PATCH("/task-types/:id", handlers.UpdateTaskType)
+		api.DELETE("/task-types/:id", handlers.DeleteTaskType)
 
 		api.GET("/issues", handlers.GetIssues)
 		api.POST("/issues", handlers.CreateIssue)

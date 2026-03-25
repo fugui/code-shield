@@ -16,6 +16,9 @@ type Config struct {
 	Review struct {
 		NotifyThreshold int `yaml:"notify_threshold"`
 	} `yaml:"review"`
+	Workspace struct {
+		Home string `yaml:"home"`
+	} `yaml:"workspace"`
 }
 
 var AppConfig Config
@@ -26,5 +29,12 @@ func LoadConfig(filename string) error {
 	if err != nil {
 		return err
 	}
-	return yaml.Unmarshal(data, &AppConfig)
+	if err := yaml.Unmarshal(data, &AppConfig); err != nil {
+		return err
+	}
+	// Default values
+	if AppConfig.Workspace.Home == "" {
+		AppConfig.Workspace.Home = "."
+	}
+	return nil
 }

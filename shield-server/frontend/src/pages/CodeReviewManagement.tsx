@@ -1,21 +1,21 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import ReviewOverviewTab from './ReviewOverviewTab';
+import TaskOverviewTab from './ReviewOverviewTab';
 import ExecutionLogs from './ExecutionLogs';
 
-type ReviewTab = 'overview' | 'activity';
+type TaskTab = 'overview' | 'activity';
 
-function CodeReviewManagement() {
-  const { tab } = useParams<{ tab: ReviewTab }>();
+function TaskManagement() {
+  const { tab } = useParams<{ tab: TaskTab }>();
   const navigate = useNavigate();
 
-  const activeTab: ReviewTab = (tab as ReviewTab) || 'overview';
+  const activeTab: TaskTab = (tab as TaskTab) || 'overview';
 
-  const setActiveTab = (t: ReviewTab) => {
-    navigate(`/reviews/${t}`, { replace: true });
+  const setActiveTab = (t: TaskTab) => {
+    navigate(`/tasks/${t}`, { replace: true });
   };
 
-  const tabStyle = (t: ReviewTab) => ({
+  const tabStyle = (t: TaskTab) => ({
     background: 'transparent',
     border: 'none',
     padding: '0.75rem 0',
@@ -31,19 +31,19 @@ function CodeReviewManagement() {
     <div>
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
         <button onClick={() => setActiveTab('overview')} style={tabStyle('overview')}>
-          检视概览
+          任务概览
         </button>
         <button onClick={() => setActiveTab('activity')} style={tabStyle('activity')}>
-          检视活动
+          执行活动
         </button>
       </div>
 
       <div style={{ minHeight: '500px' }}>
-        {activeTab === 'overview' && <ReviewOverviewTab />}
+        {activeTab === 'overview' && <TaskOverviewTab />}
         {activeTab === 'activity' && <ExecutionLogs />}
       </div>
     </div>
   );
 }
 
-export default CodeReviewManagement;
+export default TaskManagement;

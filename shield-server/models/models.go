@@ -46,37 +46,57 @@ type Repository struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-type ReviewReport struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	RepoID         uint       `json:"repo_id"`
-	Repo           Repository `gorm:"foreignKey:RepoID" json:"repo"`
-	BaseCommit     string     `gorm:"not null" json:"base_commit"`
-	HeadCommit     string     `gorm:"not null" json:"head_commit"`
-	Status         string     `gorm:"default:pending" json:"status"` // pending, success, failed
-	AISummary      string     `json:"ai_summary"`
-	ReportPath     string     `json:"report_path"`
-	CloneStatus    string     `gorm:"default:pending" json:"clone_status"` // pending, success, failed
-	IssueCount     int        `gorm:"default:0" json:"issue_count"`
-	CriticalIssues int        `gorm:"default:0" json:"critical_issues"`
-	MajorIssues    int        `gorm:"default:0" json:"major_issues"`
-	MinorIssues    int        `gorm:"default:0" json:"minor_issues"`
-	CreatedAt      time.Time  `json:"created_at"`
+// TaskType 任务类型定义（管理员可配置）
+type TaskType struct {
+	ID                 uint      `gorm:"primaryKey" json:"id"`
+	Name               string    `gorm:"uniqueIndex;not null" json:"name"`        // 唯一标识: "code_review", "memory_leak"
+	DisplayName        string    `gorm:"not null" json:"display_name"`            // 中文名: "代码检视"
+	Description        string    `json:"description"`                             // 任务说明
+	PromptFile         string    `json:"prompt_file"`                             // prompt 文件路径
+	PreconditionScript string    `json:"precondition_script"`                     // 前置检查脚本路径
+	PostprocessScript  string    `json:"postprocess_script"`                      // 后置结果解析脚本路径
+	NotifyTemplate     string    `json:"notify_template"`                         // 邮件主题模板
+	NotifyThreshold    int       `gorm:"default:0" json:"notify_threshold"`       // score >= 此值才通知
+	Timeout            int       `gorm:"default:30" json:"timeout"`               // AI 执行超时（分钟）
+	IsActive           bool      `gorm:"default:true" json:"is_active"`
+	IsBuiltin          bool      `gorm:"default:false" json:"is_builtin"`         // 内置任务不可删除
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
+// TaskReport 通用任务报告（替代原 ReviewReport）
+type TaskReport struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	RepoID      uint           `json:"repo_id"`
+	Repo        Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskTypeID  uint           `json:"task_type_id"`
+	TaskType    TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	Status      string         `gorm:"default:pending" json:"status"`      // pending/queued/running/success/failed/skipped
+	CloneStatus string         `gorm:"default:pending" json:"clone_status"`
+	AISummary   string         `json:"ai_summary"`
+	ReportPath  string         `json:"report_path"`
+	Score       int            `gorm:"default:0" json:"score"`
+	Metrics     datatypes.JSON `json:"metrics"`                            // {"blocking":0,"critical":3,...}
+	BaseCommit  string         `json:"base_commit"`
+	HeadCommit  string         `json:"head_commit"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+// KeyIssue 核心问题追踪
 type KeyIssue struct {
-	ID         uint         `gorm:"primaryKey" json:"id"`
-	RepoID     uint         `json:"repo_id"`
-	ReportID   uint         `json:"report_id"`
-	Repo       Repository   `gorm:"foreignKey:RepoID" json:"repo"`
-	Report     ReviewReport `gorm:"foreignKey:ReportID" json:"report"`
-	IssueType  string       `gorm:"not null" json:"issue_type"` // multithreading, lock, memory_leak, library
-	Title      string       `gorm:"not null" json:"title"`
-	FilePath   string       `json:"file_path"`
-	LineNumber int          `json:"line_number"`
-	Status     string       `gorm:"default:open" json:"status"` // open, in_progress, resolved
-	AssigneeID string       `json:"assignee_id"`
-	Assignee   Member       `gorm:"foreignKey:AssigneeID" json:"assignee"`
-	CreatedAt  time.Time    `json:"created_at"`
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	RepoID       uint       `json:"repo_id"`
+	TaskReportID uint       `json:"task_report_id"`
+	Repo         Repository `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReport   TaskReport `gorm:"foreignKey:TaskReportID" json:"task_report"`
+	IssueType    string     `gorm:"not null" json:"issue_type"` // multithreading, lock, memory_leak, library
+	Title        string     `gorm:"not null" json:"title"`
+	FilePath     string     `json:"file_path"`
+	LineNumber   int        `json:"line_number"`
+	Status       string     `gorm:"default:open" json:"status"` // open, in_progress, resolved
+	AssigneeID   string     `json:"assignee_id"`
+	Assignee     Member     `gorm:"foreignKey:AssigneeID" json:"assignee"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type SystemConfig struct {
@@ -88,26 +108,30 @@ type ScheduleConfig struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Name         string         `gorm:"not null" json:"name"`
 	CronExpr     string         `gorm:"not null" json:"cron_expr"`
+	TaskTypeID   uint           `json:"task_type_id"`
+	TaskType     TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
 	TargetMode   string         `gorm:"not null" json:"target_mode"`     // "all", "service_group", "team", "specific"
-	TargetValues datatypes.JSON `json:"target_values"`                   // JSON array of strings or ints depending on TargetMode
-	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"` // Notify automatically after review finishes
+	TargetValues datatypes.JSON `json:"target_values"`                   // JSON array
+	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
 type TaskExecutionLog struct {
-	ID             uint          `gorm:"primaryKey" json:"id"`
-	ScheduleID     *uint         `json:"schedule_id"` // Nullable, if triggered manually
+	ID             uint            `gorm:"primaryKey" json:"id"`
+	ScheduleID     *uint           `json:"schedule_id"`
 	Schedule       *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule"`
-	RepoID         uint          `json:"repo_id"`
-	Repo           Repository    `gorm:"foreignKey:RepoID" json:"repo"`
-	ReviewReportID *uint         `json:"review_report_id"` // Nullable FK to ReviewReport
-	ReviewReport   *ReviewReport `gorm:"foreignKey:ReviewReportID" json:"review_report"`
-	TriggerType  string          `gorm:"not null" json:"trigger_type"`  // "cron", "manual", "webhook"
-	Status       string          `gorm:"default:pending" json:"status"` // "pending", "running", "success", "failed", "skipped"
-	ErrorMessage string          `json:"error_message"`
-	StartTime    time.Time       `json:"start_time"`
-	EndTime      *time.Time      `json:"end_time"` // Nullable until finished
-	CreatedAt    time.Time       `json:"created_at"`
+	RepoID         uint            `json:"repo_id"`
+	Repo           Repository      `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID   *uint           `json:"task_report_id"`
+	TaskReport     *TaskReport     `gorm:"foreignKey:TaskReportID" json:"task_report"`
+	TaskTypeID     uint            `json:"task_type_id"`
+	TaskType       TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	TriggerType    string          `gorm:"not null" json:"trigger_type"`  // "cron", "manual", "webhook"
+	Status         string          `gorm:"default:pending" json:"status"` // "pending", "running", "success", "failed", "skipped"
+	ErrorMessage   string          `json:"error_message"`
+	StartTime      time.Time       `json:"start_time"`
+	EndTime        *time.Time      `json:"end_time"`
+	CreatedAt      time.Time       `json:"created_at"`
 }

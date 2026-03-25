@@ -1,0 +1,136 @@
+package handlers
+
+import (
+	"code-shield/models"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// GetTaskTypes returns all task types
+func GetTaskTypes(c *gin.Context) {
+	var taskTypes []models.TaskType
+	query := models.DB.Order("id asc")
+
+	activeOnly := c.Query("active_only")
+	if activeOnly == "true" {
+		query = query.Where("is_active = ?", true)
+	}
+
+	query.Find(&taskTypes)
+	c.JSON(http.StatusOK, taskTypes)
+}
+
+// GetTaskType returns a single task type
+func GetTaskType(c *gin.Context) {
+	id := c.Param("id")
+	var taskType models.TaskType
+	if err := models.DB.First(&taskType, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found"})
+		return
+	}
+	c.JSON(http.StatusOK, taskType)
+}
+
+// CreateTaskType creates a new task type
+func CreateTaskType(c *gin.Context) {
+	var req models.TaskType
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	req.IsBuiltin = false // User-created types are never built-in
+
+	if err := models.DB.Create(&req).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task type"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, req)
+}
+
+// UpdateTaskType updates an existing task type
+func UpdateTaskType(c *gin.Context) {
+	id := c.Param("id")
+	var taskType models.TaskType
+	if err := models.DB.First(&taskType, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found"})
+		return
+	}
+
+	var req struct {
+		DisplayName        *string `json:"display_name"`
+		Description        *string `json:"description"`
+		PromptFile         *string `json:"prompt_file"`
+		PreconditionScript *string `json:"precondition_script"`
+		PostprocessScript  *string `json:"postprocess_script"`
+		NotifyTemplate     *string `json:"notify_template"`
+		NotifyThreshold    *int    `json:"notify_threshold"`
+		Timeout            *int    `json:"timeout"`
+		IsActive           *bool   `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.DisplayName != nil {
+		updates["display_name"] = *req.DisplayName
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.PromptFile != nil {
+		updates["prompt_file"] = *req.PromptFile
+	}
+	if req.PreconditionScript != nil {
+		updates["precondition_script"] = *req.PreconditionScript
+	}
+	if req.PostprocessScript != nil {
+		updates["postprocess_script"] = *req.PostprocessScript
+	}
+	if req.NotifyTemplate != nil {
+		updates["notify_template"] = *req.NotifyTemplate
+	}
+	if req.NotifyThreshold != nil {
+		updates["notify_threshold"] = *req.NotifyThreshold
+	}
+	if req.Timeout != nil {
+		updates["timeout"] = *req.Timeout
+	}
+	if req.IsActive != nil {
+		updates["is_active"] = *req.IsActive
+	}
+
+	if err := models.DB.Model(&taskType).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task type"})
+		return
+	}
+
+	models.DB.First(&taskType, id)
+	c.JSON(http.StatusOK, taskType)
+}
+
+// DeleteTaskType deletes a task type (built-in types cannot be deleted)
+func DeleteTaskType(c *gin.Context) {
+	id := c.Param("id")
+	var taskType models.TaskType
+	if err := models.DB.First(&taskType, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found"})
+		return
+	}
+
+	if taskType.IsBuiltin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "内置任务类型不可删除"})
+		return
+	}
+
+	if err := models.DB.Delete(&taskType).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task type"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Task type deleted"})
+}

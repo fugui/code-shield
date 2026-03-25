@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import CodeReviewManagement from './pages/CodeReviewManagement';
-import RepoReviewHistory from './pages/RepoReviewHistory';
+import TaskManagement from './pages/CodeReviewManagement';
+import RepoTaskHistory from './pages/RepoReviewHistory';
+import TaskTypeManagement from './pages/TaskTypeManagement';
 import KeyIssues from './pages/KeyIssues';
 import Configuration from './pages/Configuration';
 import Login from './pages/Login';
@@ -194,7 +195,7 @@ function Sidebar() {
   }, []);
 
   const navItems = [
-    { path: '/reviews', label: '代码检视', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
+    { path: '/tasks', label: '任务中心', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
     { path: '/issues', label: '核心问题', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
     { path: '/opensource', label: '开源管理', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' },
     { path: '/teams', label: '团队管理', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
@@ -249,7 +250,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
           <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
-            {location.pathname.startsWith('/reviews') ? '代码检视' : location.pathname === '/opensource' ? '开源管理' : location.pathname === '/config' ? '系统管理' : location.pathname.startsWith('/teams') ? '团队组织架构与代码仓配置' : '核心问题追踪'}
+            {location.pathname.startsWith('/tasks') ? '任务中心' : location.pathname === '/task-types' ? '任务类型管理' : location.pathname === '/opensource' ? '开源管理' : location.pathname === '/config' ? '系统管理' : location.pathname.startsWith('/teams') ? '团队组织架构与代码仓配置' : '核心问题追踪'}
           </h1>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
             <AuthHeader />
@@ -270,10 +271,11 @@ function App() {
         <MainLayout>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Navigate to="/reviews" replace />} />
-            <Route path="/reviews" element={<PrivateRoute><CodeReviewManagement /></PrivateRoute>} />
-            <Route path="/reviews/:tab" element={<PrivateRoute><CodeReviewManagement /></PrivateRoute>} />
-            <Route path="/reviews/repo/:repoId" element={<PrivateRoute><RepoReviewHistory /></PrivateRoute>} />
+            <Route path="/" element={<Navigate to="/tasks" replace />} />
+            <Route path="/tasks" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
+            <Route path="/tasks/:tab" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
+            <Route path="/tasks/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
+            <Route path="/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
             <Route path="/opensource" element={<PrivateRoute><OpenSourceManagement /></PrivateRoute>} />
             <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
             <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
