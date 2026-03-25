@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 
+type FileTab = 'prompt' | 'precondition' | 'postprocess';
+
 function TaskTypeManagement() {
   const { showToast } = useToast();
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
@@ -11,6 +13,15 @@ function TaskTypeManagement() {
     notify_threshold: 0, timeout: 30, is_active: true
   });
   const [showForm, setShowForm] = useState(false);
+
+  // File editor state
+  const [showFileEditor, setShowFileEditor] = useState(false);
+  const [fileEditorTaskId, setFileEditorTaskId] = useState<number | null>(null);
+  const [fileEditorTaskName, setFileEditorTaskName] = useState('');
+  const [activeFileTab, setActiveFileTab] = useState<FileTab>('prompt');
+  const [fileContents, setFileContents] = useState({ prompt: '', precondition: '', postprocess: '' });
+  const [fileDirty, setFileDirty] = useState({ prompt: false, precondition: false, postprocess: false });
+  const [fileSaving, setFileSaving] = useState(false);
 
   const fetchTaskTypes = async () => {
     const res = await fetch('/api/task-types');
@@ -74,8 +85,50 @@ function TaskTypeManagement() {
     fetchTaskTypes();
   };
 
+  // File editor functions
+  const openFileEditor = async (tt: any) => {
+    setFileEditorTaskId(tt.id);
+    setFileEditorTaskName(tt.display_name);
+    setActiveFileTab('prompt');
+    setFileDirty({ prompt: false, precondition: false, postprocess: false });
+    try {
+      const res = await fetch(`/api/task-types/${tt.id}/files`);
+      if (res.ok) {
+        const data = await res.json();
+        setFileContents({ prompt: data.prompt || '', precondition: data.precondition || '', postprocess: data.postprocess || '' });
+      }
+    } catch { /* ignore */ }
+    setShowFileEditor(true);
+  };
+
+  const handleFileSave = async (fileType: FileTab) => {
+    if (!fileEditorTaskId) return;
+    setFileSaving(true);
+    try {
+      const res = await fetch(`/api/task-types/${fileEditorTaskId}/files/${fileType}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: fileContents[fileType] })
+      });
+      if (res.ok) {
+        showToast('文件已保存', 'success');
+        setFileDirty({ ...fileDirty, [fileType]: false });
+      } else {
+        const d = await res.json();
+        showToast(d.error || '保存失败', 'error');
+      }
+    } catch { showToast('网络错误', 'error'); }
+    setFileSaving(false);
+  };
+
+  const updateFileContent = (tab: FileTab, content: string) => {
+    setFileContents({ ...fileContents, [tab]: content });
+    setFileDirty({ ...fileDirty, [tab]: true });
+  };
+
   const fieldStyle: React.CSSProperties = { width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.875rem' };
   const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 };
+
+  const fileTabLabels: Record<FileTab, string> = { prompt: 'Prompt 提示词', precondition: '前置检查脚本', postprocess: '后置分析脚本' };
 
   return (
     <div>
@@ -120,7 +173,8 @@ function TaskTypeManagement() {
                 </td>
                 <td style={{ padding: '1rem', textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    <button onClick={() => handleEdit(tt)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--primary-color)', cursor: 'pointer', borderRadius: '4px' }}>编辑</button>
+                    <button onClick={() => openFileEditor(tt)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid #10b981', color: '#10b981', cursor: 'pointer', borderRadius: '4px' }}>编辑脚本</button>
+                    <button onClick={() => handleEdit(tt)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--primary-color)', cursor: 'pointer', borderRadius: '4px' }}>配置</button>
                     {!tt.is_builtin && (
                       <button onClick={() => handleDelete(tt.id)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer' }}>删除</button>
                     )}
@@ -132,7 +186,7 @@ function TaskTypeManagement() {
         </table>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Config Modal */}
       {showForm && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="card" style={{ width: '560px', maxHeight: '80vh', overflowY: 'auto', maxWidth: '95%' }}>
@@ -152,20 +206,28 @@ function TaskTypeManagement() {
                 <label style={labelStyle}>描述</label>
                 <textarea style={{...fieldStyle, minHeight: '60px', resize: 'vertical'}} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="任务说明..." />
               </div>
-              <div>
-                <label style={labelStyle}>Prompt 文件路径</label>
-                <input style={fieldStyle} value={form.prompt_file} onChange={e => setForm({...form, prompt_file: e.target.value})} placeholder="如: my-task/prompt.md" />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              {editingId ? (
+                <>
                 <div>
-                  <label style={labelStyle}>前置检查脚本</label>
-                  <input style={fieldStyle} value={form.precondition_script} onChange={e => setForm({...form, precondition_script: e.target.value})} placeholder="如: my-task/precondition.sh" />
+                  <label style={labelStyle}>Prompt 文件路径</label>
+                  <input style={fieldStyle} value={form.prompt_file} onChange={e => setForm({...form, prompt_file: e.target.value})} placeholder="如: tasks/my-task/prompt.md" />
                 </div>
-                <div>
-                  <label style={labelStyle}>后置分析脚本</label>
-                  <input style={fieldStyle} value={form.postprocess_script} onChange={e => setForm({...form, postprocess_script: e.target.value})} placeholder="如: my-task/postprocess.sh" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={labelStyle}>前置检查脚本</label>
+                    <input style={fieldStyle} value={form.precondition_script} onChange={e => setForm({...form, precondition_script: e.target.value})} placeholder="如: tasks/my-task/precondition.sh" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>后置分析脚本</label>
+                    <input style={fieldStyle} value={form.postprocess_script} onChange={e => setForm({...form, postprocess_script: e.target.value})} placeholder="如: tasks/my-task/postprocess.sh" />
+                  </div>
                 </div>
-              </div>
+                </>
+              ) : (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>
+                  💡 提示词和脚本文件将自动创建在 <code style={{ background: '#dcfce7', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>tasks/{form.name || '<标识名>'}/</code> 目录下，创建后可通过「编辑脚本」修改内容。
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={labelStyle}>执行超时（分钟）</label>
@@ -181,6 +243,71 @@ function TaskTypeManagement() {
                 <button type="submit" className="btn" style={{ padding: '0.6rem 1.5rem' }}>{editingId ? '保存修改' : '创建'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* File Editor Modal */}
+      {showFileEditor && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="card" style={{ width: '800px', maxWidth: '95vw', height: '75vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>
+                编辑脚本 — {fileEditorTaskName}
+              </h3>
+              <button onClick={() => setShowFileEditor(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.25rem', borderRadius: '4px', color: '#64748b', fontSize: '1.2rem', lineHeight: 1 }}>✕</button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+              {(['prompt', 'precondition', 'postprocess'] as FileTab[]).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveFileTab(tab)}
+                  style={{
+                    padding: '0.6rem 1.2rem', border: 'none', background: 'transparent', cursor: 'pointer',
+                    fontWeight: activeFileTab === tab ? 600 : 400, fontSize: '0.85rem',
+                    color: activeFileTab === tab ? 'var(--primary-color)' : '#64748b',
+                    borderBottom: activeFileTab === tab ? '2px solid var(--primary-color)' : '2px solid transparent',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  {fileTabLabels[tab]}
+                  {fileDirty[tab] && <span style={{ marginLeft: '0.3rem', color: '#f59e0b', fontSize: '0.7rem' }}>●</span>}
+                </button>
+              ))}
+            </div>
+
+            {/* Editor */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <textarea
+                value={fileContents[activeFileTab]}
+                onChange={e => updateFileContent(activeFileTab, e.target.value)}
+                spellCheck={false}
+                style={{
+                  flex: 1, width: '100%', padding: '1rem 1.5rem', border: 'none', outline: 'none', resize: 'none',
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace", fontSize: '0.85rem', lineHeight: '1.6',
+                  background: '#1e293b', color: '#e2e8f0', boxSizing: 'border-box'
+                }}
+                placeholder={activeFileTab === 'prompt' ? '在此编写 AI 任务提示词（Markdown 格式）...' : '在此编写 Bash 脚本...'}
+              />
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--bg-color)' }}>
+              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                {activeFileTab === 'prompt' ? 'Markdown 格式' : 'Bash 脚本 · 前置: exit 0=继续, 1=跳过, 2=失败 · 后置: 输出 JSON {"score":N,"summary":"...","metrics":{}}'}
+              </span>
+              <button
+                className="btn"
+                onClick={() => handleFileSave(activeFileTab)}
+                disabled={fileSaving || !fileDirty[activeFileTab]}
+                style={{ padding: '0.4rem 1.2rem', fontSize: '0.85rem', opacity: fileDirty[activeFileTab] ? 1 : 0.5 }}
+              >
+                {fileSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
           </div>
         </div>
       )}

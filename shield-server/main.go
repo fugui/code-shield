@@ -83,6 +83,8 @@ func main() {
 		api.POST("/task-types", handlers.CreateTaskType)
 		api.PATCH("/task-types/:id", handlers.UpdateTaskType)
 		api.DELETE("/task-types/:id", handlers.DeleteTaskType)
+		api.GET("/task-types/:id/files", handlers.GetTaskTypeFiles)
+		api.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
 
 		api.GET("/issues", handlers.GetIssues)
 		api.POST("/issues", handlers.CreateIssue)
