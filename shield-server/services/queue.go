@@ -37,7 +37,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 		RepoID:      repoID,
 		TaskTypeID:  taskTypeID,
 		TriggerType: triggerType,
-		Status:      "pending",
+		Status:      models.StatusPending,
 		StartTime:   time.Now(),
 	}
 
@@ -52,8 +52,8 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 		TaskTypeID:  taskTypeID,
 		BaseCommit:  "HEAD~1",
 		HeadCommit:  "HEAD",
-		Status:      "queued",
-		CloneStatus: "pending",
+		Status:      models.StatusQueued,
+		CloneStatus: models.StatusPending,
 	}
 	if err := models.DB.Create(&report).Error; err != nil {
 		log.Printf("[WorkerPool] Failed to create TaskReport for Repo %d: %v\n", repoID, err)
@@ -77,7 +77,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 		log.Printf("[WorkerPool] Enqueued Repo %d (TaskType %d). Queue size: %d\n", repoID, taskTypeID, len(TaskQueue))
 	default:
 		log.Printf("[WorkerPool] Queue is full! Dropping task for Repo %d\n", repoID)
-		UpdateTaskExecutionLog(execLog.ID, "failed", "Queue is full")
+		UpdateTaskExecutionLog(execLog.ID, models.StatusFailed, "Queue is full")
 	}
 }
 
@@ -85,9 +85,9 @@ func worker(id int) {
 	for task := range TaskQueue {
 		log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d)\n", id, task.RepoID, task.TaskTypeID, task.LogID)
 
-		// Update status to running
+		// Update status to running (initial phase)
 		UpdateTaskExecutionLog(task.LogID, "running", "")
-		models.DB.Model(&models.TaskReport{}).Where("id = ?", task.ReportID).Update("status", "running")
+		// Note: Detailed report status is updated inside RunTaskSync (cloning, analyzing, etc.)
 
 		err := RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify)
 
@@ -95,21 +95,21 @@ func worker(id int) {
 		if errors.Is(err, ErrSkipped) {
 			log.Printf("[Worker %d] Skipping Repo %d — precondition not met.\n", id, task.RepoID)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":        "skipped",
+				"status":        models.StatusSkipped,
 				"error_message": "前置条件未满足，跳过执行",
 				"end_time":      &now,
 			})
 		} else if err != nil {
 			log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":        "failed",
+				"status":        models.StatusFailed,
 				"error_message": err.Error(),
 				"end_time":      &now,
 			})
 		} else {
 			log.Printf("[Worker %d] Task completed for Repo %d\n", id, task.RepoID)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":   "success",
+				"status":   models.StatusSuccess,
 				"end_time": &now,
 			})
 		}
@@ -124,7 +124,7 @@ func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 	if errMsg != "" {
 		updates["error_message"] = errMsg
 	}
-	if status == "success" || status == "failed" {
+	if status == models.StatusSuccess || status == models.StatusFailed {
 		updates["end_time"] = &now
 	}
 

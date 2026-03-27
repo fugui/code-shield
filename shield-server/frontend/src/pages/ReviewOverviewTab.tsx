@@ -260,8 +260,28 @@ function TaskOverviewTab() {
                   {item.latest_task_status === 'none' ? (
                      <span style={{ color: '#aaa', fontSize: '0.875rem' }}>未执行</span>
                   ) : (
-                    <span className={`badge ${item.latest_task_status === 'success' ? 'success' : (item.latest_task_status === 'failed' ? 'danger' : item.latest_task_status === 'queued' ? '' : 'warning')}`}>
-                      {item.latest_task_status === 'success' ? '完成' : item.latest_task_status === 'failed' ? '失败' : item.latest_task_status === 'queued' ? '排队中' : item.latest_task_status === 'running' ? '执行中' : item.latest_task_status === 'skipped' ? '已跳过' : item.latest_task_status}
+                    <span className={`badge ${
+                      item.latest_task_status === 'success' ? 'success' : 
+                      item.latest_task_status === 'failed' ? 'danger' : 
+                      item.latest_task_status === 'queued' ? '' : 
+                      (item.latest_task_status === 'running' || 
+                       item.latest_task_status === 'cloning' || 
+                       item.latest_task_status === 'pre_processing' || 
+                       item.latest_task_status === 'analyzing' || 
+                       item.latest_task_status === 'post_processing') ? 'warning' : 'info'
+                    }`}>
+                      {
+                        item.latest_task_status === 'success' ? '完成' : 
+                        item.latest_task_status === 'failed' ? '失败' : 
+                        item.latest_task_status === 'queued' ? '排队中' : 
+                        item.latest_task_status === 'running' ? '执行中' : 
+                        item.latest_task_status === 'skipped' ? '已跳过' : 
+                        item.latest_task_status === 'cloning' ? '克隆中' :
+                        item.latest_task_status === 'pre_processing' ? '检查中' :
+                        item.latest_task_status === 'analyzing' ? '分析中' :
+                        item.latest_task_status === 'post_processing' ? '处理中' :
+                        item.latest_task_status
+                      }
                     </span>
                   )}
                 </td>

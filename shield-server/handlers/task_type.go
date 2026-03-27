@@ -192,7 +192,8 @@ func GetTaskTypeFiles(c *gin.Context) {
 		if path == "" {
 			return ""
 		}
-		content, err := os.ReadFile(path)
+		absPath := models.AppConfig.GetAbsPath(path)
+		content, err := os.ReadFile(absPath)
 		if err != nil {
 			return ""
 		}
@@ -243,8 +244,10 @@ func UpdateTaskTypeFile(c *gin.Context) {
 		return
 	}
 
+	absPath := models.AppConfig.GetAbsPath(filePath)
+
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create directory"})
 		return
 	}
@@ -254,7 +257,7 @@ func UpdateTaskTypeFile(c *gin.Context) {
 		perm = 0755 // scripts need execute permission
 	}
 
-	if err := os.WriteFile(filePath, []byte(req.Content), perm); err != nil {
+	if err := os.WriteFile(absPath, []byte(req.Content), perm); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write file"})
 		return
 	}

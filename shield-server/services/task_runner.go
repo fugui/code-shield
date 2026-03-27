@@ -49,7 +49,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	u, err := url.Parse(repoURL)
 	if err != nil {
 		log.Printf("[TaskRunner] Failed to parse URL %s: %v\n", repoURL, err)
-		updateTaskStatus(report.ID, "failed")
+		updateTaskStatus(report.ID, models.StatusFailed)
 		return fmt.Errorf("invalid repository URL: %w", err)
 	}
 
@@ -60,17 +60,18 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	codesPath := filepath.Join(models.AppConfig.Workspace.Home, "codes", rawPath)
 	if err := os.MkdirAll(filepath.Dir(codesPath), 0755); err != nil {
 		log.Printf("[TaskRunner] Failed to create dir %s: %v\n", filepath.Dir(codesPath), err)
-		updateTaskStatus(report.ID, "failed")
+		updateTaskStatus(report.ID, models.StatusFailed)
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// ─── Step 3: Git Clone or Pull ───
+	updateTaskStatus(report.ID, models.StatusCloning)
 	if stat, err := os.Stat(filepath.Join(codesPath, ".git")); err == nil && stat.IsDir() {
 		log.Printf("[TaskRunner] Repo exists, running git pull in %s\n", codesPath)
 		cmd := exec.Command("git", "-C", codesPath, "pull")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("[TaskRunner] git pull failed: %v\nOutput: %s\n", err, output)
-			updateTaskStatus(report.ID, "failed")
+			updateTaskStatus(report.ID, models.StatusFailed)
 			models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
 			return fmt.Errorf("git pull failed: %w", err)
 		}
@@ -79,7 +80,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		cmd := exec.Command("git", "clone", repoURL, codesPath)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("[TaskRunner] git clone failed: %v\nOutput: %s\n", err, output)
-			updateTaskStatus(report.ID, "failed")
+			updateTaskStatus(report.ID, models.StatusFailed)
 			models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
 			return fmt.Errorf("git clone failed: %w", err)
 		}
@@ -88,7 +89,8 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 
 	// ─── Step 4: Execute precondition script ───
 	if taskType.PreconditionScript != "" {
-		absScript, _ := filepath.Abs(taskType.PreconditionScript)
+		updateTaskStatus(report.ID, models.StatusPreProcessing)
+		absScript := models.AppConfig.GetAbsPath(taskType.PreconditionScript)
 		absCodesPath, _ := filepath.Abs(codesPath)
 		log.Printf("[TaskRunner] Running precondition script: %s %s\n", absScript, absCodesPath)
 
@@ -102,13 +104,13 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 			case 1: // Skip
 				log.Printf("[TaskRunner] Precondition skip: %s\n", outputStr)
 				models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
-					"status":     "skipped",
+					"status":     models.StatusSkipped,
 					"ai_summary": outputStr,
 				})
 				return ErrSkipped
 			default: // Fail (exit 2 or any other)
 				log.Printf("[TaskRunner] Precondition failed: %s\n", outputStr)
-				updateTaskStatus(report.ID, "failed")
+				updateTaskStatus(report.ID, models.StatusFailed)
 				return fmt.Errorf("precondition failed: %s", outputStr)
 			}
 		}
@@ -120,7 +122,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	reportsDir := filepath.Join(models.AppConfig.Workspace.Home, "reports", taskType.Name, currentDate)
 	if err := os.MkdirAll(reportsDir, 0755); err != nil {
 		log.Printf("[TaskRunner] Failed to create reports dir %s: %v\n", reportsDir, err)
-		updateTaskStatus(report.ID, "failed")
+		updateTaskStatus(report.ID, models.StatusFailed)
 		return fmt.Errorf("failed to create reports directory: %w", err)
 	}
 
@@ -132,13 +134,14 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	jsonPath := filepath.Join(reportsDir, jsonSummaryName)
 
 	// ─── Step 6: Execute AI via Claude CLI ───
-	absPromptPath, _ := filepath.Abs(taskType.PromptFile)
+	updateTaskStatus(report.ID, models.StatusAnalyzing)
+	absPromptPath := models.AppConfig.GetAbsPath(taskType.PromptFile)
 	absReportPath, _ := filepath.Abs(reportPath)
 	absJsonPath, _ := filepath.Abs(jsonPath)
 
 	if _, err := os.Stat(absPromptPath); os.IsNotExist(err) {
 		log.Printf("[TaskRunner] Prompt file %s does not exist!\n", absPromptPath)
-		updateTaskStatus(report.ID, "failed")
+		updateTaskStatus(report.ID, models.StatusFailed)
 		return fmt.Errorf("prompt file not found: %s", absPromptPath)
 	}
 
@@ -159,7 +162,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		log.Printf("[TaskRunner] AI execution timed out after %v for ReportID %d\n", timeout, reportID)
-		updateTaskStatus(report.ID, "failed")
+		updateTaskStatus(report.ID, models.StatusFailed)
 		return fmt.Errorf("AI execution timed out after %v", timeout)
 	}
 	if err != nil {
@@ -169,7 +172,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 			os.WriteFile(absJsonPath, []byte(`{"status": "simulated_success"}`), 0644)
 			os.WriteFile(absReportPath, []byte("# Simulated Report\nEverything looks good!"), 0644)
 		} else {
-			updateTaskStatus(report.ID, "failed")
+			updateTaskStatus(report.ID, models.StatusFailed)
 			return fmt.Errorf("AI execution failed: %w", err)
 		}
 	}
@@ -177,9 +180,10 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	log.Printf("[TaskRunner] AI execution completed for %s\n", repoURL)
 
 	// ─── Step 7: Execute postprocess script ───
+	updateTaskStatus(report.ID, models.StatusPostProcessing)
 	var result TaskResult
 	if taskType.PostprocessScript != "" {
-		absPostScript, _ := filepath.Abs(taskType.PostprocessScript)
+		absPostScript := models.AppConfig.GetAbsPath(taskType.PostprocessScript)
 		log.Printf("[TaskRunner] Running postprocess script: %s %s\n", absPostScript, absReportPath)
 
 		postCmd := exec.Command("bash", absPostScript, absReportPath)
@@ -199,7 +203,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	// ─── Step 8: Save to database ───
 	metricsJSON, _ := json.Marshal(result.Metrics)
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
-		"status":      "success",
+		"status":      models.StatusSuccess,
 		"report_path": absReportPath,
 		"ai_summary":  result.Summary,
 		"score":       result.Score,

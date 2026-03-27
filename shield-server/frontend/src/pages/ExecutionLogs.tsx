@@ -103,6 +103,10 @@ function ExecutionLogs() {
       running: { cls: 'primary', label: '运行中...' },
       skipped: { cls: 'info',    label: '已跳过' },
       pending: { cls: 'warning', label: '排队中' },
+      cloning: { cls: 'primary', label: '代码克隆中...' },
+      pre_processing: { cls: 'primary', label: '前置检查中...' },
+      analyzing: { cls: 'primary', label: 'AI 检视中...' },
+      post_processing: { cls: 'primary', label: '结果分析中...' },
     };
     const s = map[status] || { cls: 'warning', label: status };
     return <span className={`badge ${s.cls}`}>{s.label}</span>;

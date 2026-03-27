@@ -64,23 +64,35 @@ type TaskType struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
-// TaskReport 通用任务报告（替代原 ReviewReport）
+// TaskReport 通用任务报告
 type TaskReport struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
 	RepoID      uint           `json:"repo_id"`
 	Repo        Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskTypeID  uint           `json:"task_type_id"`
 	TaskType    TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	Status      string         `gorm:"default:pending" json:"status"`      // pending/queued/running/success/failed/skipped
+	Status      string         `gorm:"default:pending" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
 	CloneStatus string         `gorm:"default:pending" json:"clone_status"`
 	AISummary   string         `json:"ai_summary"`
 	ReportPath  string         `json:"report_path"`
 	Score       int            `gorm:"default:0" json:"score"`
-	Metrics     datatypes.JSON `json:"metrics"`                            // {"blocking":0,"critical":3,...}
+	Metrics     datatypes.JSON `json:"metrics"` // {"blocking":0,"critical":3,...}
 	BaseCommit  string         `json:"base_commit"`
 	HeadCommit  string         `json:"head_commit"`
 	CreatedAt   time.Time      `json:"created_at"`
 }
+
+const (
+	StatusPending        = "pending"
+	StatusQueued         = "queued"
+	StatusCloning        = "cloning"
+	StatusPreProcessing  = "pre_processing"
+	StatusAnalyzing      = "analyzing"
+	StatusPostProcessing = "post_processing"
+	StatusSuccess        = "success"
+	StatusFailed         = "failed"
+	StatusSkipped        = "skipped"
+)
 
 // KeyIssue 核心问题追踪
 type KeyIssue struct {
