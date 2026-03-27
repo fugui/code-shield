@@ -12,10 +12,12 @@ clean:
 
 # 独立编译前端
 frontend:
+	cd frontend && ( [ -d node_modules ] || npm install )
 	cd frontend && npm run build
 
 # 独立编译后端
 backend:
+	go mod download
 	go build -o code-shield-server
 
 # 快捷启动命令

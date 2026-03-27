@@ -18,7 +18,9 @@ clean:
 # 安装 Node.js 依赖
 install:
 	@echo "Installing Notifier dependencies..."
-	cd notifier && npm install
+	cd notifier && ( [ -d node_modules ] || npm install )
+	@echo "Installing Frontend dependencies..."
+	cd shield-server/frontend && ( [ -d node_modules ] || npm install )
 
 # 快捷启动整个系统 (当前终端会被阻塞)
 run: build

@@ -23,225 +23,234 @@ type TaskResult struct {
 	Metrics map[string]int `json:"metrics"`
 }
 
+// taskContext holds all necessary data for a single task execution run
+type taskContext struct {
+	report     models.TaskReport
+	taskType   models.TaskType
+	repo       models.Repository
+	codesPath  string
+	reportPath string
+	jsonPath   string
+	autoNotify bool
+}
+
 func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool) error {
-	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskTypeID: %d\n", reportID, repoURL, taskTypeID)
+	ctx := &taskContext{autoNotify: autoNotify}
 
-	// Load task type configuration
-	var taskType models.TaskType
-	if err := models.DB.First(&taskType, taskTypeID).Error; err != nil {
-		log.Printf("[TaskRunner] TaskType %d not found: %v\n", taskTypeID, err)
-		return fmt.Errorf("task type not found")
+	// 1. Initialize and load data
+	if err := ctx.load(reportID, taskTypeID); err != nil {
+		return err
 	}
 
-	var report models.TaskReport
-	if err := models.DB.First(&report, reportID).Error; err != nil {
-		log.Printf("[TaskRunner] ReportID %d not found: %v\n", reportID, err)
-		return fmt.Errorf("report not found")
+	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s\n", 
+		ctx.report.ID, repoURL, ctx.taskType.Name)
+
+	// 2. Prepare workspace and sync code
+	if err := ctx.prepareAndSync(repoURL); err != nil {
+		ctx.markFailed(err.Error())
+		return err
 	}
 
-	var repo models.Repository
-	if err := models.DB.First(&repo, report.RepoID).Error; err != nil {
-		log.Printf("[TaskRunner] RepoID %d not found: %v\n", report.RepoID, err)
-		return fmt.Errorf("repository not found")
+	// 3. Run Precondition check
+	if skipped, err := ctx.checkPrecondition(); err != nil {
+		ctx.markFailed(err.Error())
+		return err
+	} else if skipped {
+		return ErrSkipped
 	}
 
-	// ─── Step 1: Parse URL to get local path ───
+	// 4. Execute AI Engine
+	if err := ctx.executeAI(); err != nil {
+		ctx.markFailed(err.Error())
+		return err
+	}
+
+	// 5. Post-process and Finalize
+	result := ctx.runPostProcess()
+	return ctx.finalize(result)
+}
+
+// load fetches necessary models from the database
+func (ctx *taskContext) load(reportID, taskTypeID uint) error {
+	if err := models.DB.Preload("Repo").First(&ctx.report, reportID).Error; err != nil {
+		return fmt.Errorf("report %d not found", reportID)
+	}
+	if err := models.DB.First(&ctx.taskType, taskTypeID).Error; err != nil {
+		return fmt.Errorf("task type %d not found", taskTypeID)
+	}
+	ctx.repo = ctx.report.Repo
+	return nil
+}
+
+// prepareAndSync handles URL parsing and git operations
+func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	u, err := url.Parse(repoURL)
 	if err != nil {
-		log.Printf("[TaskRunner] Failed to parse URL %s: %v\n", repoURL, err)
-		updateTaskStatus(report.ID, models.StatusFailed)
 		return fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	rawPath := strings.TrimPrefix(u.Path, "/")
-	rawPath = strings.TrimSuffix(rawPath, ".git")
+	rawPath := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
+	ctx.codesPath = filepath.Join(models.AppConfig.Workspace.Home, "codes", rawPath)
 
-	// ─── Step 2: Setup codes directory ───
-	codesPath := filepath.Join(models.AppConfig.Workspace.Home, "codes", rawPath)
-	if err := os.MkdirAll(filepath.Dir(codesPath), 0755); err != nil {
-		log.Printf("[TaskRunner] Failed to create dir %s: %v\n", filepath.Dir(codesPath), err)
-		updateTaskStatus(report.ID, models.StatusFailed)
+	if err := os.MkdirAll(filepath.Dir(ctx.codesPath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// ─── Step 3: Git Clone or Pull ───
-	updateTaskStatus(report.ID, models.StatusCloning)
-	if stat, err := os.Stat(filepath.Join(codesPath, ".git")); err == nil && stat.IsDir() {
-		log.Printf("[TaskRunner] Repo exists, running git pull in %s\n", codesPath)
-		cmd := exec.Command("git", "-C", codesPath, "pull")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("[TaskRunner] git pull failed: %v\nOutput: %s\n", err, output)
-			updateTaskStatus(report.ID, models.StatusFailed)
-			models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
-			return fmt.Errorf("git pull failed: %w", err)
-		}
+	updateTaskStatus(ctx.report.ID, models.StatusCloning)
+	
+	var cmd *exec.Cmd
+	if stat, err := os.Stat(filepath.Join(ctx.codesPath, ".git")); err == nil && stat.IsDir() {
+		log.Printf("[TaskRunner] Running git pull in %s\n", ctx.codesPath)
+		cmd = exec.Command("git", "-C", ctx.codesPath, "pull")
 	} else {
-		log.Printf("[TaskRunner] New repo, running git clone %s %s\n", repoURL, codesPath)
-		cmd := exec.Command("git", "clone", repoURL, codesPath)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("[TaskRunner] git clone failed: %v\nOutput: %s\n", err, output)
-			updateTaskStatus(report.ID, models.StatusFailed)
-			models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("clone_status", "failed")
-			return fmt.Errorf("git clone failed: %w", err)
-		}
-	}
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("clone_status", "success")
-
-	// ─── Step 4: Execute precondition script ───
-	if taskType.PreconditionScript != "" {
-		updateTaskStatus(report.ID, models.StatusPreProcessing)
-		absScript := models.AppConfig.GetAbsPath(taskType.PreconditionScript)
-		absCodesPath, _ := filepath.Abs(codesPath)
-		log.Printf("[TaskRunner] Running precondition script: %s %s\n", absScript, absCodesPath)
-
-		cmd := exec.Command("bash", absScript, absCodesPath)
-		output, err := cmd.CombinedOutput()
-		outputStr := strings.TrimSpace(string(output))
-
-		if err != nil {
-			exitCode := cmd.ProcessState.ExitCode()
-			switch exitCode {
-			case 1: // Skip
-				log.Printf("[TaskRunner] Precondition skip: %s\n", outputStr)
-				models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
-					"status":     models.StatusSkipped,
-					"ai_summary": outputStr,
-				})
-				return ErrSkipped
-			default: // Fail (exit 2 or any other)
-				log.Printf("[TaskRunner] Precondition failed: %s\n", outputStr)
-				updateTaskStatus(report.ID, models.StatusFailed)
-				return fmt.Errorf("precondition failed: %s", outputStr)
-			}
-		}
-		log.Printf("[TaskRunner] Precondition passed: %s\n", outputStr)
+		log.Printf("[TaskRunner] Running git clone %s %s\n", repoURL, ctx.codesPath)
+		cmd = exec.Command("git", "clone", repoURL, ctx.codesPath)
 	}
 
-	// ─── Step 5: Setup reports directory ───
+	if output, err := cmd.CombinedOutput(); err != nil {
+		models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "failed")
+		return fmt.Errorf("git operation failed: %s", string(output))
+	}
+
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "success")
+	return nil
+}
+
+// checkPrecondition executes the task-specific bash script to decide whether to proceed
+func (ctx *taskContext) checkPrecondition() (bool, error) {
+	if ctx.taskType.PreconditionScript == "" {
+		return false, nil
+	}
+
+	updateTaskStatus(ctx.report.ID, models.StatusPreProcessing)
+	absScript := models.AppConfig.GetAbsPath(ctx.taskType.PreconditionScript)
+	
+	log.Printf("[TaskRunner] Running precondition: %s\n", absScript)
+	cmd := exec.Command("bash", absScript, ctx.codesPath)
+	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
+
+	if err != nil {
+		if cmd.ProcessState.ExitCode() == 1 {
+			log.Printf("[TaskRunner] Precondition skip: %s\n", outputStr)
+			models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
+				"status":     models.StatusSkipped,
+				"ai_summary": outputStr,
+			})
+			return true, nil
+		}
+		return false, fmt.Errorf("precondition failed: %s", outputStr)
+	}
+	return false, nil
+}
+
+// executeAI invokes the external AI CLI
+func (ctx *taskContext) executeAI() error {
+	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
+
+	// Prepare output paths
 	currentDate := time.Now().Format("2006-01-02")
-	reportsDir := filepath.Join(models.AppConfig.Workspace.Home, "reports", taskType.Name, currentDate)
-	if err := os.MkdirAll(reportsDir, 0755); err != nil {
-		log.Printf("[TaskRunner] Failed to create reports dir %s: %v\n", reportsDir, err)
-		updateTaskStatus(report.ID, models.StatusFailed)
-		return fmt.Errorf("failed to create reports directory: %w", err)
-	}
+	reportsDir := filepath.Join(models.AppConfig.Workspace.Home, "reports", ctx.taskType.Name, currentDate)
+	os.MkdirAll(reportsDir, 0755)
 
-	prefix := strings.ReplaceAll(rawPath, "/", "-")
-	reportFileName := fmt.Sprintf("%s-report-%s-%s.md", taskType.Name, prefix, currentDate)
-	reportPath := filepath.Join(reportsDir, reportFileName)
+	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
+	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("%s-report-%s.md", ctx.taskType.Name, safeRepoName))
+	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s.json", ctx.taskType.Name, safeRepoName))
 
-	jsonSummaryName := fmt.Sprintf("%s-summary-%s-%s.json", taskType.Name, prefix, currentDate)
-	jsonPath := filepath.Join(reportsDir, jsonSummaryName)
-
-	// ─── Step 6: Execute AI via Claude CLI ───
-	updateTaskStatus(report.ID, models.StatusAnalyzing)
-	absPromptPath := models.AppConfig.GetAbsPath(taskType.PromptFile)
-	absReportPath, _ := filepath.Abs(reportPath)
-	absJsonPath, _ := filepath.Abs(jsonPath)
-
-	if _, err := os.Stat(absPromptPath); os.IsNotExist(err) {
-		log.Printf("[TaskRunner] Prompt file %s does not exist!\n", absPromptPath)
-		updateTaskStatus(report.ID, models.StatusFailed)
-		return fmt.Errorf("prompt file not found: %s", absPromptPath)
+	absPrompt := models.AppConfig.GetAbsPath(ctx.taskType.PromptFile)
+	if _, err := os.Stat(absPrompt); os.IsNotExist(err) {
+		return fmt.Errorf("prompt file not found: %s", absPrompt)
 	}
 
 	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行%s任务，并输出文档到 %s' --output-format json > %s",
-		codesPath, absPromptPath, taskType.DisplayName, absReportPath, absJsonPath)
+		ctx.codesPath, absPrompt, ctx.taskType.DisplayName, ctx.reportPath, ctx.jsonPath)
 
-	timeout := time.Duration(taskType.Timeout) * time.Minute
-	if timeout <= 0 {
-		timeout = 30 * time.Minute
-	}
+	timeout := time.Duration(ctx.taskType.Timeout) * time.Minute
+	if timeout <= 0 { timeout = 30 * time.Minute }
 
-	log.Printf("[TaskRunner] Executing AI (timeout: %v): %s\n", timeout, cliCmd)
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctxRun, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-c", cliCmd)
-	cmd.Dir = "."
 
-	output, err := cmd.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
-		log.Printf("[TaskRunner] AI execution timed out after %v for ReportID %d\n", timeout, reportID)
-		updateTaskStatus(report.ID, models.StatusFailed)
-		return fmt.Errorf("AI execution timed out after %v", timeout)
-	}
-	if err != nil {
-		log.Printf("[TaskRunner] AI execution failed.\nError: %v\nOutput: %s\n", err, output)
+	log.Printf("[TaskRunner] Executing AI: %s\n", cliCmd)
+	cmd := exec.CommandContext(ctxRun, "bash", "-c", cliCmd)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if ctxRun.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("AI execution timed out after %v", timeout)
+		}
+		// Fallback for demo/simulation if claude is missing
 		if strings.Contains(string(output), "command not found") {
-			log.Printf("[TaskRunner] Simulating success since claude CLI not found.")
-			os.WriteFile(absJsonPath, []byte(`{"status": "simulated_success"}`), 0644)
-			os.WriteFile(absReportPath, []byte("# Simulated Report\nEverything looks good!"), 0644)
-		} else {
-			updateTaskStatus(report.ID, models.StatusFailed)
-			return fmt.Errorf("AI execution failed: %w", err)
+			log.Println("[TaskRunner] Simulating success (claude CLI not found)")
+			os.WriteFile(ctx.jsonPath, []byte(`{"status": "simulated"}`), 0644)
+			os.WriteFile(ctx.reportPath, []byte("# Simulated Report\nAI engine not found."), 0644)
+			return nil
 		}
-	}
-
-	log.Printf("[TaskRunner] AI execution completed for %s\n", repoURL)
-
-	// ─── Step 7: Execute postprocess script ───
-	updateTaskStatus(report.ID, models.StatusPostProcessing)
-	var result TaskResult
-	if taskType.PostprocessScript != "" {
-		absPostScript := models.AppConfig.GetAbsPath(taskType.PostprocessScript)
-		log.Printf("[TaskRunner] Running postprocess script: %s %s\n", absPostScript, absReportPath)
-
-		postCmd := exec.Command("bash", absPostScript, absReportPath)
-		postOutput, err := postCmd.Output()
-		if err != nil {
-			log.Printf("[TaskRunner] Postprocess script failed: %v\n", err)
-			// Not fatal — save what we can
-		} else {
-			if err := json.Unmarshal(postOutput, &result); err != nil {
-				log.Printf("[TaskRunner] Failed to parse postprocess JSON: %v\nOutput: %s\n", err, postOutput)
-			} else {
-				log.Printf("[TaskRunner] Postprocess result — score: %d, metrics: %v\n", result.Score, result.Metrics)
-			}
-		}
-	}
-
-	// ─── Step 8: Save to database ───
-	metricsJSON, _ := json.Marshal(result.Metrics)
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
-		"status":      models.StatusSuccess,
-		"report_path": absReportPath,
-		"ai_summary":  result.Summary,
-		"score":       result.Score,
-		"metrics":     string(metricsJSON),
-		"created_at":  time.Now(),
-	})
-
-	// ─── Step 9: Notification ───
-	if autoNotify && result.Score >= taskType.NotifyThreshold {
-		mdContent, err := os.ReadFile(absReportPath)
-		if err == nil {
-			NotifyTaskResult(repo, taskType, result, string(mdContent))
-		} else {
-			log.Printf("[TaskRunner] Failed to read report for notification: %v\n", err)
-		}
-	} else if autoNotify {
-		log.Printf("[TaskRunner] Score %d below threshold %d — skipping notification for RepoID %d\n",
-			result.Score, taskType.NotifyThreshold, report.RepoID)
+		return fmt.Errorf("AI execution failed: %s", string(output))
 	}
 
 	return nil
 }
 
+// runPostProcess parses the AI output using the task-specific postprocess script
+func (ctx *taskContext) runPostProcess() TaskResult {
+	updateTaskStatus(ctx.report.ID, models.StatusPostProcessing)
+	var result TaskResult
+
+	if ctx.taskType.PostprocessScript == "" {
+		return result
+	}
+
+	absPostScript := models.AppConfig.GetAbsPath(ctx.taskType.PostprocessScript)
+	log.Printf("[TaskRunner] Running postprocess: %s\n", absPostScript)
+
+	cmd := exec.Command("bash", absPostScript, ctx.reportPath)
+	if output, err := cmd.Output(); err == nil {
+		if err := json.Unmarshal(output, &result); err != nil {
+			log.Printf("[TaskRunner] Postprocess JSON error: %v\n", err)
+		}
+	} else {
+		log.Printf("[TaskRunner] Postprocess script failed: %v\n", err)
+	}
+	return result
+}
+
+// finalize saves the result to DB and triggers notification
+func (ctx *taskContext) finalize(result TaskResult) error {
+	metricsJSON, _ := json.Marshal(result.Metrics)
+	
+	err := models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
+		"status":      models.StatusSuccess,
+		"report_path": ctx.reportPath,
+		"ai_summary":  result.Summary,
+		"score":       result.Score,
+		"metrics":     string(metricsJSON),
+		"created_at":  time.Now(),
+	}).Error
+
+	if ctx.autoNotify && result.Score >= ctx.taskType.NotifyThreshold {
+		if content, err := os.ReadFile(ctx.reportPath); err == nil {
+			NotifyTaskResult(ctx.repo, ctx.taskType, result, string(content))
+		}
+	}
+
+	return err
+}
+
+func (ctx *taskContext) markFailed(errMsg string) {
+	updateTaskStatus(ctx.report.ID, models.StatusFailed)
+}
+
 // NotifyTaskResult sends a notification for a completed task
 func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result TaskResult, markdownContent string) {
-	// Load repo with owner and team leader
 	models.DB.Preload("Owner").Preload("Team.Leader").First(&repo, repo.ID)
 
 	toEmails := []string{}
-	if repo.Owner.Email != "" {
-		toEmails = append(toEmails, repo.Owner.Email)
-	}
+	if repo.Owner.Email != "" { toEmails = append(toEmails, repo.Owner.Email) }
+	
 	ccEmails := []string{}
 	if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
 		ccEmails = append(ccEmails, repo.Team.Leader.Email)
 	}
 
-	// Build subject from template or fallback
 	subject := fmt.Sprintf("【Code-Shield】%s %s报告（评分: %d）",
 		repo.Name, taskType.DisplayName, result.Score)
 
@@ -249,35 +258,21 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		"task_id":   fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
 		"repo_name": repo.Name,
 		"branch":    repo.Branch,
-		"recipients": map[string]interface{}{
-			"to": toEmails,
-			"cc": ccEmails,
-		},
+		"recipients": map[string]interface{}{ "to": toEmails, "cc": ccEmails },
 		"subject":          subject,
 		"body":             result.Summary,
 		"markdown_content": markdownContent,
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("[Notifier] Failed to marshal payload: %v\n", err)
-		return
-	}
-
 	targetURL := models.AppConfig.Notifier.URL
-	if targetURL == "" {
-		log.Println("[Notifier] Warning: Notifier URL not configured, skipping.")
-		return
-	}
+	if targetURL == "" { return }
 
+	payloadBytes, _ := json.Marshal(payload)
 	resp, err := http.Post(targetURL, "application/json", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		log.Printf("[Notifier] Failed to send webhook (%s): %v\n", targetURL, err)
-		return
+	if err == nil {
+		defer resp.Body.Close()
+		log.Printf("[Notifier] Sent for RepoID %d (Status: %d)\n", repo.ID, resp.StatusCode)
 	}
-	defer resp.Body.Close()
-
-	log.Printf("[Notifier] Sent notification for RepoID %d, TaskType %s (Status: %d)\n", repo.ID, taskType.Name, resp.StatusCode)
 }
 
 func updateTaskStatus(reportID uint, status string) {
