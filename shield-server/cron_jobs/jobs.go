@@ -82,7 +82,7 @@ func SyncSchedules() {
 			log.Printf("[Cron] Schedule %d found %d repositories to scan.\n", sched.ID, len(repos))
 			for _, repo := range repos {
 				schedID := sched.ID // Create local copy for pointer
-				services.EnqueueTask(&schedID, repo.ID, repo.URL, sched.TaskTypeID, sysConfig.AutoNotify, "cron")
+				services.EnqueueTask(&schedID, repo.ID, repo.URL, sched.TaskTypeID, sched.AutoNotify, "cron")
 			}
 		})
 
