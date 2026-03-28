@@ -18,17 +18,17 @@ import (
 
 func ExtractSummary(markdown string) string {
 	var summaryText string
-	overviewRegex := regexp.MustCompile("(?mi)# 1\\. 概述[\\s\\S]*?(?=# 2\\.)")
-	overviewMatch := overviewRegex.FindString(markdown)
+	overviewRegex := regexp.MustCompile(`(?im)(# 1\. 概述[\s\S]*?)(?:# 2\.|$)`)
+	matches1 := overviewRegex.FindStringSubmatch(markdown)
 
-	conclusionRegex := regexp.MustCompile("(?mi)# 3\\. (?:\\S+)?总结[\\s\\S]*|(?mi)# 3\\. 代码检视总结[\\s\\S]*")
-	conclusionMatch := conclusionRegex.FindString(markdown)
+	conclusionRegex := regexp.MustCompile(`(?im)(# 3\. (?:\S+)?总结[\s\S]*|# 3\. 代码检视总结[\s\S]*)`)
+	matches2 := conclusionRegex.FindStringSubmatch(markdown)
 
-	if overviewMatch != "" {
-		summaryText += overviewMatch + "\n\n"
+	if len(matches1) > 1 {
+		summaryText += matches1[1] + "\n\n"
 	}
-	if conclusionMatch != "" {
-		summaryText += conclusionMatch + "\n\n"
+	if len(matches2) > 1 {
+		summaryText += matches2[1] + "\n\n"
 	}
 
 	if summaryText == "" {
