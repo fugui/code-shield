@@ -7,6 +7,7 @@ import (
 
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/co"
+	"github.com/rodrigocfd/windigo/win"
 )
 
 var (
@@ -83,8 +84,27 @@ func setupControls() {
 }
 
 func setupEvents() {
+	var nid win.NOTIFYICONDATA
+	const WM_TRAYICON = co.WM_APP + 1
+
 	mainWnd.On().WmCreate(func(p ui.WmCreate) int {
 		chkAuto.SetCheck(GetAutoSend())
+
+		nid.SetCbSize()
+		nid.HWnd = mainWnd.Hwnd()
+		nid.UID = 100
+		nid.UFlags = co.NIF_MESSAGE | co.NIF_ICON | co.NIF_TIP
+		nid.UCallbackMessage = WM_TRAYICON
+		
+		hInst, _ := win.GetModuleHandle("")
+		hIcon, err := hInst.LoadIcon(win.IconResId(uint16(co.IDI_APPLICATION)))
+		if err != nil || hIcon == 0 {
+			hIcon, _ = win.HINSTANCE(0).LoadIcon(win.IconResId(uint16(co.IDI_APPLICATION)))
+		}
+		nid.HIcon = hIcon
+		nid.SetSzTip("Code-Shield Notifier (Running)")
+		
+		win.Shell_NotifyIcon(co.NIM_ADD, &nid)
 		return 0
 	})
 
@@ -123,8 +143,26 @@ func setupEvents() {
 		mainWnd.Hwnd().PostMessage(co.WM_DESTROY, 0, 0)
 	})
 
-	// To keep things simple and functional without SysTray, we do not hide window on minimize
-	// The user can keep it in the taskbar or minimize it normally.
+
+
+
+	mainWnd.On().Wm(WM_TRAYICON, func(p ui.Wm) uintptr {
+		lParam := co.WM(p.LParam)
+		if lParam == co.WM_LBUTTONDBLCLK || lParam == co.WM_LBUTTONUP {
+			mainWnd.Hwnd().ShowWindow(co.SW_RESTORE)
+			mainWnd.Hwnd().SetForegroundWindow()
+		}
+		return 0
+	})
+
+	mainWnd.On().Wm(co.WM_CLOSE, func(p ui.Wm) uintptr {
+		mainWnd.Hwnd().ShowWindow(co.SW_HIDE)
+		return 0 // intercept and don't destroy
+	})
+
+	mainWnd.On().WmDestroy(func() {
+		win.Shell_NotifyIcon(co.NIM_DELETE, &nid)
+	})
 }
 
 func LogMessage(msg string) {
