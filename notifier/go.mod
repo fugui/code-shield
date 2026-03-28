@@ -1,4 +1,4 @@
-module code-shield/notifier-go
+module code-shield/notifier
 
 go 1.26
 
