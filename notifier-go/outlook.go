@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/go-ole/go-ole"
@@ -14,6 +15,9 @@ const draftSubjectPrefix = "[Code-Shield]"
 // CreateAndHandleEmail creates an email in Outlook COM.
 // If isAutoSend is true, it immediately sends it. Otherwise, it saves it to the Drafts folder.
 func CreateAndHandleEmail(to, cc, subject, htmlBody, pdfPath string, isAutoSend bool) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ole.CoInitialize(0)
 	defer ole.CoUninitialize()
 
@@ -79,6 +83,9 @@ func CreateAndHandleEmail(to, cc, subject, htmlBody, pdfPath string, isAutoSend 
 
 // BatchSendOutlookDrafts iterates through the Outlook Drafts folder, sending emails with the specified prefix.
 func BatchSendOutlookDrafts() (int, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	ole.CoInitialize(0)
 	defer ole.CoUninitialize()
 
