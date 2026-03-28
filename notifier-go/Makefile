@@ -9,7 +9,7 @@ all: build
 
 build:
 	@echo "Building Go Notifier for Windows..."
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-H windowsgui" -o $(BINARY_NAME)
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "-H=windowsgui -s -w" -o $(BINARY_NAME)
 
 clean:
 	@echo "Cleaning notifier build..."
