@@ -99,30 +99,22 @@ func processEmailPayload(payload NotifyPayload) {
 		summaryHtml = "<p>" + summaryText + "</p>"
 	}
 
-	draft := DraftEntity{
-		TaskID:    payload.TaskID,
-		To:        toEmails,
-		CC:        ccEmails,
-		Subject:   payload.Subject,
-		HtmlBody:  summaryHtml,
-		PdfPath:   pdfPath,
-		Status:    "草稿",
-		CreatedAt: time.Now(),
-	}
-
-	id, err := InsertDraft(draft)
+	// Log to GUI View
+	timeStr := time.Now().Format("01-02 15:04:05")
+	LogMessage(fmt.Sprintf("Ready to interact with Outlook for task: %s", payload.TaskID))
+	
+	err = CreateAndHandleEmail(toEmails, ccEmails, payload.Subject, summaryHtml, pdfPath, GetAutoSend())
 	if err != nil {
-		LogMessage(fmt.Sprintf("Failed to save draft to DB: %v", err))
+		LogMessage(fmt.Sprintf("Failed to Create/Send email via Outlook: %v", err))
+		AddDraftLogToView("失败", toEmails, payload.Subject, timeStr)
 		return
 	}
-	draft.ID = id
-	
-	LogMessage(fmt.Sprintf("Draft saved to DB (ID: %d)", id))
-	
-	RefreshDraftsUI()
 
 	if GetAutoSend() {
-		LogMessage(fmt.Sprintf("Auto-send enabled. Attempting to send Draft ID: %d", id))
-		go SendDraft(draft)
+		LogMessage(fmt.Sprintf("Auto-send is ON. Email sent via Outlook! (Task: %s)", payload.TaskID))
+		AddDraftLogToView("已发送", toEmails, payload.Subject, timeStr)
+	} else {
+		LogMessage(fmt.Sprintf("Email saved to Outlook Drafts folder. (Task: %s)", payload.TaskID))
+		AddDraftLogToView("保存草稿", toEmails, payload.Subject, timeStr)
 	}
 }

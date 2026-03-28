@@ -17,15 +17,20 @@ var (
 	btnQuit   *ui.Button
 	lstDrafts *ui.ListView
 	txtLog    *ui.Edit
+
+	autoSendEnabled = false
 )
+
+func GetAutoSend() bool {
+	return autoSendEnabled
+}
+
+func SetAutoSend(b bool) {
+	autoSendEnabled = b
+}
 
 func main() {
 	runtime.LockOSThread()
-
-	err := initDB()
-	if err != nil {
-		panic("Database Initialization failed: " + err.Error())
-	}
 
 	mainWnd = ui.NewMain(
 		ui.OptsMain().
@@ -79,13 +84,7 @@ func setupControls() {
 
 func setupEvents() {
 	mainWnd.On().WmCreate(func(p ui.WmCreate) int {
-		if GetAutoSend() {
-			chkAuto.SetCheck(true)
-		} else {
-			chkAuto.SetCheck(false)
-		}
-		
-		RefreshDraftsUI()
+		chkAuto.SetCheck(GetAutoSend())
 		return 0
 	})
 
@@ -100,16 +99,24 @@ func setupEvents() {
 	})
 
 	btnBatch.On().BnClicked(func() {
-		SendAllPendingDrafts()
+		LogMessage("Checking Outlook Drafts for batch sending...")
+		go func() {
+			sentCount, err := BatchSendOutlookDrafts()
+			if err != nil {
+				LogMessage(fmt.Sprintf("Batch send error: %v", err))
+			} else {
+				LogMessage(fmt.Sprintf("Batch send complete: Sent %d matching emails from Outlook Drafts.", sentCount))
+			}
+		}()
 	})
 
 	btnClear.On().BnClicked(func() {
-		drafts, _ := GetAllDrafts()
-		for _, d := range drafts {
-			DeleteDraft(d.ID)
+		if mainWnd != nil && mainWnd.Hwnd() != 0 {
+			mainWnd.UiThread(func() {
+				lstDrafts.DeleteAllItems()
+			})
 		}
-		RefreshDraftsUI()
-		LogMessage("All drafts cleared from database.")
+		LogMessage("Local GUI draft history cleared.")
 	})
 
 	btnQuit.On().BnClicked(func() {
@@ -137,19 +144,11 @@ func LogMessage(msg string) {
 	})
 }
 
-func RefreshDraftsUI() {
+func AddDraftLogToView(status, to, subject, timeStr string) {
 	if mainWnd == nil || mainWnd.Hwnd() == 0 {
 		return
 	}
 	mainWnd.UiThread(func() {
-		drafts, err := GetAllDrafts()
-		if err != nil {
-			return
-		}
-		lstDrafts.DeleteAllItems()
-		for _, d := range drafts {
-			createdAtStr := d.CreatedAt.Format("01-02 15:04:05")
-			lstDrafts.AddItem(d.Status, d.To, d.Subject, createdAtStr)
-		}
+		lstDrafts.AddItem(status, to, subject, timeStr)
 	})
 }

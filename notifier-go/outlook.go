@@ -3,98 +3,151 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
 )
 
-func SendDraft(draft DraftEntity) {
-	UpdateDraftStatus(draft.ID, "发送中")
-	RefreshDraftsUI()
+const draftSubjectPrefix = "[Code-Shield]"
 
-	err := func() error {
-		ole.CoInitialize(0)
-		defer ole.CoUninitialize()
+// CreateAndHandleEmail creates an email in Outlook COM.
+// If isAutoSend is true, it immediately sends it. Otherwise, it saves it to the Drafts folder.
+func CreateAndHandleEmail(to, cc, subject, htmlBody, pdfPath string, isAutoSend bool) error {
+	ole.CoInitialize(0)
+	defer ole.CoUninitialize()
 
-		unknown, err := oleutil.CreateObject("Outlook.Application")
+	unknown, err := oleutil.CreateObject("Outlook.Application")
+	if err != nil {
+		return fmt.Errorf("could not create Outlook object: %w", err)
+	}
+	defer unknown.Release()
+
+	outlook, err := unknown.QueryInterface(ole.IID_IDispatch)
+	if err != nil {
+		return fmt.Errorf("could not query IDispatch: %w", err)
+	}
+	defer outlook.Release()
+
+	item, err := oleutil.CallMethod(outlook, "CreateItem", 0)
+	if err != nil {
+		return fmt.Errorf("could not CreateItem: %w", err)
+	}
+	mail := item.ToIDispatch()
+	defer mail.Release()
+
+	oleutil.PutProperty(mail, "To", to)
+	oleutil.PutProperty(mail, "CC", cc)
+	// Add prefix so we can easily filter it out later
+	fullSubject := fmt.Sprintf("%s %s", draftSubjectPrefix, subject)
+	oleutil.PutProperty(mail, "Subject", fullSubject)
+	oleutil.PutProperty(mail, "HTMLBody", htmlBody)
+
+	attachments, err := oleutil.GetProperty(mail, "Attachments")
+	if err != nil {
+		return fmt.Errorf("could not get Attachments: %w", err)
+	}
+	att := attachments.ToIDispatch()
+	defer att.Release()
+
+	if _, err := os.Stat(pdfPath); err == nil {
+		_, err = oleutil.CallMethod(att, "Add", pdfPath)
 		if err != nil {
-			return fmt.Errorf("could not create Outlook object: %w", err)
+			LogMessage(fmt.Sprintf("Warning: could not attach PDF %s: %v", pdfPath, err))
 		}
-		defer unknown.Release()
+	} else {
+		LogMessage(fmt.Sprintf("Warning: PDF not found at path %s", pdfPath))
+	}
 
-		outlook, err := unknown.QueryInterface(ole.IID_IDispatch)
-		if err != nil {
-			return fmt.Errorf("could not query IDispatch: %w", err)
-		}
-		defer outlook.Release()
-
-		item, err := oleutil.CallMethod(outlook, "CreateItem", 0)
-		if err != nil {
-			return fmt.Errorf("could not CreateItem: %w", err)
-		}
-		mail := item.ToIDispatch()
-		defer mail.Release()
-
-		oleutil.PutProperty(mail, "To", draft.To)
-		oleutil.PutProperty(mail, "CC", draft.CC)
-		oleutil.PutProperty(mail, "Subject", draft.Subject)
-		oleutil.PutProperty(mail, "HTMLBody", draft.HtmlBody)
-
-		attachments, err := oleutil.GetProperty(mail, "Attachments")
-		if err != nil {
-			return fmt.Errorf("could not get Attachments: %w", err)
-		}
-		att := attachments.ToIDispatch()
-		defer att.Release()
-
-		if _, err := os.Stat(draft.PdfPath); err == nil {
-			_, err = oleutil.CallMethod(att, "Add", draft.PdfPath)
-			if err != nil {
-				LogMessage(fmt.Sprintf("Warning: could not attach PDF %s: %v", draft.PdfPath, err))
-			}
-		} else {
-			LogMessage(fmt.Sprintf("Warning: PDF not found at path %s", draft.PdfPath))
-		}
-
+	if isAutoSend {
 		_, err = oleutil.CallMethod(mail, "Send")
 		if err != nil {
 			return fmt.Errorf("could not Send email: %w", err)
 		}
-
-		return nil
-	}()
-
-	if err != nil {
-		LogMessage(fmt.Sprintf("Outlook COM Error for Draft ID %d: %v", draft.ID, err))
-		UpdateDraftStatus(draft.ID, "失败")
 	} else {
-		UpdateDraftStatus(draft.ID, "已完成")
-		LogMessage(fmt.Sprintf("Successfully sent Draft ID %d via Outlook", draft.ID))
-		
-		_ = os.Remove(draft.PdfPath)
-	}
-
-	RefreshDraftsUI()
-}
-
-func SendAllPendingDrafts() {
-	drafts, err := GetAllDrafts()
-	if err != nil {
-		LogMessage(fmt.Sprintf("Failed to get drafts for batch sending: %v", err))
-		return
-	}
-	
-	count := 0
-	for _, d := range drafts {
-		if d.Status == "草稿" || d.Status == "失败" {
-			count++
-			go SendDraft(d)
+		_, err = oleutil.CallMethod(mail, "Save")
+		if err != nil {
+			return fmt.Errorf("could not Save email to drafts: %w", err)
 		}
 	}
-	
-	if count == 0 {
-		LogMessage("No pending drafts to send.")
-	} else {
-		LogMessage(fmt.Sprintf("Started sending %d pending drafts at background...", count))
+
+	// Safely clean up PDF after Send/Save handles attachment
+	_ = os.Remove(pdfPath)
+
+	return nil
+}
+
+// BatchSendOutlookDrafts iterates through the Outlook Drafts folder, sending emails with the specified prefix.
+func BatchSendOutlookDrafts() (int, error) {
+	ole.CoInitialize(0)
+	defer ole.CoUninitialize()
+
+	unknown, err := oleutil.CreateObject("Outlook.Application")
+	if err != nil {
+		return 0, fmt.Errorf("could not create Outlook object: %w", err)
 	}
+	defer unknown.Release()
+
+	outlook, err := unknown.QueryInterface(ole.IID_IDispatch)
+	if err != nil {
+		return 0, fmt.Errorf("could not query IDispatch: %w", err)
+	}
+	defer outlook.Release()
+
+	namespace, err := oleutil.CallMethod(outlook, "GetNamespace", "MAPI")
+	if err != nil {
+		return 0, fmt.Errorf("could not get MAPI namespace: %w", err)
+	}
+	defer namespace.ToIDispatch().Release()
+
+	// 16 corresponds to olFolderDrafts
+	draftsFolder, err := oleutil.CallMethod(namespace.ToIDispatch(), "GetDefaultFolder", 16)
+	if err != nil {
+		return 0, fmt.Errorf("could not get Drafts folder: %w", err)
+	}
+	defer draftsFolder.ToIDispatch().Release()
+
+	items, err := oleutil.CallMethod(draftsFolder.ToIDispatch(), "Items")
+	if err != nil {
+		return 0, fmt.Errorf("could not get Items from Drafts: %w", err)
+	}
+	itemsDispatch := items.ToIDispatch()
+	defer itemsDispatch.Release()
+
+	countProp, err := oleutil.GetProperty(itemsDispatch, "Count")
+	if err != nil {
+		return 0, fmt.Errorf("could not get Items count: %w", err)
+	}
+	count := int(countProp.Val)
+
+	sentCount := 0
+	// Loop backwards to safely delete/send items while iterating
+	for i := count; i >= 1; i-- {
+		item, err := oleutil.CallMethod(itemsDispatch, "Item", i)
+		if err != nil {
+			continue
+		}
+		mailItem := item.ToIDispatch()
+
+		// Verify it is a MailItem by checking Class == 43 (olMailItem)
+		classProp, err := oleutil.GetProperty(mailItem, "Class")
+		if err == nil && int(classProp.Val) == 43 {
+			subjectProp, err := oleutil.GetProperty(mailItem, "Subject")
+			if err == nil {
+				subjectStr := subjectProp.ToString()
+				if strings.HasPrefix(subjectStr, draftSubjectPrefix) {
+					// We matched our autogenerated draft! Let's send it
+					_, err := oleutil.CallMethod(mailItem, "Send")
+					if err == nil {
+						sentCount++
+					} else {
+						LogMessage(fmt.Sprintf("Error sending draft '%s': %v", subjectStr, err))
+					}
+				}
+			}
+		}
+		mailItem.Release()
+	}
+
+	return sentCount, nil
 }
