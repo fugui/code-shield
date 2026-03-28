@@ -140,7 +140,7 @@ func setupEvents() {
 	})
 
 	btnQuit.On().BnClicked(func() {
-		mainWnd.Hwnd().PostMessage(co.WM_DESTROY, 0, 0)
+		mainWnd.Hwnd().DestroyWindow()
 	})
 
 
