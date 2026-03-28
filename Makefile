@@ -7,25 +7,24 @@ all: build
 build:
 	@echo "Building shield-server..."
 	$(MAKE) -C shield-server build
+	@echo "Building notifier-go..."
+	$(MAKE) -C notifier-go build
 
 # 清理构建产物
 clean:
 	@echo "Cleaning shield-server..."
 	$(MAKE) -C shield-server clean
-	@echo "Cleaning notifier..."
-	rm -rf notifier/node_modules
+	@echo "Cleaning notifier-go..."
+	$(MAKE) -C notifier-go clean
 
-# 安装 Node.js 依赖
+# 安装依赖 (现在只有前端需要 npm)
 install:
-	@echo "Installing Notifier dependencies..."
-	cd notifier && ( [ -d node_modules ] || npm install )
 	@echo "Installing Frontend dependencies..."
 	cd shield-server/frontend && ( [ -d node_modules ] || npm install )
 
 # 快捷启动整个系统 (当前终端会被阻塞)
 run: build
-	@echo "Starting Notifier..."
-	cd notifier && npm start &
+	@echo "Important: Notifier runs independently on Windows via GUI. Starting Shield Server locally only."
 	@echo "Starting Shield Server..."
 	$(MAKE) -C shield-server run
 
@@ -33,6 +32,6 @@ run: build
 start-server: build
 	$(MAKE) -C shield-server run
 
-# 独立启动 Notifier
+# 独立启动 Notifier 的提醒
 start-notifier:
-	cd notifier && npm start
+	@echo "Notifier-go runs independently on Windows via GUI. Please start notifier.exe manually on Windows."
