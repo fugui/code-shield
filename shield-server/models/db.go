@@ -72,8 +72,8 @@ func seedBuiltinTaskTypes() {
 			DisplayName:        "代码检视",
 			Description:        "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
 			PromptFile:         filepath.Join("tasks", "code-review", "prompt.md"),
-			PreconditionScript: filepath.Join("tasks", "code-review", "precondition.sh"),
-			PostprocessScript:  filepath.Join("tasks", "code-review", "postprocess.sh"),
+			PreconditionScript: filepath.Join("tasks", "code-review", "precondition"),
+			PostprocessScript:  filepath.Join("tasks", "code-review", "postprocess"),
 			NotifyTemplate:     "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
 			NotifyThreshold:    20,
 			Timeout:            30,
@@ -85,8 +85,8 @@ func seedBuiltinTaskTypes() {
 			DisplayName:        "内存泄漏检测",
 			Description:        "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
 			PromptFile:         filepath.Join("tasks", "memory-leak", "prompt.md"),
-			PreconditionScript: filepath.Join("tasks", "memory-leak", "precondition.sh"),
-			PostprocessScript:  filepath.Join("tasks", "memory-leak", "postprocess.sh"),
+			PreconditionScript: filepath.Join("tasks", "memory-leak", "precondition"),
+			PostprocessScript:  filepath.Join("tasks", "memory-leak", "postprocess"),
 			NotifyTemplate:     "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
 			NotifyThreshold:    10,
 			Timeout:            30,
@@ -94,6 +94,7 @@ func seedBuiltinTaskTypes() {
 			IsBuiltin:          true,
 		},
 	}
+
 
 	for _, bt := range builtins {
 		var existing TaskType

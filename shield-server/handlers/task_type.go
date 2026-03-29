@@ -47,8 +47,8 @@ func CreateTaskType(c *gin.Context) {
 	// Auto-generate file paths based on task name
 	taskDir := filepath.Join("tasks", req.Name)
 	req.PromptFile = filepath.Join(taskDir, "prompt.md")
-	req.PreconditionScript = filepath.Join(taskDir, "precondition.sh")
-	req.PostprocessScript = filepath.Join(taskDir, "postprocess.sh")
+	req.PreconditionScript = filepath.Join(taskDir, "precondition")
+	req.PostprocessScript = filepath.Join(taskDir, "postprocess")
 
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
@@ -75,16 +75,23 @@ if [ -z "$RECENT" ]; then
 fi
 exit 0
 `
-	defaultPostprocess := `#!/bin/bash
-# 后置分析脚本
-# 输入: $1 = 报告文件路径
-# 输出: JSON {"score": N, "summary": "...", "metrics": {...}}
-REPORT="$1"
-if [ ! -f "$REPORT" ]; then
-    echo '{"score": 0, "summary": "报告文件未找到", "metrics": {}}'
-    exit 0
-fi
-echo '{"score": 0, "summary": "待完善后置分析逻辑", "metrics": {}}'
+	defaultPostprocess := `#!/usr/bin/env node
+const fs = require('fs');
+const reportPath = process.argv[2];
+
+if (!reportPath || !fs.existsSync(reportPath)) {
+    console.log(JSON.stringify({ score: 0, summary: "报告文件未找到", metrics: {} }));
+    process.exit(0);
+}
+
+const content = fs.readFileSync(reportPath, 'utf8');
+// TODO: 根据 AI 报告内容解析分数和指标
+const result = {
+    score: 0,
+    summary: "待完善后置分析逻辑",
+    metrics: {}
+};
+process.stdout.write(JSON.stringify(result));
 `
 
 	os.WriteFile(req.PromptFile, []byte(defaultPrompt), 0644)

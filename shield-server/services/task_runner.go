@@ -116,7 +116,7 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	return nil
 }
 
-// checkPrecondition executes the task-specific bash script to decide whether to proceed
+// checkPrecondition executes the task-specific script to decide whether to proceed
 func (ctx *taskContext) checkPrecondition() (bool, error) {
 	if ctx.taskType.PreconditionScript == "" {
 		return false, nil
@@ -126,7 +126,11 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 	absScript := models.AppConfig.GetAbsPath(ctx.taskType.PreconditionScript)
 	
 	log.Printf("[TaskRunner] Running precondition: %s\n", absScript)
-	cmd := exec.Command("bash", absScript, ctx.codesPath)
+
+	// Ensure the script is executable
+	os.Chmod(absScript, 0755)
+
+	cmd := exec.Command(absScript, ctx.codesPath)
 	output, err := cmd.CombinedOutput()
 	outputStr := strings.TrimSpace(string(output))
 
@@ -202,7 +206,10 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	absPostScript := models.AppConfig.GetAbsPath(ctx.taskType.PostprocessScript)
 	log.Printf("[TaskRunner] Running postprocess: %s\n", absPostScript)
 
-	cmd := exec.Command("bash", absPostScript, ctx.reportPath)
+	// Ensure the script is executable
+	os.Chmod(absPostScript, 0755)
+
+	cmd := exec.Command(absPostScript, ctx.reportPath)
 	if output, err := cmd.Output(); err == nil {
 		if err := json.Unmarshal(output, &result); err != nil {
 			log.Printf("[TaskRunner] Postprocess JSON error: %v\n", err)

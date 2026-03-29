@@ -1,0 +1,46 @@
+#!/usr/bin/env node
+/**
+ * 后置处理：解析内存泄漏检测报告
+ * 输入: process.argv[2] = AI 生成的 Markdown 报告文件路径
+ * 输出: 标准输出一行 JSON
+ */
+const fs = require('fs');
+
+const reportPath = process.argv[2];
+
+if (!reportPath || !fs.existsSync(reportPath)) {
+    console.log(JSON.stringify({ score: 0, summary: "报告文件不存在", metrics: {} }));
+    process.exit(0);
+}
+
+const content = fs.readFileSync(reportPath, 'utf8');
+
+function getMetric(pattern) {
+    const match = content.match(pattern);
+    return match ? parseInt(match[1], 10) : 0;
+}
+
+const high = getMetric(/高风险[：:]\s*(\d+)/);
+const medium = getMetric(/中风险[：:]\s*(\d+)/);
+const low = getMetric(/低风险[：:]\s*(\d+)/);
+
+const score = (high * 5) + (medium * 3) + low;
+
+// 提取摘要
+let summary = "";
+const summaryMatch = content.match(/## .*摘要([\s\S]*?)(?=\n## |$)/);
+if (summaryMatch) {
+    summary = summaryMatch[1].trim().split('\n').slice(0, 5).join(' ').substring(0, 500);
+}
+
+const result = {
+    score: score,
+    summary: summary || "未提取到摘要",
+    metrics: {
+        high_risk: high,
+        medium_risk: medium,
+        low_risk: low
+    }
+};
+
+process.stdout.write(JSON.stringify(result));

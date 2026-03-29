@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+/**
+ * 后置处理：解析代码检视报告
+ * 输入: process.argv[2] = AI 生成的 Markdown 报告文件路径
+ * 输出: 标准输出一行 JSON
+ */
+const fs = require('fs');
+const path = require('path');
+
+const reportPath = process.argv[2];
+
+if (!reportPath || !fs.existsSync(reportPath)) {
+    console.log(JSON.stringify({ score: 0, summary: "报告文件不存在", metrics: {} }));
+    process.exit(0);
+}
+
+const content = fs.readFileSync(reportPath, 'utf8');
+
+// 匹配 "阻塞：N" 等格式
+function getMetric(pattern) {
+    const match = content.match(pattern);
+    return match ? parseInt(match[1], 10) : 0;
+}
+
+const blocking = getMetric(/阻塞[：:]\s*(\d+)/);
+const critical = getMetric(/严重[：:]\s*(\d+)/);
+const major = getMetric(/主要[：:]\s*(\d+)/);
+const hint = getMetric(/提示[：:]\s*(\d+)/);
+const suggestion = getMetric(/建议[：:]\s*(\d+)/);
+
+const score = (blocking * 5) + (critical * 4) + (major * 3) + (hint * 2) + suggestion;
+
+// 提取检视摘要 (## 检视摘要 之后的内容)
+let summary = "";
+const summaryMatch = content.match(/## 检视摘要([\s\S]*?)(?=\n## |$)/);
+if (summaryMatch) {
+    summary = summaryMatch[1].trim().split('\n').slice(0, 5).join(' ').substring(0, 500);
+}
+
+const result = {
+    score: score,
+    summary: summary || "未提取到摘要",
+    metrics: {
+        blocking,
+        critical,
+        major,
+        hint,
+        suggestion
+    }
+};
+
+process.stdout.write(JSON.stringify(result));
