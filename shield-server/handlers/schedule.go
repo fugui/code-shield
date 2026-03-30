@@ -130,3 +130,21 @@ func ClearCompletedExecutionLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
 }
+
+// TriggerSchedule manually triggers a schedule config and queues jobs for repos immediately
+func TriggerSchedule(c *gin.Context) {
+	id := c.Param("id")
+	
+	var schedule models.ScheduleConfig
+	if err := models.DB.First(&schedule, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "定时策略未找到"})
+		return
+	}
+
+	if err := cron_jobs.ExecuteScheduleContext(schedule.ID, "manual"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "触发策略失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "触发成功加入队列"})
+}

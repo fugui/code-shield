@@ -94,6 +94,7 @@ func main() {
 		api.POST("/schedules", handlers.CreateSchedule)
 		api.PUT("/schedules/:id", handlers.UpdateSchedule)
 		api.DELETE("/schedules/:id", handlers.DeleteSchedule)
+		api.POST("/schedules/:id/trigger", handlers.TriggerSchedule)
 
 		api.GET("/executions", handlers.GetExecutionLogs)
 		api.DELETE("/executions/completed", handlers.ClearCompletedExecutionLogs)

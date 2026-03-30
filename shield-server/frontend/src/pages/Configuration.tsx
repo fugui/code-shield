@@ -203,6 +203,19 @@ function Configuration() {
     } catch (err) { console.error(err); }
   };
 
+  const handleTriggerSchedule = async (id: number) => {
+    try {
+      showToast('正在触发任务，请耐心等待...', 'info');
+      const res = await fetch(`/api/schedules/${id}/trigger`, { method: 'POST' });
+      if (res.ok) {
+        showToast('任务已成功触发', 'success');
+      } else {
+        const d = await res.json();
+        showToast('触发失败: ' + d.error, 'error');
+      }
+    } catch (err) { console.error(err); }
+  };
+
 
   return (
     <div className="card">
@@ -230,7 +243,7 @@ function Configuration() {
             marginBottom: '-1px'
           }}
         >
-          定时检视任务
+          定时执行策略
         </button>
       </div>
 
@@ -351,6 +364,14 @@ function Configuration() {
                       </div>
                     </td>
                     <td style={{ padding: '1rem 0', textAlign: 'right', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button 
+                        onClick={() => handleTriggerSchedule(sched.id)}
+                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--success-color)', cursor: 'pointer', borderRadius: '4px', fontWeight: 500, transition: 'all 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.06)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        触发
+                      </button>
                       <button 
                         onClick={() => handleEditSchedule(sched)}
                         style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--primary-color)', cursor: 'pointer', borderRadius: '4px', fontWeight: 500, transition: 'all 0.15s' }}

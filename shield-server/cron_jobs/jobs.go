@@ -45,45 +45,7 @@ func SyncSchedules() {
 		sched := schedule
 
 		_, err := globalCron.AddFunc(sched.CronExpr, func() {
-			log.Printf("[Cron] Triggering schedule: %s (ID: %d, TaskTypeID: %d)\n", sched.Name, sched.ID, sched.TaskTypeID)
-
-			// Determine which repos to run against based on TargetMode
-			query := models.DB.Model(&models.Repository{}).Where("is_active = ?", true)
-
-			switch sched.TargetMode {
-			case "all":
-				// no additional filters
-			case "service_group":
-				var groups []string
-				json.Unmarshal(sched.TargetValues, &groups)
-				if len(groups) > 0 {
-					query = query.Where("service_group IN ?", groups)
-				}
-			case "team":
-				var teamIDs []uint
-				json.Unmarshal(sched.TargetValues, &teamIDs)
-				if len(teamIDs) > 0 {
-					query = query.Where("team_id IN ?", teamIDs)
-				}
-			case "specific":
-				var repoIDs []uint
-				json.Unmarshal(sched.TargetValues, &repoIDs)
-				if len(repoIDs) > 0 {
-					query = query.Where("id IN ?", repoIDs)
-				}
-			}
-
-			var repos []models.Repository
-			if err := query.Find(&repos).Error; err != nil {
-				log.Printf("[Cron] Failed to fetch repos for schedule %d: %v\n", sched.ID, err)
-				return
-			}
-
-			log.Printf("[Cron] Schedule %d found %d repositories to scan.\n", sched.ID, len(repos))
-			for _, repo := range repos {
-				schedID := sched.ID // Create local copy for pointer
-				services.EnqueueTask(&schedID, repo.ID, repo.URL, sched.TaskTypeID, sched.AutoNotify, "cron")
-			}
+			ExecuteScheduleContext(sched.ID, "cron")
 		})
 
 		if err != nil {
@@ -93,3 +55,53 @@ func SyncSchedules() {
 		}
 	}
 }
+
+// ExecuteScheduleContext triggers a schedule immediately
+func ExecuteScheduleContext(schedID uint, triggerSource string) error {
+	var sched models.ScheduleConfig
+	if err := models.DB.First(&sched, schedID).Error; err != nil {
+		return err
+	}
+
+	log.Printf("[Cron-%s] Triggering schedule: %s (ID: %d, TaskTypeID: %d)\n", triggerSource, sched.Name, sched.ID, sched.TaskTypeID)
+
+	// Determine which repos to run against based on TargetMode
+	query := models.DB.Model(&models.Repository{}).Where("is_active = ?", true)
+
+	switch sched.TargetMode {
+	case "all":
+		// no additional filters
+	case "service_group":
+		var groups []string
+		json.Unmarshal(sched.TargetValues, &groups)
+		if len(groups) > 0 {
+			query = query.Where("service_group IN ?", groups)
+		}
+	case "team":
+		var teamIDs []uint
+		json.Unmarshal(sched.TargetValues, &teamIDs)
+		if len(teamIDs) > 0 {
+			query = query.Where("team_id IN ?", teamIDs)
+		}
+	case "specific":
+		var repoIDs []uint
+		json.Unmarshal(sched.TargetValues, &repoIDs)
+		if len(repoIDs) > 0 {
+			query = query.Where("id IN ?", repoIDs)
+		}
+	}
+
+	var repos []models.Repository
+	if err := query.Find(&repos).Error; err != nil {
+		log.Printf("[Cron-%s] Failed to fetch repos for schedule %d: %v\n", triggerSource, sched.ID, err)
+		return err
+	}
+
+	log.Printf("[Cron-%s] Schedule %d found %d repositories to scan.\n", triggerSource, sched.ID, len(repos))
+	for _, repo := range repos {
+		sID := sched.ID
+		services.EnqueueTask(&sID, repo.ID, repo.URL, sched.TaskTypeID, sched.AutoNotify, triggerSource)
+	}
+	return nil
+}
+
