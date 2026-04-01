@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ type NotifyPayload struct {
 		CC []string `json:"cc"`
 	} `json:"recipients"`
 	Subject         string `json:"subject"`
+	Summary         string `json:"summary"`
 	MarkdownContent string `json:"markdown_content"`
 }
 
@@ -27,7 +29,7 @@ type NotifyResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func StartHTTPServer() {
+func StartHTTPServer(listener net.Listener) {
 	http.HandleFunc("/api/notify", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(NotifyResponse{Success: true})
@@ -37,7 +39,7 @@ func StartHTTPServer() {
 
 	port := ":8081"
 	LogMessage("HTTP Server started on 0.0.0.0" + port)
-	err := http.ListenAndServe(port, nil)
+	err := http.Serve(listener, nil)
 	if err != nil {
 		LogMessage(fmt.Sprintf("HTTP Server failed: %v", err))
 	}
@@ -92,7 +94,11 @@ func processEmailPayload(payload NotifyPayload) {
 	toEmails := strings.Join(payload.Recipients.To, ";")
 	ccEmails := strings.Join(payload.Recipients.CC, ";")
 	
-	summaryText := ExtractSummary(payload.MarkdownContent)
+	summaryText := payload.Summary
+	if summaryText == "" {
+		summaryText = ExtractSummary(payload.MarkdownContent)
+	}
+	
 	summaryHtml, err := RenderMarkdownToHTML(summaryText)
 	if err != nil {
 		LogMessage(fmt.Sprintf("Failed to render HTML summary: %v", err))

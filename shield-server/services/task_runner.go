@@ -267,7 +267,7 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		"branch":    repo.Branch,
 		"recipients": map[string]interface{}{ "to": toEmails, "cc": ccEmails },
 		"subject":          subject,
-		"body":             result.Summary,
+		"summary":          result.Summary,
 		"markdown_content": markdownContent,
 	}
 

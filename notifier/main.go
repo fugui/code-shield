@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"runtime"
 	"time"
 
@@ -33,6 +34,12 @@ func SetAutoSend(b bool) {
 func main() {
 	runtime.LockOSThread()
 
+	listener, err := net.Listen("tcp", "0.0.0.0:8081")
+	if err != nil {
+		win.HWND(0).MessageBox("无法绑定端口 8081 (报错: "+err.Error()+")。\nCode-Shield 通知工具可能已经在运行中，或者端口被占用。\n\nFailed to bind port 8081. Is notifier already running?", "启动失败 / Startup Failed", co.MB_OK|co.MB_ICONERROR)
+		return
+	}
+
 	mainWnd = ui.NewMain(
 		ui.OptsMain().
 			Title("Code-Shield Notifier").
@@ -42,7 +49,7 @@ func main() {
 	setupControls()
 	setupEvents()
 
-	go StartHTTPServer()
+	go StartHTTPServer(listener)
 
 	mainWnd.RunAsMain()
 }
