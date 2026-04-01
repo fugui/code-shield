@@ -258,11 +258,12 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		ccEmails = append(ccEmails, repo.Team.Leader.Email)
 	}
 
-	subject := fmt.Sprintf("【Code-Shield】%s %s报告（评分: %d）",
-		repo.Name, taskType.DisplayName, result.Score)
+	subject := fmt.Sprintf("【%s】%s %s报告（评分: %d）",
+		taskType.DisplayName, repo.Name, taskType.DisplayName, result.Score)
 
 	payload := map[string]interface{}{
 		"task_id":   fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
+		"task_type": taskType.Name,
 		"repo_name": repo.Name,
 		"branch":    repo.Branch,
 		"recipients": map[string]interface{}{ "to": toEmails, "cc": ccEmails },

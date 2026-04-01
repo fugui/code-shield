@@ -12,6 +12,7 @@ import (
 
 type NotifyPayload struct {
 	TaskID          string `json:"task_id"`
+	TaskType        string `json:"task_type"`
 	RepoName        string `json:"repo_name"`
 	Branch          string `json:"branch"`
 	Recipients      struct {

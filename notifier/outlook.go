@@ -10,7 +10,7 @@ import (
 	"github.com/go-ole/go-ole/oleutil"
 )
 
-const draftSubjectPrefix = "[Code-Shield]"
+const draftSubjectPrefix = "【Code-Shield】"
 
 // CreateAndHandleEmail creates an email in Outlook COM.
 // If isAutoSend is true, it immediately sends it. Otherwise, it saves it to the Drafts folder.
