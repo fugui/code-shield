@@ -186,11 +186,19 @@ function TaskTypeManagement() {
                 </td>
                 <td style={{ padding: '1rem', textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                    <PlayCircle size={18} color="var(--primary-color)" style={{ cursor: 'pointer' }} title="全仓扫描" onClick={() => handleTriggerAll(tt)} />
-                    <Code2 size={18} color="#10b981" style={{ cursor: 'pointer' }} title="编辑脚本" onClick={() => openFileEditor(tt)} />
-                    <Settings size={18} color="#64748b" style={{ cursor: 'pointer' }} title="配置" onClick={() => handleEdit(tt)} />
+                    <span title="全仓扫描" onClick={() => handleTriggerAll(tt)} style={{ cursor: 'pointer', display: 'flex' }}>
+                      <PlayCircle size={18} color="var(--primary-color)" />
+                    </span>
+                    <span title="编辑脚本" onClick={() => openFileEditor(tt)} style={{ cursor: 'pointer', display: 'flex' }}>
+                      <Code2 size={18} color="#10b981" />
+                    </span>
+                    <span title="配置" onClick={() => handleEdit(tt)} style={{ cursor: 'pointer', display: 'flex' }}>
+                      <Settings size={18} color="#64748b" />
+                    </span>
                     {!tt.is_builtin && (
-                      <Trash2 size={18} color="#dc2626" style={{ cursor: 'pointer' }} title="删除" onClick={() => handleDelete(tt.id)} />
+                      <span title="删除" onClick={() => handleDelete(tt.id)} style={{ cursor: 'pointer', display: 'flex' }}>
+                        <Trash2 size={18} color="#dc2626" />
+                      </span>
                     )}
                   </div>
                 </td>
