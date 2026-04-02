@@ -262,10 +262,11 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		taskType.DisplayName, repo.Name, taskType.DisplayName, result.Score)
 
 	payload := map[string]interface{}{
-		"task_id":   fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
-		"task_type": taskType.Name,
-		"repo_name": repo.Name,
-		"branch":    repo.Branch,
+		"task_id":            fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
+		"task_type":          taskType.Name,
+		"task_display_name":  taskType.DisplayName,
+		"repo_name":          repo.Name,
+		"branch":             repo.Branch,
 		"recipients": map[string]interface{}{ "to": toEmails, "cc": ccEmails },
 		"subject":          subject,
 		"summary":          result.Summary,

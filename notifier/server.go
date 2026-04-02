@@ -13,6 +13,7 @@ import (
 type NotifyPayload struct {
 	TaskID          string `json:"task_id"`
 	TaskType        string `json:"task_type"`
+	TaskDisplayName string `json:"task_display_name"`
 	RepoName        string `json:"repo_name"`
 	Branch          string `json:"branch"`
 	Recipients      struct {
@@ -31,6 +32,12 @@ type NotifyResponse struct {
 }
 
 func StartHTTPServer(listener net.Listener) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogMessage(fmt.Sprintf("HTTP Server Panic: %v", r))
+		}
+	}()
+
 	http.HandleFunc("/api/notify", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(NotifyResponse{Success: true})
@@ -84,6 +91,12 @@ func handleEmailNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 func processEmailPayload(payload NotifyPayload) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogMessage(fmt.Sprintf("Email Processing Panic (Task: %s): %v", payload.TaskID, r))
+		}
+	}()
+
 	LogMessage("Generating PDF for task: " + payload.TaskID)
 	pdfPath, err := GeneratePDF(payload.MarkdownContent, payload.TaskID)
 	if err != nil {
@@ -99,18 +112,21 @@ func processEmailPayload(payload NotifyPayload) {
 	if summaryText == "" {
 		summaryText = ExtractSummary(payload.MarkdownContent)
 	}
+
+	templateContent := LoadTemplate()
+	finalMarkdownBody := RenderTemplate(templateContent, payload, summaryText)
 	
-	summaryHtml, err := RenderMarkdownToHTML(summaryText)
+	finalHtmlBody, err := RenderMarkdownToHTML(finalMarkdownBody)
 	if err != nil {
-		LogMessage(fmt.Sprintf("Failed to render HTML summary: %v", err))
-		summaryHtml = "<p>" + summaryText + "</p>"
+		LogMessage(fmt.Sprintf("Failed to render HTML from template: %v", err))
+		finalHtmlBody = "<p>" + finalMarkdownBody + "</p>"
 	}
 
 	// Log to GUI View
 	timeStr := time.Now().Format("01-02 15:04:05")
 	LogMessage(fmt.Sprintf("Ready to interact with Outlook for task: %s", payload.TaskID))
 	
-	err = CreateAndHandleEmail(toEmails, ccEmails, payload.Subject, summaryHtml, pdfPath, GetAutoSend())
+	err = CreateAndHandleEmail(toEmails, ccEmails, payload.Subject, finalHtmlBody, pdfPath, GetAutoSend())
 	if err != nil {
 		LogMessage(fmt.Sprintf("Failed to Create/Send email via Outlook: %v", err))
 		AddDraftLogToView("失败", toEmails, payload.Subject, timeStr)

@@ -13,12 +13,16 @@ import (
 
 var (
 	mainWnd   *ui.Main
+	tabMain   *ui.Tab
 	chkAuto   *ui.CheckBox
 	btnBatch  *ui.Button
 	btnClear  *ui.Button
 	btnQuit   *ui.Button
 	lstDrafts *ui.ListView
 	txtLog    *ui.Edit
+
+	txtTemplate     *ui.Edit
+	btnSaveTemplate *ui.Button
 
 	autoSendEnabled = false
 )
@@ -43,7 +47,7 @@ func main() {
 	mainWnd = ui.NewMain(
 		ui.OptsMain().
 			Title("Code-Shield Notifier").
-			Size(600, 500),
+			Size(640, 560),
 	)
 
 	setupControls()
@@ -55,39 +59,60 @@ func main() {
 }
 
 func setupControls() {
-	chkAuto = ui.NewCheckBox(mainWnd, ui.OptsCheckBox().
+	tabMain = ui.NewTab(mainWnd, ui.OptsTab().
+		Titles("常规态与日志", "邮件模版设置").
+		Position(10, 10).
+		Size(620, 540))
+
+	tabOverview := tabMain.Item(0).Child()
+
+	chkAuto = ui.NewCheckBox(tabOverview, ui.OptsCheckBox().
 		Text("自动发送").
 		Position(10, 10).
 		Size(80, 20))
 
-	btnBatch = ui.NewButton(mainWnd, ui.OptsButton().
+	btnBatch = ui.NewButton(tabOverview, ui.OptsButton().
 		Text("批量发送等待中的邮件").
 		Position(100, 8).
 		Width(150).Height(24))
 
-	btnClear = ui.NewButton(mainWnd, ui.OptsButton().
+	btnClear = ui.NewButton(tabOverview, ui.OptsButton().
 		Text("清空全部记录").
 		Position(260, 8).
 		Width(100).Height(24))
 
-	btnQuit = ui.NewButton(mainWnd, ui.OptsButton().
+	btnQuit = ui.NewButton(tabOverview, ui.OptsButton().
 		Text("退出程序").
 		Position(490, 8).
 		Width(100).Height(24))
 
-	lstDrafts = ui.NewListView(mainWnd, ui.OptsListView().
+	lstDrafts = ui.NewListView(tabOverview, ui.OptsListView().
 		Position(10, 40).
-		Size(580, 290).
+		Size(590, 310).
 		Column("状态", 60).
 		Column("收件人", 150).
 		Column("主题", 220).
 		Column("时间", 120))
 
-	txtLog = ui.NewEdit(mainWnd, ui.OptsEdit().
-		Position(10, 340).
-		Width(580).Height(150).
+	txtLog = ui.NewEdit(tabOverview, ui.OptsEdit().
+		Position(10, 360).
+		Width(590).Height(140).
 		CtrlStyle(co.ES_MULTILINE | co.ES_READONLY | co.ES_AUTOVSCROLL | co.ES_NOHIDESEL).
 		WndStyle(co.WS_CHILD | co.WS_VISIBLE | co.WS_TABSTOP | co.WS_GROUP | co.WS_VSCROLL))
+
+	tabSettings := tabMain.Item(1).Child()
+
+	txtTemplate = ui.NewEdit(tabSettings, ui.OptsEdit().
+		Position(10, 10).
+		Width(590).Height(450).
+		CtrlStyle(co.ES_MULTILINE | co.ES_WANTRETURN | co.ES_AUTOVSCROLL | co.ES_NOHIDESEL).
+		WndStyle(co.WS_CHILD | co.WS_VISIBLE | co.WS_TABSTOP | co.WS_GROUP | co.WS_VSCROLL).
+		Text(LoadTemplate()))
+
+	btnSaveTemplate = ui.NewButton(tabSettings, ui.OptsButton().
+		Text("保存模版").
+		Position(490, 470).
+		Width(110).Height(26))
 }
 
 func setupEvents() {
@@ -130,6 +155,12 @@ func setupEvents() {
 	btnBatch.On().BnClicked(func() {
 		LogMessage("Checking Outlook Drafts for batch sending...")
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					LogMessage(fmt.Sprintf("Batch Send Panic: %v", r))
+				}
+			}()
+
 			sentCount, err := BatchSendOutlookDrafts()
 			if err != nil {
 				LogMessage(fmt.Sprintf("Batch send error: %v", err))
@@ -150,6 +181,15 @@ func setupEvents() {
 
 	btnQuit.On().BnClicked(func() {
 		mainWnd.Hwnd().DestroyWindow()
+	})
+
+	btnSaveTemplate.On().BnClicked(func() {
+		err := SaveTemplate(txtTemplate.Text())
+		if err != nil {
+			win.HWND(mainWnd.Hwnd()).MessageBox("保存失败: "+err.Error(), "错误", co.MB_OK|co.MB_ICONERROR)
+		} else {
+			win.HWND(mainWnd.Hwnd()).MessageBox("模版保存成功！\n注意：当前修改立即生效。", "保存成功", co.MB_OK|co.MB_ICONINFORMATION)
+		}
 	})
 
 
