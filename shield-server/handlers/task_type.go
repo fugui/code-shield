@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"code-shield/models"
+	"code-shield/services"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -270,4 +272,30 @@ func UpdateTaskTypeFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "文件已保存"})
+}
+
+// TriggerAllReposForTaskType triggers the task type for all repositories
+func TriggerAllReposForTaskType(c *gin.Context) {
+	id := c.Param("id")
+	var taskType models.TaskType
+	if err := models.DB.First(&taskType, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found"})
+		return
+	}
+
+	var repos []models.Repository
+	if err := models.DB.Find(&repos).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch repositories"})
+		return
+	}
+
+	count := 0
+	for _, repo := range repos {
+		services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual")
+		count++
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": fmt.Sprintf("已成功触发 %d 个代码仓的 %s 任务", count, taskType.DisplayName),
+	})
 }

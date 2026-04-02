@@ -85,6 +85,7 @@ func main() {
 		api.DELETE("/task-types/:id", handlers.DeleteTaskType)
 		api.GET("/task-types/:id/files", handlers.GetTaskTypeFiles)
 		api.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
+		api.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
 
 		api.GET("/issues", handlers.GetIssues)
 		api.POST("/issues", handlers.CreateIssue)

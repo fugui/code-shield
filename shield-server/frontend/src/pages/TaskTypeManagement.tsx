@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
+import { PlayCircle, Code2, Settings, Trash2 } from 'lucide-react';
 
 type FileTab = 'prompt' | 'precondition' | 'postprocess';
 
@@ -83,6 +84,18 @@ function TaskTypeManagement() {
       body: JSON.stringify({ is_active: !tt.is_active })
     });
     fetchTaskTypes();
+  };
+
+  const handleTriggerAll = async (tt: any) => {
+    if (!window.confirm(`确认要立即对全体代码仓下发执行【${tt.display_name}】扫描任务吗？\n警告：如果你有很多仓库，这可能非常耗时并触发大量资源占用。`)) return;
+    const res = await fetch(`/api/task-types/${tt.id}/trigger-all`, { method: 'POST' });
+    if (res.ok) {
+      const d = await res.json();
+      showToast(d.message || '全仓扫描已下发', 'success');
+    } else {
+      const d = await res.json();
+      showToast(d.error || '触发失败', 'error');
+    }
   };
 
   // File editor functions
@@ -172,11 +185,12 @@ function TaskTypeManagement() {
                   </div>
                 </td>
                 <td style={{ padding: '1rem', textAlign: 'right' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    <button onClick={() => openFileEditor(tt)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid #10b981', color: '#10b981', cursor: 'pointer', borderRadius: '4px' }}>编辑脚本</button>
-                    <button onClick={() => handleEdit(tt)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--primary-color)', cursor: 'pointer', borderRadius: '4px' }}>配置</button>
+                  <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                    <PlayCircle size={18} color="var(--primary-color)" style={{ cursor: 'pointer' }} title="全仓扫描" onClick={() => handleTriggerAll(tt)} />
+                    <Code2 size={18} color="#10b981" style={{ cursor: 'pointer' }} title="编辑脚本" onClick={() => openFileEditor(tt)} />
+                    <Settings size={18} color="#64748b" style={{ cursor: 'pointer' }} title="配置" onClick={() => handleEdit(tt)} />
                     {!tt.is_builtin && (
-                      <button onClick={() => handleDelete(tt.id)} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer' }}>删除</button>
+                      <Trash2 size={18} color="#dc2626" style={{ cursor: 'pointer' }} title="删除" onClick={() => handleDelete(tt.id)} />
                     )}
                   </div>
                 </td>
