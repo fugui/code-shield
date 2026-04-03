@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
+import MemberSearchSelect from '../components/MemberSearchSelect';
 
 function TeamsTab() {
   const [teams, setTeams] = useState<any[]>([]);
@@ -156,12 +157,10 @@ function TeamsTab() {
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>部门负责人</label>
-                <select value={formData.leader_id} onChange={e => setFormData({...formData, leader_id: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box' }}>
-                  <option value="">暂不指定</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
-                  ))}
-                </select>
+                <MemberSearchSelect 
+                  value={formData.leader_id} 
+                  onChange={(id: string) => setFormData({...formData, leader_id: id})} 
+                />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
                 <button type="button" onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.5rem 1rem' }}>取消</button>
