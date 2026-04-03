@@ -12,7 +12,7 @@ function Configuration() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamLeader, setNewTeamLeader] = useState('');
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', is_admin: false });
+  const [newUserForm, setNewUserForm] = useState({ username: '', name: '', password: '', is_admin: false });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
@@ -111,7 +111,7 @@ function Configuration() {
         body: JSON.stringify(newUserForm)
       });
       if (res.ok) {
-        setNewUserForm({ username: '', password: '', is_admin: false });
+        setNewUserForm({ username: '', name: '', password: '', is_admin: false });
         setIsUserModalOpen(false);
         fetchUsers();
       } else {
@@ -269,7 +269,8 @@ function Configuration() {
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left' }}>
                 <th style={{ padding: '1rem 0' }}>系统 ID</th>
-                <th style={{ padding: '1rem 0' }}>用户名</th>
+                <th style={{ padding: '1rem 0' }}>邮箱账号</th>
+                <th style={{ padding: '1rem 0' }}>姓名</th>
                 <th style={{ padding: '1rem 0' }}>角色标识</th>
                 <th style={{ padding: '1rem 0' }}>账号状态</th>
                 <th style={{ padding: '1rem 0' }}>最近登录时间</th>
@@ -286,6 +287,7 @@ function Configuration() {
                   <tr key={u.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '1rem 0' }}>#{u.id}</td>
                     <td style={{ padding: '1rem 0', fontWeight: 500 }}>{u.username}</td>
+                    <td style={{ padding: '1rem 0' }}>{u.name || '-'}</td>
                     <td style={{ padding: '1rem 0' }}>
                       {u.is_admin ? 
                         <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontSize: '0.75rem', fontWeight: 600 }}>管理员</span> : 
@@ -421,12 +423,18 @@ function Configuration() {
             <h3 style={{ margin: '0 0 1.5rem 0' }}>分配新系统账号</h3>
             <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>登录邮箱账号（用户名）</label>
-                <input required type="email" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} placeholder="如: zhangsan@company.com" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>真实姓名</label>
+                <input required value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} placeholder="如: 张三" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>初始密码</label>
-                <input required type="password" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} placeholder="不少于6位" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>登录邮箱账号</label>
+                  <input required type="email" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} placeholder="如: zhangsan@company.com" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>初始密码</label>
+                  <input required type="password" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} placeholder="不少于6位" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <input type="checkbox" id="isAdmin" checked={newUserForm.is_admin} onChange={e => setNewUserForm({...newUserForm, is_admin: e.target.checked})} />

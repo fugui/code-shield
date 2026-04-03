@@ -130,10 +130,10 @@ function AuthHeader() {
         onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
       >
         <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '1rem' }}>
-          {user.username.charAt(0).toUpperCase()}
+          {(user.name || user.username).charAt(0).toUpperCase()}
         </div>
         <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-color)', lineHeight: 1.2 }}>{user.username}</span>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-color)', lineHeight: 1.2 }}>{user.name || user.username}</span>
           <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{user.is_admin ? '管理员' : '普通用户'}</span>
         </div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '0.5rem', transform: showDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>

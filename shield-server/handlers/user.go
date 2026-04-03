@@ -48,6 +48,7 @@ func GetUsers(c *gin.Context) {
 func CreateUser(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
+		Name     string `json:"name" binding:"required"`
 		Password string `json:"password" binding:"required"`
 		IsAdmin  bool   `json:"is_admin"`
 	}
@@ -70,6 +71,7 @@ func CreateUser(c *gin.Context) {
 
 	user := models.User{
 		Username: req.Username,
+		Name:     req.Name,
 		Password: string(hashed),
 		IsActive: true,
 		IsAdmin:  req.IsAdmin,
