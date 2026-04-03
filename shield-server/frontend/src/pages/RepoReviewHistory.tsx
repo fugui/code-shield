@@ -139,6 +139,7 @@ function RepoReviewHistory() {
           <thead>
             <tr>
               <th style={{ width: '60px' }}>报告 ID</th>
+              <th>任务类型</th>
               <th>状态</th>
               <th>执行时间</th>
               <th>Base Commit</th>
@@ -156,6 +157,11 @@ function RepoReviewHistory() {
               return (
                 <tr key={r.id}>
                   <td style={{ color: '#64748b' }}>#{r.id}</td>
+                  <td>
+                    <span style={{ fontSize: '0.8rem', background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#475569' }}>
+                      {r.task_type ? r.task_type.display_name : `类型 ${r.task_type_id}`}
+                    </span>
+                  </td>
                   <td>
                     <span className={`badge ${st.cls}`}>{st.text}</span>
                   </td>
