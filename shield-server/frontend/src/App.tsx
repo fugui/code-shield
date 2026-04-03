@@ -15,17 +15,31 @@ const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   const [resource, config] = args;
   const token = localStorage.getItem('token');
+  
+  let res: Response;
   if (token && resource.toString().startsWith('/api')) {
     const defaultHeaders: any = config?.headers || {};
-    return originalFetch(resource, {
+    res = await originalFetch(resource, {
       ...config,
       headers: {
         ...defaultHeaders,
         Authorization: `Bearer ${token}`
       }
     });
+  } else {
+    res = await originalFetch(resource, config);
   }
-  return originalFetch(resource, config);
+
+  // Intercept 401 to handle expired tokens globally
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    window.dispatchEvent(new Event('auth-change'));
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  }
+
+  return res;
 };
 
 const PrivateRoute = ({ children }: { children: JSX.Element }) => {
