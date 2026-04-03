@@ -19,8 +19,9 @@ type User struct {
 	Username  string    `gorm:"uniqueIndex;not null" json:"username"`
 	Password  string    `gorm:"not null" json:"-"` // Omit password in JSON
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
-	IsAdmin   bool      `gorm:"default:false" json:"is_admin"`
-	CreatedAt time.Time `json:"created_at"`
+	IsAdmin   bool       `gorm:"default:false" json:"is_admin"`
+	LastLogin *time.Time `json:"last_login"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type Team struct {

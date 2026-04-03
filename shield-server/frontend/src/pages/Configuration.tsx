@@ -272,13 +272,14 @@ function Configuration() {
                 <th style={{ padding: '1rem 0' }}>用户名</th>
                 <th style={{ padding: '1rem 0' }}>角色标识</th>
                 <th style={{ padding: '1rem 0' }}>账号状态</th>
+                <th style={{ padding: '1rem 0' }}>最近登录时间</th>
                 <th style={{ padding: '1rem 0', textAlign: 'right' }}>特权操作</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
+                  <td colSpan={6} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
                 </tr>
               ) : (
                 users.map(u => (
@@ -294,6 +295,9 @@ function Configuration() {
                       {u.is_active ? 
                         <span style={{ color: 'var(--success-color)', fontSize: '0.875rem', fontWeight: 500 }}>正常使用</span> : 
                         <span style={{ color: 'var(--danger-color)', fontSize: '0.875rem', fontWeight: 500 }}>已被禁用</span>}
+                    </td>
+                    <td style={{ padding: '1rem 0', fontSize: '0.875rem', color: '#64748b' }}>
+                      {u.last_login ? new Date(u.last_login).toLocaleString() : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>从未登录</span>}
                     </td>
                     <td style={{ padding: '1rem 0', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                       <button 
@@ -417,8 +421,8 @@ function Configuration() {
             <h3 style={{ margin: '0 0 1.5rem 0' }}>分配新系统账号</h3>
             <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>登录用户名</label>
-                <input required value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} placeholder="如: zhangsan" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>登录邮箱账号（用户名）</label>
+                <input required type="email" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} placeholder="如: zhangsan@company.com" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>初始密码</label>

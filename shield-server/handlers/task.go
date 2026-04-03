@@ -4,6 +4,7 @@ import (
 	"code-shield/models"
 	"code-shield/services"
 	"net/http"
+	"net/mail"
 	"os"
 	"strconv"
 
@@ -136,12 +137,16 @@ func TriggerManualNotification(c *gin.Context) {
 	if userID, exists := c.Get("userID"); exists {
 		var user models.User
 		if err := models.DB.First(&user, userID).Error; err == nil && !user.IsAdmin {
-			var member models.Member
-			models.DB.Where("id = ? OR name = ?", user.Username, user.Username).First(&member)
-			if member.Email != "" {
-				specificEmail = member.Email
-			} else {
+			if _, err := mail.ParseAddress(user.Username); err == nil {
 				specificEmail = user.Username
+			} else {
+				var member models.Member
+				models.DB.Where("id = ? OR name = ?", user.Username, user.Username).First(&member)
+				if member.Email != "" {
+					specificEmail = member.Email
+				} else {
+					specificEmail = user.Username
+				}
 			}
 		}
 	}

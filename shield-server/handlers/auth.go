@@ -60,6 +60,11 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Update last_login
+	now := time.Now()
+	models.DB.Model(&user).Update("last_login", now)
+	user.LastLogin = &now // reflect in response
+
 	c.JSON(http.StatusOK, gin.H{
 		"token": tokenString,
 		"user":  user,

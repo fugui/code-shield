@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/models"
 	"net/http"
+	"net/mail"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -53,6 +54,11 @@ func CreateUser(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := mail.ParseAddress(req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Login username must be a valid email address"})
 		return
 	}
 
