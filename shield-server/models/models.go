@@ -40,10 +40,11 @@ type Repository struct {
 	OwnerID        string    `json:"owner_id"`
 	Owner          Member    `gorm:"foreignKey:OwnerID" json:"owner"`
 	Branch         string    `gorm:"default:main" json:"branch"`
-	ServiceGroup   string    `gorm:"size:30" json:"service_group"`
-	IsActive       bool      `gorm:"default:true" json:"is_active"`
-	LastCommitHash string    `json:"last_commit_hash"`
-	CreatedAt      time.Time `json:"created_at"`
+	ServiceGroup   string         `gorm:"size:30" json:"service_group"`
+	RelatedMembers datatypes.JSON `json:"related_members"` // Optional related members (receives CC emails)
+	IsActive       bool           `gorm:"default:true" json:"is_active"`
+	LastCommitHash string         `json:"last_commit_hash"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
 
 // TaskType 任务类型定义（管理员可配置）

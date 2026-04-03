@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 import MemberSearchSelect from '../components/MemberSearchSelect';
+import MultiMemberSearchSelect from '../components/MultiMemberSearchSelect';
 
 const inputStyle: React.CSSProperties = { width: '100%', padding: '0.625rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', boxSizing: 'border-box', fontSize: '0.875rem', transition: 'border-color 0.2s' };
 const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.375rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 500 };
@@ -11,7 +12,7 @@ function Repositories() {
   const [repos, setRepos] = useState<any[]>([]);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit' | null>(null);
   const [editingRepoId, setEditingRepoId] = useState<number | null>(null);
-  const [formData, setFormData] = useState({ name: '', url: '', owner_id: '', branch: 'main', team_id: 0, service_group: '' });
+  const [formData, setFormData] = useState({ name: '', url: '', owner_id: '', branch: 'main', team_id: 0, service_group: '', related_members: [] as string[] });
   const [teams, setTeams] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [filterTeam, setFilterTeam] = useState<string>('');
@@ -90,7 +91,7 @@ function Repositories() {
   };
 
   const openAddDrawer = () => {
-    setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 0, service_group: '' });
+    setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 0, service_group: '', related_members: [] });
     setEditingRepoId(null);
     setDrawerMode('add');
   };
@@ -102,7 +103,8 @@ function Repositories() {
       owner_id: repo.owner_id || '',
       branch: repo.branch || 'main',
       team_id: repo.team_id || (teams.length > 0 ? teams[0].id : 0),
-      service_group: repo.service_group || ''
+      service_group: repo.service_group || '',
+      related_members: Array.isArray(repo.related_members) ? repo.related_members : []
     });
     setEditingRepoId(repo.id);
     setDrawerMode('edit');
@@ -132,7 +134,8 @@ function Repositories() {
         owner_id: formData.owner_id,
         branch: formData.branch,
         team_id: Number(formData.team_id),
-        service_group: formData.service_group
+        service_group: formData.service_group,
+        related_members: formData.related_members
       })
     })
     .then(res => {
@@ -160,7 +163,8 @@ function Repositories() {
         owner_id: formData.owner_id,
         branch: formData.branch,
         team_id: Number(formData.team_id),
-        service_group: formData.service_group
+        service_group: formData.service_group,
+        related_members: formData.related_members
       })
     })
     .then(res => {
@@ -393,6 +397,10 @@ function Repositories() {
               <div>
                 <label style={labelStyle}>项目责任人</label>
                 <MemberSearchSelect value={formData.owner_id} onChange={id => setFormData({...formData, owner_id: id})} />
+              </div>
+              <div>
+                <label style={labelStyle}>相关人员 (最多20人，分析结果将抄送给他们)</label>
+                <MultiMemberSearchSelect value={formData.related_members} onChange={ids => setFormData({...formData, related_members: ids})} />
               </div>
               <div>
                 <label style={labelStyle}>主干分支</label>

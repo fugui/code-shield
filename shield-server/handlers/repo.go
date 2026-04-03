@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"code-shield/models"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -97,10 +98,11 @@ func UpdateRepo(c *gin.Context) {
 	var input struct {
 		Name         *string `json:"name"`
 		URL          *string `json:"url"`
-		OwnerID      *string `json:"owner_id"`
-		Branch       *string `json:"branch"`
-		TeamID       *uint   `json:"team_id"`
-		ServiceGroup *string `json:"service_group"`
+		OwnerID        *string   `json:"owner_id"`
+		Branch         *string   `json:"branch"`
+		TeamID         *uint     `json:"team_id"`
+		ServiceGroup   *string   `json:"service_group"`
+		RelatedMembers *[]string `json:"related_members"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -125,6 +127,14 @@ func UpdateRepo(c *gin.Context) {
 	}
 	if input.ServiceGroup != nil {
 		updates["service_group"] = *input.ServiceGroup
+	}
+	if input.RelatedMembers != nil {
+		if len(*input.RelatedMembers) == 0 {
+			updates["related_members"] = nil // clear
+		} else {
+			b, _ := json.Marshal(*input.RelatedMembers)
+			updates["related_members"] = b // GORM safely accepts byte slices for JSON type natively
+		}
 	}
 
 	if len(updates) == 0 {

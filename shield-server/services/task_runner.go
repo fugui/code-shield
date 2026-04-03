@@ -266,6 +266,32 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		ccEmails = append(ccEmails, repo.Team.Leader.Email)
 	}
 
+	// Unmarshal related members and append their emails
+	var relatedIDs []string
+	if len(repo.RelatedMembers) > 0 {
+		_ = json.Unmarshal(repo.RelatedMembers, &relatedIDs)
+	}
+
+	if len(relatedIDs) > 0 {
+		var members []models.Member
+		models.DB.Where("id IN ?", relatedIDs).Find(&members)
+		for _, m := range members {
+			if m.Email != "" && m.Email != repo.Owner.Email {
+				// Prevent duplicate CC entries
+				duplicate := false
+				for _, cc := range ccEmails {
+					if cc == m.Email {
+						duplicate = true
+						break
+					}
+				}
+				if !duplicate {
+					ccEmails = append(ccEmails, m.Email)
+				}
+			}
+		}
+	}
+
 	subject := fmt.Sprintf("【%s】%s %s报告（评分: %d）",
 		taskType.DisplayName, repo.Name, taskType.DisplayName, result.Score)
 
