@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import TaskTypeManagement from './TaskTypeManagement';
 
 function Configuration() {
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'users' | 'task-types' | 'tasks'>('users');
+  const { tab } = useParams<{ tab: string }>();
+  const navigate = useNavigate();
+  const activeTab = tab || 'users';
   const [teams, setTeams] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -221,7 +224,7 @@ function Configuration() {
     <div className="card">
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem', gap: '2rem' }}>
         <button 
-          onClick={() => setActiveTab('users')}
+          onClick={() => navigate('/config/users')}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
             fontSize: '0.875rem', fontWeight: 600,
@@ -234,7 +237,7 @@ function Configuration() {
         </button>
 
         <button 
-          onClick={() => setActiveTab('task-types')}
+          onClick={() => navigate('/config/task-types')}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
             fontSize: '0.875rem', fontWeight: 600,
@@ -247,7 +250,7 @@ function Configuration() {
         </button>
 
         <button 
-          onClick={() => setActiveTab('tasks')}
+          onClick={() => navigate('/config/tasks')}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
             fontSize: '0.875rem', fontWeight: 600,

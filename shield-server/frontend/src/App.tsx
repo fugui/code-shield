@@ -293,6 +293,7 @@ function App() {
             <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
             <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
             <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
+            <Route path="/config/:tab" element={<PrivateRoute><Configuration /></PrivateRoute>} />
           </Routes>
         </MainLayout>
       </ToastProvider>
