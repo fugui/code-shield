@@ -77,15 +77,10 @@ func main() {
 		api.GET("/tasks/:id", handlers.GetTaskDetails)
 		api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
 
-		// Task type management
+		// Task type management (read-only for normal users)
 		api.GET("/task-types", handlers.GetTaskTypes)
 		api.GET("/task-types/:id", handlers.GetTaskType)
-		api.POST("/task-types", handlers.CreateTaskType)
-		api.PATCH("/task-types/:id", handlers.UpdateTaskType)
-		api.DELETE("/task-types/:id", handlers.DeleteTaskType)
 		api.GET("/task-types/:id/files", handlers.GetTaskTypeFiles)
-		api.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
-		api.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
 
 		api.GET("/issues", handlers.GetIssues)
 		api.POST("/issues", handlers.CreateIssue)
@@ -100,14 +95,23 @@ func main() {
 		api.GET("/executions", handlers.GetExecutionLogs)
 		api.DELETE("/executions/completed", handlers.ClearCompletedExecutionLogs)
 
-		// Admin only routes for user management
-		admin := api.Group("/users")
+		// Admin only routes
+		admin := api.Group("/")
 		admin.Use(handlers.AdminMiddleware())
 		{
-			admin.GET("", handlers.GetUsers)
-			admin.POST("", handlers.CreateUser)
-			admin.PATCH("/:id/status", handlers.UpdateUserStatus)
-			admin.DELETE("/:id", handlers.DeleteUser)
+			admin.POST("/task-types", handlers.CreateTaskType)
+			admin.PATCH("/task-types/:id", handlers.UpdateTaskType)
+			admin.DELETE("/task-types/:id", handlers.DeleteTaskType)
+			admin.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
+			admin.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
+
+			users := admin.Group("/users")
+			{
+				users.GET("", handlers.GetUsers)
+				users.POST("", handlers.CreateUser)
+				users.PATCH("/:id/status", handlers.UpdateUserStatus)
+				users.DELETE("/:id", handlers.DeleteUser)
+			}
 		}
 	}
 

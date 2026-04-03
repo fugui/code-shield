@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
+import TaskTypeManagement from './TaskTypeManagement';
 
 function Configuration() {
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'tasks'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'task-types' | 'tasks'>('users');
   const [teams, setTeams] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -66,9 +67,7 @@ function Configuration() {
   };
 
   useEffect(() => {
-    if (activeTab === 'teams') {
-      fetchTeams();
-    } else if (activeTab === 'tasks') {
+    if (activeTab === 'tasks') {
       fetchSchedules();
       fetchRepos();
       fetchTeams();
@@ -234,6 +233,19 @@ function Configuration() {
         </button>
 
         <button 
+          onClick={() => setActiveTab('task-types')}
+          style={{ 
+            background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
+            fontSize: '0.875rem', fontWeight: 600,
+            color: activeTab === 'task-types' ? 'var(--primary-color)' : '#64748b',
+            borderBottom: activeTab === 'task-types' ? '2px solid var(--primary-color)' : '2px solid transparent',
+            marginBottom: '-1px'
+          }}
+        >
+          任务类型管理
+        </button>
+
+        <button 
           onClick={() => setActiveTab('tasks')}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
@@ -305,6 +317,10 @@ function Configuration() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {activeTab === 'task-types' && (
+        <TaskTypeManagement />
       )}
 
 
