@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../components/Toast';
 import { PlayCircle, Code2, Settings, Trash2 } from 'lucide-react';
 
@@ -209,7 +210,7 @@ function TaskTypeManagement() {
       </div>
 
       {/* Config Modal */}
-      {showForm && (
+      {showForm && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="card" style={{ width: '560px', maxHeight: '80vh', overflowY: 'auto', maxWidth: '95%' }}>
             <h3 style={{ margin: '0 0 1.5rem 0' }}>{editingId ? '编辑任务类型' : '新建任务类型'}</h3>
@@ -266,11 +267,11 @@ function TaskTypeManagement() {
               </div>
             </form>
           </div>
-        </div>
+        </div>, document.body
       )}
 
       {/* File Editor Modal */}
-      {showFileEditor && (
+      {showFileEditor && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="card" style={{ width: '800px', maxWidth: '95vw', height: '75vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
             {/* Header */}
@@ -331,7 +332,7 @@ function TaskTypeManagement() {
               </button>
             </div>
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
