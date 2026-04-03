@@ -188,7 +188,15 @@ func (ctx *taskContext) executeAI() error {
 			os.WriteFile(ctx.reportPath, []byte("# Simulated Report\nAI engine not found."), 0644)
 			return nil
 		}
-		return fmt.Errorf("AI execution failed: %s", string(output))
+
+		errMsg := strings.TrimSpace(string(output))
+		if errMsg == "" {
+			if content, readErr := os.ReadFile(ctx.jsonPath); readErr == nil {
+				errMsg = strings.TrimSpace(string(content))
+			}
+		}
+
+		return fmt.Errorf("AI execution failed: %s", errMsg)
 	}
 
 	return nil
