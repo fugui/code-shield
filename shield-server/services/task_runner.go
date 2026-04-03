@@ -243,7 +243,7 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 
 	if ctx.autoNotify && result.Score >= ctx.taskType.NotifyThreshold {
 		if content, err := os.ReadFile(ctx.reportPath); err == nil {
-			NotifyTaskResult(ctx.repo, ctx.taskType, result, string(content))
+			NotifyTaskResult(ctx.repo, ctx.taskType, result, string(content), "")
 		}
 	}
 
@@ -255,38 +255,43 @@ func (ctx *taskContext) markFailed(errMsg string) {
 }
 
 // NotifyTaskResult sends a notification for a completed task
-func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result TaskResult, markdownContent string) {
+func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result TaskResult, markdownContent string, specificRecipientEmail string) {
 	models.DB.Preload("Owner").Preload("Team.Leader").First(&repo, repo.ID)
 
 	toEmails := []string{}
-	if repo.Owner.Email != "" { toEmails = append(toEmails, repo.Owner.Email) }
-	
 	ccEmails := []string{}
-	if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
-		ccEmails = append(ccEmails, repo.Team.Leader.Email)
-	}
 
-	// Unmarshal related members and append their emails
-	var relatedIDs []string
-	if len(repo.RelatedMembers) > 0 {
-		_ = json.Unmarshal(repo.RelatedMembers, &relatedIDs)
-	}
+	if specificRecipientEmail != "" {
+		toEmails = []string{specificRecipientEmail}
+	} else {
+		if repo.Owner.Email != "" { toEmails = append(toEmails, repo.Owner.Email) }
+		
+		if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
+			ccEmails = append(ccEmails, repo.Team.Leader.Email)
+		}
 
-	if len(relatedIDs) > 0 {
-		var members []models.Member
-		models.DB.Where("id IN ?", relatedIDs).Find(&members)
-		for _, m := range members {
-			if m.Email != "" && m.Email != repo.Owner.Email {
-				// Prevent duplicate CC entries
-				duplicate := false
-				for _, cc := range ccEmails {
-					if cc == m.Email {
-						duplicate = true
-						break
+		// Unmarshal related members and append their emails
+		var relatedIDs []string
+		if len(repo.RelatedMembers) > 0 {
+			_ = json.Unmarshal(repo.RelatedMembers, &relatedIDs)
+		}
+
+		if len(relatedIDs) > 0 {
+			var members []models.Member
+			models.DB.Where("id IN ?", relatedIDs).Find(&members)
+			for _, m := range members {
+				if m.Email != "" && m.Email != repo.Owner.Email {
+					// Prevent duplicate CC entries
+					duplicate := false
+					for _, cc := range ccEmails {
+						if cc == m.Email {
+							duplicate = true
+							break
+						}
 					}
-				}
-				if !duplicate {
-					ccEmails = append(ccEmails, m.Email)
+					if !duplicate {
+						ccEmails = append(ccEmails, m.Email)
+					}
 				}
 			}
 		}

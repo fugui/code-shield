@@ -132,12 +132,26 @@ func TriggerManualNotification(c *gin.Context) {
 		}
 	}
 
+	var specificEmail string
+	if userID, exists := c.Get("userID"); exists {
+		var user models.User
+		if err := models.DB.First(&user, userID).Error; err == nil && !user.IsAdmin {
+			var member models.Member
+			models.DB.Where("id = ? OR name = ?", user.Username, user.Username).First(&member)
+			if member.Email != "" {
+				specificEmail = member.Email
+			} else {
+				specificEmail = user.Username
+			}
+		}
+	}
+
 	result := services.TaskResult{
 		Score:   report.Score,
 		Summary: report.AISummary,
 	}
 
-	services.NotifyTaskResult(report.Repo, report.TaskType, result, mdContent)
+	services.NotifyTaskResult(report.Repo, report.TaskType, result, mdContent, specificEmail)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Notification dispatched"})
 }
