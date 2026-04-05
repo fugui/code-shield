@@ -41,22 +41,22 @@
                                  ▼
                           ┌─────────────────┐
                           │    notifier     │
-                          │  (Node.js)      │
-                          │  Outlook COM    │
+                          │  (Go / Win32)   │
+                          │   Outlook COM   │
                           └─────────────────┘
 ```
 
 | 组件 | 技术栈 | 端口 | 说明 |
 |------|--------|------|------|
 | shield-server | Go + Gin + GORM + SQLite | 8080 | 主服务，提供 API，内嵌前端静态资源 |
-| notifier | Node.js + Express | 8081 | 邮件通知服务（需 Windows 环境，通过 PowerShell 操作 Outlook） |
+| notifier | Go + Winigo (Win32 GUI) | 8081 | 邮件通知服务（Windows 桌面应用，内置 GUI，通过 COM 直接操作 Outlook） |
 
 ## 快速开始
 
 ### 环境要求
 
 - **shield-server**：Go 1.21+、Node.js 18+（仅用于前端构建）
-- **notifier**：Windows 操作系统、Node.js 18+、Microsoft Outlook 客户端
+- **notifier**：Windows 操作系统、Go 1.21+、Microsoft Outlook 客户端
 
 ### 安装步骤
 
@@ -71,7 +71,7 @@ cd code-shield
 
 ```bash
 # 安装 notifier 依赖
-cd notifier && npm install
+cd notifier && go mod download
 
 # 安装前端依赖并构建
 cd ../shield-server/frontend && npm install && npm run build
@@ -249,10 +249,10 @@ go run main.go
 
 ### Q: 邮件发送失败怎么办？
 
-1. 确认 `notifier` 服务已启动并运行在 Windows 环境。
+1. 确认 `notifier` 服务已在 Windows 环境启动（显示 GUI 窗口）。
 2. 确认 Outlook 客户端已安装，且至少配置了一个活动的邮箱账户。
 3. 检查 `shield-server` 中的 `notifier.url` 配置是否能正确访问 `notifier` 服务。
-4. 查看 `notifier` 控制台日志排查 PowerShell 执行错误。
+4. 查看 `notifier` GUI 界面中的日志排查 COM 组件执行错误。
 
 ### Q: 检视任务一直处于 pending 状态？
 
@@ -274,7 +274,8 @@ go run main.go
 - **框架**：React 18, Vite, Ant Design
 
 ### 邮件服务
-- **运行时**：Node.js, Express, html-to-docx, PowerShell/Outlook COM
+- **运行环境**：Windows (x64)
+- **技术栈**：Go 1.21+, Winigo (Win32 GUI), Outlook COM
 
 ---
 
