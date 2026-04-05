@@ -98,7 +98,7 @@ make run
 打开浏览器访问 http://localhost:8080
 
 默认管理员账号：
-- 用户名：`admin` (注：新分配账号需使用邮箱格式作为用户名)
+- 用户名：`admin@code-shield.com`
 - 密码：`admin123`
 
 ## 使用指南
@@ -198,7 +198,7 @@ Content-Type: application/json
 
 {
   "username": "admin@code-shield.com",
-  "password": "yourpassword"
+  "password": "admin123"
 }
 ```
 

@@ -49,7 +49,8 @@ func InitDB() {
 	if count == 0 {
 		hashed, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 		admin := User{
-			Username: "admin",
+			Username: "admin@code-shield.com",
+			Name:     "管理员",
 			Password: string(hashed),
 			IsAdmin:  true,
 			IsActive: true,
@@ -57,7 +58,7 @@ func InitDB() {
 		if err := DB.Create(&admin).Error; err != nil {
 			log.Printf("failed to seed admin user: %v", err)
 		} else {
-			log.Println("Admin user created (username: admin, password: admin123)")
+			log.Println("Admin user created (username: admin@code-shield.com, password: admin123)")
 		}
 	}
 
