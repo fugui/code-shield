@@ -109,6 +109,7 @@ func main() {
 			{
 				users.GET("", handlers.GetUsers)
 				users.POST("", handlers.CreateUser)
+				users.PUT("/:id", handlers.UpdateUser)
 				users.PATCH("/:id/status", handlers.UpdateUserStatus)
 				users.DELETE("/:id", handlers.DeleteUser)
 			}

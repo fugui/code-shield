@@ -19,6 +19,9 @@ function Configuration() {
   const [newUserForm, setNewUserForm] = useState({ username: '', name: '', password: '', is_admin: false });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editUserForm, setEditUserForm] = useState({ name: '', is_admin: false, password: '' });
+  const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
 
   const fetchTeams = async () => {
@@ -125,6 +128,38 @@ function Configuration() {
     } catch (err) {
       console.error('Error creating user:', err);
     }
+  };
+
+  const handleEditUser = (user: any) => {
+    setEditingUser(user);
+    setEditUserForm({ name: user.name || '', is_admin: user.is_admin, password: '' });
+    setIsEditUserModalOpen(true);
+  };
+
+  const handleSaveEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    try {
+      const payload: any = { name: editUserForm.name, is_admin: editUserForm.is_admin };
+      if (editUserForm.password) payload.password = editUserForm.password;
+      const res = await fetch(`/api/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setIsEditUserModalOpen(false);
+        setEditingUser(null);
+        fetchUsers();
+        showToast('用户信息已更新', 'success');
+      } else {
+        const d = await res.json();
+        showToast('更新失败: ' + d.error, 'error');
+      }
+    } catch (err) { console.error(err); }
   };
 
   const handleUpdateUserStatus = async (id: number, isActive: boolean) => {
@@ -278,7 +313,7 @@ function Configuration() {
                 <th style={{ padding: '1rem 0' }}>角色标识</th>
                 <th style={{ padding: '1rem 0' }}>账号状态</th>
                 <th style={{ padding: '1rem 0' }}>最近登录时间</th>
-                <th style={{ padding: '1rem 0', textAlign: 'right' }}>特权操作</th>
+                <th style={{ padding: '1rem 0', textAlign: 'right' }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -305,20 +340,37 @@ function Configuration() {
                     <td style={{ padding: '1rem 0', fontSize: '0.875rem', color: '#64748b' }}>
                       {u.last_login ? new Date(u.last_login).toLocaleString() : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>从未登录</span>}
                     </td>
-                    <td style={{ padding: '1rem 0', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                      <button 
-                        onClick={() => handleUpdateUserStatus(u.id, !u.is_active)}
-                        className="btn" 
-                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-color)' }}
+                    <td style={{ padding: '1rem 0', textAlign: 'right', display: 'flex', gap: '0.25rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <button
+                        title="编辑用户"
+                        onClick={() => handleEditUser(u)}
+                        style={{ padding: '0.4rem', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '4px', color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.08)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                       >
-                        {u.is_active ? '封禁' : '解封'}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
-                      <button 
-                        onClick={() => handleDeleteUser(u.id)}
-                        className="btn" 
-                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: '#fee2e2', color: '#dc2626' }}
+                      <button
+                        title={u.is_active ? '封禁用户' : '解封用户'}
+                        onClick={() => handleUpdateUserStatus(u.id, !u.is_active)}
+                        style={{ padding: '0.4rem', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '4px', color: u.is_active ? '#f59e0b' : 'var(--success-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = u.is_active ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                       >
-                        注销用户
+                        {u.is_active ? (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                        ) : (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        )}
+                      </button>
+                      <button
+                        title="注销用户"
+                        onClick={() => handleDeleteUser(u.id)}
+                        style={{ padding: '0.4rem', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '4px', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,38,38,0.08)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                       </button>
                     </td>
                   </tr>
@@ -447,6 +499,36 @@ function Configuration() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
                 <button type="button" onClick={() => setIsUserModalOpen(false)} style={{ padding: '0.6rem 1.5rem', border: '1px solid var(--border-color)', background: 'transparent', borderRadius: '4px', cursor: 'pointer' }}>取消</button>
                 <button type="submit" className="btn" style={{ padding: '0.6rem 1.5rem' }}>确认创建</button>
+              </div>
+            </form>
+          </div>
+        </div>, document.body
+      )}
+
+      {isEditUserModalOpen && editingUser && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', width: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+            <h3 style={{ margin: '0 0 1.5rem 0' }}>编辑用户</h3>
+            <form onSubmit={handleSaveEditUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: '#64748b', fontWeight: 500 }}>登录邮箱</label>
+                <div style={{ padding: '0.6rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem' }}>{editingUser.username}</div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>真实姓名</label>
+                <input required value={editUserForm.name} onChange={e => setEditUserForm({...editUserForm, name: e.target.value})} placeholder="如: 张三" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>重置密码 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(留空表示不修改)</span></label>
+                <input type="password" value={editUserForm.password} onChange={e => setEditUserForm({...editUserForm, password: e.target.value})} placeholder="输入新密码" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <input type="checkbox" id="editIsAdmin" checked={editUserForm.is_admin} onChange={e => setEditUserForm({...editUserForm, is_admin: e.target.checked})} />
+                <label htmlFor="editIsAdmin" style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>设为管理员</label>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
+                <button type="button" onClick={() => { setIsEditUserModalOpen(false); setEditingUser(null); }} style={{ padding: '0.6rem 1.5rem', border: '1px solid var(--border-color)', background: 'transparent', borderRadius: '4px', cursor: 'pointer' }}>取消</button>
+                <button type="submit" className="btn" style={{ padding: '0.6rem 1.5rem' }}>保存修改</button>
               </div>
             </form>
           </div>
