@@ -30,6 +30,14 @@ func ExtractSummary(markdown string) string {
 		return strings.TrimSpace(matches[1]) + "\n\n"
 	}
 
+	// Fallback: try matching "概述" if "概要" was not found
+	overviewRegex := regexp.MustCompile(`(?im)(^##\s+(?:[一二三四五六七八九十\d]+[、.]\s*)?.*概述.*\n[\s\S]*?)(?:^##\s|\z)`)
+	matches = overviewRegex.FindStringSubmatch(markdown)
+
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1]) + "\n\n"
+	}
+
 	return "具体报告，请查阅随附的完整版附件。\n\n"
 }
 
