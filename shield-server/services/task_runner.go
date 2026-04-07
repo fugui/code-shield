@@ -295,6 +295,27 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 				}
 			}
 		}
+
+		// Add task-type-level CC recipients
+		var taskTypeCcEmails []string
+		if len(taskType.NotifyCc) > 0 {
+			_ = json.Unmarshal(taskType.NotifyCc, &taskTypeCcEmails)
+		}
+		for _, email := range taskTypeCcEmails {
+			if email == "" {
+				continue
+			}
+			duplicate := false
+			for _, existing := range append(toEmails, ccEmails...) {
+				if existing == email {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				ccEmails = append(ccEmails, email)
+			}
+		}
 	}
 
 	subject := fmt.Sprintf("【%s】%s %s报告（评分: %d）",

@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/models"
 	"code-shield/services"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -113,15 +114,16 @@ func UpdateTaskType(c *gin.Context) {
 	}
 
 	var req struct {
-		DisplayName        *string `json:"display_name"`
-		Description        *string `json:"description"`
-		PromptFile         *string `json:"prompt_file"`
-		PreconditionScript *string `json:"precondition_script"`
-		PostprocessScript  *string `json:"postprocess_script"`
-		NotifyTemplate     *string `json:"notify_template"`
-		NotifyThreshold    *int    `json:"notify_threshold"`
-		Timeout            *int    `json:"timeout"`
-		IsActive           *bool   `json:"is_active"`
+		DisplayName        *string          `json:"display_name"`
+		Description        *string          `json:"description"`
+		PromptFile         *string          `json:"prompt_file"`
+		PreconditionScript *string          `json:"precondition_script"`
+		PostprocessScript  *string          `json:"postprocess_script"`
+		NotifyTemplate     *string          `json:"notify_template"`
+		NotifyThreshold    *int             `json:"notify_threshold"`
+		NotifyCc           *json.RawMessage `json:"notify_cc"`
+		Timeout            *int             `json:"timeout"`
+		IsActive           *bool            `json:"is_active"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -149,6 +151,9 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.NotifyThreshold != nil {
 		updates["notify_threshold"] = *req.NotifyThreshold
+	}
+	if req.NotifyCc != nil {
+		updates["notify_cc"] = string(*req.NotifyCc)
 	}
 	if req.Timeout != nil {
 		updates["timeout"] = *req.Timeout
