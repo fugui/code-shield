@@ -12,8 +12,9 @@ function TaskTypeManagement() {
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', prompt_file: '',
     precondition_script: '', postprocess_script: '', notify_template: '',
-    notify_threshold: 0, timeout: 30, is_active: true
+    notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
   });
+  const [ccInput, setCcInput] = useState('');
   const [showForm, setShowForm] = useState(false);
 
   // File editor state
@@ -33,19 +34,38 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
     setEditingId(null);
+    setCcInput('');
   };
 
   const handleEdit = (tt: any) => {
+    let ccList: string[] = [];
+    if (tt.notify_cc) {
+      try { ccList = typeof tt.notify_cc === 'string' ? JSON.parse(tt.notify_cc) : tt.notify_cc; } catch { ccList = []; }
+    }
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       prompt_file: tt.prompt_file || '', precondition_script: tt.precondition_script || '',
       postprocess_script: tt.postprocess_script || '', notify_template: tt.notify_template || '',
-      notify_threshold: tt.notify_threshold || 0, timeout: tt.timeout || 30, is_active: tt.is_active
+      notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
     });
+    setCcInput('');
     setEditingId(tt.id);
     setShowForm(true);
+  };
+
+  const handleAddCc = () => {
+    const email = ccInput.trim();
+    if (!email) return;
+    if (!/\S+@\S+\.\S+/.test(email)) { showToast('请输入有效的邮箱地址', 'error'); return; }
+    if (form.notify_cc.includes(email)) { showToast('该邮箱已添加', 'error'); return; }
+    setForm({ ...form, notify_cc: [...form.notify_cc, email] });
+    setCcInput('');
+  };
+
+  const handleRemoveCc = (email: string) => {
+    setForm({ ...form, notify_cc: form.notify_cc.filter(e => e !== email) });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -259,6 +279,25 @@ function TaskTypeManagement() {
                 <div>
                   <label style={labelStyle}>通知阈值（评分≥此值才通知）</label>
                   <input type="number" style={fieldStyle} value={form.notify_threshold} onChange={e => setForm({...form, notify_threshold: parseInt(e.target.value) || 0})} />
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>通知抄送 <span style={{ fontWeight: 400, color: '#94a3b8' }}>（任务完成后额外抄送的邮箱）</span></label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', minHeight: '38px', alignItems: 'center' }}>
+                  {form.notify_cc.map(email => (
+                    <span key={email} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(37,99,235,0.08)', color: 'var(--primary-color)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>
+                      {email}
+                      <span onClick={() => handleRemoveCc(email)} style={{ cursor: 'pointer', color: '#94a3b8', fontWeight: 700, fontSize: '0.9rem', lineHeight: 1 }}>×</span>
+                    </span>
+                  ))}
+                  <input
+                    type="email"
+                    value={ccInput}
+                    onChange={e => setCcInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCc(); } }}
+                    placeholder={form.notify_cc.length === 0 ? '输入邮箱后按回车添加' : '继续添加...'}
+                    style={{ border: 'none', outline: 'none', flex: 1, minWidth: '150px', fontSize: '0.85rem', padding: '0.2rem' }}
+                  />
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
