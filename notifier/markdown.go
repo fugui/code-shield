@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -17,25 +18,19 @@ import (
 )
 
 func ExtractSummary(markdown string) string {
-	var summaryText string
-	overviewRegex := regexp.MustCompile(`(?im)(# 1\. 概述[\s\S]*?)(?:# 2\.|$)`)
-	matches1 := overviewRegex.FindStringSubmatch(markdown)
+	// Match "## ...概要" headings, allowing for:
+	//   - Chinese ordinal prefixes like "一、" "二、" or numeric "1." "2." etc.
+	//   - Extra whitespace between ## and the title text
+	//   - Arbitrary prefix text before "概要", e.g. "代码检视结果概要"
+	// Captures from the heading line through to the next ## heading or EOF.
+	summaryRegex := regexp.MustCompile(`(?im)(^##\s+(?:[一二三四五六七八九十\d]+[、.]\s*)?.*概要.*\n[\s\S]*?)(?:^##\s|\z)`)
+	matches := summaryRegex.FindStringSubmatch(markdown)
 
-	conclusionRegex := regexp.MustCompile(`(?im)(# 3\. (?:\S+)?总结[\s\S]*|# 3\. 代码检视总结[\s\S]*)`)
-	matches2 := conclusionRegex.FindStringSubmatch(markdown)
-
-	if len(matches1) > 1 {
-		summaryText += matches1[1] + "\n\n"
-	}
-	if len(matches2) > 1 {
-		summaryText += matches2[1] + "\n\n"
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1]) + "\n\n"
 	}
 
-	if summaryText == "" {
-		summaryText = "无法截取固定段落，请查阅随附的完整版报告附件。\n\n" + markdown
-	}
-
-	return summaryText
+	return "具体报告，请查阅随附的完整版附件。\n\n"
 }
 
 func RenderMarkdownToHTML(markdown string) (string, error) {
