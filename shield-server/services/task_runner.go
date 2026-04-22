@@ -166,8 +166,14 @@ func (ctx *taskContext) executeAI() error {
 		return fmt.Errorf("prompt file not found: %s", absPrompt)
 	}
 
-	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行%s任务，并输出文档到 %s' --output-format json > %s",
-		ctx.codesPath, absPrompt, ctx.taskType.DisplayName, ctx.reportPath, ctx.jsonPath)
+	settingsFlag := ""
+	settingsFile := models.AppConfig.GetAbsPath("settings.json")
+	if _, err := os.Stat(settingsFile); err == nil {
+		settingsFlag = fmt.Sprintf(" --settings '%s'", settingsFile)
+	}
+
+	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行%s任务，并输出文档到 %s' --output-format json%s > %s",
+		ctx.codesPath, absPrompt, ctx.taskType.DisplayName, ctx.reportPath, settingsFlag, ctx.jsonPath)
 
 	timeout := time.Duration(ctx.taskType.Timeout) * time.Minute
 	if timeout <= 0 { timeout = 30 * time.Minute }
