@@ -30,7 +30,14 @@ function TaskOverviewTab() {
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
 
+  const [isAdmin, setIsAdmin] = useState(false);
+
   useEffect(() => {
+    fetch('/api/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setIsAdmin(!!data.is_admin); })
+      .catch(() => {});
+
     fetch('/api/teams')
       .then(res => res.json())
       .then(data => setTeams(data || []))
@@ -71,6 +78,23 @@ function TaskOverviewTab() {
   const handleFilterChange = (setter: React.Dispatch<React.SetStateAction<string>>, value: string) => {
     setter(value);
     setPage(1);
+  };
+
+  const handleClearInvalidReports = async () => {
+    if (!window.confirm('确认清除所有不是“完成”状态的无效报告记录吗？进行中的任务可能会受影响。')) return;
+    try {
+      const res = await fetch('/api/tasks/invalid-reports', { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`成功清除 ${data.deleted} 条无效报告记录`, 'success');
+        fetchOverview();
+      } else {
+        const err = await res.json();
+        showToast(`清除失败: ${err.error || '未知错误'}`, 'error');
+      }
+    } catch (err) {
+      showToast('请求失败，请检查网络连接', 'error');
+    }
   };
 
   const toggleSort = (field: 'latest_task_time' | 'status') => {
@@ -169,6 +193,25 @@ function TaskOverviewTab() {
           <input type="text" placeholder="按服务组过滤..." value={filterServiceGroup} onChange={e => handleFilterChange(setFilterServiceGroup, e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
           <input type="text" placeholder="按责任人过滤..." value={filterOwner} onChange={e => handleFilterChange(setFilterOwner, e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
         </div>
+        {isAdmin && (
+          <button 
+            className="btn"
+            onClick={handleClearInvalidReports}
+            style={{ 
+              background: 'transparent', 
+              color: 'var(--danger-color)', 
+              border: '1px solid var(--danger-color)', 
+              padding: '0.4rem 0.8rem', 
+              borderRadius: '4px', 
+              cursor: 'pointer',
+              fontSize: '0.875rem'
+            }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            清除无效报告
+          </button>
+        )}
       </div>
 
       <div className="card" style={{ padding: 0, fontSize: '0.875rem' }}>
