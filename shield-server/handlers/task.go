@@ -288,3 +288,18 @@ func GetTaskOverview(c *gin.Context) {
 		"totalPages": totalPages,
 	})
 }
+
+// ClearInvalidReports deletes all report records that are not in the "success" state
+func ClearInvalidReports(c *gin.Context) {
+// Delete task reports where status != "success"
+result := models.DB.Where("status != ?", models.StatusSuccess).Delete(&models.TaskReport{})
+if result.Error != nil {
+c.JSON(http.StatusInternalServerError, gin.H{"error": "清除失败: " + result.Error.Error()})
+return
+}
+
+c.JSON(http.StatusOK, gin.H{
+"message": "清除成功",
+"deleted": result.RowsAffected,
+})
+}

@@ -104,6 +104,7 @@ func main() {
 			admin.DELETE("/task-types/:id", handlers.DeleteTaskType)
 			admin.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
 			admin.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
+			admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
 
 			users := admin.Group("/users")
 			{
