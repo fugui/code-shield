@@ -267,6 +267,24 @@ function TaskTypeManagement() {
                 <label style={labelStyle}>描述</label>
                 <textarea style={{...fieldStyle, minHeight: '60px', resize: 'vertical'}} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="任务说明..." />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={labelStyle}>执行模式</label>
+                  <select style={fieldStyle} value={form.engine_mode} onChange={e => setForm({...form, engine_mode: e.target.value})}>
+                    <option value="single">单引擎 (single)</option>
+                    <option value="chunked">分片引擎 (chunked)</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={labelStyle}>引擎配置 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(JSON，可选)</span></label>
+                  <textarea
+                    style={{...fieldStyle, minHeight: '60px', resize: 'vertical', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '0.8rem'}}
+                    value={form.engine_config}
+                    onChange={e => setForm({...form, engine_config: e.target.value})}
+                    placeholder={'{\n  "models": ["gpt-4", "claude-3"]\n}'}
+                  />
+                </div>
+              </div>
               {editingId ? (
                 <>
                 <div>

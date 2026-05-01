@@ -49,10 +49,7 @@ type Repository struct {
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
-const (
-	EngineModeSingle  = "single"
-	EngineModeChunked = "chunked"
-)
+
 
 // TaskType 任务类型定义（管理员可配置）
 type TaskType struct {
