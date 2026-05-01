@@ -42,8 +42,8 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		return err
 	}
 
-	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s\n", 
-		ctx.report.ID, repoURL, ctx.taskType.Name)
+	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s (Mode: %s)\n", 
+		ctx.report.ID, repoURL, ctx.taskType.Name, ctx.taskType.EngineMode)
 
 	// 2. Prepare workspace and sync code
 	if err := ctx.prepareAndSync(repoURL); err != nil {
@@ -56,11 +56,23 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		ctx.markFailed(err.Error())
 		return err
 	} else if skipped {
-		return ErrSkipped
+		return nil // ErrSkipped is not defined, using nil for success-but-skipped
 	}
 
+	// 4. Dispatch to Engine
+	switch ctx.taskType.EngineMode {
+	case models.EngineModeChunked:
+		return ctx.runChunkedEngine()
+	case models.EngineModeSingle:
+		fallthrough
+	default:
+		return ctx.runSingleEngine()
+	}
+}
+
+func (ctx *taskContext) runSingleEngine() error {
 	// 4. Execute AI Engine
-	if err := ctx.executeAI(); err != nil {
+	if err := ctx.executeAI(nil, ""); err != nil {
 		ctx.markFailed(err.Error())
 		return err
 	}
@@ -68,6 +80,137 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	// 5. Post-process and Finalize
 	result := ctx.runPostProcess()
 	return ctx.finalize(result)
+}
+
+type ChunkConfig struct {
+	MaxFiles int `json:"max_files"`
+	Depth    int `json:"depth"`
+}
+
+func (ctx *taskContext) runChunkedEngine() error {
+	// 1. Parse config
+	cfg := ChunkConfig{MaxFiles: 50, Depth: 1}
+	if len(ctx.taskType.EngineConfig) > 0 {
+		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
+	}
+
+	// 2. Scan and Chunk
+	chunks, err := ctx.scanAndChunk(cfg)
+	if err != nil {
+		ctx.markFailed(err.Error())
+		return err
+	}
+
+	log.Printf("[TaskRunner] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
+
+	var subResults []TaskResult
+	var subReports []string
+
+	// 3. Process Chunks
+	for name, files := range chunks {
+		// Create a sub-context/report record for this chunk
+		subReport := models.TaskReport{
+			RepoID:     ctx.repo.ID,
+			TaskTypeID: ctx.taskType.ID,
+			ParentID:   ctx.report.ID,
+			ChunkName:  name,
+			Status:     models.StatusAnalyzing,
+		}
+		models.DB.Create(&subReport)
+
+		subCtx := &taskContext{
+			report:     subReport,
+			taskType:   ctx.taskType,
+			repo:       ctx.repo,
+			codesPath:  ctx.codesPath,
+			autoNotify: false, // Don't notify for individual chunks
+		}
+
+		log.Printf("[TaskRunner] Processing chunk [%s] (%d files)\n", name, len(files))
+		if err := subCtx.executeAI(files, ""); err != nil {
+			log.Printf("[TaskRunner] Chunk [%s] failed: %v\n", name, err)
+			models.DB.Model(&subReport).Update("status", models.StatusFailed)
+			continue
+		}
+
+		res := subCtx.runPostProcess()
+		subResults = append(subResults, res)
+		
+		if content, err := os.ReadFile(subCtx.reportPath); err == nil {
+			subReports = append(subReports, fmt.Sprintf("### 模块: %s (评分: %d)\n\n%s\n", name, res.Score, string(content)))
+		}
+		
+		subCtx.finalize(res)
+	}
+
+	// 4. Final Synthesis
+	updateTaskStatus(ctx.report.ID, "synthesizing")
+	log.Printf("[TaskRunner] Starting synthesis for %d chunks\n", len(subResults))
+
+	synthesisPrompt := "以上是该项目各模块的检视结果。请以此为基础，生成一份全工程的综合报告，总结核心风险，剔除重复发现，并给出整体健康度评分。请务必保持输出格式为 Markdown。"
+	
+	// Create a temporary synthesis report input
+	synthesisInputPath := filepath.Join(os.TempDir(), fmt.Sprintf("synthesis-input-%d.md", ctx.report.ID))
+	os.WriteFile(synthesisInputPath, []byte(strings.Join(subReports, "\n\n")), 0644)
+	defer os.Remove(synthesisInputPath)
+
+	// Update report status to allow executeAI to pick up the right paths
+	ctx.report.ChunkName = "total" 
+	if err := ctx.executeAI([]string{synthesisInputPath}, synthesisPrompt); err != nil {
+		ctx.markFailed("Synthesis failed: " + err.Error())
+		return err
+	}
+
+	// Aggregate metrics
+	finalResult := TaskResult{Metrics: make(map[string]int)}
+	totalScore := 0
+	for _, r := range subResults {
+		totalScore += r.Score
+		for k, v := range r.Metrics {
+			finalResult.Metrics[k] += v
+		}
+	}
+	if len(subResults) > 0 {
+		finalResult.Score = totalScore / len(subResults)
+	}
+	
+	finalResult.Summary = fmt.Sprintf("已完成对 %d 个模块的分片检视。整体平均分为 %d。", len(subResults), finalResult.Score)
+
+	return ctx.finalize(finalResult)
+}
+
+func (ctx *taskContext) scanAndChunk(cfg ChunkConfig) (map[string][]string, error) {
+	cmd := exec.Command("git", "-C", ctx.codesPath, "ls-files")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files failed: %w", err)
+	}
+
+	files := strings.Split(strings.TrimSpace(string(output)), "\n")
+	chunks := make(map[string][]string)
+
+	for _, file := range files {
+		if file == "" { continue }
+		
+		// Determine chunk name based on directory depth
+		parts := strings.Split(file, string(filepath.Separator))
+		chunkName := "root"
+		if len(parts) > 1 {
+			depth := cfg.Depth
+			if depth >= len(parts) {
+				depth = len(parts) - 1
+			}
+			chunkName = filepath.Join(parts[:depth]...)
+		}
+
+		chunks[chunkName] = append(chunks[chunkName], file)
+	}
+
+	// Post-process chunks: if a chunk is too big, we could further split it, 
+	// but for now let's just respect the directory-based split.
+	// Optional: merge very small chunks? 
+	
+	return chunks, nil
 }
 
 // load fetches necessary models from the database
@@ -149,7 +292,7 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 }
 
 // executeAI invokes the external AI CLI
-func (ctx *taskContext) executeAI() error {
+func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string) error {
 	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
 
 	// Prepare output paths
@@ -158,8 +301,12 @@ func (ctx *taskContext) executeAI() error {
 	os.MkdirAll(reportsDir, 0755)
 
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
-	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("%s-report-%s.md", ctx.taskType.Name, safeRepoName))
-	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s.json", ctx.taskType.Name, safeRepoName))
+	suffix := ""
+	if ctx.report.ChunkName != "" {
+		suffix = "-" + strings.ReplaceAll(ctx.report.ChunkName, "/", "-")
+	}
+	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("%s-report-%s%s.md", ctx.taskType.Name, safeRepoName, suffix))
+	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s%s.json", ctx.taskType.Name, safeRepoName, suffix))
 
 	absPrompt := models.AppConfig.GetAbsPath(ctx.taskType.PromptFile)
 	if _, err := os.Stat(absPrompt); os.IsNotExist(err) {
@@ -172,8 +319,27 @@ func (ctx *taskContext) executeAI() error {
 		settingsFlag = fmt.Sprintf(" --settings '%s'", settingsFile)
 	}
 
-	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '请执行%s任务，并输出文档到 %s' --output-format json%s > %s",
-		ctx.codesPath, absPrompt, ctx.taskType.DisplayName, ctx.reportPath, settingsFlag, ctx.jsonPath)
+	// Prepare the input stream
+	var inputCmd string
+	if len(fileList) > 0 {
+		// Only include specific files
+		inputCmd = fmt.Sprintf("cat %s && git -C %s show HEAD:README.md 2>/dev/null || true && cat %s", 
+			absPrompt, ctx.codesPath, strings.Join(fileList, " "))
+	} else {
+		// Original behavior: cat prompt and pipe everything (though claude cli usually scans the dir)
+		inputCmd = fmt.Sprintf("cat %s", absPrompt)
+	}
+
+	promptMsg := fmt.Sprintf("请执行%s任务", ctx.taskType.DisplayName)
+	if ctx.report.ChunkName != "" {
+		promptMsg = fmt.Sprintf("你正在分析模块 [%s]，请执行%s任务", ctx.report.ChunkName, ctx.taskType.DisplayName)
+	}
+	if customPromptSuffix != "" {
+		promptMsg += "。" + customPromptSuffix
+	}
+
+	cliCmd := fmt.Sprintf("cd %s && %s | claude -p '%s，并输出文档到 %s' --output-format json%s > %s",
+		ctx.codesPath, inputCmd, promptMsg, ctx.reportPath, settingsFlag, ctx.jsonPath)
 
 	timeout := time.Duration(ctx.taskType.Timeout) * time.Minute
 	if timeout <= 0 { timeout = 30 * time.Minute }
@@ -181,7 +347,7 @@ func (ctx *taskContext) executeAI() error {
 	ctxRun, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	log.Printf("[TaskRunner] Executing AI: %s\n", cliCmd)
+	log.Printf("[TaskRunner] Executing AI (ReportID: %d): %s\n", ctx.report.ID, cliCmd)
 	cmd := exec.CommandContext(ctxRun, "bash", "-c", cliCmd)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if ctxRun.Err() == context.DeadlineExceeded {
