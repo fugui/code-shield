@@ -49,23 +49,30 @@ type Repository struct {
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
+const (
+	EngineModeSingle  = "single"
+	EngineModeChunked = "chunked"
+)
+
 // TaskType 任务类型定义（管理员可配置）
 type TaskType struct {
-	ID                 uint      `gorm:"primaryKey" json:"id"`
-	Name               string    `gorm:"uniqueIndex;not null" json:"name"`        // 唯一标识: "code_review", "memory_leak"
-	DisplayName        string    `gorm:"not null" json:"display_name"`            // 中文名: "代码检视"
-	Description        string    `json:"description"`                             // 任务说明
-	PromptFile         string    `json:"prompt_file"`                             // prompt 文件路径
-	PreconditionScript string    `json:"precondition_script"`                     // 前置检查脚本路径
-	PostprocessScript  string    `json:"postprocess_script"`                      // 后置结果解析脚本路径
-	NotifyTemplate     string    `json:"notify_template"`                         // 邮件主题模板
-	NotifyThreshold    int            `gorm:"default:0" json:"notify_threshold"`       // score >= 此值才通知
-	NotifyCc           datatypes.JSON `json:"notify_cc"`                               // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
-	Timeout            int            `gorm:"default:30" json:"timeout"`               // AI 执行超时（分钟）
-	IsActive           bool      `gorm:"default:true" json:"is_active"`
-	IsBuiltin          bool      `gorm:"default:false" json:"is_builtin"`         // 内置任务不可删除
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 uint           `gorm:"primaryKey" json:"id"`
+	Name               string         `gorm:"uniqueIndex;not null" json:"name"` // 唯一标识: "code_review", "memory_leak"
+	DisplayName        string         `gorm:"not null" json:"display_name"`     // 中文名: "代码检视"
+	Description        string         `json:"description"`                      // 任务说明
+	EngineMode         string         `gorm:"default:single" json:"engine_mode"` // 执行引擎模式: single, chunked
+	EngineConfig       datatypes.JSON `json:"engine_config"`                    // 引擎配置 {"max_files": 50, "depth": 2}
+	PromptFile         string         `json:"prompt_file"`                      // prompt 文件路径
+	PreconditionScript string         `json:"precondition_script"`              // 前置检查脚本路径
+	PostprocessScript  string         `json:"postprocess_script"`               // 后置结果解析脚本路径
+	NotifyTemplate     string         `json:"notify_template"`                  // 邮件主题模板
+	NotifyThreshold    int            `gorm:"default:0" json:"notify_threshold"` // score >= 此值才通知
+	NotifyCc           datatypes.JSON `json:"notify_cc"`                        // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
+	Timeout            int            `gorm:"default:30" json:"timeout"`        // AI 执行超时（分钟）
+	IsActive           bool           `gorm:"default:true" json:"is_active"`
+	IsBuiltin          bool           `gorm:"default:false" json:"is_builtin"` // 内置任务不可删除
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
 // TaskReport 通用任务报告
@@ -75,6 +82,8 @@ type TaskReport struct {
 	Repo        Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskTypeID  uint           `json:"task_type_id"`
 	TaskType    TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	ParentID    uint           `gorm:"default:0" json:"parent_id"`    // 0 if it is a parent or independent task
+	ChunkName   string         `gorm:"default:''" json:"chunk_name"`  // Name of the directory or file group
 	Status      string         `gorm:"default:pending" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
 	CloneStatus string         `gorm:"default:pending" json:"clone_status"`
 	AISummary   string         `json:"ai_summary"`

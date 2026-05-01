@@ -116,6 +116,8 @@ func UpdateTaskType(c *gin.Context) {
 	var req struct {
 		DisplayName        *string          `json:"display_name"`
 		Description        *string          `json:"description"`
+		EngineMode         *string          `json:"engine_mode"`
+		EngineConfig       *json.RawMessage `json:"engine_config"`
 		PromptFile         *string          `json:"prompt_file"`
 		PreconditionScript *string          `json:"precondition_script"`
 		PostprocessScript  *string          `json:"postprocess_script"`
@@ -136,6 +138,12 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.Description != nil {
 		updates["description"] = *req.Description
+	}
+	if req.EngineMode != nil {
+		updates["engine_mode"] = *req.EngineMode
+	}
+	if req.EngineConfig != nil {
+		updates["engine_config"] = string(*req.EngineConfig)
 	}
 	if req.PromptFile != nil {
 		updates["prompt_file"] = *req.PromptFile

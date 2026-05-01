@@ -10,7 +10,7 @@ function TaskTypeManagement() {
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
-    name: '', display_name: '', description: '', prompt_file: '',
+    name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', prompt_file: '',
     precondition_script: '', postprocess_script: '', notify_template: '',
     notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
   });
@@ -34,7 +34,7 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
     setEditingId(null);
     setCcInput('');
   };
@@ -44,8 +44,13 @@ function TaskTypeManagement() {
     if (tt.notify_cc) {
       try { ccList = typeof tt.notify_cc === 'string' ? JSON.parse(tt.notify_cc) : tt.notify_cc; } catch { ccList = []; }
     }
+    let configStr = '';
+    if (tt.engine_config) {
+      configStr = typeof tt.engine_config === 'string' ? tt.engine_config : JSON.stringify(tt.engine_config, null, 2);
+    }
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
+      engine_mode: tt.engine_mode || 'single', engine_config: configStr,
       prompt_file: tt.prompt_file || '', precondition_script: tt.precondition_script || '',
       postprocess_script: tt.postprocess_script || '', notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
@@ -72,9 +77,22 @@ function TaskTypeManagement() {
     e.preventDefault();
     const url = editingId ? `/api/task-types/${editingId}` : '/api/task-types';
     const method = editingId ? 'PATCH' : 'POST';
+    
+    const payload = { ...form };
+    if (payload.engine_config) {
+      try {
+        (payload as any).engine_config = JSON.parse(payload.engine_config);
+      } catch (e) {
+        showToast('引擎配置必须是有效的 JSON', 'error');
+        return;
+      }
+    } else {
+      (payload as any).engine_config = null;
+    }
+
     const res = await fetch(url, {
       method, headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast(editingId ? '任务类型已更新' : '任务类型已创建', 'success');
