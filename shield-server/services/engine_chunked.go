@@ -1,7 +1,6 @@
 package services
 
 import (
-	"code-shield/models"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,92 +20,67 @@ type ChunkConfig struct {
 type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
-	// 1. 解析配置
+	// ── 引擎前处理：解析配置并扫描分片 ──
 	cfg := ChunkConfig{MaxFiles: 50, Depth: 1}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 
-	// 2. 扫描并分片
 	chunks, err := scanAndChunk(ctx.codesPath, cfg)
 	if err != nil {
-		ctx.markFailed(err.Error())
 		return err
 	}
 
 	log.Printf("[TaskRunner] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
 
-	var subResults []TaskResult
-	var subReports []string
+	// ── 逐片执行 AI ──
+	chunkDir := filepath.Join(os.TempDir(), fmt.Sprintf("chunks-%d", ctx.report.ID))
+	os.MkdirAll(chunkDir, 0755)
+	defer os.RemoveAll(chunkDir)
 
-	// 3. 逐片处理
+	var chunkReports []string
+
 	for name, files := range chunks {
-		subReport := models.TaskReport{
-			RepoID:     ctx.repo.ID,
-			TaskTypeID: ctx.taskType.ID,
-			ParentID:   ctx.report.ID,
-			ChunkName:  name,
-			Status:     models.StatusAnalyzing,
-		}
-		models.DB.Create(&subReport)
-
-		subCtx := &taskContext{
-			report:     subReport,
+		safeName := strings.ReplaceAll(name, "/", "-")
+		chunkCtx := &taskContext{
+			report:     ctx.report,
 			taskType:   ctx.taskType,
 			repo:       ctx.repo,
 			codesPath:  ctx.codesPath,
-			autoNotify: false, // 单片不发通知
+			reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.md", safeName)),
+			jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.json", safeName)),
 		}
+		chunkCtx.report.ChunkName = name
 
 		log.Printf("[TaskRunner] Processing chunk [%s] (%d files)\n", name, len(files))
-		if err := subCtx.executeAI(files, ""); err != nil {
+		if err := chunkCtx.executeAI(files, ""); err != nil {
 			log.Printf("[TaskRunner] Chunk [%s] failed: %v\n", name, err)
-			models.DB.Model(&subReport).Update("status", models.StatusFailed)
 			continue
 		}
 
-		res := subCtx.runPostProcess()
-		subResults = append(subResults, res)
-
-		if content, err := os.ReadFile(subCtx.reportPath); err == nil {
-			subReports = append(subReports, fmt.Sprintf("### 模块: %s (评分: %d)\n\n%s\n", name, res.Score, string(content)))
+		if content, err := os.ReadFile(chunkCtx.reportPath); err == nil {
+			chunkReports = append(chunkReports, fmt.Sprintf("### 模块: %s\n\n%s\n", name, string(content)))
 		}
-
-		subCtx.finalize(res)
 	}
 
-	// 4. 综合报告
-	updateTaskStatus(ctx.report.ID, "synthesizing")
-	log.Printf("[TaskRunner] Starting synthesis for %d chunks\n", len(subResults))
+	if len(chunkReports) == 0 {
+		return fmt.Errorf("all %d chunks failed", len(chunks))
+	}
+
+	// ── 引擎后处理：合并分片报告并综合 ──
+	log.Printf("[TaskRunner] Starting synthesis for %d chunks\n", len(chunkReports))
 
 	synthesisPrompt := "以上是该项目各模块的检视结果。请以此为基础，生成一份全工程的综合报告，总结核心风险，剔除重复发现，并给出整体健康度评分。请务必保持输出格式为 Markdown。"
 
-	synthesisInputPath := filepath.Join(os.TempDir(), fmt.Sprintf("synthesis-input-%d.md", ctx.report.ID))
-	os.WriteFile(synthesisInputPath, []byte(strings.Join(subReports, "\n\n")), 0644)
-	defer os.Remove(synthesisInputPath)
+	synthesisInputPath := filepath.Join(chunkDir, "synthesis-input.md")
+	os.WriteFile(synthesisInputPath, []byte(strings.Join(chunkReports, "\n\n")), 0644)
 
-	ctx.report.ChunkName = "total"
+	// 综合报告写入 ctx.reportPath（外层管线准备好的路径）
 	if err := ctx.executeAI([]string{synthesisInputPath}, synthesisPrompt); err != nil {
-		ctx.markFailed("Synthesis failed: " + err.Error())
-		return err
+		return fmt.Errorf("synthesis failed: %w", err)
 	}
 
-	// 聚合指标
-	finalResult := TaskResult{Metrics: make(map[string]int)}
-	totalScore := 0
-	for _, r := range subResults {
-		totalScore += r.Score
-		for k, v := range r.Metrics {
-			finalResult.Metrics[k] += v
-		}
-	}
-	if len(subResults) > 0 {
-		finalResult.Score = totalScore / len(subResults)
-	}
-
-	finalResult.Summary = fmt.Sprintf("已完成对 %d 个模块的分片检视。整体平均分为 %d。", len(subResults), finalResult.Score)
-
-	return ctx.finalize(finalResult)
+	return nil
 }
 
 // scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
