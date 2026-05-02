@@ -56,12 +56,24 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		ctx.markFailed(err.Error())
 		return err
 	} else if skipped {
-		return nil // ErrSkipped is not defined, using nil for success-but-skipped
+		return nil
 	}
 
-	// 4. Dispatch to Engine
+	// 4. Prepare output paths for final report
+	ctx.prepareOutputPaths()
+
+	// 5. Dispatch to Engine
 	engine := GetEngine(ctx.taskType.EngineMode)
-	return engine.Run(ctx)
+	if err := engine.Run(ctx); err != nil {
+		ctx.markFailed(err.Error())
+		return err
+	}
+
+	// 6. Post-process: run postprocess script on final report
+	result := ctx.runPostProcess()
+
+	// 7. Finalize: save result to DB and trigger notification
+	return ctx.finalize(result)
 }
 
 
@@ -145,11 +157,8 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 	return false, nil
 }
 
-// executeAI invokes the external AI CLI
-func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string) error {
-	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
-
-	// Prepare output paths
+// prepareOutputPaths creates the output directory and sets reportPath/jsonPath on the context
+func (ctx *taskContext) prepareOutputPaths() {
 	currentDate := time.Now().Format("2006-01-02")
 	reportsDir := filepath.Join(models.AppConfig.Workspace.Home, "reports", ctx.taskType.Name, currentDate)
 	os.MkdirAll(reportsDir, 0755)
@@ -161,6 +170,11 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string) 
 	}
 	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("%s-report-%s%s.md", ctx.taskType.Name, safeRepoName, suffix))
 	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s%s.json", ctx.taskType.Name, safeRepoName, suffix))
+}
+
+// executeAI invokes the external AI CLI. Requires reportPath and jsonPath to be set.
+func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string) error {
+	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
 
 	absPrompt := models.AppConfig.GetAbsPath(ctx.taskType.PromptFile)
 	if _, err := os.Stat(absPrompt); os.IsNotExist(err) {
