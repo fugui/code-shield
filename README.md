@@ -7,6 +7,10 @@
 ### 🤖 AI 代码检视
 - **智能分析**：利用 LLM 进行深度代码分析，发现潜在问题。
 - **灵活扩展**：支持多种检视任务类型（如通用代码检视、内存泄漏检测等），可自定义 Prompt。
+- **多引擎模式**：支持三种执行引擎，适配不同仓库结构：
+  - **单引擎 (single)**：将整个代码仓作为整体提交给 AI 分析，适合小型项目。
+  - **分片引擎 (chunked)**：按目录深度自动分片，逐片分析后综合，适合大型单体项目。
+  - **模块引擎 (module)**：按顶层子目录拆分为独立模块，逐模块分析后综合，适合多模块 mono-repo。
 - **定向巡检**：重点检测以下领域：
   - 多线程与并发安全（竞态条件、死锁、资源竞争）
   - 内存泄漏（未关闭的资源、无法回收的对象）
@@ -158,14 +162,18 @@ code-shield/
 │   ├── handlers/          # HTTP 处理器
 │   ├── models/            # 数据模型
 │   ├── services/          # 业务逻辑
-│   │   ├── task_runner.go  # 任务执行器
+│   │   ├── task_runner.go  # 任务执行管线
+│   │   ├── engine.go       # TaskEngine 接口定义 + 注册表
+│   │   ├── engine_single.go   # 单引擎实现
+│   │   ├── engine_chunked.go  # 分片引擎实现
+│   │   ├── engine_module.go   # 模块引擎实现
 │   │   └── queue.go        # 异步任务队列
 │   ├── cron_jobs/         # 定时任务调度
 │   ├── tasks/             # 检视任务定义 (Prompt/脚本)
 │   │   ├── code-review/
 │   │   └── memory-leak/
 │   └── frontend/          # React 前端
-├── notifier/              # 邮件通知服务 (Node.js)
+├── notifier/              # 邮件通知服务 (Go)
 │   └── src/
 │       └── index.js       # 邮件发送逻辑 (Outlook COM)
 ├── templates/             # CSV 导入模板
@@ -187,6 +195,37 @@ review:
 workspace:
   home: "/path/to/workspace"       # 代码克隆和报告生成的根目录
 ```
+
+### 引擎模式配置
+
+在「任务类型管理」中选择执行模式并填写引擎配置（JSON，可选）：
+
+| 引擎 | 配置项 | 默认值 | 说明 |
+|------|--------|--------|------|
+| single | 无 | - | 无需配置 |
+| chunked | `max_files` | `50` | 每个分片最大文件数 |
+| chunked | `depth` | `1` | 按几层目录深度分片 |
+| module | `exclude` | `[".git", "vendor", ...]` | 排除不检视的顶层目录 |
+
+示例：
+
+```json
+// chunked 引擎
+{"max_files": 100, "depth": 2}
+
+// module 引擎
+{"exclude": [".git", "vendor", "docs", "scripts"]}
+```
+
+#### 任务执行管线
+
+每个任务按以下管线顺序执行：
+
+```
+load → prepareAndSync → checkPrecondition → prepareOutputPaths → engine.Run() → runPostProcess → finalize
+```
+
+引擎通过 `TaskEngine` 接口实现插件化，新增引擎只需创建 `engine_xxx.go` 并在 `init()` 中注册。
 
 ## API 接口
 
