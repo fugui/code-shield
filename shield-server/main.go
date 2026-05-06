@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"log"
 	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"code-shield/cron_jobs"
 	"code-shield/handlers"
@@ -155,13 +159,39 @@ func main() {
 		})
 	}
 
-	// Start server
+	// Build HTTP server with timeouts
 	port := models.AppConfig.Server.Port
 	if port == "" {
 		port = ":8080"
 	}
-	log.Printf("Starting server on %s...\n", port)
-	if err := r.Run(port); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	srv := &http.Server{
+		Addr:              port,
+		Handler:           r,
+		ReadTimeout:       models.AppConfig.Server.ReadTimeout,
+		ReadHeaderTimeout: models.AppConfig.Server.ReadHeaderTimeout,
+		WriteTimeout:      models.AppConfig.Server.WriteTimeout,
+		IdleTimeout:       models.AppConfig.Server.IdleTimeout,
+		MaxHeaderBytes:    models.AppConfig.Server.MaxHeaderBytes,
 	}
+
+	// Graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.Printf("Starting server on %s ...\n", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("Shutting down server ...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	log.Println("Server exited gracefully")
 }
