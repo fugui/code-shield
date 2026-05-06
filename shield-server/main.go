@@ -33,7 +33,13 @@ func main() {
 	cron_jobs.StartCronJobs()
 
 	// Initialize Gin engine
-	r := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	if models.AppConfig.Server.GinLog {
+		r.Use(gin.Logger())
+		log.Println("[Server] GIN request logging enabled")
+	}
 
 	// Register Auth routes (unprotected)
 	auth := r.Group("/api")
