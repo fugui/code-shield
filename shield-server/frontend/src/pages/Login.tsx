@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiUrl } from '../config';
 
 function Login() {
   const [username, setUsername] = useState('');
@@ -109,7 +110,7 @@ function Login() {
         <div style={{ position: 'relative', zIndex: 1, maxWidth: '520px', animation: 'fadeInUp 0.8s ease' }}>
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '3rem' }}>
-            <img src="/madun-logo.png" alt="码盾" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+            <img src={apiUrl('/madun-logo.png')} alt="码盾" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
             <div>
               <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: '#f1f5f9', letterSpacing: '1px' }}>码盾</h1>
               <span style={{ fontSize: '0.8rem', color: '#64748b', letterSpacing: '2px', textTransform: 'uppercase' }}>Code Shield</span>
