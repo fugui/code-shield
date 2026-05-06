@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface ReportSidebarProps {
   open: boolean;
@@ -93,7 +95,29 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
             </div>
           ) : (
             <div className="markdown-body" ref={markdownRef}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({ className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const codeString = String(children).replace(/\n$/, '');
+                    return match ? (
+                      <SyntaxHighlighter
+                        style={oneDark}
+                        language={match[1]}
+                        PreTag="div"
+                        customStyle={{ borderRadius: '6px', fontSize: '85%', margin: '0' }}
+                      >
+                        {codeString}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    );
+                  },
+                }}
+              >
                 {markdown || '*暂无任何报告信息*'}
               </ReactMarkdown>
             </div>
