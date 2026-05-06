@@ -102,20 +102,19 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
 
         /* Print styles: only show .markdown-body content */
         @media print {
-          body > *:not(.report-sidebar-drawer),
-          .report-sidebar-backdrop,
-          .report-sidebar-header { display: none !important; }
+          /* Hide everything visually */
+          body * { visibility: hidden !important; }
 
-          .report-sidebar-drawer {
-            position: static !important;
-            width: 100% !important;
-            height: auto !important;
-            box-shadow: none !important;
-            right: auto !important;
-          }
+          /* Show only the markdown content */
+          .markdown-body,
+          .markdown-body * { visibility: visible !important; }
 
           .markdown-body {
-            padding: 0 !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 20px !important;
             color: #000 !important;
           }
 
