@@ -9,7 +9,8 @@ import (
 
 type Config struct {
 	Server struct {
-		Port string `yaml:"port"`
+		Port   string `yaml:"port"`
+		GinLog bool   `yaml:"gin_log"` // 是否打印 GIN 请求日志，默认 false
 	} `yaml:"server"`
 	Notifier struct {
 		URL string `yaml:"url"`
