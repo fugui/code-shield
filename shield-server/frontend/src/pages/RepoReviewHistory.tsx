@@ -280,6 +280,7 @@ function RepoReviewHistory() {
           <h3 style={{ margin: 0 }}>任务报告详情</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {!loadingMarkdown && currentMarkdown && (
+              <>
               <button
                 onClick={async () => {
                   if (!markdownRef.current || savingPdf) return;
@@ -309,6 +310,25 @@ function RepoReviewHistory() {
                 </svg>
                 {savingPdf ? '生成中...' : '下载 PDF'}
               </button>
+              <button
+                onClick={() => {
+                  const blob = new Blob([currentMarkdown], { type: 'text/markdown;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `report-${Date.now()}.md`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                style={{ background: 'transparent', border: '1px solid #64748b', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#64748b', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                title="下载原始 Markdown 文件"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                下载 MD
+              </button>
+              </>
             )}
             <button onClick={() => setSidebarOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)' }}>&times;</button>
           </div>
