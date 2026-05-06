@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { solarizedlight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface ReportSidebarProps {
   open: boolean;
@@ -103,7 +103,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
                     const codeString = String(children).replace(/\n$/, '');
                     return match ? (
                       <SyntaxHighlighter
-                        style={solarizedlight}
+                        style={ghcolors}
                         language={match[1]}
                         PreTag="div"
                         customStyle={{ borderRadius: '6px', fontSize: '85%', margin: '0' }}
