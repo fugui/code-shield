@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useToast } from '../components/Toast';
+import html2pdf from 'html2pdf.js';
 
 function RepoReviewHistory() {
   const { repoId } = useParams<{ repoId: string }>();
@@ -21,6 +22,8 @@ function RepoReviewHistory() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMarkdown, setCurrentMarkdown] = useState('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
+  const [savingPdf, setSavingPdf] = useState(false);
+  const markdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchReviews();
@@ -275,7 +278,40 @@ function RepoReviewHistory() {
       >
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>任务报告详情</h3>
-          <button onClick={() => setSidebarOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)' }}>&times;</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {!loadingMarkdown && currentMarkdown && (
+              <button
+                onClick={async () => {
+                  if (!markdownRef.current || savingPdf) return;
+                  setSavingPdf(true);
+                  try {
+                    await html2pdf().set({
+                      margin: [10, 10, 10, 10],
+                      filename: `report-${Date.now()}.pdf`,
+                      image: { type: 'jpeg', quality: 0.98 },
+                      html2canvas: { scale: 2, useCORS: true },
+                      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+                    } as any).from(markdownRef.current).save();
+                  } catch (err) {
+                    console.error('PDF generation failed:', err);
+                    showToast('PDF 生成失败', 'error');
+                  } finally {
+                    setSavingPdf(false);
+                  }
+                }}
+                disabled={savingPdf}
+                style={{ background: 'transparent', border: '1px solid var(--primary-color)', cursor: savingPdf ? 'wait' : 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem', opacity: savingPdf ? 0.6 : 1 }}
+                title="保存为 PDF 文件"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                {savingPdf ? '生成中...' : '下载 PDF'}
+              </button>
+            )}
+            <button onClick={() => setSidebarOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)' }}>&times;</button>
+          </div>
         </div>
         <div style={{ padding: '2rem', overflowY: 'auto', flex: 1, backgroundColor: '#ffffff' }}>
           {loadingMarkdown ? (
@@ -283,7 +319,7 @@ function RepoReviewHistory() {
               <span className="spinner"></span> 正在渲染 Markdown...
             </div>
           ) : (
-            <div className="markdown-body">
+            <div className="markdown-body" ref={markdownRef}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {currentMarkdown || '*暂无任何报告信息*'}
               </ReactMarkdown>
