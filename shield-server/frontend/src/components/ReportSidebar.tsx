@@ -13,7 +13,28 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
   const markdownRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
-    window.print();
+    if (!markdownRef.current) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>任务报告</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292f; max-width: 900px; margin: 0 auto; padding: 20px 40px; }
+  h1, h2, h3, h4 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; }
+  h2 { border-bottom: 1px solid #d0d7de; padding-bottom: .3em; }
+  blockquote { padding: 0 1em; color: #57606a; border-left: .25em solid #d0d7de; margin: 0 0 16px 0; }
+  pre { padding: 16px; overflow: auto; font-size: 85%; line-height: 1.45; background-color: #f6f8fa; border-radius: 6px; white-space: pre-wrap; word-wrap: break-word; }
+  code { padding: .2em .4em; font-size: 85%; background-color: rgba(175,184,193,0.2); border-radius: 6px; }
+  pre > code { padding: 0; font-size: 100%; background-color: transparent; }
+  ul, ol { margin-top: 0; margin-bottom: 16px; padding-left: 2em; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 16px; page-break-inside: avoid; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
+  th { background-color: #f6f8fa; font-weight: 600; }
+</style>
+</head><body>${markdownRef.current.innerHTML}</body></html>`);
+    printWindow.document.close();
+    printWindow.onafterprint = () => printWindow.close();
+    printWindow.print();
   };
 
   const handleDownloadMd = () => {
@@ -100,32 +121,6 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
         .markdown-body th, .markdown-body td { border: 1px solid #d0d7de; padding: 6px 13px; }
         .markdown-body th { background-color: #f6f8fa; font-weight: 600; }
 
-        /* Print styles: only show .markdown-body content */
-        @media print {
-          /* Hide everything visually */
-          body * { visibility: hidden !important; }
-
-          /* Show only the markdown content */
-          .markdown-body,
-          .markdown-body * { visibility: visible !important; }
-
-          .markdown-body {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            padding: 20px !important;
-            color: #000 !important;
-          }
-
-          .markdown-body pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            border: 1px solid #ccc;
-          }
-
-          .markdown-body table { page-break-inside: avoid; }
-        }
       `}</style>
     </>
   );
