@@ -15,6 +15,8 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
+	highlighting "github.com/yuin/goldmark-highlighting/v2"
+	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 )
 
 func ExtractSummary(markdown string) string {
@@ -43,7 +45,15 @@ func ExtractSummary(markdown string) string {
 
 func RenderMarkdownToHTML(markdown string) (string, error) {
 	md := goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithExtensions(
+			extension.GFM,
+			highlighting.NewHighlighting(
+				highlighting.WithStyle("github"),
+				highlighting.WithFormatOptions(
+					chromahtml.WithClasses(false), // 使用 inline style，兼容邮件客户端
+				),
+			),
+		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
 		),
