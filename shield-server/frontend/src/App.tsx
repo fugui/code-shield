@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { BASE_PATH, apiUrl } from './config';
 import TaskManagement from './pages/CodeReviewManagement';
 import RepoTaskHistory from './pages/RepoReviewHistory';
 import KeyIssues from './pages/KeyIssues';
@@ -9,16 +10,21 @@ import TeamManagement from './pages/TeamManagement';
 import OpenSourceManagement from './pages/OpenSourceManagement';
 import { ToastProvider, useToast } from './components/Toast';
 
-// Setup global fetch interceptor to inject JWT token
+// Setup global fetch interceptor to inject JWT token and prepend BASE_PATH
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
-  const [resource, config] = args;
+  let [resource, config] = args;
   const token = localStorage.getItem('token');
-  
-  let res: Response;
-  if (token && resource.toString().startsWith('/api')) {
+  const url = resource.toString();
+
+  // Auto-prepend BASE_PATH for absolute /api calls
+  if (url.startsWith('/api')) {
+    resource = apiUrl(url);
+  }
+
+  if (token && resource.toString().includes('/api')) {
     const defaultHeaders: any = config?.headers || {};
-    res = await originalFetch(resource, {
+    var res = await originalFetch(resource, {
       ...config,
       headers: {
         ...defaultHeaders,
@@ -26,15 +32,16 @@ window.fetch = async (...args) => {
       }
     });
   } else {
-    res = await originalFetch(resource, config);
+    var res = await originalFetch(resource, config);
   }
 
   // Intercept 401 to handle expired tokens globally
   if (res.status === 401) {
     localStorage.removeItem('token');
     window.dispatchEvent(new Event('auth-change'));
-    if (window.location.pathname !== '/login') {
-      window.location.href = '/login';
+    const loginPath = BASE_PATH + '/login';
+    if (window.location.pathname !== loginPath) {
+      window.location.href = loginPath;
     }
   }
 
@@ -218,7 +225,7 @@ function Sidebar() {
   return (
     <aside style={{ width: '260px', background: 'var(--card-bg)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0 }}>
       <div style={{ height: '70px', padding: '0 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem', boxSizing: 'border-box' }}>
-        <img src="/madun-logo.png" alt="码盾" style={{ width: '34px', height: '34px', objectFit: 'contain', flexShrink: 0 }} />
+        <img src={apiUrl('/madun-logo.png')} alt="码盾" style={{ width: '34px', height: '34px', objectFit: 'contain', flexShrink: 0 }} />
         <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-color)', letterSpacing: '0.5px', fontWeight: 700 }}>码盾，守护代码质量</h2>
           <span style={{ fontSize: '0.7rem', color: '#94a3b8', letterSpacing: '0.3px' }}>Code Shield</span>
@@ -279,7 +286,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={BASE_PATH}>
       <ToastProvider>
         <MainLayout>
           <Routes>
