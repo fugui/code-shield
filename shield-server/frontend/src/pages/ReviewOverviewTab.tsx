@@ -1,30 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { sshToHttps } from '../utils/urlUtils';
 
+type SortOrder = 'latest_task_time_desc' | 'latest_task_time_asc' | 'status_desc' | 'status_asc';
 
 function TaskOverviewTab() {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read filter state from URL search params, falling back to defaults
+  const filterTeam = searchParams.get('team') || '';
+  const filterServiceGroup = searchParams.get('sg') || '';
+  const filterOwner = searchParams.get('owner') || '';
+  const filterTaskType = searchParams.get('tt') || '';
+  const sortOrder: SortOrder = (searchParams.get('sort') as SortOrder) || 'latest_task_time_desc';
+  const page = parseInt(searchParams.get('page') || '1', 10) || 1;
+
+  // Helper to update a single search param while preserving others
+  const updateParam = useCallback((key: string, value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value) {
+        next.set(key, value);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const setPage = (p: number) => updateParam('page', p <= 1 ? '' : p.toString());
+
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
-  
-  const [filterTeam, setFilterTeam] = useState<string>('');
-  const [filterServiceGroup, setFilterServiceGroup] = useState<string>('');
-  const [filterOwner, setFilterOwner] = useState<string>('');
-  const [filterTaskType, setFilterTaskType] = useState<string>('');
   const [openMenuRepoId, setOpenMenuRepoId] = useState<number | null>(null);
 
-  const [page, setPage] = useState<number>(1);
   const [pageSize] = useState<number>(15);
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
-  
-  const [sortOrder, setSortOrder] = useState<'latest_task_time_desc' | 'latest_task_time_asc' | 'status_desc' | 'status_asc'>('latest_task_time_desc');
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
@@ -75,9 +93,17 @@ function TaskOverviewTab() {
       .catch(console.error);
   };
 
-  const handleFilterChange = (setter: React.Dispatch<React.SetStateAction<string>>, value: string) => {
-    setter(value);
-    setPage(1);
+  const handleFilterChange = (paramKey: string, value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value) {
+        next.set(paramKey, value);
+      } else {
+        next.delete(paramKey);
+      }
+      next.delete('page'); // reset page to 1
+      return next;
+    }, { replace: true });
   };
 
   const handleClearInvalidReports = async () => {
@@ -98,14 +124,23 @@ function TaskOverviewTab() {
   };
 
   const toggleSort = (field: 'latest_task_time' | 'status') => {
-    setSortOrder(prev => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      const currentSort: SortOrder = (prev.get('sort') as SortOrder) || 'latest_task_time_desc';
+      let newSort: SortOrder;
       if (field === 'latest_task_time') {
-        return prev === 'latest_task_time_desc' ? 'latest_task_time_asc' : 'latest_task_time_desc';
+        newSort = currentSort === 'latest_task_time_desc' ? 'latest_task_time_asc' : 'latest_task_time_desc';
       } else {
-        return prev === 'status_desc' ? 'status_asc' : 'status_desc';
+        newSort = currentSort === 'status_desc' ? 'status_asc' : 'status_desc';
       }
-    });
-    setPage(1);
+      if (newSort === 'latest_task_time_desc') {
+        next.delete('sort');
+      } else {
+        next.set('sort', newSort);
+      }
+      next.delete('page'); // reset page to 1
+      return next;
+    }, { replace: true });
   };
 
   const getSortIcon = (field: 'latest_task_time' | 'status') => {
@@ -182,16 +217,16 @@ function TaskOverviewTab() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <select value={filterTaskType} onChange={e => handleFilterChange(setFilterTaskType, e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}>
+          <select value={filterTaskType} onChange={e => handleFilterChange('tt', e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}>
             <option value="">全部任务类型</option>
             {taskTypes.map(t => <option key={t.id} value={t.id}>{t.display_name}</option>)}
           </select>
-          <select value={filterTeam} onChange={e => handleFilterChange(setFilterTeam, e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}>
+          <select value={filterTeam} onChange={e => handleFilterChange('team', e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}>
             <option value="">全部部门</option>
             {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          <input type="text" placeholder="按服务组过滤..." value={filterServiceGroup} onChange={e => handleFilterChange(setFilterServiceGroup, e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
-          <input type="text" placeholder="按责任人过滤..." value={filterOwner} onChange={e => handleFilterChange(setFilterOwner, e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+          <input type="text" placeholder="按服务组过滤..." value={filterServiceGroup} onChange={e => handleFilterChange('sg', e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+          <input type="text" placeholder="按责任人过滤..." value={filterOwner} onChange={e => handleFilterChange('owner', e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
         </div>
         {isAdmin && (
           <button 
@@ -372,7 +407,7 @@ function TaskOverviewTab() {
                     </span>
                     {item.report_count > 0 && (
                       <button
-                        onClick={() => navigate(`/tasks/repo/${item.repo.id}`)}
+                        onClick={() => navigate(`/tasks/repo/${item.repo.id}`, { state: { returnSearch: searchParams.toString() } })}
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem', borderRadius: '4px', color: 'var(--primary-color)' }}
                         title="查看历史报告"
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useToast } from '../components/Toast';
@@ -7,6 +7,8 @@ import { useToast } from '../components/Toast';
 function RepoReviewHistory() {
   const { repoId } = useParams<{ repoId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnSearch = (location.state as any)?.returnSearch || '';
   const { showToast } = useToast();
 
   const [reviews, setReviews] = useState<any[]>([]);
@@ -110,7 +112,7 @@ function RepoReviewHistory() {
       {/* Header with back button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <button
-          onClick={() => navigate('/tasks/overview')}
+          onClick={() => navigate(`/tasks/overview${returnSearch ? '?' + returnSearch : ''}`)}
           style={{
             background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px',
             cursor: 'pointer', padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
