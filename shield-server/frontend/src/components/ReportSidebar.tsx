@@ -1,7 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import html2pdf from 'html2pdf.js';
 
 interface ReportSidebarProps {
   open: boolean;
@@ -11,26 +10,10 @@ interface ReportSidebarProps {
 }
 
 export default function ReportSidebar({ open, onClose, markdown, loading }: ReportSidebarProps) {
-  const [savingPdf, setSavingPdf] = useState(false);
   const markdownRef = useRef<HTMLDivElement>(null);
 
-  const handleDownloadPdf = async () => {
-    if (!markdownRef.current || savingPdf) return;
-    setSavingPdf(true);
-    try {
-      await html2pdf().set({
-        margin: [10, 10, 10, 10],
-        filename: `report-${Date.now()}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      } as any).from(markdownRef.current).save();
-    } catch (err) {
-      console.error('PDF generation failed:', err);
-    } finally {
-      setSavingPdf(false);
-    }
+  const handlePrint = () => {
+    window.print();
   };
 
   const handleDownloadMd = () => {
@@ -48,23 +31,22 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
   return (
     <>
       {/* Sidebar Drawer */}
-      <div style={{ position: 'fixed', top: 0, right: open ? 0 : '-50vw', width: '50vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', transition: 'right 0.3s ease-in-out', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+      <div className="report-sidebar-drawer" style={{ position: 'fixed', top: 0, right: open ? 0 : '-50vw', width: '50vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', transition: 'right 0.3s ease-in-out', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
-        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="report-sidebar-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>任务报告详情</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {showActions && (
               <>
                 <button
-                  onClick={handleDownloadPdf}
-                  disabled={savingPdf}
-                  style={{ background: 'transparent', border: '1px solid var(--primary-color)', cursor: savingPdf ? 'wait' : 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem', opacity: savingPdf ? 0.6 : 1 }}
-                  title="保存为 PDF 文件"
+                  onClick={handlePrint}
+                  style={{ background: 'transparent', border: '1px solid var(--primary-color)', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                  title={'打印或保存为 PDF（在打印对话框中选择"另存为 PDF"）'}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
                   </svg>
-                  {savingPdf ? '生成中...' : '下载 PDF'}
+                  打印 / PDF
                 </button>
                 <button
                   onClick={handleDownloadMd}
@@ -100,7 +82,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
 
       {/* Backdrop */}
       {open && (
-        <div onClick={onClose} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999 }} />
+        <div className="report-sidebar-backdrop" onClick={onClose} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999 }} />
       )}
 
       <style>{`
@@ -114,6 +96,37 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
         .markdown-body code { padding: .2em .4em; margin: 0; font-size: 85%; background-color: rgba(175, 184, 193, 0.2); border-radius: 6px; }
         .markdown-body pre > code { padding: 0; margin: 0; font-size: 100%; background-color: transparent; border: 0; }
         .markdown-body ul, .markdown-body ol { margin-top: 0; margin-bottom: 16px; padding-left: 2em; }
+        .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+        .markdown-body th, .markdown-body td { border: 1px solid #d0d7de; padding: 6px 13px; }
+        .markdown-body th { background-color: #f6f8fa; font-weight: 600; }
+
+        /* Print styles: only show .markdown-body content */
+        @media print {
+          body > *:not(.report-sidebar-drawer),
+          .report-sidebar-backdrop,
+          .report-sidebar-header { display: none !important; }
+
+          .report-sidebar-drawer {
+            position: static !important;
+            width: 100% !important;
+            height: auto !important;
+            box-shadow: none !important;
+            right: auto !important;
+          }
+
+          .markdown-body {
+            padding: 0 !important;
+            color: #000 !important;
+          }
+
+          .markdown-body pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border: 1px solid #ccc;
+          }
+
+          .markdown-body table { page-break-inside: avoid; }
+        }
       `}</style>
     </>
   );
