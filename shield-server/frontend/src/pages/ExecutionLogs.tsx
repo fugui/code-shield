@@ -135,7 +135,7 @@ function ExecutionLogs() {
               <th style={{ padding: '1rem', fontWeight: 600 }}>所属代码仓</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>任务类型</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>触发方式</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>关联调度策略</th>
+              <th style={{ padding: '1rem', fontWeight: 600 }}>执行引擎</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>开始时间</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>执行耗时</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>状态</th>
@@ -161,10 +161,10 @@ function ExecutionLogs() {
                       {hasReport ? (expanded ? '▼' : '▶') : ''}
                     </td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>#{log.id}</td>
-                    <td style={{ padding: '1rem', fontWeight: 500 }}>{log.repo?.name || `Repo ${log.repo_id}`}</td>
+                    <td style={{ padding: '1rem', fontWeight: 500 }}>{log.repo_name || `Repo ${log.repo_id}`}</td>
                     <td style={{ padding: '1rem' }}>
                       <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
-                        {log.task_type?.display_name || '-'}
+                        {log.task_type_name || '-'}
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
@@ -172,7 +172,11 @@ function ExecutionLogs() {
                         {log.trigger_type}
                       </span>
                     </td>
-                    <td style={{ padding: '1rem' }}>{log.schedule ? log.schedule.name : '-'}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: log.engine_mode === 'chunked' ? 'rgba(168, 85, 247, 0.08)' : 'var(--bg-color)', border: '1px solid ' + (log.engine_mode === 'chunked' ? 'rgba(168, 85, 247, 0.2)' : 'var(--border-color)'), fontSize: '0.75rem', color: log.engine_mode === 'chunked' ? '#7c3aed' : '#64748b' }}>
+                        {log.engine_mode === 'chunked' ? '分片模式' : '单次模式'}
+                      </span>
+                    </td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>{formatDate(log.start_time)}</td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>{calcDuration(log.start_time, log.end_time)}</td>
                     <td style={{ padding: '1rem' }}>
