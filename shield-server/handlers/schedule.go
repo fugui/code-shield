@@ -4,6 +4,7 @@ import (
 	"code-shield/cron_jobs"
 	"code-shield/models"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -95,6 +96,32 @@ func DeleteSchedule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Schedule deleted successfully"})
 }
 
+// ExecutionLogResponse is a flattened DTO for the execution log list API.
+type ExecutionLogResponse struct {
+	ID           uint       `json:"id"`
+	ScheduleID   *uint      `json:"schedule_id"`
+	ScheduleName string     `json:"schedule_name"`
+	RepoID       uint       `json:"repo_id"`
+	RepoName     string     `json:"repo_name"`
+	TaskTypeID   uint       `json:"task_type_id"`
+	TaskTypeName string     `json:"task_type_name"`
+	EngineMode   string     `json:"engine_mode"`
+	TriggerType  string     `json:"trigger_type"`
+	Status       string     `json:"status"`
+	ErrorMessage string     `json:"error_message"`
+	StartTime    time.Time  `json:"start_time"`
+	EndTime      *time.Time `json:"end_time"`
+	TaskReport   *ExecutionReportBrief `json:"task_report"`
+}
+
+// ExecutionReportBrief contains only the fields the frontend needs for the expanded row.
+type ExecutionReportBrief struct {
+	ID        uint   `json:"id"`
+	Status    string `json:"status"`
+	Score     int    `json:"score"`
+	AISummary string `json:"ai_summary"`
+}
+
 func GetExecutionLogs(c *gin.Context) {
 	var logs []models.TaskExecutionLog
 	query := models.DB.Preload("Schedule").Preload("Repo").Preload("TaskReport").Preload("TaskType")
@@ -114,7 +141,39 @@ func GetExecutionLogs(c *gin.Context) {
 	}
 
 	query.Order("created_at desc").Limit(100).Find(&logs)
-	c.JSON(http.StatusOK, logs)
+
+	// Map to flattened DTOs
+	result := make([]ExecutionLogResponse, 0, len(logs))
+	for _, log := range logs {
+		item := ExecutionLogResponse{
+			ID:           log.ID,
+			ScheduleID:   log.ScheduleID,
+			RepoID:       log.RepoID,
+			RepoName:     log.Repo.Name,
+			TaskTypeID:   log.TaskTypeID,
+			TaskTypeName: log.TaskType.DisplayName,
+			EngineMode:   log.TaskType.EngineMode,
+			TriggerType:  log.TriggerType,
+			Status:       log.Status,
+			ErrorMessage: log.ErrorMessage,
+			StartTime:    log.StartTime,
+			EndTime:      log.EndTime,
+		}
+		if log.Schedule != nil {
+			item.ScheduleName = log.Schedule.Name
+		}
+		if log.TaskReport != nil {
+			item.TaskReport = &ExecutionReportBrief{
+				ID:        log.TaskReport.ID,
+				Status:    log.TaskReport.Status,
+				Score:     log.TaskReport.Score,
+				AISummary: log.TaskReport.AISummary,
+			}
+		}
+		result = append(result, item)
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 // ClearCompletedExecutionLogs deletes all finished logs
