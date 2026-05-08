@@ -112,6 +112,15 @@ func seedBuiltinTaskTypes() {
 			} else {
 				log.Printf("Built-in task type created: %s (%s)", bt.Name, bt.DisplayName)
 			}
+		} else {
+			// Exists: sync file paths for built-in task types (handles migration from prompt.md → analysis_prompt.md)
+			updates := map[string]interface{}{
+				"analysis_prompt_file":  bt.AnalysisPromptFile,
+				"synthesis_prompt_file": bt.SynthesisPromptFile,
+				"precondition_script":   bt.PreconditionScript,
+				"postprocess_script":    bt.PostprocessScript,
+			}
+			DB.Model(&existing).Updates(updates)
 		}
 	}
 }
