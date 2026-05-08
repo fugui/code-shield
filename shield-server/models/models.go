@@ -95,19 +95,23 @@ type TaskReport struct {
 
 // AnalysisFinding 记录 AI 分析阶段输出的结构化问题
 type AnalysisFinding struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	TaskReportID uint      `gorm:"index" json:"task_report_id"`          // 关联到 TaskReport
-	TaskTypeID   uint      `gorm:"index" json:"task_type_id"`            // 哪个任务类型触发的
-	RepoID       uint      `gorm:"index" json:"repo_id"`                 // 来自哪个代码仓
-	Severity     string    `gorm:"not null" json:"severity"`             // 严重程度（阻塞/严重/主要/提示/建议）
-	Category     string    `json:"category"`                             // 问题分类（multithreading, memory_leak, library...）
-	FilePath     string    `json:"file_path"`                            // 问题所在文件
-	LineNumber   int       `json:"line_number"`                          // 行号
-	CodeSnippet  string    `gorm:"type:text" json:"code_snippet"`        // 问题发生处的原始代码片段
-	Title        string    `gorm:"not null" json:"title"`                // 问题标题
-	Detail       string    `gorm:"type:text" json:"detail"`              // 详细描述
-	Suggestion   string    `gorm:"type:text" json:"suggestion"`          // 修复建议
-	CreatedAt    time.Time `json:"created_at"`
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	TaskReportID uint       `gorm:"index" json:"task_report_id"`          // 关联到 TaskReport
+	TaskTypeID   uint       `gorm:"index" json:"task_type_id"`            // 哪个任务类型触发的
+	RepoID       uint       `gorm:"index" json:"repo_id"`                 // 来自哪个代码仓
+	Severity     string     `gorm:"not null" json:"severity"`             // 严重程度（阻塞/严重/主要/提示/建议）
+	Category     string     `json:"category"`                             // 问题分类（multithreading, memory_leak, library...）
+	FilePath     string     `json:"file_path"`                            // 问题所在文件
+	LineNumber   int        `json:"line_number"`                          // 行号
+	CodeSnippet  string     `gorm:"type:text" json:"code_snippet"`        // 问题发生处的原始代码片段
+	Title        string     `gorm:"not null" json:"title"`                // 问题标题
+	Detail       string     `gorm:"type:text" json:"detail"`              // 详细描述
+	Suggestion   string     `gorm:"type:text" json:"suggestion"`          // 修复建议
+	Status       string     `gorm:"default:open" json:"status"`           // 处理状态: open, processing, closed
+	AssigneeID   string     `json:"assignee_id"`                          // 处理人 ID
+	Feedback     string     `gorm:"type:text" json:"feedback"`            // 用户反馈内容
+	FeedbackAt   *time.Time `json:"feedback_at"`                          // 反馈时间
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 const (

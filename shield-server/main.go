@@ -100,6 +100,11 @@ func main() {
 		api.POST("/issues", handlers.CreateIssue)
 		api.PATCH("/issues/:id", handlers.UpdateIssue)
 
+		// Analysis findings management (问题清单)
+		api.GET("/findings", handlers.GetFindings)
+		api.GET("/findings/stats", handlers.GetFindingStats)
+		api.PATCH("/findings/:id", handlers.UpdateFinding)
+
 		api.GET("/schedules", handlers.GetSchedules)
 		api.POST("/schedules", handlers.CreateSchedule)
 		api.PUT("/schedules/:id", handlers.UpdateSchedule)
