@@ -111,13 +111,7 @@ function TeamsTab() {
             onChange={handleFileUpload} 
             style={{ display: 'none' }} 
           />
-          <button 
-            className="btn" 
-            style={{ background: 'transparent', borderColor: 'var(--primary-color)', color: 'var(--primary-color)' }}
-            onClick={() => window.open('/api/teams/export', '_blank')}
-          >
-            导出
-          </button>
+          <button className="btn" onClick={openAdd}>新增部门</button>
           <button 
             className="btn" 
             style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
@@ -125,7 +119,25 @@ function TeamsTab() {
           >
             批量导入
           </button>
-          <button className="btn" onClick={openAdd}>新增部门</button>
+          <button 
+            className="btn" 
+            style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
+            onClick={() => {
+              fetch('/api/teams/export')
+                .then(res => res.blob())
+                .then(blob => {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'departments.csv';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                })
+                .catch(() => showToast('导出失败', 'error'));
+            }}
+          >
+            批量导出
+          </button>
         </div>
       </div>
 

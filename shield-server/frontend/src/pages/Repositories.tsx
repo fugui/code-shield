@@ -242,21 +242,33 @@ function Repositories() {
             onChange={handleFileUpload} 
             style={{ display: 'none' }} 
           />
+          <button className="btn" onClick={openAddDrawer}>新增代码仓</button>
           <button 
             className="btn" 
-            style={{ background: 'transparent', borderColor: 'var(--primary-color)', color: 'var(--primary-color)' }}
-            onClick={() => window.open('/api/repos/export', '_blank')}
-          >
-            导出
-          </button>
-          <button 
-            className="btn" 
-            style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)' }}
+            style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
             onClick={() => fileInputRef.current?.click()}
           >
-            批量导入(CSV)
+            批量导入
           </button>
-          <button className="btn" onClick={openAddDrawer}>录入代码仓</button>
+          <button 
+            className="btn" 
+            style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
+            onClick={() => {
+              fetch('/api/repos/export')
+                .then(res => res.blob())
+                .then(blob => {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'repositories.csv';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                })
+                .catch(() => showToast('导出失败', 'error'));
+            }}
+          >
+            批量导出
+          </button>
         </div>
       </div>
 
