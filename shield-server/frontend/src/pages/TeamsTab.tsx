@@ -45,11 +45,15 @@ function TeamsTab() {
   };
 
   const handleDelete = (id: number, name: string) => {
-    if (window.confirm(`确认删除部门 "${name}" 吗？如果关联了代码仓可能无法删除。`)) {
+    if (window.confirm(`确认删除部门 "${name}" 吗？`)) {
       fetch(`/api/teams/${id}`, { method: 'DELETE' })
         .then(res => {
-          if (res.ok) fetchTeams();
-          else showToast('删除失败，此部门下可能挂靠了代码仓。', 'error');
+          if (res.ok) {
+            showToast('部门已删除', 'success');
+            fetchTeams();
+          } else {
+            res.json().then(data => showToast(data.error || '删除失败', 'error'));
+          }
         })
         .catch(console.error);
     }
