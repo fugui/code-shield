@@ -103,6 +103,36 @@ func DeleteTeam(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "部门已删除"})
 }
 
+// ExportTeams exports all departments as CSV
+func ExportTeams(c *gin.Context) {
+	var teams []models.Team
+	models.DB.Preload("Leader").Find(&teams)
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=departments.csv")
+
+	// Write UTF-8 BOM for Excel compatibility
+	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(c.Writer)
+	defer writer.Flush()
+
+	writer.Write([]string{"ID", "部门名称", "负责人ID", "负责人姓名", "创建时间"})
+	for _, t := range teams {
+		leaderName := ""
+		if t.Leader.Name != "" {
+			leaderName = t.Leader.Name
+		}
+		writer.Write([]string{
+			fmt.Sprintf("%d", t.ID),
+			t.Name,
+			t.LeaderID,
+			leaderName,
+			t.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+}
+
 // ImportTeams imports departments from CSV
 func ImportTeams(c *gin.Context) {
 	file, err := c.FormFile("file")

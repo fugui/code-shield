@@ -113,6 +113,13 @@ function TeamsTab() {
           />
           <button 
             className="btn" 
+            style={{ background: 'transparent', borderColor: 'var(--primary-color)', color: 'var(--primary-color)' }}
+            onClick={() => window.open('/api/teams/export', '_blank')}
+          >
+            导出
+          </button>
+          <button 
+            className="btn" 
             style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
             onClick={() => fileInputRef.current?.click()}
           >

@@ -244,6 +244,13 @@ function Repositories() {
           />
           <button 
             className="btn" 
+            style={{ background: 'transparent', borderColor: 'var(--primary-color)', color: 'var(--primary-color)' }}
+            onClick={() => window.open('/api/repos/export', '_blank')}
+          >
+            导出
+          </button>
+          <button 
+            className="btn" 
             style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)' }}
             onClick={() => fileInputRef.current?.click()}
           >

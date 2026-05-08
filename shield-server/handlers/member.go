@@ -123,6 +123,31 @@ func DeleteMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Member deleted"})
 }
 
+// ExportMembers exports all members as CSV
+func ExportMembers(c *gin.Context) {
+	var members []models.Member
+	models.DB.Order("name asc").Find(&members)
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=members.csv")
+
+	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(c.Writer)
+	defer writer.Flush()
+
+	writer.Write([]string{"工号", "姓名", "部门", "邮箱", "创建时间"})
+	for _, m := range members {
+		writer.Write([]string{
+			m.ID,
+			m.Name,
+			m.Department,
+			m.Email,
+			m.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+}
+
 // ImportMembers imports personnel from CSV
 func ImportMembers(c *gin.Context) {
 	file, err := c.FormFile("file")

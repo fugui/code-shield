@@ -127,6 +127,7 @@ function MembersTab() {
             style={{ padding: '0.4rem 0.8rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} 
           />
           <input type="file" accept=".csv" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
+          <button className="btn" style={{ background: 'transparent', borderColor: 'var(--primary-color)', color: 'var(--primary-color)' }} onClick={() => window.open('/api/members/export', '_blank')}>导出</button>
           <button className="btn" style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }} onClick={() => fileInputRef.current?.click()}>批量导入</button>
           <button className="btn" onClick={openAdd}>新增人员</button>
         </div>

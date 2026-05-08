@@ -61,12 +61,14 @@ func main() {
 		api.GET("/teams", handlers.GetTeams)
 		api.POST("/teams", handlers.CreateTeam)
 		api.POST("/teams/import", handlers.ImportTeams)
+		api.GET("/teams/export", handlers.ExportTeams)
 		api.PATCH("/teams/:id", handlers.UpdateTeam)
 		api.DELETE("/teams/:id", handlers.DeleteTeam)
 
 		api.GET("/members", handlers.GetMembers)
 		api.POST("/members", handlers.CreateMember)
 		api.POST("/members/import", handlers.ImportMembers)
+		api.GET("/members/export", handlers.ExportMembers)
 		api.PATCH("/members/:id", handlers.UpdateMember)
 		api.DELETE("/members/:id", handlers.DeleteMember)
 
@@ -75,6 +77,7 @@ func main() {
 		api.PATCH("/repos/:id", handlers.UpdateRepo)
 		api.DELETE("/repos/:id", handlers.DeleteRepo)
 		api.POST("/repos/import", handlers.ImportRepos)
+		api.GET("/repos/export", handlers.ExportRepos)
 
 		api.GET("/config", handlers.GetConfig)
 		api.PATCH("/config", handlers.UpdateConfig)
