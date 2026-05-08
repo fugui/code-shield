@@ -89,6 +89,7 @@ func main() {
 		api.POST("/tasks/:id/notify", handlers.TriggerManualNotification)
 		api.GET("/tasks/:id", handlers.GetTaskDetails)
 		api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
+		api.GET("/tasks/:id/findings", handlers.GetAnalysisFindings)
 
 		// Task type management (read-only for normal users)
 		api.GET("/task-types", handlers.GetTaskTypes)

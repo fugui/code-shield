@@ -172,11 +172,11 @@ func (ctx *taskContext) prepareOutputPaths() {
 	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s%s.json", ctx.taskType.Name, safeRepoName, suffix))
 }
 
-// executeAI invokes the external AI CLI. Requires reportPath and jsonPath to be set.
-func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string) error {
+// executeAI invokes the external AI CLI with the given prompt file. Requires reportPath and jsonPath to be set.
+func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, promptFilePath string) error {
 	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
 
-	absPrompt := models.AppConfig.GetAbsPath(ctx.taskType.PromptFile)
+	absPrompt := models.AppConfig.GetAbsPath(promptFilePath)
 	if _, err := os.Stat(absPrompt); os.IsNotExist(err) {
 		return fmt.Errorf("prompt file not found: %s", absPrompt)
 	}
@@ -240,6 +240,95 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string) 
 	}
 
 	return nil
+}
+
+// AnalysisOutput represents the JSON structure output by AI during the analysis phase
+type AnalysisOutput struct {
+	Findings []struct {
+		Severity    string `json:"severity"`
+		Category    string `json:"category"`
+		FilePath    string `json:"file_path"`
+		LineNumber  int    `json:"line_number"`
+		CodeSnippet string `json:"code_snippet"`
+		Title       string `json:"title"`
+		Detail      string `json:"detail"`
+		Suggestion  string `json:"suggestion"`
+	} `json:"findings"`
+	Summary string `json:"summary"`
+}
+
+// executeAnalysis runs the analysis phase: AI outputs structured JSON findings
+func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
+	if ctx.taskType.AnalysisPromptFile == "" {
+		return nil, fmt.Errorf("analysis prompt file not configured")
+	}
+
+	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果", ctx.taskType.AnalysisPromptFile); err != nil {
+		return nil, err
+	}
+
+	// Parse the AI JSON output from the report file
+	rawJSON, err := os.ReadFile(ctx.reportPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read analysis output: %w", err)
+	}
+
+	var output AnalysisOutput
+	if err := json.Unmarshal(rawJSON, &output); err != nil {
+		log.Printf("[TaskRunner] Failed to parse analysis JSON, saving raw output: %v\n", err)
+		// Even if parsing fails, return empty findings (report file still exists for postprocess)
+		return nil, nil
+	}
+
+	// Convert to model objects and persist
+	var findings []models.AnalysisFinding
+	for _, f := range output.Findings {
+		finding := models.AnalysisFinding{
+			TaskReportID: ctx.report.ID,
+			TaskTypeID:   ctx.taskType.ID,
+			RepoID:       ctx.repo.ID,
+			Severity:     f.Severity,
+			Category:     f.Category,
+			FilePath:     f.FilePath,
+			LineNumber:   f.LineNumber,
+			CodeSnippet:  f.CodeSnippet,
+			Title:        f.Title,
+			Detail:       f.Detail,
+			Suggestion:   f.Suggestion,
+		}
+		findings = append(findings, finding)
+	}
+
+	// Batch insert into database
+	if len(findings) > 0 {
+		if err := models.DB.Create(&findings).Error; err != nil {
+			log.Printf("[TaskRunner] Failed to save analysis findings: %v\n", err)
+		}
+	}
+
+	log.Printf("[TaskRunner] Analysis phase complete: %d findings for ReportID %d\n", len(findings), ctx.report.ID)
+	return findings, nil
+}
+
+// executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings
+func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
+	if ctx.taskType.SynthesisPromptFile == "" {
+		log.Println("[TaskRunner] No synthesis prompt configured, skipping synthesis phase")
+		return nil
+	}
+
+	// Serialize all findings to a JSON input file
+	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
+	synthesisInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("synthesis-input-%d.json", ctx.report.ID))
+	if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
+		return fmt.Errorf("failed to write synthesis input: %w", err)
+	}
+	defer os.Remove(synthesisInputPath)
+
+	log.Printf("[TaskRunner] Starting synthesis with %d findings for ReportID %d\n", len(allFindings), ctx.report.ID)
+
+	// Call AI with synthesis prompt, passing the JSON file as input
+	return ctx.executeAI([]string{synthesisInputPath}, "请基于以上 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile)
 }
 
 // runPostProcess parses the AI output using the task-specific postprocess script

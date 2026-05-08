@@ -82,6 +82,17 @@ func GetTaskReportMarkdown(c *gin.Context) {
 	c.String(http.StatusOK, string(content))
 }
 
+// GetAnalysisFindings returns structured analysis findings for a task report
+func GetAnalysisFindings(c *gin.Context) {
+	id := c.Param("id")
+	var findings []models.AnalysisFinding
+	if err := models.DB.Where("task_report_id = ?", id).Order("id asc").Find(&findings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query findings"})
+		return
+	}
+	c.JSON(http.StatusOK, findings)
+}
+
 // TriggerTask triggers a task for a specific repository
 func TriggerTask(c *gin.Context) {
 	var req struct {
