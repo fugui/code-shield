@@ -59,7 +59,8 @@ type TaskType struct {
 	Description        string         `json:"description"`                      // 任务说明
 	EngineMode         string         `gorm:"default:single" json:"engine_mode"` // 执行引擎模式: single, chunked
 	EngineConfig       datatypes.JSON `json:"engine_config"`                    // 引擎配置 {"max_files": 50, "depth": 2}
-	PromptFile         string         `json:"prompt_file"`                      // prompt 文件路径
+	AnalysisPromptFile  string         `json:"analysis_prompt_file"`             // 分析阶段提示词文件路径
+	SynthesisPromptFile string         `json:"synthesis_prompt_file"`            // 综合报告阶段提示词文件路径
 	PreconditionScript string         `json:"precondition_script"`              // 前置检查脚本路径
 	PostprocessScript  string         `json:"postprocess_script"`               // 后置结果解析脚本路径
 	NotifyTemplate     string         `json:"notify_template"`                  // 邮件主题模板
@@ -90,6 +91,23 @@ type TaskReport struct {
 	BaseCommit  string         `json:"base_commit"`
 	HeadCommit  string         `json:"head_commit"`
 	CreatedAt   time.Time      `json:"created_at"`
+}
+
+// AnalysisFinding 记录 AI 分析阶段输出的结构化问题
+type AnalysisFinding struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	TaskReportID uint      `gorm:"index" json:"task_report_id"`          // 关联到 TaskReport
+	TaskTypeID   uint      `gorm:"index" json:"task_type_id"`            // 哪个任务类型触发的
+	RepoID       uint      `gorm:"index" json:"repo_id"`                 // 来自哪个代码仓
+	Severity     string    `gorm:"not null" json:"severity"`             // 严重程度（阻塞/严重/主要/提示/建议）
+	Category     string    `json:"category"`                             // 问题分类（multithreading, memory_leak, library...）
+	FilePath     string    `json:"file_path"`                            // 问题所在文件
+	LineNumber   int       `json:"line_number"`                          // 行号
+	CodeSnippet  string    `gorm:"type:text" json:"code_snippet"`        // 问题发生处的原始代码片段
+	Title        string    `gorm:"not null" json:"title"`                // 问题标题
+	Detail       string    `gorm:"type:text" json:"detail"`              // 详细描述
+	Suggestion   string    `gorm:"type:text" json:"suggestion"`          // 修复建议
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 const (

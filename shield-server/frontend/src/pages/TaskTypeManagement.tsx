@@ -3,15 +3,15 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../components/Toast';
 import { PlayCircle, Code2, Settings, Trash2 } from 'lucide-react';
 
-type FileTab = 'prompt' | 'precondition' | 'postprocess';
+type FileTab = 'analysis_prompt' | 'synthesis_prompt' | 'precondition' | 'postprocess';
 
 function TaskTypeManagement() {
   const { showToast } = useToast();
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
-    name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', prompt_file: '',
-    precondition_script: '', postprocess_script: '', notify_template: '',
+    name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', analysis_prompt_file: '',
+    synthesis_prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '',
     notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
   });
   const [ccInput, setCcInput] = useState('');
@@ -21,9 +21,9 @@ function TaskTypeManagement() {
   const [showFileEditor, setShowFileEditor] = useState(false);
   const [fileEditorTaskId, setFileEditorTaskId] = useState<number | null>(null);
   const [fileEditorTaskName, setFileEditorTaskName] = useState('');
-  const [activeFileTab, setActiveFileTab] = useState<FileTab>('prompt');
-  const [fileContents, setFileContents] = useState({ prompt: '', precondition: '', postprocess: '' });
-  const [fileDirty, setFileDirty] = useState({ prompt: false, precondition: false, postprocess: false });
+  const [activeFileTab, setActiveFileTab] = useState<FileTab>('analysis_prompt');
+  const [fileContents, setFileContents] = useState({ analysis_prompt: '', synthesis_prompt: '', precondition: '', postprocess: '' });
+  const [fileDirty, setFileDirty] = useState({ analysis_prompt: false, synthesis_prompt: false, precondition: false, postprocess: false });
   const [fileSaving, setFileSaving] = useState(false);
 
   const fetchTaskTypes = async () => {
@@ -34,7 +34,7 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', analysis_prompt_file: '', synthesis_prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
     setEditingId(null);
     setCcInput('');
   };
@@ -51,7 +51,8 @@ function TaskTypeManagement() {
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
-      prompt_file: tt.prompt_file || '', precondition_script: tt.precondition_script || '',
+      analysis_prompt_file: tt.analysis_prompt_file || '', synthesis_prompt_file: tt.synthesis_prompt_file || '',
+      precondition_script: tt.precondition_script || '',
       postprocess_script: tt.postprocess_script || '', notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
     });
@@ -141,13 +142,13 @@ function TaskTypeManagement() {
   const openFileEditor = async (tt: any) => {
     setFileEditorTaskId(tt.id);
     setFileEditorTaskName(tt.display_name);
-    setActiveFileTab('prompt');
-    setFileDirty({ prompt: false, precondition: false, postprocess: false });
+    setActiveFileTab('analysis_prompt');
+    setFileDirty({ analysis_prompt: false, synthesis_prompt: false, precondition: false, postprocess: false });
     try {
       const res = await fetch(`/api/task-types/${tt.id}/files`);
       if (res.ok) {
         const data = await res.json();
-        setFileContents({ prompt: data.prompt || '', precondition: data.precondition || '', postprocess: data.postprocess || '' });
+        setFileContents({ analysis_prompt: data.analysis_prompt || '', synthesis_prompt: data.synthesis_prompt || '', precondition: data.precondition || '', postprocess: data.postprocess || '' });
       }
     } catch { /* ignore */ }
     setShowFileEditor(true);
@@ -180,7 +181,7 @@ function TaskTypeManagement() {
   const fieldStyle: React.CSSProperties = { width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', boxSizing: 'border-box', fontSize: '0.875rem' };
   const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 };
 
-  const fileTabLabels: Record<FileTab, string> = { prompt: 'Prompt 提示词', precondition: '前置检查脚本', postprocess: '后置分析脚本' };
+  const fileTabLabels: Record<FileTab, string> = { analysis_prompt: '分析提示词', synthesis_prompt: '综合报告提示词', precondition: '前置检查脚本', postprocess: '后置分析脚本' };
 
   return (
     <div>
@@ -212,7 +213,7 @@ function TaskTypeManagement() {
                   {tt.is_builtin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: '#dbeafe', color: '#2563eb', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>内置</span>}
                 </td>
                 <td style={{ padding: '1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{tt.name}</td>
-                <td style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tt.prompt_file}>{tt.prompt_file || '-'}</td>
+                <td style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tt.analysis_prompt_file}>{tt.analysis_prompt_file || '-'}</td>
                 <td style={{ padding: '1rem' }}>{tt.timeout}</td>
                 <td style={{ padding: '1rem' }}>{tt.notify_threshold}</td>
                 <td style={{ padding: '1rem' }}>
@@ -289,8 +290,12 @@ function TaskTypeManagement() {
               {editingId ? (
                 <>
                 <div>
-                  <label style={labelStyle}>Prompt 文件路径</label>
-                  <input style={fieldStyle} value={form.prompt_file} onChange={e => setForm({...form, prompt_file: e.target.value})} placeholder="如: tasks/my-task/prompt.md" />
+                  <label style={labelStyle}>分析提示词文件路径</label>
+                  <input style={fieldStyle} value={form.analysis_prompt_file} onChange={e => setForm({...form, analysis_prompt_file: e.target.value})} placeholder="如: tasks/my-task/analysis_prompt.md" />
+                </div>
+                <div>
+                  <label style={labelStyle}>综合报告提示词文件路径</label>
+                  <input style={fieldStyle} value={form.synthesis_prompt_file} onChange={e => setForm({...form, synthesis_prompt_file: e.target.value})} placeholder="如: tasks/my-task/synthesis_prompt.md" />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div>
@@ -360,7 +365,7 @@ function TaskTypeManagement() {
 
             {/* Tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
-              {(['prompt', 'precondition', 'postprocess'] as FileTab[]).map(tab => (
+              {(['analysis_prompt', 'synthesis_prompt', 'precondition', 'postprocess'] as FileTab[]).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveFileTab(tab)}
@@ -389,14 +394,14 @@ function TaskTypeManagement() {
                   fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace", fontSize: '0.85rem', lineHeight: '1.6',
                   background: '#1e293b', color: '#e2e8f0', boxSizing: 'border-box'
                 }}
-                placeholder={activeFileTab === 'prompt' ? '在此编写 AI 任务提示词（Markdown 格式）...' : '在此编写 Bash 脚本...'}
+                placeholder={activeFileTab === 'analysis_prompt' || activeFileTab === 'synthesis_prompt' ? '在此编写 AI 任务提示词（Markdown 格式）...' : '在此编写 Bash 脚本...'}
               />
             </div>
 
             {/* Footer */}
             <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--bg-color)' }}>
               <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                {activeFileTab === 'prompt' ? 'Markdown 格式' : 'Bash 脚本 · 前置: exit 0=继续, 1=跳过, 2=失败 · 后置: 输出 JSON {"score":N,"summary":"...","metrics":{}}'}
+                {activeFileTab === 'analysis_prompt' ? '分析阶段提示词 · AI 输出 JSON' : activeFileTab === 'synthesis_prompt' ? '综合报告提示词 · AI 输出 Markdown' : 'Bash 脚本 · 前置: exit 0=继续, 1=跳过, 2=失败 · 后置: 输出 JSON {"score":N,"summary":"...","metrics":{}}'}
               </span>
               <button
                 className="btn"

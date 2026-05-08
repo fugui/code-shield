@@ -35,6 +35,7 @@ func InitDB() {
 		&TaskType{},
 		&TaskReport{},
 		&KeyIssue{},
+		&AnalysisFinding{},
 		&SystemConfig{},
 		&ScheduleConfig{},
 		&TaskExecutionLog{},
@@ -42,6 +43,9 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
+
+	// One-time data migration: prompt_file → analysis_prompt_file
+	sqlDB.Exec("UPDATE task_types SET analysis_prompt_file = prompt_file WHERE (analysis_prompt_file IS NULL OR analysis_prompt_file = '') AND prompt_file != ''")
 
 	// Seed admin user if no users exist
 	var count int64
@@ -69,30 +73,32 @@ func InitDB() {
 func seedBuiltinTaskTypes() {
 	builtins := []TaskType{
 		{
-			Name:               "code_review",
-			DisplayName:        "代码检视",
-			Description:        "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
-			PromptFile:         filepath.Join("tasks", "code-review", "prompt.md"),
-			PreconditionScript: filepath.Join("tasks", "code-review", "precondition"),
-			PostprocessScript:  filepath.Join("tasks", "code-review", "postprocess"),
-			NotifyTemplate:     "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-			NotifyThreshold:    20,
-			Timeout:            30,
-			IsActive:           true,
-			IsBuiltin:          true,
+			Name:                "code_review",
+			DisplayName:         "代码检视",
+			Description:         "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
+			AnalysisPromptFile:  filepath.Join("tasks", "code-review", "analysis_prompt.md"),
+			SynthesisPromptFile: filepath.Join("tasks", "code-review", "synthesis_prompt.md"),
+			PreconditionScript:  filepath.Join("tasks", "code-review", "precondition"),
+			PostprocessScript:   filepath.Join("tasks", "code-review", "postprocess"),
+			NotifyTemplate:      "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+			NotifyThreshold:     20,
+			Timeout:             30,
+			IsActive:            true,
+			IsBuiltin:           true,
 		},
 		{
-			Name:               "memory_leak",
-			DisplayName:        "内存泄漏检测",
-			Description:        "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
-			PromptFile:         filepath.Join("tasks", "memory-leak", "prompt.md"),
-			PreconditionScript: filepath.Join("tasks", "memory-leak", "precondition"),
-			PostprocessScript:  filepath.Join("tasks", "memory-leak", "postprocess"),
-			NotifyTemplate:     "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-			NotifyThreshold:    10,
-			Timeout:            30,
-			IsActive:           true,
-			IsBuiltin:          true,
+			Name:                "memory_leak",
+			DisplayName:         "内存泄漏检测",
+			Description:         "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
+			AnalysisPromptFile:  filepath.Join("tasks", "memory-leak", "analysis_prompt.md"),
+			SynthesisPromptFile: filepath.Join("tasks", "memory-leak", "synthesis_prompt.md"),
+			PreconditionScript:  filepath.Join("tasks", "memory-leak", "precondition"),
+			PostprocessScript:   filepath.Join("tasks", "memory-leak", "postprocess"),
+			NotifyTemplate:      "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+			NotifyThreshold:     10,
+			Timeout:             30,
+			IsActive:            true,
+			IsBuiltin:           true,
 		},
 	}
 

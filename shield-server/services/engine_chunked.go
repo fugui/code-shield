@@ -1,6 +1,7 @@
 package services
 
 import (
+	"code-shield/models"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -33,12 +34,12 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 
 	log.Printf("[TaskRunner] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
 
-	// ── 逐片执行 AI ──
+	// ── 逐片执行分析阶段 ──
 	chunkDir := filepath.Join(os.TempDir(), fmt.Sprintf("chunks-%d", ctx.report.ID))
 	os.MkdirAll(chunkDir, 0755)
 	defer os.RemoveAll(chunkDir)
 
-	var chunkReports []string
+	var allFindings []models.AnalysisFinding
 
 	for name, files := range chunks {
 		safeName := strings.ReplaceAll(name, "/", "-")
@@ -53,34 +54,23 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		chunkCtx.report.ChunkName = name
 
 		log.Printf("[TaskRunner] Processing chunk [%s] (%d files)\n", name, len(files))
-		if err := chunkCtx.executeAI(files, ""); err != nil {
-			log.Printf("[TaskRunner] Chunk [%s] failed: %v\n", name, err)
+
+		// Phase 1: 分析阶段
+		findings, err := chunkCtx.executeAnalysis(files)
+		if err != nil {
+			log.Printf("[TaskRunner] Chunk [%s] analysis failed: %v\n", name, err)
 			continue
 		}
-
-		if content, err := os.ReadFile(chunkCtx.reportPath); err == nil {
-			chunkReports = append(chunkReports, fmt.Sprintf("### 模块: %s\n\n%s\n", name, string(content)))
-		}
+		allFindings = append(allFindings, findings...)
 	}
 
-	if len(chunkReports) == 0 {
-		return fmt.Errorf("all %d chunks failed", len(chunks))
+	if len(allFindings) == 0 && len(chunks) > 0 {
+		log.Printf("[TaskRunner] Warning: all %d chunks produced no findings\n", len(chunks))
 	}
 
-	// ── 引擎后处理：合并分片报告并综合 ──
-	log.Printf("[TaskRunner] Starting synthesis for %d chunks\n", len(chunkReports))
-
-	synthesisPrompt := "以上是该项目各模块的检视结果。请以此为基础，生成一份全工程的综合报告，总结核心风险，剔除重复发现，并给出整体健康度评分。请务必保持输出格式为 Markdown。"
-
-	synthesisInputPath := filepath.Join(chunkDir, "synthesis-input.md")
-	os.WriteFile(synthesisInputPath, []byte(strings.Join(chunkReports, "\n\n")), 0644)
-
-	// 综合报告写入 ctx.reportPath（外层管线准备好的路径）
-	if err := ctx.executeAI([]string{synthesisInputPath}, synthesisPrompt); err != nil {
-		return fmt.Errorf("synthesis failed: %w", err)
-	}
-
-	return nil
+	// ── Phase 2: 综合阶段 ──
+	log.Printf("[TaskRunner] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
+	return ctx.executeSynthesis(allFindings)
 }
 
 // scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
