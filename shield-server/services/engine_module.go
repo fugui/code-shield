@@ -121,7 +121,7 @@ func scanModules(codesPath string, cfg ModuleConfig) ([]string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		if excludeSet[entry.Name()] {
+		if excludeSet[entry.Name()] || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 		modules = append(modules, entry.Name())
