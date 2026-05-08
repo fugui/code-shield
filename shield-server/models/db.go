@@ -2,7 +2,6 @@ package models
 
 import (
 	"log"
-	"path/filepath"
 
 	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
@@ -44,9 +43,6 @@ func InitDB() {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
 
-	// One-time data migration: prompt_file → analysis_prompt_file
-	sqlDB.Exec("UPDATE task_types SET analysis_prompt_file = prompt_file WHERE (analysis_prompt_file IS NULL OR analysis_prompt_file = '') AND prompt_file != ''")
-
 	// Seed admin user if no users exist
 	var count int64
 	DB.Model(&User{}).Count(&count)
@@ -73,54 +69,35 @@ func InitDB() {
 func seedBuiltinTaskTypes() {
 	builtins := []TaskType{
 		{
-			Name:                "code_review",
-			DisplayName:         "代码检视",
-			Description:         "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
-			AnalysisPromptFile:  filepath.Join("tasks", "code-review", "analysis_prompt.md"),
-			SynthesisPromptFile: filepath.Join("tasks", "code-review", "synthesis_prompt.md"),
-			PreconditionScript:  filepath.Join("tasks", "code-review", "precondition"),
-			PostprocessScript:   filepath.Join("tasks", "code-review", "postprocess"),
-			NotifyTemplate:      "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-			NotifyThreshold:     20,
-			Timeout:             30,
-			IsActive:            true,
-			IsBuiltin:           true,
+			Name:            "code_review",
+			DisplayName:     "代码检视",
+			Description:     "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
+			NotifyTemplate:  "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+			NotifyThreshold: 20,
+			Timeout:         30,
+			IsActive:        true,
+			IsBuiltin:       true,
 		},
 		{
-			Name:                "memory_leak",
-			DisplayName:         "内存泄漏检测",
-			Description:         "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
-			AnalysisPromptFile:  filepath.Join("tasks", "memory-leak", "analysis_prompt.md"),
-			SynthesisPromptFile: filepath.Join("tasks", "memory-leak", "synthesis_prompt.md"),
-			PreconditionScript:  filepath.Join("tasks", "memory-leak", "precondition"),
-			PostprocessScript:   filepath.Join("tasks", "memory-leak", "postprocess"),
-			NotifyTemplate:      "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-			NotifyThreshold:     10,
-			Timeout:             30,
-			IsActive:            true,
-			IsBuiltin:           true,
+			Name:            "memory_leak",
+			DisplayName:     "内存泄漏检测",
+			Description:     "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
+			NotifyTemplate:  "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+			NotifyThreshold: 10,
+			Timeout:         30,
+			IsActive:        true,
+			IsBuiltin:       true,
 		},
 	}
-
 
 	for _, bt := range builtins {
 		var existing TaskType
 		if err := DB.Where("name = ?", bt.Name).First(&existing).Error; err != nil {
-			// Doesn't exist, create it
 			if err := DB.Create(&bt).Error; err != nil {
 				log.Printf("failed to seed task type %s: %v", bt.Name, err)
 			} else {
 				log.Printf("Built-in task type created: %s (%s)", bt.Name, bt.DisplayName)
 			}
-		} else {
-			// Exists: sync file paths for built-in task types (handles migration from prompt.md → analysis_prompt.md)
-			updates := map[string]interface{}{
-				"analysis_prompt_file":  bt.AnalysisPromptFile,
-				"synthesis_prompt_file": bt.SynthesisPromptFile,
-				"precondition_script":   bt.PreconditionScript,
-				"postprocess_script":    bt.PostprocessScript,
-			}
-			DB.Model(&existing).Updates(updates)
 		}
 	}
 }

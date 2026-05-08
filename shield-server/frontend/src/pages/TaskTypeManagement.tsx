@@ -10,9 +10,8 @@ function TaskTypeManagement() {
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
-    name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', analysis_prompt_file: '',
-    synthesis_prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '',
-    notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
+    name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
+    notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
   });
   const [ccInput, setCcInput] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -34,7 +33,7 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', analysis_prompt_file: '', synthesis_prompt_file: '', precondition_script: '', postprocess_script: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
     setEditingId(null);
     setCcInput('');
   };
@@ -51,9 +50,7 @@ function TaskTypeManagement() {
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
-      analysis_prompt_file: tt.analysis_prompt_file || '', synthesis_prompt_file: tt.synthesis_prompt_file || '',
-      precondition_script: tt.precondition_script || '',
-      postprocess_script: tt.postprocess_script || '', notify_template: tt.notify_template || '',
+      notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
     });
     setCcInput('');
@@ -196,7 +193,6 @@ function TaskTypeManagement() {
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left', background: 'var(--bg-color)' }}>
               <th style={{ padding: '1rem' }}>名称</th>
               <th style={{ padding: '1rem' }}>标识</th>
-              <th style={{ padding: '1rem' }}>Prompt 文件</th>
               <th style={{ padding: '1rem' }}>超时(分钟)</th>
               <th style={{ padding: '1rem' }}>通知阈值</th>
               <th style={{ padding: '1rem' }}>状态</th>
@@ -205,7 +201,7 @@ function TaskTypeManagement() {
           </thead>
           <tbody>
             {taskTypes.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>暂无任务类型</td></tr>
+              <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>暂无任务类型</td></tr>
             ) : taskTypes.map(tt => (
               <tr key={tt.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <td style={{ padding: '1rem', fontWeight: 500 }}>
@@ -213,7 +209,6 @@ function TaskTypeManagement() {
                   {tt.is_builtin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: '#dbeafe', color: '#2563eb', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>内置</span>}
                 </td>
                 <td style={{ padding: '1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{tt.name}</td>
-                <td style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tt.analysis_prompt_file}>{tt.analysis_prompt_file || '-'}</td>
                 <td style={{ padding: '1rem' }}>{tt.timeout}</td>
                 <td style={{ padding: '1rem' }}>{tt.notify_threshold}</td>
                 <td style={{ padding: '1rem' }}>
@@ -287,32 +282,9 @@ function TaskTypeManagement() {
                   />
                 </div>
               </div>
-              {editingId ? (
-                <>
-                <div>
-                  <label style={labelStyle}>分析提示词文件路径</label>
-                  <input style={fieldStyle} value={form.analysis_prompt_file} onChange={e => setForm({...form, analysis_prompt_file: e.target.value})} placeholder="如: tasks/my-task/analysis_prompt.md" />
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>
+                  💡 提示词和脚本文件位于 <code style={{ background: '#dcfce7', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>tasks/{(form.name || '<标识名>').replace(/_/g, '-')}/</code> 目录下{editingId ? '，可通过「编辑脚本」修改内容' : '，创建后可通过「编辑脚本」修改内容'}。
                 </div>
-                <div>
-                  <label style={labelStyle}>综合报告提示词文件路径</label>
-                  <input style={fieldStyle} value={form.synthesis_prompt_file} onChange={e => setForm({...form, synthesis_prompt_file: e.target.value})} placeholder="如: tasks/my-task/synthesis_prompt.md" />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div>
-                    <label style={labelStyle}>前置检查脚本</label>
-                    <input style={fieldStyle} value={form.precondition_script} onChange={e => setForm({...form, precondition_script: e.target.value})} placeholder="如: tasks/my-task/precondition.sh" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>后置分析脚本</label>
-                    <input style={fieldStyle} value={form.postprocess_script} onChange={e => setForm({...form, postprocess_script: e.target.value})} placeholder="如: tasks/my-task/postprocess.sh" />
-                  </div>
-                </div>
-                </>
-              ) : (
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>
-                  💡 提示词和脚本文件将自动创建在 <code style={{ background: '#dcfce7', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>tasks/{form.name || '<标识名>'}/</code> 目录下，创建后可通过「编辑脚本」修改内容。
-                </div>
-              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={labelStyle}>执行超时（分钟）</label>

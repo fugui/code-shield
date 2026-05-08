@@ -1,6 +1,8 @@
 package models
 
 import (
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/datatypes"
@@ -53,25 +55,47 @@ type Repository struct {
 
 // TaskType 任务类型定义（管理员可配置）
 type TaskType struct {
-	ID                 uint           `gorm:"primaryKey" json:"id"`
-	Name               string         `gorm:"uniqueIndex;not null" json:"name"` // 唯一标识: "code_review", "memory_leak"
-	DisplayName        string         `gorm:"not null" json:"display_name"`     // 中文名: "代码检视"
-	Description        string         `json:"description"`                      // 任务说明
-	EngineMode         string         `gorm:"default:single" json:"engine_mode"` // 执行引擎模式: single, chunked
-	EngineConfig       datatypes.JSON `json:"engine_config"`                    // 引擎配置 {"max_files": 50, "depth": 2}
-	AnalysisPromptFile  string         `json:"analysis_prompt_file"`             // 分析阶段提示词文件路径
-	SynthesisPromptFile string         `json:"synthesis_prompt_file"`            // 综合报告阶段提示词文件路径
-	PreconditionScript string         `json:"precondition_script"`              // 前置检查脚本路径
-	PostprocessScript  string         `json:"postprocess_script"`               // 后置结果解析脚本路径
-	NotifyTemplate     string         `json:"notify_template"`                  // 邮件主题模板
-	NotifyThreshold    int            `gorm:"default:0" json:"notify_threshold"` // score >= 此值才通知
-	NotifyCc           datatypes.JSON `json:"notify_cc"`                        // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
-	Timeout            int            `gorm:"default:30" json:"timeout"`        // AI 执行超时（分钟）
-	IsActive           bool           `gorm:"default:true" json:"is_active"`
-	IsBuiltin          bool           `gorm:"default:false" json:"is_builtin"` // 内置任务不可删除
-	CreatedAt          time.Time      `json:"created_at"`
-	UpdatedAt          time.Time      `json:"updated_at"`
+	ID              uint           `gorm:"primaryKey" json:"id"`
+	Name            string         `gorm:"uniqueIndex;not null" json:"name"` // 唯一标识: "code_review", "memory_leak"
+	DisplayName     string         `gorm:"not null" json:"display_name"`     // 中文名: "代码检视"
+	Description     string         `json:"description"`                      // 任务说明
+	EngineMode      string         `gorm:"default:single" json:"engine_mode"` // 执行引擎模式: single, chunked
+	EngineConfig    datatypes.JSON `json:"engine_config"`                    // 引擎配置 {"max_files": 50, "depth": 2}
+	NotifyTemplate  string         `json:"notify_template"`                  // 邮件主题模板
+	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"` // score >= 此值才通知
+	NotifyCc        datatypes.JSON `json:"notify_cc"`                        // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
+	Timeout         int            `gorm:"default:30" json:"timeout"`        // AI 执行超时（分钟）
+	IsActive        bool           `gorm:"default:true" json:"is_active"`
+	IsBuiltin       bool           `gorm:"default:false" json:"is_builtin"` // 内置任务不可删除
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
+
+// TaskDir 返回任务类型的文件目录（约定: tasks/<name-with-hyphens>/）
+func (t *TaskType) TaskDir() string {
+	return filepath.Join("tasks", strings.ReplaceAll(t.Name, "_", "-"))
+}
+
+// AnalysisPromptFile 分析阶段提示词文件路径（约定固定）
+func (t *TaskType) AnalysisPromptFile() string {
+	return filepath.Join(t.TaskDir(), "analysis_prompt.md")
+}
+
+// SynthesisPromptFile 综合报告阶段提示词文件路径（约定固定）
+func (t *TaskType) SynthesisPromptFile() string {
+	return filepath.Join(t.TaskDir(), "synthesis_prompt.md")
+}
+
+// PreconditionScript 前置检查脚本路径（约定固定）
+func (t *TaskType) PreconditionScript() string {
+	return filepath.Join(t.TaskDir(), "precondition")
+}
+
+// PostprocessScript 后置结果解析脚本路径（约定固定）
+func (t *TaskType) PostprocessScript() string {
+	return filepath.Join(t.TaskDir(), "postprocess")
+}
+
 
 // TaskReport 通用任务报告
 type TaskReport struct {
