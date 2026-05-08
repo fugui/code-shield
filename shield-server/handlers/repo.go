@@ -152,6 +152,43 @@ func UpdateRepo(c *gin.Context) {
 	c.JSON(http.StatusOK, repo)
 }
 
+// ExportRepos exports all repositories as CSV
+func ExportRepos(c *gin.Context) {
+	var repos []models.Repository
+	models.DB.Preload("Team").Preload("Owner").Find(&repos)
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=repositories.csv")
+
+	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(c.Writer)
+	defer writer.Flush()
+
+	writer.Write([]string{"ID", "代码仓名称", "Repo URL", "归属部门", "负责人ID", "负责人姓名", "分支", "服务组", "创建时间"})
+	for _, r := range repos {
+		teamName := ""
+		if r.Team.Name != "" {
+			teamName = r.Team.Name
+		}
+		ownerName := ""
+		if r.Owner.Name != "" {
+			ownerName = r.Owner.Name
+		}
+		writer.Write([]string{
+			fmt.Sprintf("%d", r.ID),
+			r.Name,
+			r.URL,
+			teamName,
+			r.OwnerID,
+			ownerName,
+			r.Branch,
+			r.ServiceGroup,
+			r.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+}
+
 func ImportRepos(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
