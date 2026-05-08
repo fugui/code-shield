@@ -37,7 +37,7 @@ func GetTaskType(c *gin.Context) {
 	c.JSON(http.StatusOK, taskType)
 }
 
-// CreateTaskType creates a new task type with auto-generated file paths and default files
+// CreateTaskType creates a new task type with auto-generated default files
 func CreateTaskType(c *gin.Context) {
 	var req models.TaskType
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,13 +46,6 @@ func CreateTaskType(c *gin.Context) {
 	}
 
 	req.IsBuiltin = false
-
-	// Auto-generate file paths based on task name
-	taskDir := filepath.Join("tasks", req.Name)
-	req.AnalysisPromptFile = filepath.Join(taskDir, "analysis_prompt.md")
-	req.SynthesisPromptFile = filepath.Join(taskDir, "synthesis_prompt.md")
-	req.PreconditionScript = filepath.Join(taskDir, "precondition")
-	req.PostprocessScript = filepath.Join(taskDir, "postprocess")
 
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
@@ -63,8 +56,8 @@ func CreateTaskType(c *gin.Context) {
 		return
 	}
 
-	// Create default files on disk
-	absTaskDir := models.AppConfig.GetAbsPath(taskDir)
+	// Create default files on disk using conventional paths
+	absTaskDir := models.AppConfig.GetAbsPath(req.TaskDir())
 	os.MkdirAll(absTaskDir, 0755)
 
 	defaultAnalysisPrompt := "# " + req.DisplayName + " 分析指令\n\n请对当前代码仓库执行" + req.DisplayName + "任务。\n\n## 要求\n\n1. 仔细检查代码\n2. 输出结构化 JSON 分析结果\n\n## 输出格式\n\n请严格按照以下 JSON 格式输出：\n\n```json\n{\n  \"findings\": [\n    {\n      \"severity\": \"严重程度\",\n      \"category\": \"问题分类\",\n      \"file_path\": \"文件路径\",\n      \"line_number\": 0,\n      \"code_snippet\": \"相关代码片段\",\n      \"title\": \"问题标题\",\n      \"detail\": \"详细说明\",\n      \"suggestion\": \"修复建议\"\n    }\n  ],\n  \"summary\": \"整体评估摘要\"\n}\n```\n"
@@ -100,10 +93,10 @@ const result = {
 process.stdout.write(JSON.stringify(result));
 `
 
-	os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile), []byte(defaultAnalysisPrompt), 0644)
-	os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile), []byte(defaultSynthesisPrompt), 0644)
-	os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript), []byte(defaultPrecondition), 0755)
-	os.WriteFile(models.AppConfig.GetAbsPath(req.PostprocessScript), []byte(defaultPostprocess), 0755)
+	os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644)
+	os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644)
+	os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755)
+	os.WriteFile(models.AppConfig.GetAbsPath(req.PostprocessScript()), []byte(defaultPostprocess), 0755)
 
 	c.JSON(http.StatusCreated, req)
 }
@@ -118,19 +111,15 @@ func UpdateTaskType(c *gin.Context) {
 	}
 
 	var req struct {
-		DisplayName         *string          `json:"display_name"`
-		Description         *string          `json:"description"`
-		EngineMode          *string          `json:"engine_mode"`
-		EngineConfig        *json.RawMessage `json:"engine_config"`
-		AnalysisPromptFile  *string          `json:"analysis_prompt_file"`
-		SynthesisPromptFile *string          `json:"synthesis_prompt_file"`
-		PreconditionScript  *string          `json:"precondition_script"`
-		PostprocessScript   *string          `json:"postprocess_script"`
-		NotifyTemplate      *string          `json:"notify_template"`
-		NotifyThreshold     *int             `json:"notify_threshold"`
-		NotifyCc            *json.RawMessage `json:"notify_cc"`
-		Timeout             *int             `json:"timeout"`
-		IsActive            *bool            `json:"is_active"`
+		DisplayName     *string          `json:"display_name"`
+		Description     *string          `json:"description"`
+		EngineMode      *string          `json:"engine_mode"`
+		EngineConfig    *json.RawMessage `json:"engine_config"`
+		NotifyTemplate  *string          `json:"notify_template"`
+		NotifyThreshold *int             `json:"notify_threshold"`
+		NotifyCc        *json.RawMessage `json:"notify_cc"`
+		Timeout         *int             `json:"timeout"`
+		IsActive        *bool            `json:"is_active"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -149,18 +138,6 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.EngineConfig != nil {
 		updates["engine_config"] = string(*req.EngineConfig)
-	}
-	if req.AnalysisPromptFile != nil {
-		updates["analysis_prompt_file"] = *req.AnalysisPromptFile
-	}
-	if req.SynthesisPromptFile != nil {
-		updates["synthesis_prompt_file"] = *req.SynthesisPromptFile
-	}
-	if req.PreconditionScript != nil {
-		updates["precondition_script"] = *req.PreconditionScript
-	}
-	if req.PostprocessScript != nil {
-		updates["postprocess_script"] = *req.PostprocessScript
 	}
 	if req.NotifyTemplate != nil {
 		updates["notify_template"] = *req.NotifyTemplate
@@ -209,7 +186,7 @@ func DeleteTaskType(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Task type deleted"})
 }
 
-// GetTaskTypeFiles returns the content of prompt, precondition, and postprocess files
+// GetTaskTypeFiles returns the content of the 4 conventional files
 func GetTaskTypeFiles(c *gin.Context) {
 	id := c.Param("id")
 	var taskType models.TaskType
@@ -219,9 +196,6 @@ func GetTaskTypeFiles(c *gin.Context) {
 	}
 
 	readFile := func(path string) string {
-		if path == "" {
-			return ""
-		}
 		absPath := models.AppConfig.GetAbsPath(path)
 		content, err := os.ReadFile(absPath)
 		if err != nil {
@@ -231,17 +205,17 @@ func GetTaskTypeFiles(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"analysis_prompt":  readFile(taskType.AnalysisPromptFile),
-		"synthesis_prompt": readFile(taskType.SynthesisPromptFile),
-		"precondition":     readFile(taskType.PreconditionScript),
-		"postprocess":      readFile(taskType.PostprocessScript),
+		"analysis_prompt":  readFile(taskType.AnalysisPromptFile()),
+		"synthesis_prompt": readFile(taskType.SynthesisPromptFile()),
+		"precondition":     readFile(taskType.PreconditionScript()),
+		"postprocess":      readFile(taskType.PostprocessScript()),
 	})
 }
 
 // UpdateTaskTypeFile writes content to a specific file of a task type
 func UpdateTaskTypeFile(c *gin.Context) {
 	id := c.Param("id")
-	fileType := c.Param("file_type") // "prompt", "precondition", "postprocess"
+	fileType := c.Param("file_type")
 
 	var taskType models.TaskType
 	if err := models.DB.First(&taskType, id).Error; err != nil {
@@ -260,20 +234,15 @@ func UpdateTaskTypeFile(c *gin.Context) {
 	var filePath string
 	switch fileType {
 	case "analysis_prompt":
-		filePath = taskType.AnalysisPromptFile
+		filePath = taskType.AnalysisPromptFile()
 	case "synthesis_prompt":
-		filePath = taskType.SynthesisPromptFile
+		filePath = taskType.SynthesisPromptFile()
 	case "precondition":
-		filePath = taskType.PreconditionScript
+		filePath = taskType.PreconditionScript()
 	case "postprocess":
-		filePath = taskType.PostprocessScript
+		filePath = taskType.PostprocessScript()
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type, must be: analysis_prompt, synthesis_prompt, precondition, or postprocess"})
-		return
-	}
-
-	if filePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "此任务类型未配置该文件路径，请先在编辑中设置路径"})
 		return
 	}
 

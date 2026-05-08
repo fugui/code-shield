@@ -127,12 +127,10 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 
 // checkPrecondition executes the task-specific script to decide whether to proceed
 func (ctx *taskContext) checkPrecondition() (bool, error) {
-	if ctx.taskType.PreconditionScript == "" {
+	absScript := models.AppConfig.GetAbsPath(ctx.taskType.PreconditionScript())
+	if _, err := os.Stat(absScript); os.IsNotExist(err) {
 		return false, nil
 	}
-
-	updateTaskStatus(ctx.report.ID, models.StatusPreProcessing)
-	absScript := models.AppConfig.GetAbsPath(ctx.taskType.PreconditionScript)
 	
 	log.Printf("[TaskRunner] Running precondition: %s\n", absScript)
 
@@ -259,11 +257,7 @@ type AnalysisOutput struct {
 
 // executeAnalysis runs the analysis phase: AI outputs structured JSON findings
 func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
-	if ctx.taskType.AnalysisPromptFile == "" {
-		return nil, fmt.Errorf("analysis prompt file not configured")
-	}
-
-	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果", ctx.taskType.AnalysisPromptFile); err != nil {
+	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果", ctx.taskType.AnalysisPromptFile()); err != nil {
 		return nil, err
 	}
 
@@ -312,10 +306,6 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 
 // executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings
 func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
-	if ctx.taskType.SynthesisPromptFile == "" {
-		log.Println("[TaskRunner] No synthesis prompt configured, skipping synthesis phase")
-		return nil
-	}
 
 	// Serialize all findings to a JSON input file
 	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
@@ -328,7 +318,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	log.Printf("[TaskRunner] Starting synthesis with %d findings for ReportID %d\n", len(allFindings), ctx.report.ID)
 
 	// Call AI with synthesis prompt, passing the JSON file as input
-	return ctx.executeAI([]string{synthesisInputPath}, "请基于以上 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile)
+	return ctx.executeAI([]string{synthesisInputPath}, "请基于以上 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile())
 }
 
 // runPostProcess parses the AI output using the task-specific postprocess script
@@ -336,11 +326,10 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	updateTaskStatus(ctx.report.ID, models.StatusPostProcessing)
 	var result TaskResult
 
-	if ctx.taskType.PostprocessScript == "" {
+	absPostScript := models.AppConfig.GetAbsPath(ctx.taskType.PostprocessScript())
+	if _, err := os.Stat(absPostScript); os.IsNotExist(err) {
 		return result
 	}
-
-	absPostScript := models.AppConfig.GetAbsPath(ctx.taskType.PostprocessScript)
 	log.Printf("[TaskRunner] Running postprocess: %s\n", absPostScript)
 
 	// Ensure the script is executable
