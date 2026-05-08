@@ -68,11 +68,39 @@ func UpdateTeam(c *gin.Context) {
 
 func DeleteTeam(c *gin.Context) {
 	id := c.Param("id")
-	if err := models.DB.Delete(&models.Team{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete team"})
+
+	// Look up the team first so we can use its name for the member check
+	var team models.Team
+	if err := models.DB.First(&team, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "部门不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Team deleted"})
+
+	// Check for associated repositories
+	var repoCount int64
+	models.DB.Model(&models.Repository{}).Where("team_id = ?", team.ID).Count(&repoCount)
+	if repoCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("该部门下仍有 %d 个代码仓，请先移除或转移后再删除部门。", repoCount),
+		})
+		return
+	}
+
+	// Check for associated members (Member.Department stores the team name as a string)
+	var memberCount int64
+	models.DB.Model(&models.Member{}).Where("department = ?", team.Name).Count(&memberCount)
+	if memberCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("该部门下仍有 %d 名人员，请先移除或转移后再删除部门。", memberCount),
+		})
+		return
+	}
+
+	if err := models.DB.Delete(&team).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除部门失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "部门已删除"})
 }
 
 // ImportTeams imports departments from CSV
