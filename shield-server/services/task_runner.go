@@ -170,8 +170,9 @@ func (ctx *taskContext) prepareOutputPaths() {
 	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s%s.json", ctx.taskType.Name, safeRepoName, suffix))
 }
 
-// executeAI invokes the external AI CLI with the given prompt file. Requires reportPath and jsonPath to be set.
-func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, promptFilePath string) error {
+// executeAI invokes the external AI CLI with the given prompt file.
+// outputPath controls where AI writes its content (reportPath for Markdown, jsonPath for JSON analysis).
+func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, promptFilePath string, outputPath string) error {
 	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
 
 	absPrompt := models.AppConfig.GetAbsPath(promptFilePath)
@@ -205,7 +206,7 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 	}
 
 	cliCmd := fmt.Sprintf("cd %s && %s | claude -p '%s，并输出文档到 %s' --output-format json%s > %s",
-		ctx.codesPath, inputCmd, promptMsg, ctx.reportPath, settingsFlag, ctx.jsonPath)
+		ctx.codesPath, inputCmd, promptMsg, outputPath, settingsFlag, ctx.jsonPath)
 
 	timeout := time.Duration(ctx.taskType.Timeout) * time.Minute
 	if timeout <= 0 { timeout = 30 * time.Minute }
@@ -288,12 +289,12 @@ func cleanJSONFromAI(raw []byte) []byte {
 
 // executeAnalysis runs the analysis phase: AI outputs structured JSON findings
 func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
-	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果", ctx.taskType.AnalysisPromptFile()); err != nil {
+	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果，不要输出 Markdown", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
 		return nil, err
 	}
 
 	// Parse the AI JSON output from the report file
-	rawJSON, err := os.ReadFile(ctx.reportPath)
+	rawJSON, err := os.ReadFile(ctx.jsonPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read analysis output: %w", err)
 	}
@@ -353,7 +354,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	log.Printf("[TaskRunner] Starting synthesis with %d findings for ReportID %d\n", len(allFindings), ctx.report.ID)
 
 	// Call AI with synthesis prompt, passing the JSON file as input
-	return ctx.executeAI([]string{synthesisInputPath}, "请基于以上 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile())
+	return ctx.executeAI([]string{synthesisInputPath}, "请基于以上 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile(), ctx.reportPath)
 }
 
 // runPostProcess parses the AI output using the task-specific postprocess script
