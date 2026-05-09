@@ -255,6 +255,37 @@ type AnalysisOutput struct {
 	Summary string `json:"summary"`
 }
 
+// cleanJSONFromAI strips markdown code block markers and extracts JSON from AI output.
+// AI models frequently wrap JSON in ```json ... ``` markers despite being told not to.
+func cleanJSONFromAI(raw []byte) []byte {
+	s := strings.TrimSpace(string(raw))
+
+	// Strip leading ```json or ``` and trailing ```
+	if strings.HasPrefix(s, "```") {
+		// Remove the opening marker line
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			s = s[idx+1:]
+		}
+		// Remove the trailing ```
+		if strings.HasSuffix(s, "```") {
+			s = s[:len(s)-3]
+		}
+		s = strings.TrimSpace(s)
+	}
+
+	// Try to find a JSON object if there's surrounding text
+	if !strings.HasPrefix(s, "{") {
+		if start := strings.Index(s, "{"); start != -1 {
+			// Find the matching closing brace from the end
+			if end := strings.LastIndex(s, "}"); end > start {
+				s = s[start : end+1]
+			}
+		}
+	}
+
+	return []byte(s)
+}
+
 // executeAnalysis runs the analysis phase: AI outputs structured JSON findings
 func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
 	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果", ctx.taskType.AnalysisPromptFile()); err != nil {
@@ -267,9 +298,13 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 		return nil, fmt.Errorf("failed to read analysis output: %w", err)
 	}
 
+	// Clean the AI output: strip markdown code block markers (```json ... ```)
+	cleanedJSON := cleanJSONFromAI(rawJSON)
+
 	var output AnalysisOutput
-	if err := json.Unmarshal(rawJSON, &output); err != nil {
-		log.Printf("[TaskRunner] Failed to parse analysis JSON, saving raw output: %v\n", err)
+	if err := json.Unmarshal(cleanedJSON, &output); err != nil {
+		log.Printf("[TaskRunner] Failed to parse analysis JSON: %v\n", err)
+		log.Printf("[TaskRunner] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
 		// Even if parsing fails, return empty findings (report file still exists for postprocess)
 		return nil, nil
 	}
