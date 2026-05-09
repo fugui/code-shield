@@ -47,9 +47,8 @@ func (e *ModuleEngine) Run(ctx *taskContext) error {
 	}
 
 	// ── 逐模块执行分析阶段 ──
-	moduleDir := filepath.Join(os.TempDir(), fmt.Sprintf("modules-%d", ctx.report.ID))
+	moduleDir := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("modules-%d", ctx.report.ID))
 	os.MkdirAll(moduleDir, 0755)
-	defer os.RemoveAll(moduleDir)
 
 	var allFindings []models.AnalysisFinding
 
