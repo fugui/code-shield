@@ -81,7 +81,7 @@ func scanAndChunk(codesPath string, cfg ChunkConfig) (map[string][]string, error
 	}
 
 	files := strings.Split(strings.TrimSpace(string(output)), "\n")
-	chunks := make(map[string][]string)
+	rawChunks := make(map[string][]string)
 
 	for _, file := range files {
 		if file == "" {
@@ -103,7 +103,24 @@ func scanAndChunk(codesPath string, cfg ChunkConfig) (map[string][]string, error
 			chunkName = filepath.Join(parts[:depth]...)
 		}
 
-		chunks[chunkName] = append(chunks[chunkName], file)
+		rawChunks[chunkName] = append(rawChunks[chunkName], file)
+	}
+
+	// 对超过 MaxFiles 的分片进行二次拆分
+	chunks := make(map[string][]string)
+	for name, fileList := range rawChunks {
+		if cfg.MaxFiles > 0 && len(fileList) > cfg.MaxFiles {
+			for i := 0; i < len(fileList); i += cfg.MaxFiles {
+				end := i + cfg.MaxFiles
+				if end > len(fileList) {
+					end = len(fileList)
+				}
+				subName := fmt.Sprintf("%s-%d", name, i/cfg.MaxFiles+1)
+				chunks[subName] = fileList[i:end]
+			}
+		} else {
+			chunks[name] = fileList
+		}
 	}
 
 	return chunks, nil
