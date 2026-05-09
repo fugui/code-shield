@@ -136,11 +136,11 @@ var sourceExtensions = map[string]bool{
 	".dart": true, ".lua": true, ".r": true, ".pl": true, ".pm": true,
 	// Shell / 脚本
 	".sh": true, ".bash": true, ".zsh": true, ".bat": true, ".ps1": true,
-	// 配置 / 标记语言（可能含安全相关配置）
-	".yaml": true, ".yml": true, ".toml": true, ".ini": true,
-	".xml": true, ".json": true, ".jsonc": true,
-	// Web
-	".html": true, ".css": true, ".scss": true, ".less": true,
+	// // 配置 / 标记语言（可能含安全相关配置）
+	// ".yaml": true, ".yml": true, ".toml": true, ".ini": true,
+	// ".xml": true, ".json": true, ".jsonc": true,
+	// // Web
+	// ".html": true, ".css": true, ".scss": true, ".less": true,
 	// 数据库
 	".sql": true,
 	// 其他
