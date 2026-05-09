@@ -95,9 +95,9 @@ function KeyIssues() {
 
   useEffect(() => {
     fetchStats();
-    fetch('/api/members').then(r => r.json()).then(d => setMembers(d || [])).catch(() => {});
+    fetch('/api/members?pageSize=999').then(r => r.json()).then(d => setMembers(d?.items || d || [])).catch(() => {});
     fetch('/api/repos?pageSize=999').then(r => r.json()).then(d => setRepos(d?.items || d || [])).catch(() => {});
-    fetch('/api/task-types').then(r => r.json()).then(d => setTaskTypes(d || [])).catch(() => {});
+    fetch('/api/task-types').then(r => r.json()).then(d => setTaskTypes(Array.isArray(d) ? d : d?.items || [])).catch(() => {});
   }, []);
 
   const updateFinding = async (id: number, updates: Record<string, any>) => {
