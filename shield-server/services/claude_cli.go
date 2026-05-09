@@ -30,24 +30,21 @@ func InvokeClaude(req ClaudeRequest) error {
 		return fmt.Errorf("prompt file not found: %s", req.PromptFile)
 	}
 
-	// 检查 settings.json
-	settingsFlag := ""
-	settingsFile := models.AppConfig.GetAbsPath("settings.json")
-	if _, err := os.Stat(settingsFile); err == nil {
-		settingsFlag = fmt.Sprintf(" --settings '%s'", settingsFile)
-	}
-
 	// 构建 prompt 消息：如果有文件列表，追加到消息中让 Claude 自行读取
 	promptMsg := req.PromptMsg
 	if len(req.InputFiles) > 0 {
 		promptMsg += fmt.Sprintf("。请读取并分析以下文件：\n%s", strings.Join(req.InputFiles, "\n"))
 	}
+	promptMsg += fmt.Sprintf("，并输出文档到 %s", req.OutputPath)
 
-	// CLI 元数据输出到独立文件，避免覆盖 AI 文档输出
-	cliMetaPath := req.OutputPath + ".meta.json"
+	// 构建 claude CLI 参数（不经过 shell，避免引号转义问题）
+	args := []string{"-p", promptMsg, "--output-format", "json"}
 
-	cliCmd := fmt.Sprintf("cd %s && cat %s | claude -p '%s，并输出文档到 %s' --output-format json%s > %s",
-		req.WorkDir, req.PromptFile, promptMsg, req.OutputPath, settingsFlag, cliMetaPath)
+	// 检查 settings.json
+	settingsFile := models.AppConfig.GetAbsPath("settings.json")
+	if _, err := os.Stat(settingsFile); err == nil {
+		args = append(args, "--settings", settingsFile)
+	}
 
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
 	if timeout <= 0 {
@@ -57,27 +54,54 @@ func InvokeClaude(req ClaudeRequest) error {
 	ctxRun, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	log.Printf("[Claude] Executing: %s\n", cliCmd)
-	cmd := exec.CommandContext(ctxRun, "bash", "-c", cliCmd)
-	output, err := cmd.CombinedOutput()
+	// CLI 元数据输出到独立文件
+	cliMetaPath := req.OutputPath + ".meta.json"
+	metaFile, err := os.Create(cliMetaPath)
 	if err != nil {
+		return fmt.Errorf("failed to create meta file: %w", err)
+	}
+	defer metaFile.Close()
+
+	log.Printf("[Claude] WorkDir: %s, Args: %v\n", req.WorkDir, args)
+
+	cmd := exec.CommandContext(ctxRun, "claude", args...)
+	cmd.Dir = req.WorkDir
+	cmd.Stdout = metaFile
+
+	// 将提示词文件作为 stdin
+	promptContent, err := os.Open(req.PromptFile)
+	if err != nil {
+		return fmt.Errorf("failed to open prompt file: %w", err)
+	}
+	defer promptContent.Close()
+	cmd.Stdin = promptContent
+
+	// 捕获 stderr 用于错误报告
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
 		if ctxRun.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("AI execution timed out after %v", timeout)
 		}
 
 		// 模拟模式：claude CLI 未安装时返回模拟结果
-		if strings.Contains(string(output), "command not found") {
+		stderrStr := stderrBuf.String()
+		if strings.Contains(stderrStr, "not found") || strings.Contains(err.Error(), "not found") {
 			log.Println("[Claude] Simulating success (claude CLI not found)")
 			os.WriteFile(req.OutputPath, []byte(`{"findings":[],"summary":"模拟报告：AI 引擎未安装"}`), 0644)
 			return nil
 		}
 
 		// 提取错误信息
-		errMsg := strings.TrimSpace(string(output))
+		errMsg := strings.TrimSpace(stderrStr)
 		if errMsg == "" {
 			if content, readErr := os.ReadFile(cliMetaPath); readErr == nil {
 				errMsg = strings.TrimSpace(string(content))
 			}
+		}
+		if errMsg == "" {
+			errMsg = err.Error()
 		}
 
 		return fmt.Errorf("AI execution failed: %s", errMsg)
