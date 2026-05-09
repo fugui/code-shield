@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"code-shield/models"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -155,48 +154,26 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 	return false, nil
 }
 
-// prepareOutputPaths creates the output directory and sets reportPath/jsonPath on the context
+// prepareOutputPaths creates the output directory and sets reportPath/jsonPath on the main report context.
+// Note: ChunkedEngine constructs paths for chunk sub-reports independently.
 func (ctx *taskContext) prepareOutputPaths() {
 	currentDate := time.Now().Format("2006-01-02")
 	reportsDir := filepath.Join(models.AppConfig.Workspace.Home, "reports", ctx.taskType.Name, currentDate)
 	os.MkdirAll(reportsDir, 0755)
 
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
-	suffix := ""
-	if ctx.report.ChunkName != "" {
-		suffix = "-" + strings.ReplaceAll(ctx.report.ChunkName, "/", "-")
-	}
-	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("%s-report-%s%s.md", ctx.taskType.Name, safeRepoName, suffix))
-	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("%s-summary-%s%s.json", ctx.taskType.Name, safeRepoName, suffix))
+	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-%s.md", ctx.report.ID, safeRepoName))
+	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("summary-%d-%s.json", ctx.report.ID, safeRepoName))
 }
 
-// executeAI invokes the external AI CLI with the given prompt file.
+// executeAI constructs the prompt and delegates to InvokeClaude.
 // outputPath controls where AI writes its content (reportPath for Markdown, jsonPath for JSON analysis).
 func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, promptFilePath string, outputPath string) error {
 	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
 
 	absPrompt := models.AppConfig.GetAbsPath(promptFilePath)
-	if _, err := os.Stat(absPrompt); os.IsNotExist(err) {
-		return fmt.Errorf("prompt file not found: %s", absPrompt)
-	}
 
-	settingsFlag := ""
-	settingsFile := models.AppConfig.GetAbsPath("settings.json")
-	if _, err := os.Stat(settingsFile); err == nil {
-		settingsFlag = fmt.Sprintf(" --settings '%s'", settingsFile)
-	}
-
-	// Prepare the input stream
-	var inputCmd string
-	if len(fileList) > 0 {
-		// Only include specific files
-		inputCmd = fmt.Sprintf("cat %s && git -C %s show HEAD:README.md 2>/dev/null || true && cat %s", 
-			absPrompt, ctx.codesPath, strings.Join(fileList, " "))
-	} else {
-		// Original behavior: cat prompt and pipe everything (though claude cli usually scans the dir)
-		inputCmd = fmt.Sprintf("cat %s", absPrompt)
-	}
-
+	// 构造 prompt 消息
 	promptMsg := fmt.Sprintf("请执行%s任务", ctx.taskType.DisplayName)
 	if ctx.report.ChunkName != "" {
 		promptMsg = fmt.Sprintf("你正在分析模块 [%s]，请执行%s任务", ctx.report.ChunkName, ctx.taskType.DisplayName)
@@ -205,43 +182,16 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		promptMsg += "。" + customPromptSuffix
 	}
 
-	// CLI metadata output goes to a separate file, avoiding overwrite of AI document output
-	cliMetaPath := outputPath + ".meta.json"
+	log.Printf("[TaskRunner] Invoking AI (ReportID: %d, Output: %s)\n", ctx.report.ID, outputPath)
 
-	cliCmd := fmt.Sprintf("cd %s && %s | claude -p '%s，并输出文档到 %s' --output-format json%s > %s",
-		ctx.codesPath, inputCmd, promptMsg, outputPath, settingsFlag, cliMetaPath)
-
-	timeout := time.Duration(ctx.taskType.Timeout) * time.Minute
-	if timeout <= 0 { timeout = 30 * time.Minute }
-
-	ctxRun, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	log.Printf("[TaskRunner] Executing AI (ReportID: %d): %s\n", ctx.report.ID, cliCmd)
-	cmd := exec.CommandContext(ctxRun, "bash", "-c", cliCmd)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		if ctxRun.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("AI execution timed out after %v", timeout)
-		}
-		// Fallback for demo/simulation if claude is missing
-		if strings.Contains(string(output), "command not found") {
-			log.Println("[TaskRunner] Simulating success (claude CLI not found)")
-			os.WriteFile(outputPath, []byte(`{"status": "simulated"}`), 0644)
-			os.WriteFile(ctx.reportPath, []byte("# Simulated Report\nAI engine not found."), 0644)
-			return nil
-		}
-
-		errMsg := strings.TrimSpace(string(output))
-		if errMsg == "" {
-			if content, readErr := os.ReadFile(cliMetaPath); readErr == nil {
-				errMsg = strings.TrimSpace(string(content))
-			}
-		}
-
-		return fmt.Errorf("AI execution failed: %s", errMsg)
-	}
-
-	return nil
+	return InvokeClaude(ClaudeRequest{
+		WorkDir:    ctx.codesPath,
+		PromptFile: absPrompt,
+		PromptMsg:  promptMsg,
+		InputFiles: fileList,
+		OutputPath: outputPath,
+		TimeoutMin: ctx.taskType.Timeout,
+	})
 }
 
 // AnalysisOutput represents the JSON structure output by AI during the analysis phase
