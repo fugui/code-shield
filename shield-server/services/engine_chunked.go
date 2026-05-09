@@ -88,6 +88,11 @@ func scanAndChunk(codesPath string, cfg ChunkConfig) (map[string][]string, error
 			continue
 		}
 
+		// 过滤非源码文件
+		if !isSourceFile(file) {
+			continue
+		}
+
 		parts := strings.Split(file, string(filepath.Separator))
 		chunkName := "root"
 		if len(parts) > 1 {
@@ -102,6 +107,56 @@ func scanAndChunk(codesPath string, cfg ChunkConfig) (map[string][]string, error
 	}
 
 	return chunks, nil
+}
+
+// sourceExtensions 定义需要分析的源码文件扩展名
+var sourceExtensions = map[string]bool{
+	// 通用编程语言
+	".go": true, ".py": true, ".java": true, ".kt": true, ".scala": true,
+	".js": true, ".ts": true, ".jsx": true, ".tsx": true, ".vue": true, ".svelte": true,
+	".c": true, ".cpp": true, ".cc": true, ".cxx": true, ".h": true, ".hpp": true,
+	".cs": true, ".rs": true, ".rb": true, ".php": true, ".swift": true, ".m": true,
+	".dart": true, ".lua": true, ".r": true, ".pl": true, ".pm": true,
+	// Shell / 脚本
+	".sh": true, ".bash": true, ".zsh": true, ".bat": true, ".ps1": true,
+	// 配置 / 标记语言（可能含安全相关配置）
+	".yaml": true, ".yml": true, ".toml": true, ".ini": true,
+	".xml": true, ".json": true, ".jsonc": true,
+	// Web
+	".html": true, ".css": true, ".scss": true, ".less": true,
+	// 数据库
+	".sql": true,
+	// 其他
+	".proto": true, ".graphql": true, ".gql": true,
+	".tf": true, ".hcl": true,
+	".dockerfile": true,
+}
+
+// isSourceFile 根据扩展名判断是否为源码文件
+func isSourceFile(file string) bool {
+	// 跳过 . 开头的目录（如 .github/, .vscode/, .idea/ 等）
+	for _, part := range strings.Split(file, "/") {
+		if strings.HasPrefix(part, ".") && part != "." {
+			return false
+		}
+	}
+
+	// 跳过常见的非源码目录
+	lower := strings.ToLower(file)
+	for _, skip := range []string{"vendor/", "node_modules/", "__pycache__/", "dist/", "build/"} {
+		if strings.Contains(lower, skip) {
+			return false
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(file))
+	if ext == "" {
+		// 无扩展名的特殊文件（如 Dockerfile, Makefile）
+		base := strings.ToLower(filepath.Base(file))
+		return base == "dockerfile" || base == "makefile" || base == "rakefile" || base == "gemfile"
+	}
+
+	return sourceExtensions[ext]
 }
 
 func init() {
