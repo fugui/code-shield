@@ -205,8 +205,11 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		promptMsg += "。" + customPromptSuffix
 	}
 
+	// CLI metadata output goes to a separate file, avoiding overwrite of AI document output
+	cliMetaPath := outputPath + ".meta.json"
+
 	cliCmd := fmt.Sprintf("cd %s && %s | claude -p '%s，并输出文档到 %s' --output-format json%s > %s",
-		ctx.codesPath, inputCmd, promptMsg, outputPath, settingsFlag, ctx.jsonPath)
+		ctx.codesPath, inputCmd, promptMsg, outputPath, settingsFlag, cliMetaPath)
 
 	timeout := time.Duration(ctx.taskType.Timeout) * time.Minute
 	if timeout <= 0 { timeout = 30 * time.Minute }
@@ -223,14 +226,14 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		// Fallback for demo/simulation if claude is missing
 		if strings.Contains(string(output), "command not found") {
 			log.Println("[TaskRunner] Simulating success (claude CLI not found)")
-			os.WriteFile(ctx.jsonPath, []byte(`{"status": "simulated"}`), 0644)
+			os.WriteFile(outputPath, []byte(`{"status": "simulated"}`), 0644)
 			os.WriteFile(ctx.reportPath, []byte("# Simulated Report\nAI engine not found."), 0644)
 			return nil
 		}
 
 		errMsg := strings.TrimSpace(string(output))
 		if errMsg == "" {
-			if content, readErr := os.ReadFile(ctx.jsonPath); readErr == nil {
+			if content, readErr := os.ReadFile(cliMetaPath); readErr == nil {
 				errMsg = strings.TrimSpace(string(content))
 			}
 		}
