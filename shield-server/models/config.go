@@ -18,19 +18,20 @@ type Config struct {
 		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 60s
 		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
 	} `yaml:"server"`
-	Workspace struct {
-		Home      string `yaml:"home"`
-		AIBackend string `yaml:"ai_backend"` // AI CLI 后端：claude 或 opencode，默认 claude
-	} `yaml:"workspace"`
-	Notifier struct {
-		URL             string `yaml:"url"`
-		NotifyThreshold int    `yaml:"notify_threshold"` // 评分达到此阈值时自动发送通知
-	} `yaml:"notifier"`
+	Storage struct {
+		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
+	} `yaml:"storage"`
+	AI struct {
+		Backend string `yaml:"backend"` // CLI 后端：claude 或 opencode，默认 claude
+	} `yaml:"ai"`
+	Notification struct {
+		Webhook string `yaml:"webhook"` // 通知回调地址
+	} `yaml:"notification"`
 }
 
 var AppConfig Config
 
-// GetAbsPath returns the absolute path relative to the workspace home if the path is relative.
+// GetAbsPath returns the absolute path relative to the storage root if the path is relative.
 func (c *Config) GetAbsPath(path string) string {
 	if path == "" {
 		return ""
@@ -38,7 +39,7 @@ func (c *Config) GetAbsPath(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(c.Workspace.Home, path)
+	return filepath.Join(c.Storage.Root, path)
 }
 
 // LoadConfig reads the configuration from the specified YAML file
@@ -51,11 +52,11 @@ func LoadConfig(filename string) error {
 		return err
 	}
 	// Default values
-	if AppConfig.Workspace.Home == "" {
-		AppConfig.Workspace.Home = "."
+	if AppConfig.Storage.Root == "" {
+		AppConfig.Storage.Root = "."
 	}
-	if AppConfig.Workspace.AIBackend == "" {
-		AppConfig.Workspace.AIBackend = "claude"
+	if AppConfig.AI.Backend == "" {
+		AppConfig.AI.Backend = "claude"
 	}
 
 	// Server timeout defaults
@@ -75,10 +76,10 @@ func LoadConfig(filename string) error {
 		AppConfig.Server.MaxHeaderBytes = 1 << 20 // 1MB
 	}
 
-	// Convert home to absolute path
-	absHome, err := filepath.Abs(AppConfig.Workspace.Home)
+	// Convert root to absolute path
+	absRoot, err := filepath.Abs(AppConfig.Storage.Root)
 	if err == nil {
-		AppConfig.Workspace.Home = absHome
+		AppConfig.Storage.Root = absRoot
 	}
 
 	return nil

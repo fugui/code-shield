@@ -98,7 +98,7 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	}
 
 	rawPath := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
-	ctx.codesPath = filepath.Join(models.AppConfig.Workspace.Home, "codes", rawPath)
+	ctx.codesPath = filepath.Join(models.AppConfig.Storage.Root, "codes", rawPath)
 
 	if err := os.MkdirAll(filepath.Dir(ctx.codesPath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -158,7 +158,7 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 // Note: ChunkedEngine constructs paths for chunk sub-reports independently.
 func (ctx *taskContext) prepareOutputPaths() {
 	currentDate := time.Now().Format("2006-01-02")
-	reportsDir := filepath.Join(models.AppConfig.Workspace.Home, "reports", ctx.taskType.Name, currentDate)
+	reportsDir := filepath.Join(models.AppConfig.Storage.Root, "reports", ctx.taskType.Name, currentDate)
 	os.MkdirAll(reportsDir, 0755)
 
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
@@ -183,7 +183,7 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 	}
 
 	// 根据配置选择 AI CLI 后端
-	invoker := GetAIInvoker(models.AppConfig.Workspace.AIBackend)
+	invoker := GetAIInvoker(models.AppConfig.AI.Backend)
 	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
 
 	return invoker.Invoke(AIRequest{
@@ -442,7 +442,7 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		"markdown_content": markdownContent,
 	}
 
-	targetURL := models.AppConfig.Notifier.URL
+	targetURL := models.AppConfig.Notification.Webhook
 	if targetURL == "" { return }
 
 	payloadBytes, _ := json.Marshal(payload)
