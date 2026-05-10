@@ -27,6 +27,9 @@ type Config struct {
 	Workspace struct {
 		Home string `yaml:"home"`
 	} `yaml:"workspace"`
+	AICli struct {
+		Backend string `yaml:"backend"` // AI CLI 后端：claude 或 opencode，默认 claude
+	} `yaml:"ai_cli"`
 }
 
 var AppConfig Config
@@ -54,6 +57,9 @@ func LoadConfig(filename string) error {
 	// Default values
 	if AppConfig.Workspace.Home == "" {
 		AppConfig.Workspace.Home = "."
+	}
+	if AppConfig.AICli.Backend == "" {
+		AppConfig.AICli.Backend = "claude"
 	}
 
 	// Server timeout defaults

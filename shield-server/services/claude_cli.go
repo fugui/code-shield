@@ -11,20 +11,15 @@ import (
 	"time"
 )
 
-// ClaudeRequest 封装一次 Claude CLI 调用所需的全部参数
-type ClaudeRequest struct {
-	WorkDir    string   // 执行目录（代码仓根目录）
-	PromptFile string   // 系统提示词文件的绝对路径
-	PromptMsg  string   // 传给 claude -p 的用户提示消息
-	InputFiles []string // 需要分析的文件列表（相对路径），Claude 自行读取
-	OutputPath string   // AI 输出文档的目标路径
-	TimeoutMin int      // 执行超时（分钟），0 表示默认 30 分钟
-}
+// ClaudeInvoker 使用 claude CLI 执行 AI 任务
+type ClaudeInvoker struct{}
 
-// InvokeClaude 调用 Claude CLI 执行 AI 任务。
+func (c *ClaudeInvoker) Name() string { return "claude" }
+
+// Invoke 调用 Claude CLI 执行 AI 任务。
 // 提示词通过 stdin 管道输入，文件列表写在 prompt 消息中由 Claude 自行读取。
 // 返回 nil 表示成功，AI 输出已写入 req.OutputPath。
-func InvokeClaude(req ClaudeRequest) error {
+func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	// 校验 prompt 文件存在
 	if _, err := os.Stat(req.PromptFile); os.IsNotExist(err) {
 		return fmt.Errorf("prompt file not found: %s", req.PromptFile)
@@ -108,4 +103,8 @@ func InvokeClaude(req ClaudeRequest) error {
 	}
 
 	return nil
+}
+
+func init() {
+	RegisterAIInvoker("claude", &ClaudeInvoker{})
 }

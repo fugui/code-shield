@@ -166,7 +166,7 @@ func (ctx *taskContext) prepareOutputPaths() {
 	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("summary-%d-%s.json", ctx.report.ID, safeRepoName))
 }
 
-// executeAI constructs the prompt and delegates to InvokeClaude.
+// executeAI constructs the prompt and delegates to the configured AI CLI backend.
 // outputPath controls where AI writes its content (reportPath for Markdown, jsonPath for JSON analysis).
 func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, promptFilePath string, outputPath string) error {
 	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
@@ -182,9 +182,11 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		promptMsg += "。" + customPromptSuffix
 	}
 
-	log.Printf("[TaskRunner] Invoking AI (ReportID: %d, Output: %s)\n", ctx.report.ID, outputPath)
+	// 根据配置选择 AI CLI 后端
+	invoker := GetAIInvoker(models.AppConfig.AICli.Backend)
+	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
 
-	return InvokeClaude(ClaudeRequest{
+	return invoker.Invoke(AIRequest{
 		WorkDir:    ctx.codesPath,
 		PromptFile: absPrompt,
 		PromptMsg:  promptMsg,
