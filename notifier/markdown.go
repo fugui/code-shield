@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,9 @@ import (
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 )
+
+//go:embed assets
+var hljsAssets embed.FS
 
 func ExtractSummary(markdown string) string {
 	// Match "## ...概要" headings, allowing for:
@@ -43,6 +47,8 @@ func ExtractSummary(markdown string) string {
 	return "具体报告，请查阅随附的完整版附件。\n\n"
 }
 
+// RenderMarkdownToHTML 将 Markdown 转为 HTML，使用 Chroma 内联样式高亮。
+// 适用于邮件正文等不支持 JavaScript 的场景。
 func RenderMarkdownToHTML(markdown string) (string, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
@@ -69,11 +75,71 @@ func RenderMarkdownToHTML(markdown string) (string, error) {
 	return buf.String(), nil
 }
 
+// renderMarkdownPlain 将 Markdown 转为 HTML，保留原始 <code> 标签不做高亮。
+// 交由 highlight.js 在浏览器端完成高亮，效果更精细。
+func renderMarkdownPlain(markdown string) (string, error) {
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+		goldmark.WithRendererOptions(
+			html.WithHardWraps(),
+			html.WithUnsafe(),
+		),
+	)
+	var buf bytes.Buffer
+	if err := md.Convert([]byte(markdown), &buf); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// buildHighlightScripts 拼接所有 highlight.js 资源（核心 + 语言包）为一段 <script>
+func buildHighlightScripts() string {
+	var sb strings.Builder
+
+	// 核心 JS
+	if data, err := hljsAssets.ReadFile("assets/highlight.min.js"); err == nil {
+		sb.WriteString("<script>")
+		sb.Write(data)
+		sb.WriteString("</script>\n")
+	}
+
+	// 语言包
+	entries, _ := hljsAssets.ReadDir("assets")
+	for _, e := range entries {
+		name := e.Name()
+		if name == "highlight.min.js" || name == "github.min.css" {
+			continue
+		}
+		if strings.HasSuffix(name, ".min.js") {
+			if data, err := hljsAssets.ReadFile("assets/" + name); err == nil {
+				sb.WriteString("<script>")
+				sb.Write(data)
+				sb.WriteString("</script>\n")
+			}
+		}
+	}
+
+	// 触发高亮
+	sb.WriteString("<script>hljs.highlightAll();</script>\n")
+	return sb.String()
+}
+
 func GeneratePDF(markdownContent string, taskID string) (string, error) {
-	htmlBody, err := RenderMarkdownToHTML(markdownContent)
+	// 使用不带高亮的 HTML，交由 highlight.js 浏览器端渲染
+	htmlBody, err := renderMarkdownPlain(markdownContent)
 	if err != nil {
 		return "", err
 	}
+
+	// 读取 highlight.js CSS 主题
+	hljsCSS := ""
+	if data, err := hljsAssets.ReadFile("assets/github.min.css"); err == nil {
+		hljsCSS = string(data)
+	}
+
+	// 拼接 highlight.js 脚本
+	hljsScripts := buildHighlightScripts()
 
 	fullHTML := fmt.Sprintf(`
 	<!DOCTYPE html>
@@ -81,19 +147,22 @@ func GeneratePDF(markdownContent string, taskID string) (string, error) {
 	<head>
 		<meta charset="utf-8">
 		<style>
+			%s
 			body { font-family: "Microsoft YaHei", sans-serif; padding: 20px; line-height: 1.6; color: #333; }
 			table { border-collapse: collapse; width: 100%%; }
 			table, th, td { border: 1px solid #ddd; padding: 8px; }
 			th { background-color: #f2f2f2; }
 			code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; }
-			pre { background-color: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; }
+			pre { background-color: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; border: 1px solid #e1e4e8; }
+			pre code { background-color: transparent; padding: 0; }
 		</style>
 	</head>
 	<body>
 		%s
+		%s
 	</body>
 	</html>
-	`, htmlBody)
+	`, hljsCSS, htmlBody, hljsScripts)
 
 	tempDir := filepath.Join(os.TempDir(), "code-shield-notifier")
 	os.MkdirAll(tempDir, 0755)
@@ -116,6 +185,8 @@ func GeneratePDF(markdownContent string, taskID string) (string, error) {
 
 	err = chromedp.Run(ctx,
 		chromedp.Navigate(fileURL),
+		// 等待 highlight.js 完成渲染
+		chromedp.WaitReady("body"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			pdfBuffer, _, err = page.PrintToPDF().
