@@ -1,10 +1,21 @@
+# ============================================================
+# Code Shield 服务端配置
+# ============================================================
+
+# ── 服务器 ──
 server:
   port: ":8080"
-notifier:
-  url: "http://127.0.0.1:8081/api/notify/email"
-review:
-  notify_threshold: 20
+  # gin_log: true                # 是否打印 GIN 请求日志，默认 false
+  # read_timeout: 15s            # 读取请求超时
+  # write_timeout: 15s           # 写入响应超时
+  # idle_timeout: 60s            # keep-alive 空闲超时
+
+# ── 工作空间 & AI 引擎 ──
 workspace:
   home: "/home/fugui/test_root"  # 工作目录，下设 codes/ 和 reports/ 子目录
-ai_cli:
-  backend: "claude"  # AI CLI 后端：claude 或 opencode
+  ai_backend: "claude"           # AI CLI 后端：claude 或 opencode
+
+# ── 通知 ──
+notifier:
+  url: "http://127.0.0.1:8081/api/notify/email"
+  notify_threshold: 20           # 评分达到此阈值时自动发送通知

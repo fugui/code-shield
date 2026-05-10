@@ -18,18 +18,14 @@ type Config struct {
 		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 60s
 		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
 	} `yaml:"server"`
-	Notifier struct {
-		URL string `yaml:"url"`
-	} `yaml:"notifier"`
-	Review struct {
-		NotifyThreshold int `yaml:"notify_threshold"`
-	} `yaml:"review"`
 	Workspace struct {
-		Home string `yaml:"home"`
+		Home      string `yaml:"home"`
+		AIBackend string `yaml:"ai_backend"` // AI CLI 后端：claude 或 opencode，默认 claude
 	} `yaml:"workspace"`
-	AICli struct {
-		Backend string `yaml:"backend"` // AI CLI 后端：claude 或 opencode，默认 claude
-	} `yaml:"ai_cli"`
+	Notifier struct {
+		URL             string `yaml:"url"`
+		NotifyThreshold int    `yaml:"notify_threshold"` // 评分达到此阈值时自动发送通知
+	} `yaml:"notifier"`
 }
 
 var AppConfig Config
@@ -58,8 +54,8 @@ func LoadConfig(filename string) error {
 	if AppConfig.Workspace.Home == "" {
 		AppConfig.Workspace.Home = "."
 	}
-	if AppConfig.AICli.Backend == "" {
-		AppConfig.AICli.Backend = "claude"
+	if AppConfig.Workspace.AIBackend == "" {
+		AppConfig.Workspace.AIBackend = "claude"
 	}
 
 	// Server timeout defaults
