@@ -1,7 +1,6 @@
 package services
 
 import (
-	"code-shield/models"
 	"context"
 	"fmt"
 	"log"
@@ -11,35 +10,43 @@ import (
 	"time"
 )
 
-// ClaudeInvoker 使用 claude CLI 执行 AI 任务
-type ClaudeInvoker struct{}
+// OpenCodeInvoker 使用 opencode CLI 执行 AI 任务
+type OpenCodeInvoker struct{}
 
-func (c *ClaudeInvoker) Name() string { return "claude" }
+func (o *OpenCodeInvoker) Name() string { return "opencode" }
 
-// Invoke 调用 Claude CLI 执行 AI 任务。
-// 提示词通过 stdin 管道输入，文件列表写在 prompt 消息中由 Claude 自行读取。
+// Invoke 调用 opencode run 执行 AI 任务。
+// opencode 使用 opencode.json 中的 instructions 来注入系统提示词，
+// 用户提示通过命令行参数传递。
 // 返回 nil 表示成功，AI 输出已写入 req.OutputPath。
-func (c *ClaudeInvoker) Invoke(req AIRequest) error {
+func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	// 校验 prompt 文件存在
 	if _, err := os.Stat(req.PromptFile); os.IsNotExist(err) {
 		return fmt.Errorf("prompt file not found: %s", req.PromptFile)
 	}
 
-	// 构建 prompt 消息：如果有文件列表，追加到消息中让 Claude 自行读取
-	promptMsg := req.PromptMsg
+	// 读取系统提示词文件内容，嵌入到用户 prompt 中
+	promptContent, err := os.ReadFile(req.PromptFile)
+	if err != nil {
+		return fmt.Errorf("failed to read prompt file: %w", err)
+	}
+
+	// 构建完整 prompt 消息：系统提示词 + 用户消息 + 文件列表 + 输出路径
+	var sb strings.Builder
+	sb.WriteString("请严格遵守以下系统指令：\n\n")
+	sb.Write(promptContent)
+	sb.WriteString("\n\n---\n\n")
+	sb.WriteString(req.PromptMsg)
+
 	if len(req.InputFiles) > 0 {
-		promptMsg += fmt.Sprintf("。请读取并分析以下文件：\n%s", strings.Join(req.InputFiles, "\n"))
+		sb.WriteString(fmt.Sprintf("。请读取并分析以下文件：\n%s", strings.Join(req.InputFiles, "\n")))
 	}
-	promptMsg += fmt.Sprintf("，并输出文档到 %s", req.OutputPath)
+	sb.WriteString(fmt.Sprintf("，并输出文档到 %s", req.OutputPath))
 
-	// 构建 claude CLI 参数（不经过 shell，避免引号转义问题）
-	args := []string{"-p", promptMsg, "--output-format", "json"}
+	fullPrompt := sb.String()
 
-	// 检查 settings.json
-	settingsFile := models.AppConfig.GetAbsPath("settings.json")
-	if _, err := os.Stat(settingsFile); err == nil {
-		args = append(args, "--settings", settingsFile)
-	}
+	// 构建 opencode run 参数
+	args := []string{"run", fullPrompt, "-q"}
 
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
 	if timeout <= 0 {
@@ -57,19 +64,11 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	}
 	defer metaFile.Close()
 
-	log.Printf("[Claude] WorkDir: %s, Args: %v\n", req.WorkDir, args)
+	log.Printf("[OpenCode] WorkDir: %s, PromptLen: %d chars\n", req.WorkDir, len(fullPrompt))
 
-	cmd := exec.CommandContext(ctxRun, "claude", args...)
+	cmd := exec.CommandContext(ctxRun, "opencode", args...)
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
-
-	// 将提示词文件作为 stdin
-	promptContent, err := os.Open(req.PromptFile)
-	if err != nil {
-		return fmt.Errorf("failed to open prompt file: %w", err)
-	}
-	defer promptContent.Close()
-	cmd.Stdin = promptContent
 
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
@@ -80,10 +79,10 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 			return fmt.Errorf("AI execution timed out after %v", timeout)
 		}
 
-		// 模拟模式：claude CLI 未安装时返回模拟结果
+		// 模拟模式：opencode CLI 未安装时返回模拟结果
 		stderrStr := stderrBuf.String()
 		if strings.Contains(stderrStr, "not found") || strings.Contains(err.Error(), "not found") {
-			log.Println("[Claude] Simulating success (claude CLI not found)")
+			log.Println("[OpenCode] Simulating success (opencode CLI not found)")
 			os.WriteFile(req.OutputPath, []byte(`{"findings":[],"summary":"模拟报告：AI 引擎未安装"}`), 0644)
 			return nil
 		}
@@ -106,5 +105,5 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 }
 
 func init() {
-	RegisterAIInvoker("claude", &ClaudeInvoker{})
+	RegisterAIInvoker("opencode", &OpenCodeInvoker{})
 }
