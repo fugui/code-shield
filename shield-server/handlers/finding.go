@@ -19,6 +19,7 @@ func GetFindings(c *gin.Context) {
 	category := c.Query("category")
 	status := c.Query("status")
 	keyword := c.Query("keyword")
+	teamID := c.Query("team_id")
 
 	if page < 1 {
 		page = 1
@@ -28,6 +29,9 @@ func GetFindings(c *gin.Context) {
 	}
 
 	query := models.DB.Model(&models.AnalysisFinding{})
+	if teamID != "" {
+		query = query.Where("repo_id IN (?)", models.DB.Model(&models.Repository{}).Select("id").Where("team_id = ?", teamID))
+	}
 	if repoID != "" {
 		query = query.Where("repo_id = ?", repoID)
 	}
