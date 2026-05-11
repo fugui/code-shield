@@ -20,9 +20,11 @@ func (c *ClaudeInvoker) Name() string { return "claude" }
 // 提示词通过 stdin 管道输入，文件列表写在 prompt 消息中由 Claude 自行读取。
 // 返回 nil 表示成功，AI 输出已写入 req.OutputPath。
 func (c *ClaudeInvoker) Invoke(req AIRequest) error {
-	// 校验 prompt 文件存在
-	if _, err := os.Stat(req.PromptFile); os.IsNotExist(err) {
-		return fmt.Errorf("prompt file not found: %s", req.PromptFile)
+	// 校验 prompt 文件存在（PromptFile 为空时跳过，仅使用 PromptMsg）
+	if req.PromptFile != "" {
+		if _, err := os.Stat(req.PromptFile); os.IsNotExist(err) {
+			return fmt.Errorf("prompt file not found: %s", req.PromptFile)
+		}
 	}
 
 	// 构建 prompt 消息：如果有文件列表，追加到消息中让 Claude 自行读取
@@ -63,13 +65,15 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
 
-	// 将提示词文件作为 stdin
-	promptContent, err := os.Open(req.PromptFile)
-	if err != nil {
-		return fmt.Errorf("failed to open prompt file: %w", err)
+	// 将提示词文件作为 stdin（PromptFile 为空时不设置 stdin）
+	if req.PromptFile != "" {
+		promptContent, err := os.Open(req.PromptFile)
+		if err != nil {
+			return fmt.Errorf("failed to open prompt file: %w", err)
+		}
+		defer promptContent.Close()
+		cmd.Stdin = promptContent
 	}
-	defer promptContent.Close()
-	cmd.Stdin = promptContent
 
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
