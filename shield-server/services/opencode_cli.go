@@ -20,22 +20,23 @@ func (o *OpenCodeInvoker) Name() string { return "opencode" }
 // 用户提示通过命令行参数传递。
 // 返回 nil 表示成功，AI 输出已写入 req.OutputPath。
 func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
-	// 校验 prompt 文件存在
-	if _, err := os.Stat(req.PromptFile); os.IsNotExist(err) {
-		return fmt.Errorf("prompt file not found: %s", req.PromptFile)
-	}
-
-	// 读取系统提示词文件内容，嵌入到用户 prompt 中
-	promptContent, err := os.ReadFile(req.PromptFile)
-	if err != nil {
-		return fmt.Errorf("failed to read prompt file: %w", err)
-	}
-
-	// 构建完整 prompt 消息：系统提示词 + 用户消息 + 文件列表 + 输出路径
+	// 构建完整 prompt 消息
 	var sb strings.Builder
-	sb.WriteString("请严格遵守以下系统指令：\n\n")
-	sb.Write(promptContent)
-	sb.WriteString("\n\n---\n\n")
+
+	// 嵌入系统提示词文件（PromptFile 为空时跳过，仅使用 PromptMsg）
+	if req.PromptFile != "" {
+		if _, err := os.Stat(req.PromptFile); os.IsNotExist(err) {
+			return fmt.Errorf("prompt file not found: %s", req.PromptFile)
+		}
+		promptContent, err := os.ReadFile(req.PromptFile)
+		if err != nil {
+			return fmt.Errorf("failed to read prompt file: %w", err)
+		}
+		sb.WriteString("请严格遵守以下系统指令：\n\n")
+		sb.Write(promptContent)
+		sb.WriteString("\n\n---\n\n")
+	}
+
 	sb.WriteString(req.PromptMsg)
 
 	if len(req.InputFiles) > 0 {

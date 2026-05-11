@@ -259,10 +259,22 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 
 	var output AnalysisOutput
 	if err := json.Unmarshal(cleanedJSON, &output); err != nil {
-		log.Printf("[TaskRunner] Failed to parse analysis JSON: %v\n", err)
+		log.Printf("[TaskRunner] Failed to parse analysis JSON: %v, attempting AI repair\n", err)
 		log.Printf("[TaskRunner] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
-		// Even if parsing fails, return empty findings (report file still exists for postprocess)
-		return nil, nil
+
+		// Attempt AI-powered JSON repair
+		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath)
+		if repairErr != nil {
+			log.Printf("[TaskRunner] AI JSON repair failed: %v\n", repairErr)
+			return nil, nil
+		}
+		if err := json.Unmarshal(repairedJSON, &output); err != nil {
+			log.Printf("[TaskRunner] Repaired JSON still invalid: %v\n", err)
+			return nil, nil
+		}
+		log.Println("[TaskRunner] AI JSON repair successful")
+		// Overwrite the json file with the repaired version for downstream use
+		os.WriteFile(ctx.jsonPath, repairedJSON, 0644)
 	}
 
 	// Convert to model objects and persist
@@ -294,6 +306,7 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 	log.Printf("[TaskRunner] Analysis phase complete: %d findings for ReportID %d\n", len(findings), ctx.report.ID)
 	return findings, nil
 }
+
 
 // executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings
 func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
