@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../components/Toast';
 
@@ -44,6 +44,7 @@ function KeyIssues() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -53,9 +54,15 @@ function KeyIssues() {
   // Filters
   const [filterSeverity, setFilterSeverity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterTeam, setFilterTeam] = useState('');
   const [filterRepo, setFilterRepo] = useState('');
   const [filterTaskType, setFilterTaskType] = useState('');
   const [filterKeyword, setFilterKeyword] = useState('');
+
+  // Repo combobox
+  const [repoSearch, setRepoSearch] = useState('');
+  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+  const repoComboRef = useRef<HTMLDivElement>(null);
 
   // Stats
   const [stats, setStats] = useState<any>(null);
@@ -69,6 +76,7 @@ function KeyIssues() {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
     if (filterSeverity) params.set('severity', filterSeverity);
     if (filterStatus) params.set('status', filterStatus);
+    if (filterTeam) params.set('team_id', filterTeam);
     if (filterRepo) params.set('repo_id', filterRepo);
     if (filterTaskType) params.set('task_type_id', filterTaskType);
     if (filterKeyword) params.set('keyword', filterKeyword);
@@ -82,7 +90,7 @@ function KeyIssues() {
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, [page, filterSeverity, filterStatus, filterRepo, filterTaskType, filterKeyword]);
+  }, [page, filterSeverity, filterStatus, filterTeam, filterRepo, filterTaskType, filterKeyword]);
 
   const fetchStats = async () => {
     try {
@@ -97,7 +105,19 @@ function KeyIssues() {
     fetchStats();
     fetch('/api/members?pageSize=999').then(r => r.json()).then(d => setMembers(d?.items || d || [])).catch(() => {});
     fetch('/api/repos?pageSize=999').then(r => r.json()).then(d => setRepos(d?.items || d || [])).catch(() => {});
+    fetch('/api/teams').then(r => r.json()).then(d => setTeams(d?.items || d || [])).catch(() => {});
     fetch('/api/task-types').then(r => r.json()).then(d => setTaskTypes(Array.isArray(d) ? d : d?.items || [])).catch(() => {});
+  }, []);
+
+  // Close repo dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (repoComboRef.current && !repoComboRef.current.contains(e.target as Node)) {
+        setRepoDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
   const updateFinding = async (id: number, updates: Record<string, any>) => {
@@ -124,9 +144,17 @@ function KeyIssues() {
   };
 
   const resetFilters = () => {
-    setFilterSeverity(''); setFilterStatus(''); setFilterRepo('');
-    setFilterTaskType(''); setFilterKeyword(''); setPage(1);
+    setFilterSeverity(''); setFilterStatus(''); setFilterTeam('');
+    setFilterRepo(''); setRepoSearch(''); setFilterTaskType('');
+    setFilterKeyword(''); setPage(1);
   };
+
+  // Filtered repos based on selected team + search text
+  const filteredRepos = repos.filter((r: any) => {
+    if (filterTeam && String(r.team_id) !== filterTeam) return false;
+    if (repoSearch && !r.name.toLowerCase().includes(repoSearch.toLowerCase())) return false;
+    return true;
+  });
 
   const getSeverityStyle = (severity: string) => severityColors[severity] || { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' };
   const getStatusStyle = (status: string) => statusLabels[status] || statusLabels['open'];
@@ -187,10 +215,50 @@ function KeyIssues() {
           <option value="processing">处理中</option>
           <option value="closed">已关闭</option>
         </select>
-        <select style={filterSelectStyle} value={filterRepo} onChange={e => { setFilterRepo(e.target.value); setPage(1); }}>
-          <option value="">全部代码仓</option>
-          {repos.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        <select style={filterSelectStyle} value={filterTeam} onChange={e => { setFilterTeam(e.target.value); setFilterRepo(''); setRepoSearch(''); setPage(1); }}>
+          <option value="">全部部门</option>
+          {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
+        <div ref={repoComboRef} style={{ position: 'relative', minWidth: '160px' }}>
+          <input
+            style={{ ...filterSelectStyle, width: '100%', boxSizing: 'border-box' }}
+            placeholder="搜索代码仓..."
+            value={repoSearch}
+            onChange={e => { setRepoSearch(e.target.value); setRepoDropdownOpen(true); if (!e.target.value) { setFilterRepo(''); setPage(1); } }}
+            onFocus={() => setRepoDropdownOpen(true)}
+          />
+          {filterRepo && (
+            <span onClick={() => { setFilterRepo(''); setRepoSearch(''); setPage(1); }}
+              style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1 }}>✕</span>
+          )}
+          {repoDropdownOpen && filteredRepos.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+              background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '6px',
+              maxHeight: '220px', overflowY: 'auto', marginTop: '2px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+            }}>
+              <div onClick={() => { setFilterRepo(''); setRepoSearch(''); setRepoDropdownOpen(false); setPage(1); }}
+                style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', cursor: 'pointer', color: '#94a3b8', borderBottom: '1px solid var(--border-color)' }}>
+                全部代码仓
+              </div>
+              {filteredRepos.map((r: any) => (
+                <div key={r.id}
+                  onClick={() => { setFilterRepo(String(r.id)); setRepoSearch(r.name); setRepoDropdownOpen(false); setPage(1); }}
+                  style={{
+                    padding: '0.4rem 0.7rem', fontSize: '0.82rem', cursor: 'pointer',
+                    color: 'var(--text-color)',
+                    background: String(r.id) === filterRepo ? 'var(--primary-color-light, rgba(99,102,241,0.1))' : 'transparent',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-color-light, rgba(99,102,241,0.08))')}
+                  onMouseLeave={e => (e.currentTarget.style.background = String(r.id) === filterRepo ? 'var(--primary-color-light, rgba(99,102,241,0.1))' : 'transparent')}
+                >
+                  {r.name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <select style={filterSelectStyle} value={filterTaskType} onChange={e => { setFilterTaskType(e.target.value); setPage(1); }}>
           <option value="">全部任务类型</option>
           {taskTypes.map((t: any) => <option key={t.id} value={t.id}>{t.display_name}</option>)}
