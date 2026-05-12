@@ -11,6 +11,7 @@ function TaskTypeManagement() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
+    ai_backend: '', skip_tests: true,
     notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
   });
   const [ccInput, setCcInput] = useState('');
@@ -33,7 +34,7 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', ai_backend: '', skip_tests: true, notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
     setEditingId(null);
     setCcInput('');
   };
@@ -50,6 +51,7 @@ function TaskTypeManagement() {
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
+      ai_backend: tt.ai_backend || '', skip_tests: tt.skip_tests !== false,
       notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
     });
@@ -279,6 +281,22 @@ function TaskTypeManagement() {
                     onChange={e => setForm({...form, engine_config: e.target.value})}
                     placeholder={'{\n  "max_files": 50,\n  "depth": 1\n}'}
                   />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={labelStyle}>AI 后端</label>
+                  <select style={fieldStyle} value={form.ai_backend} onChange={e => setForm({...form, ai_backend: e.target.value})}>
+                    <option value="">跟随全局配置</option>
+                    <option value="claude">Claude</option>
+                    <option value="opencode">OpenCode</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '0.3rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                    <input type="checkbox" checked={form.skip_tests} onChange={e => setForm({...form, skip_tests: e.target.checked})} />
+                    跳过测试文件 <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: '0.78rem' }}>(*_test.go, *.spec.ts 等)</span>
+                  </label>
                 </div>
               </div>
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>

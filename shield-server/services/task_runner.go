@@ -182,8 +182,12 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		promptMsg += "。" + customPromptSuffix
 	}
 
-	// 根据配置选择 AI CLI 后端
-	invoker := GetAIInvoker(models.AppConfig.AI.Backend)
+	// 根据配置选择 AI CLI 后端（任务级别优先，否则使用全局配置）
+	backend := models.AppConfig.AI.Backend
+	if ctx.taskType.AIBackend != "" {
+		backend = ctx.taskType.AIBackend
+	}
+	invoker := GetAIInvoker(backend)
 	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
 
 	return invoker.Invoke(AIRequest{
