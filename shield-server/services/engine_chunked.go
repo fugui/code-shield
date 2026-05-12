@@ -27,7 +27,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 
-	chunks, err := scanAndChunk(ctx.codesPath, cfg)
+	chunks, err := scanAndChunk(ctx.codesPath, cfg, ctx.taskType.SkipTests)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 }
 
 // scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
-func scanAndChunk(codesPath string, cfg ChunkConfig) (map[string][]string, error) {
+func scanAndChunk(codesPath string, cfg ChunkConfig, skipTests bool) (map[string][]string, error) {
 	cmd := exec.Command("git", "-C", codesPath, "ls-files")
 	output, err := cmd.Output()
 	if err != nil {
@@ -90,6 +90,11 @@ func scanAndChunk(codesPath string, cfg ChunkConfig) (map[string][]string, error
 
 		// 过滤非源码文件
 		if !isSourceFile(file) {
+			continue
+		}
+
+		// 过滤测试文件
+		if skipTests && isTestFile(file) {
 			continue
 		}
 
@@ -174,6 +179,39 @@ func isSourceFile(file string) bool {
 	}
 
 	return sourceExtensions[ext]
+}
+
+// isTestFile 根据文件名和路径判断是否为测试文件
+func isTestFile(file string) bool {
+	base := filepath.Base(file)
+	lower := strings.ToLower(base)
+
+	// Go: *_test.go
+	if strings.HasSuffix(lower, "_test.go") {
+		return true
+	}
+	// JS/TS: *.test.*, *.spec.*
+	if strings.Contains(lower, ".test.") || strings.Contains(lower, ".spec.") {
+		return true
+	}
+	// Python: test_*.py, *_test.py
+	if strings.HasSuffix(lower, ".py") && (strings.HasPrefix(lower, "test_") || strings.HasSuffix(strings.TrimSuffix(lower, ".py"), "_test")) {
+		return true
+	}
+	// Java/Kotlin: *Test.java, *Spec.java, *Test.kt
+	if strings.HasSuffix(base, "Test.java") || strings.HasSuffix(base, "Spec.java") || strings.HasSuffix(base, "Test.kt") {
+		return true
+	}
+
+	// 测试目录
+	lowerPath := strings.ToLower(file)
+	for _, dir := range []string{"test/", "tests/", "__tests__/", "spec/", "testdata/"} {
+		if strings.Contains(lowerPath, dir) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func init() {
