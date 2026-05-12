@@ -269,7 +269,6 @@ function TaskTypeManagement() {
                   <select style={fieldStyle} value={form.engine_mode} onChange={e => setForm({...form, engine_mode: e.target.value})}>
                     <option value="single">单引擎 (single)</option>
                     <option value="chunked">分片引擎 (chunked)</option>
-                    <option value="module">模块引擎 (module)</option>
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
