@@ -10,7 +10,7 @@ interface Finding {
   severity: string;
   category: string;
   file_path: string;
-  line_number: number;
+  line_number: string;
   code_snippet: string;
   title: string;
   detail: string;
@@ -307,7 +307,7 @@ function KeyIssues() {
                     </div>
                     {f.file_path && (
                       <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
-                        {f.file_path}{f.line_number > 0 ? `:${f.line_number}` : ''}
+                        {f.file_path}{f.line_number ? `:${f.line_number}` : ''}
                       </div>
                     )}
                   </td>
@@ -391,7 +391,7 @@ function KeyIssues() {
             {/* File info */}
             {detailFinding.file_path && (
               <div style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.5rem 0.8rem', marginBottom: '1rem', fontFamily: 'monospace', fontSize: '0.82rem', color: '#94a3b8' }}>
-                📄 {detailFinding.file_path}{detailFinding.line_number > 0 ? `:${detailFinding.line_number}` : ''}
+                📄 {detailFinding.file_path}{detailFinding.line_number ? `:${detailFinding.line_number}` : ''}
                 <span style={{ marginLeft: '1rem', color: '#64748b' }}>代码仓: {getRepoName(detailFinding.repo_id)}</span>
               </div>
             )}

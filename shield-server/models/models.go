@@ -134,7 +134,7 @@ type AnalysisFinding struct {
 	Severity     string     `gorm:"not null" json:"severity"`             // 严重程度（阻塞/严重/主要/提示/建议）
 	Category     string     `json:"category"`                             // 问题分类（multithreading, memory_leak, library...）
 	FilePath     string     `json:"file_path"`                            // 问题所在文件
-	LineNumber   int        `json:"line_number"`                          // 行号
+	LineNumber   string     `json:"line_number"`                          // 行号（支持范围如 "100-125" 或多行 "41,42"）
 	CodeSnippet  string     `gorm:"type:text" json:"code_snippet"`        // 问题发生处的原始代码片段
 	Title        string     `gorm:"not null" json:"title"`                // 问题标题
 	Detail       string     `gorm:"type:text" json:"detail"`              // 详细描述
@@ -168,7 +168,7 @@ type KeyIssue struct {
 	IssueType    string     `gorm:"not null" json:"issue_type"` // multithreading, lock, memory_leak, library
 	Title        string     `gorm:"not null" json:"title"`
 	FilePath     string     `json:"file_path"`
-	LineNumber   int        `json:"line_number"`
+	LineNumber   string     `json:"line_number"`
 	Status       string     `gorm:"default:open" json:"status"` // open, in_progress, resolved
 	AssigneeID   string     `json:"assignee_id"`
 	Assignee     Member     `gorm:"foreignKey:AssigneeID" json:"assignee"`
