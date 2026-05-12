@@ -259,7 +259,83 @@ func cleanJSONFromAI(raw []byte) []byte {
 		}
 	}
 
+	// Fix unescaped quotes inside JSON string values
+	s = fixUnescapedQuotes(s)
+
 	return []byte(s)
+}
+
+// fixUnescapedQuotes 修复 AI 生成的 JSON 中字符串值内未转义的引号。
+// 例如: {"title": "Use "proper" method"} → {"title": "Use \"proper\" method"}
+// 使用状态机逐字符扫描，判断引号是结构性分隔符还是值内容。
+func fixUnescapedQuotes(s string) string {
+	// 先尝试标准解析，如果成功则无需修复
+	if json.Valid([]byte(s)) {
+		return s
+	}
+
+	var buf strings.Builder
+	buf.Grow(len(s) + 64)
+
+	inString := false // 是否在字符串值内部
+	i := 0
+
+	for i < len(s) {
+		ch := s[i]
+
+		// 处理已转义的字符（\x），直接保留
+		if inString && ch == '\\' && i+1 < len(s) {
+			buf.WriteByte(ch)
+			buf.WriteByte(s[i+1])
+			i += 2
+			continue
+		}
+
+		if ch == '"' {
+			if !inString {
+				// 进入字符串
+				inString = true
+				buf.WriteByte(ch)
+				i++
+				continue
+			}
+
+			// 当前在字符串内部，遇到引号 → 判断这是闭合引号还是未转义的内部引号
+			// 向后跳过空白字符，检查下一个非空字符是否为 JSON 结构字符
+			j := i + 1
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
+				j++
+			}
+
+			isStructural := false
+			if j >= len(s) {
+				// 已到末尾，视为闭合引号
+				isStructural = true
+			} else {
+				next := s[j]
+				// 闭合引号后面应该紧跟 JSON 结构字符: , : } ]
+				// 或者紧跟换行后的结构字符
+				isStructural = next == ',' || next == ':' || next == '}' || next == ']'
+			}
+
+			if isStructural {
+				// 这是闭合引号，结束字符串
+				inString = false
+				buf.WriteByte(ch)
+			} else {
+				// 这是未转义的内部引号，补上反斜杠
+				buf.WriteByte('\\')
+				buf.WriteByte(ch)
+			}
+			i++
+			continue
+		}
+
+		buf.WriteByte(ch)
+		i++
+	}
+
+	return buf.String()
 }
 
 // executeAnalysis runs the analysis phase: AI outputs structured JSON findings
