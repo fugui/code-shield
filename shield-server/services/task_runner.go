@@ -191,11 +191,8 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 
 	// 构造 prompt 消息
 	promptMsg := fmt.Sprintf("请执行%s任务", ctx.taskType.DisplayName)
-	if ctx.report.ChunkName != "" {
-		promptMsg = fmt.Sprintf("你正在分析模块 [%s]，请执行%s任务", ctx.report.ChunkName, ctx.taskType.DisplayName)
-	}
 	if customPromptSuffix != "" {
-		promptMsg += "。" + customPromptSuffix
+		promptMsg += "：" + customPromptSuffix
 	}
 
 	// 根据配置选择 AI CLI 后端（RunParams > TaskType > 全局配置）
@@ -340,7 +337,7 @@ func fixUnescapedQuotes(s string) string {
 
 // executeAnalysis runs the analysis phase: AI outputs structured JSON findings
 func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
-	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果（强调：不要输出 Markdown）", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
+	if err := ctx.executeAI(fileList, "请以纯 JSON 格式（强调：不要输出 Markdown）输出分析结果", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
 		return nil, err
 	}
 
@@ -355,17 +352,17 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 
 	var output AnalysisOutput
 	if err := json.Unmarshal(cleanedJSON, &output); err != nil {
-		log.Printf("[TaskRunner] Failed to parse analysis JSON: %v, attempting AI repair\n", err)
+		log.Printf("[Error] Failed to parse analysis JSON: %v, attempting AI repair\n", err)
 		log.Printf("[Error] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
 
 		// Attempt AI-powered JSON repair
 		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath)
 		if repairErr != nil {
-			log.Printf("[TaskRunner] AI JSON repair failed: %v\n", repairErr)
+			log.Printf("[Error] AI JSON repair failed: %v\n", repairErr)
 			return nil, nil
 		}
 		if err := json.Unmarshal(repairedJSON, &output); err != nil {
-			log.Printf("[TaskRunner] Repaired JSON still invalid: %v\n", err)
+			log.Printf("[Error] Repaired JSON still invalid: %v\n", err)
 			return nil, nil
 		}
 		log.Println("[TaskRunner] AI JSON repair successful")

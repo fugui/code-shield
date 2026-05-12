@@ -30,7 +30,7 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	// 构建 prompt 消息：如果有文件列表，追加到消息中让 Claude 自行读取
 	promptMsg := fmt.Sprintf("%s（最终分析结果输出到 %s），", req.PromptMsg, req.OutputPath)
 	if len(req.InputFiles) > 0 && strings.HasSuffix(req.OutputPath, ".json") {
-		promptMsg += fmt.Sprintf("本次任务采用分片执行，本次只" )
+		promptMsg += fmt.Sprintf("任务采用分片执行，本次只" )
 	}
 	promptMsg += fmt.Sprintf("基于以下文件内容进行分析：\n%s\n", strings.Join(req.InputFiles, "\n"))
 
