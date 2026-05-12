@@ -277,7 +277,7 @@ function TaskTypeManagement() {
                     style={{...fieldStyle, minHeight: '60px', resize: 'vertical', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '0.8rem'}}
                     value={form.engine_config}
                     onChange={e => setForm({...form, engine_config: e.target.value})}
-                    placeholder={'{\n  "models": ["gpt-4", "claude-3"]\n}'}
+                    placeholder={'{\n  "max_files": 50,\n  "depth": 1\n}'}
                   />
                 </div>
               </div>
