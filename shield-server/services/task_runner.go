@@ -340,7 +340,7 @@ func fixUnescapedQuotes(s string) string {
 
 // executeAnalysis runs the analysis phase: AI outputs structured JSON findings
 func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
-	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果，不要输出 Markdown", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
+	if err := ctx.executeAI(fileList, "请以纯 JSON 格式输出分析结果（强调：不要输出 Markdown）", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
 		return nil, err
 	}
 
@@ -418,7 +418,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	log.Printf("[TaskRunner] Starting synthesis with %d findings for ReportID %d\n", len(allFindings), ctx.report.ID)
 
 	// Call AI with synthesis prompt, passing the JSON file as input
-	return ctx.executeAI([]string{synthesisInputPath}, "请基于以上 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile(), ctx.reportPath)
+	return ctx.executeAI([]string{synthesisInputPath}, "请基于以下 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile(), ctx.reportPath)
 }
 
 // runPostProcess parses the AI output using the task-specific postprocess script
