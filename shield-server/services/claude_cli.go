@@ -35,7 +35,7 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	promptMsg += fmt.Sprintf("，并输出文档到 %s", req.OutputPath)
 
 	// 构建 claude CLI 参数（不经过 shell，避免引号转义问题）
-	args := []string{"-p", promptMsg, "--output-format", "json"}
+	args := []string{"-p", promptMsg, "--output-format", "json", "--disable-slash-commands"}
 
 	// 将提示词文件作为系统提示词注入（优先级高于普通消息）
 	if req.PromptFile != "" {
