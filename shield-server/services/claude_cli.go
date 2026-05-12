@@ -28,11 +28,10 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	}
 
 	// 构建 prompt 消息：如果有文件列表，追加到消息中让 Claude 自行读取
-	promptMsg := req.PromptMsg
+	promptMsg := req.PromptMsg + fmt.Sprintf("，并输出文档到 %s", req.OutputPath)
 	if len(req.InputFiles) > 0 {
-		promptMsg += fmt.Sprintf("。请读取并分析以下文件：\n%s", strings.Join(req.InputFiles, "\n"))
+		promptMsg += fmt.Sprintf("。本次任务采用分片执行，本次只分析以下文件：\n%s", strings.Join(req.InputFiles, "\n"))
 	}
-	promptMsg += fmt.Sprintf("，并输出文档到 %s", req.OutputPath)
 
 	// 构建 claude CLI 参数（不经过 shell，避免引号转义问题）
 	args := []string{"-p", promptMsg, "--output-format", "json", "--disable-slash-commands"}
