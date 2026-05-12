@@ -115,6 +115,8 @@ func UpdateTaskType(c *gin.Context) {
 		Description     *string          `json:"description"`
 		EngineMode      *string          `json:"engine_mode"`
 		EngineConfig    *json.RawMessage `json:"engine_config"`
+		AIBackend       *string          `json:"ai_backend"`
+		SkipTests       *bool            `json:"skip_tests"`
 		NotifyTemplate  *string          `json:"notify_template"`
 		NotifyThreshold *int             `json:"notify_threshold"`
 		NotifyCc        *json.RawMessage `json:"notify_cc"`
@@ -138,6 +140,12 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.EngineConfig != nil {
 		updates["engine_config"] = string(*req.EngineConfig)
+	}
+	if req.AIBackend != nil {
+		updates["ai_backend"] = *req.AIBackend
+	}
+	if req.SkipTests != nil {
+		updates["skip_tests"] = *req.SkipTests
 	}
 	if req.NotifyTemplate != nil {
 		updates["notify_template"] = *req.NotifyTemplate
@@ -284,7 +292,7 @@ func TriggerAllReposForTaskType(c *gin.Context) {
 
 	count := 0
 	for _, repo := range repos {
-		services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual")
+		services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 		count++
 	}
 

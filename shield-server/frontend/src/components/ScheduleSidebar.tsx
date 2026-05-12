@@ -18,6 +18,7 @@ export interface ScheduleFormData {
   target_values: any[];
   auto_notify: boolean;
   is_active: boolean;
+  run_params: { ai_backend?: string; skip_tests?: boolean };
 }
 
 const CRON_PRESETS = [
@@ -77,7 +78,7 @@ function getTargetSummary(mode: string): string {
 
 export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedule, teams, repos }: ScheduleSidebarProps) {
   const [form, setForm] = useState<ScheduleFormData>({
-    name: '', cron_expr: '0 2 * * *', task_type_id: 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true
+    name: '', cron_expr: '0 2 * * *', task_type_id: 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true, run_params: {}
   });
   const [closing, setClosing] = useState(false);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
@@ -98,6 +99,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
   // Populate form when editing
   useEffect(() => {
     if (editingSchedule) {
+      const rp = editingSchedule.run_params || {};
       setForm({
         name: editingSchedule.name || '',
         cron_expr: editingSchedule.cron_expr || '0 2 * * *',
@@ -106,9 +108,10 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
         target_values: editingSchedule.target_values || [],
         auto_notify: editingSchedule.auto_notify ?? true,
         is_active: editingSchedule.is_active ?? true,
+        run_params: rp,
       });
     } else {
-      setForm({ name: '', cron_expr: '0 2 * * *', task_type_id: taskTypes.length > 0 ? taskTypes[0].id : 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true });
+      setForm({ name: '', cron_expr: '0 2 * * *', task_type_id: taskTypes.length > 0 ? taskTypes[0].id : 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true, run_params: {} });
     }
   }, [editingSchedule, isOpen]);
 
@@ -342,6 +345,50 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Section 4: Run Parameters */}
+            <div className="sidebar-section">
+              <div className="sidebar-section-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                </svg>
+                运行参数
+                <span style={{ fontSize: '0.72rem', fontWeight: 400, color: '#94a3b8', marginLeft: '0.5rem' }}>覆盖任务类型默认值</span>
+              </div>
+
+              <label className="sidebar-label">AI 后端</label>
+              <select
+                className="sidebar-input"
+                value={form.run_params.ai_backend ?? ''}
+                onChange={e => setForm({ ...form, run_params: { ...form.run_params, ai_backend: e.target.value || undefined } })}
+                style={{ cursor: 'pointer' }}
+              >
+                <option value="">跟随任务类型默认</option>
+                <option value="claude">Claude</option>
+                <option value="opencode">OpenCode</option>
+              </select>
+
+              <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <label className="sidebar-label" style={{ marginBottom: 0 }}>跳过测试文件</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {[
+                    { label: '跟随默认', value: undefined },
+                    { label: '是', value: true },
+                    { label: '否', value: false },
+                  ].map(opt => (
+                    <button
+                      key={String(opt.value)}
+                      type="button"
+                      className={`target-segment${form.run_params.skip_tests === opt.value ? ' active' : ''}`}
+                      onClick={() => setForm({ ...form, run_params: { ...form.run_params, skip_tests: opt.value } })}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>跳过 *_test.go、*.spec.ts 等测试文件（仅分片引擎生效）</div>
+              </div>
             </div>
           </div>
 

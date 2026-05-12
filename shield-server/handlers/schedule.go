@@ -70,6 +70,7 @@ func UpdateSchedule(c *gin.Context) {
 	schedule.TargetValues = req.TargetValues
 	schedule.AutoNotify = req.AutoNotify
 	schedule.IsActive = req.IsActive
+	schedule.RunParams = req.RunParams
 
 	if err := models.DB.Save(&schedule).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update schedule"})

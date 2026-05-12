@@ -16,7 +16,8 @@ type Task struct {
 	RepoURL    string
 	TaskTypeID uint
 	AutoNotify bool
-	LogID      uint // ID of TaskExecutionLog
+	LogID      uint             // ID of TaskExecutionLog
+	RunParams  models.RunParams // 运行时参数（从 ScheduleConfig 传入）
 }
 
 var TaskQueue = make(chan Task, 300)
@@ -30,7 +31,7 @@ func StartWorkerPool(workers int) {
 }
 
 // EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
-func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string) {
+func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) {
 	// 1. Create a pending execution log
 	execLog := models.TaskExecutionLog{
 		ScheduleID:  scheduleID,
@@ -67,6 +68,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 		TaskTypeID: taskTypeID,
 		AutoNotify: autoNotify,
 		LogID:      execLog.ID,
+		RunParams:  runParams,
 	}
 
 	// Link the execution log to its task report
@@ -89,7 +91,7 @@ func worker(id int) {
 		UpdateTaskExecutionLog(task.LogID, "running", "")
 		// Note: Detailed report status is updated inside RunTaskSync (cloning, analyzing, etc.)
 
-		err := RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify)
+		err := RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
 
 		now := time.Now()
 		if errors.Is(err, ErrSkipped) {
