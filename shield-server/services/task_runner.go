@@ -356,7 +356,7 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 	var output AnalysisOutput
 	if err := json.Unmarshal(cleanedJSON, &output); err != nil {
 		log.Printf("[TaskRunner] Failed to parse analysis JSON: %v, attempting AI repair\n", err)
-		log.Printf("[TaskRunner] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
+		log.Printf("[Error] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
 
 		// Attempt AI-powered JSON repair
 		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath)

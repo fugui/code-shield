@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // AIRequest 封装一次 AI CLI 调用所需的全部参数（与具体 CLI 无关）
@@ -47,8 +49,8 @@ func GetAIInvoker(name string) AIInvoker {
 // jsonFilePath is the absolute path to the malformed JSON file.
 // Returns the cleaned, repaired JSON bytes ready for json.Unmarshal.
 func RepairJSON(workDir, jsonFilePath string) ([]byte, error) {
-	fixedPath := jsonFilePath + ".fixed"
-	defer os.Remove(fixedPath)
+	ext := filepath.Ext(jsonFilePath)
+	fixedPath := strings.TrimSuffix(jsonFilePath, ext) + ".fixed" + ext
 
 	log.Printf("[AI] Invoking AI to repair JSON: %s\n", jsonFilePath)
 
