@@ -285,7 +285,7 @@ function TaskTypeManagement() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={labelStyle}>AI 后端</label>
+                  <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，定时策略可覆盖)</span></label>
                   <select style={fieldStyle} value={form.ai_backend} onChange={e => setForm({...form, ai_backend: e.target.value})}>
                     <option value="">跟随全局配置</option>
                     <option value="claude">Claude</option>
@@ -295,7 +295,7 @@ function TaskTypeManagement() {
                 <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '0.3rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
                     <input type="checkbox" checked={form.skip_tests} onChange={e => setForm({...form, skip_tests: e.target.checked})} />
-                    跳过测试文件 <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: '0.78rem' }}>(*_test.go, *.spec.ts 等)</span>
+                    跳过测试文件 <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: '0.78rem' }}>(默认值，定时策略可覆盖)</span>
                   </label>
                 </div>
               </div>

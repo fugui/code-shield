@@ -52,6 +52,12 @@ type Repository struct {
 }
 
 
+// RunParams 定义任务执行时的运行参数。
+// ScheduleConfig 中可设置此结构覆盖 TaskType 的默认值，nil 字段表示不覆盖。
+type RunParams struct {
+	AIBackend *string `json:"ai_backend,omitempty"` // nil = 不覆盖，使用 TaskType 默认
+	SkipTests *bool   `json:"skip_tests,omitempty"` // nil = 不覆盖，使用 TaskType 默认
+}
 
 // TaskType 任务类型定义（管理员可配置）
 type TaskType struct {
@@ -185,6 +191,7 @@ type ScheduleConfig struct {
 	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time      `json:"created_at"`
+	RunParams    datatypes.JSON `json:"run_params"`                      // 运行参数覆盖 {"ai_backend":"claude","skip_tests":false}
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 

@@ -98,9 +98,16 @@ func ExecuteScheduleContext(schedID uint, triggerSource string) error {
 	}
 
 	log.Printf("[Cron-%s] Schedule %d found %d repositories to scan.\n", triggerSource, sched.ID, len(repos))
+
+	// Parse run params from schedule config
+	var runParams models.RunParams
+	if len(sched.RunParams) > 0 {
+		json.Unmarshal(sched.RunParams, &runParams)
+	}
+
 	for _, repo := range repos {
 		sID := sched.ID
-		services.EnqueueTask(&sID, repo.ID, repo.URL, sched.TaskTypeID, sched.AutoNotify, triggerSource)
+		services.EnqueueTask(&sID, repo.ID, repo.URL, sched.TaskTypeID, sched.AutoNotify, triggerSource, runParams)
 	}
 	return nil
 }

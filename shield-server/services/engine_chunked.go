@@ -27,7 +27,8 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 
-	chunks, err := scanAndChunk(ctx.codesPath, cfg, ctx.taskType.SkipTests)
+	skipTests := ctx.runParams.SkipTests != nil && *ctx.runParams.SkipTests
+	chunks, err := scanAndChunk(ctx.codesPath, cfg, skipTests)
 	if err != nil {
 		return err
 	}

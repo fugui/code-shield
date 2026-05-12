@@ -116,7 +116,7 @@ func TriggerTask(c *gin.Context) {
 		return
 	}
 
-	services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual")
+	services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": taskType.DisplayName + " 任务已下发"})
 }

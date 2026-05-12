@@ -31,15 +31,31 @@ type taskContext struct {
 	reportPath string
 	jsonPath   string
 	autoNotify bool
+	runParams  models.RunParams // 合并后的运行参数
 }
 
-func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool) error {
+// resolveRunParams 将外部传入的 RunParams 与 TaskType 默认值合并。
+// 优先级：外部 RunParams > TaskType 默认值 > 全局配置
+func (ctx *taskContext) resolveRunParams(input models.RunParams) {
+	ctx.runParams = input
+	if ctx.runParams.AIBackend == nil && ctx.taskType.AIBackend != "" {
+		ctx.runParams.AIBackend = &ctx.taskType.AIBackend
+	}
+	if ctx.runParams.SkipTests == nil {
+		ctx.runParams.SkipTests = &ctx.taskType.SkipTests
+	}
+}
+
+func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool, runParams models.RunParams) error {
 	ctx := &taskContext{autoNotify: autoNotify}
 
 	// 1. Initialize and load data
 	if err := ctx.load(reportID, taskTypeID); err != nil {
 		return err
 	}
+
+	// Resolve run params: input overrides → TaskType defaults → global config
+	ctx.resolveRunParams(runParams)
 
 	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s (Mode: %s)\n", 
 		ctx.report.ID, repoURL, ctx.taskType.Name, ctx.taskType.EngineMode)
@@ -182,10 +198,10 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		promptMsg += "。" + customPromptSuffix
 	}
 
-	// 根据配置选择 AI CLI 后端（任务级别优先，否则使用全局配置）
+	// 根据配置选择 AI CLI 后端（RunParams > TaskType > 全局配置）
 	backend := models.AppConfig.AI.Backend
-	if ctx.taskType.AIBackend != "" {
-		backend = ctx.taskType.AIBackend
+	if ctx.runParams.AIBackend != nil && *ctx.runParams.AIBackend != "" {
+		backend = *ctx.runParams.AIBackend
 	}
 	invoker := GetAIInvoker(backend)
 	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
