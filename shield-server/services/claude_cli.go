@@ -17,7 +17,7 @@ type ClaudeInvoker struct{}
 func (c *ClaudeInvoker) Name() string { return "claude" }
 
 // Invoke 调用 Claude CLI 执行 AI 任务。
-// 提示词通过 stdin 管道输入，文件列表写在 prompt 消息中由 Claude 自行读取。
+// 提示词通过 --append-system-prompt 注入为系统级指令，文件列表写在 -p 消息中由 Claude 自行读取。
 // 返回 nil 表示成功，AI 输出已写入 req.OutputPath。
 func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	// 校验 prompt 文件存在（PromptFile 为空时跳过，仅使用 PromptMsg）
@@ -36,6 +36,15 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 
 	// 构建 claude CLI 参数（不经过 shell，避免引号转义问题）
 	args := []string{"-p", promptMsg, "--output-format", "json"}
+
+	// 将提示词文件作为系统提示词注入（优先级高于普通消息）
+	if req.PromptFile != "" {
+		promptContent, err := os.ReadFile(req.PromptFile)
+		if err != nil {
+			return fmt.Errorf("failed to read prompt file: %w", err)
+		}
+		args = append(args, "--append-system-prompt", string(promptContent))
+	}
 
 	// 检查 settings.json
 	settingsFile := models.AppConfig.GetAbsPath("settings.json")
@@ -64,16 +73,6 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	cmd := exec.CommandContext(ctxRun, "claude", args...)
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
-
-	// 将提示词文件作为 stdin（PromptFile 为空时不设置 stdin）
-	if req.PromptFile != "" {
-		promptContent, err := os.Open(req.PromptFile)
-		if err != nil {
-			return fmt.Errorf("failed to open prompt file: %w", err)
-		}
-		defer promptContent.Close()
-		cmd.Stdin = promptContent
-	}
 
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
