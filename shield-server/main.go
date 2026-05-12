@@ -21,7 +21,16 @@ import (
 //go:embed frontend/dist/*
 var frontendFS embed.FS
 
+// 构建时通过 -ldflags 注入
+var (
+	Version   = "dev"
+	CommitID  = "unknown"
+	BuildTime = "unknown"
+)
+
 func main() {
+	log.Printf("Code-Shield Server %s (commit: %s, built: %s)\n", Version, CommitID, BuildTime)
+
 	// Initialize database
 	models.InitDB()
 
