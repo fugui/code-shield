@@ -219,13 +219,28 @@ type AnalysisOutput struct {
 		Severity    string `json:"severity"`
 		Category    string `json:"category"`
 		FilePath    string `json:"file_path"`
-		LineNumber  int    `json:"line_number"`
+		LineNumber  interface{} `json:"line_number"`
 		CodeSnippet string `json:"code_snippet"`
 		Title       string `json:"title"`
 		Detail      string `json:"detail"`
 		Suggestion  string `json:"suggestion"`
 	} `json:"findings"`
 	Summary string `json:"summary"`
+}
+
+// toLineStr 将 AI 输出的 line_number（可能是数字或字符串）统一转为 string
+func toLineStr(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64: // JSON 数字默认解码为 float64
+		return fmt.Sprintf("%d", int(val))
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }
 
 // cleanJSONFromAI strips markdown code block markers and extracts JSON from AI output.
@@ -380,7 +395,7 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 			Severity:     f.Severity,
 			Category:     f.Category,
 			FilePath:     f.FilePath,
-			LineNumber:   f.LineNumber,
+			LineNumber:   toLineStr(f.LineNumber),
 			CodeSnippet:  f.CodeSnippet,
 			Title:        f.Title,
 			Detail:       f.Detail,
