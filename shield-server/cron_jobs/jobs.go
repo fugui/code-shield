@@ -37,9 +37,6 @@ func SyncSchedules() {
 		return
 	}
 
-	var sysConfig models.SystemConfig
-	models.DB.First(&sysConfig, 1)
-
 	for _, schedule := range schedules {
 		// Create a copy of the schedule for the closure
 		sched := schedule
