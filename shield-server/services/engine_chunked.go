@@ -36,7 +36,10 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	log.Printf("[TaskRunner] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
 
 	// ── 逐片执行分析阶段 ──
-	chunkDir := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("chunks-%d", ctx.report.ID))
+	// 取仓库名最后一段作为目录前缀，增强可读性
+	nameParts := strings.Split(ctx.repo.Name, "/")
+	repoShort := nameParts[len(nameParts)-1]
+	chunkDir := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("chunks-%s-%d", repoShort, ctx.report.ID))
 	os.MkdirAll(chunkDir, 0755)
 
 	var allFindings []models.AnalysisFinding
