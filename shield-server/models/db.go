@@ -43,11 +43,6 @@ func InitDB() {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
 
-	// Migrate deprecated 'module' engine mode to 'chunked' (depth=1 is equivalent)
-	if result := DB.Model(&TaskType{}).Where("engine_mode = ?", "module").
-		Updates(map[string]interface{}{"engine_mode": "chunked", "engine_config": `{"max_files":50,"depth":1}`}); result.RowsAffected > 0 {
-		log.Printf("Migrated %d task types from 'module' to 'chunked' engine", result.RowsAffected)
-	}
 
 	// Seed admin user if no users exist
 	var count int64
