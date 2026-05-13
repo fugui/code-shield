@@ -37,12 +37,11 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		sb.WriteString("\n\n---\n\n")
 	}
 
-	sb.WriteString(req.PromptMsg)
-
-	if len(req.InputFiles) > 0 {
-		sb.WriteString(fmt.Sprintf("。请读取并分析以下文件：\n%s", strings.Join(req.InputFiles, "\n")))
+	sb.WriteString(fmt.Sprintf("%s（最终分析结果输出到 %s），", req.PromptMsg, req.OutputPath))
+	if len(req.InputFiles) > 1 && strings.HasSuffix(req.OutputPath, ".json") {
+		sb.WriteString("任务采用分片执行，本次只")
 	}
-	sb.WriteString(fmt.Sprintf("，并输出文档到 %s", req.OutputPath))
+	sb.WriteString(fmt.Sprintf("基于以下文件内容进行分析：\n%s\n", strings.Join(req.InputFiles, "\n")))
 
 	fullPrompt := sb.String()
 
