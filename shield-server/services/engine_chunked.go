@@ -11,12 +11,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // ChunkConfig 定义分片引擎的配置参数
 type ChunkConfig struct {
-	MaxFiles int `json:"max_files"`
-	Depth    int `json:"depth"`
+	MaxFiles    int `json:"max_files"`
+	Depth       int `json:"depth"`
+	Concurrency int `json:"concurrency"`
 }
 
 // ChunkedEngine 将代码仓按目录结构拆分成多个分片，逐个提交给 AI 分析后汇总。
@@ -24,9 +26,12 @@ type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// ── 引擎前处理：解析配置并扫描分片 ──
-	cfg := ChunkConfig{MaxFiles: 50, Depth: 1}
+	cfg := ChunkConfig{MaxFiles: 50, Depth: 1, Concurrency: 5}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
+	}
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = 5
 	}
 
 	skipTests := ctx.runParams.SkipTests != nil && *ctx.runParams.SkipTests
@@ -45,29 +50,45 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	os.MkdirAll(chunkDir, 0755)
 
 	var allFindings []models.AnalysisFinding
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, cfg.Concurrency)
 
 	for name, files := range chunks {
-		safeName := strings.ReplaceAll(name, "/", "-")
-		chunkCtx := &taskContext{
-			report:     ctx.report,
-			taskType:   ctx.taskType,
-			repo:       ctx.repo,
-			codesPath:  ctx.codesPath,
-			reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.md", safeName)),
-			jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.json", safeName)),
-		}
-		chunkCtx.report.ChunkName = name
+		wg.Add(1)
+		semaphore <- struct{}{} // Acquire semaphore
 
-		log.Printf("[TaskRunner] Processing chunk [%s] (%d files)\n", name, len(files))
+		go func(chunkName string, chunkFiles []string) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // Release semaphore
 
-		// Phase 1: 分析阶段
-		findings, err := chunkCtx.executeAnalysis(files)
-		if err != nil {
-			log.Printf("[TaskRunner] Chunk [%s] analysis failed: %v\n", name, err)
-			continue
-		}
-		allFindings = append(allFindings, findings...)
+			safeName := strings.ReplaceAll(chunkName, "/", "-")
+			chunkCtx := &taskContext{
+				report:     ctx.report,
+				taskType:   ctx.taskType,
+				repo:       ctx.repo,
+				codesPath:  ctx.codesPath,
+				reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.md", safeName)),
+				jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.json", safeName)),
+			}
+			chunkCtx.report.ChunkName = chunkName
+
+			log.Printf("[TaskRunner] Processing chunk [%s] (%d files)\n", chunkName, len(chunkFiles))
+
+			// Phase 1: 分析阶段
+			findings, err := chunkCtx.executeAnalysis(chunkFiles)
+			if err != nil {
+				log.Printf("[TaskRunner] Chunk [%s] analysis failed: %v\n", chunkName, err)
+				return
+			}
+
+			mu.Lock()
+			allFindings = append(allFindings, findings...)
+			mu.Unlock()
+		}(name, files)
 	}
+
+	wg.Wait()
 
 	if len(allFindings) == 0 && len(chunks) > 0 {
 		log.Printf("[TaskRunner] Warning: all %d chunks produced no findings\n", len(chunks))
