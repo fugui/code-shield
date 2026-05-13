@@ -116,6 +116,17 @@ func TriggerTask(c *gin.Context) {
 		return
 	}
 
+	var count int64
+	models.DB.Model(&models.TaskExecutionLog{}).
+		Where("repo_id = ? AND task_type_id = ? AND status IN (?, ?)",
+			req.RepoID, req.TaskTypeID, "pending", "running").
+		Count(&count)
+
+	if count > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "该任务已经在排队或执行中，请勿重复触发"})
+		return
+	}
+
 	services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": taskType.DisplayName + " 任务已下发"})
