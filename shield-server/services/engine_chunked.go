@@ -26,7 +26,7 @@ type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// ── 引擎前处理：解析配置并扫描分片 ──
-	cfg := ChunkConfig{MaxFiles: 50, Depth: 1, Concurrency: 5}
+	cfg := ChunkConfig{MaxFiles: 25, Depth: 1, Concurrency: 5}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
@@ -53,12 +53,17 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, cfg.Concurrency)
+	totalChunks := len(chunks)
+	chunkIndex := 0
 
 	for name, files := range chunks {
+		chunkIndex++
+		currentIndex := chunkIndex
+
 		wg.Add(1)
 		semaphore <- struct{}{} // Acquire semaphore
 
-		go func(chunkName string, chunkFiles []string) {
+		go func(chunkName string, chunkFiles []string, idx int) {
 			defer wg.Done()
 			defer func() { <-semaphore }() // Release semaphore
 
@@ -73,7 +78,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 			}
 			chunkCtx.report.ChunkName = chunkName
 
-			log.Printf("[TaskRunner] Processing chunk [%s] (%d files)\n", chunkName, len(chunkFiles))
+			log.Printf("[TaskRunner] Processing chunk %d/%d [%s] (%d files)\n", idx, totalChunks, chunkName, len(chunkFiles))
 
 			// Phase 1: 分析阶段
 			findings, err := chunkCtx.executeAnalysis(chunkFiles)
@@ -85,7 +90,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 			mu.Lock()
 			allFindings = append(allFindings, findings...)
 			mu.Unlock()
-		}(name, files)
+		}(name, files, currentIndex)
 	}
 
 	wg.Wait()
