@@ -42,7 +42,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		return err
 	}
 
-	log.Printf("[TaskRunner] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
+	log.Printf("[ChunkedEngine] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
 
 	// ── 逐片执行分析阶段 ──
 	// 取仓库名最后一段作为目录前缀，增强可读性
@@ -90,12 +90,12 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 			}
 			chunkCtx.report.ChunkName = chunkName
 
-			log.Printf("[TaskRunner] Processing chunk %d/%d [%s] (%d files)\n", idx, totalChunks, chunkName, len(chunkFiles))
+			log.Printf("[ChunkedEngine] Processing chunk %d/%d [%s] (%d files)\n", idx, totalChunks, chunkName, len(chunkFiles))
 
 			// Phase 1: 分析阶段
 			findings, err := chunkCtx.executeAnalysis(chunkFiles)
 			if err != nil {
-				log.Printf("[TaskRunner] Chunk [%s] analysis failed: %v\n", chunkName, err)
+				log.Printf("[ChunkedEngine] Chunk [%s] analysis failed: %v\n", chunkName, err)
 				return
 			}
 
@@ -108,11 +108,11 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	wg.Wait()
 
 	if len(allFindings) == 0 && len(chunks) > 0 {
-		log.Printf("[TaskRunner] Warning: all %d chunks produced no findings\n", len(chunks))
+		log.Printf("[ChunkedEngine] Warning: all %d chunks produced no findings\n", len(chunks))
 	}
 
 	// ── Phase 2: 综合阶段 ──
-	log.Printf("[TaskRunner] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
+	log.Printf("[ChunkedEngine] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
 	return ctx.executeSynthesis(allFindings)
 }
 
@@ -290,7 +290,7 @@ func isGeneratedFile(codesPath, file string) bool {
 		line = strings.TrimSpace(line)
 		for _, marker := range generatedMarkers {
 			if strings.Contains(line, marker) {
-				log.Printf("[TaskRunner] Skipping generated file: %s\n", file)
+				log.Printf("[ChunkedEngine] Skipping generated file: %s\n", file)
 				return true
 			}
 		}
