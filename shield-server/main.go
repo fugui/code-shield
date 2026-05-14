@@ -39,6 +39,9 @@ func main() {
 		log.Fatalf("Failed to load config.yaml: %v", err)
 	}
 
+	// Sync opencode agent files with current prompt files
+	services.SyncAllAgents()
+
 	// Start worker pool (e.g. 5 concurrent workers)
 	services.StartWorkerPool(5)
 

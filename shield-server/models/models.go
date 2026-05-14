@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -102,6 +103,13 @@ func (t *TaskType) PreconditionScript() string {
 // PostprocessScript 后置结果解析脚本路径（约定固定）
 func (t *TaskType) PostprocessScript() string {
 	return filepath.Join(t.TaskDir(), "postprocess")
+}
+
+// AgentName 返回指定阶段的 opencode agent 名称（约定: shield-<task-name>-<phase>）
+// phase: "analysis" 或 "synthesis"
+func (t *TaskType) AgentName(phase string) string {
+	taskDir := strings.ReplaceAll(t.Name, "_", "-")
+	return fmt.Sprintf("shield-%s-%s", taskDir, phase)
 }
 
 
