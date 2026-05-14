@@ -48,7 +48,7 @@ func GetAIInvoker(name string) AIInvoker {
 // workDir is the working directory for the AI invocation.
 // jsonFilePath is the absolute path to the malformed JSON file.
 // Returns the cleaned, repaired JSON bytes ready for json.Unmarshal.
-func RepairJSON(workDir, jsonFilePath string) ([]byte, error) {
+func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 	ext := filepath.Ext(jsonFilePath)
 	fixedPath := strings.TrimSuffix(jsonFilePath, ext) + ".fixed" + ext
 
@@ -57,7 +57,12 @@ func RepairJSON(workDir, jsonFilePath string) ([]byte, error) {
 	repairMsg := "你是一个 JSON 修复工具。请读取指定的 JSON 文件，修复其中的所有语法错误（如未转义的引号、尾部多余逗号、缺失的括号等），然后输出修复后的合法 JSON。" +
 		"只输出纯 JSON，不要添加 Markdown 代码块标记，不要添加任何解释文字，保持原始数据结构和内容不变，只修复语法错误"
 
-	invoker := GetAIInvoker(models.AppConfig.AI.Backend)
+	backend := aiBackend
+	if backend == "" {
+		backend = models.AppConfig.AI.Backend
+	}
+
+	invoker := GetAIInvoker(backend)
 	if err := invoker.Invoke(AIRequest{
 		WorkDir:    workDir,
 		PromptMsg:  repairMsg,

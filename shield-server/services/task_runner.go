@@ -371,7 +371,11 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 		log.Printf("[Error] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
 
 		// Attempt AI-powered JSON repair
-		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath)
+		backend := ""
+		if ctx.runParams.AIBackend != nil {
+			backend = *ctx.runParams.AIBackend
+		}
+		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath, backend)
 		if repairErr != nil {
 			log.Printf("[Error] AI JSON repair failed: %v\n", repairErr)
 			return nil, nil
