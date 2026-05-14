@@ -84,6 +84,8 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
 
+	log.Printf("[OpenCode] Executing command: %s\n", cmd.String())
+
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
