@@ -355,7 +355,14 @@ function KeyIssues() {
             上一页
           </button>
           <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{page} / {totalPages}（共 {total} 条）</span>
-          <button disabled={page >= totalPages}      {/* Detail Drawer */}
+          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
+            style={{ padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? 0.4 : 1 }}>
+            下一页
+          </button>
+        </div>
+      )}
+
+      {/* Detail Drawer */}
       {detailFinding && createPortal(
         <>
           <div style={{ position: 'fixed', top: 0, right: 0, width: '680px', maxWidth: '100vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', zIndex: 1000, display: 'flex', flexDirection: 'column', animation: 'slideInRight 0.2s ease-out' }}>
@@ -485,17 +492,6 @@ function KeyIssues() {
             }
           `}</style>
         </>, document.body
-      )}
-    </div>>
-
-            {/* Meta */}
-            <div style={{ fontSize: '0.75rem', color: '#64748b', borderTop: '1px solid var(--border-color)', paddingTop: '0.8rem', display: 'flex', gap: '1.5rem' }}>
-              <span>ID: {detailFinding.id}</span>
-              <span>报告: #{detailFinding.task_report_id}</span>
-              <span>创建: {new Date(detailFinding.created_at).toLocaleString('zh-CN')}</span>
-            </div>
-          </div>
-        </div>, document.body
       )}
     </div>
   );
