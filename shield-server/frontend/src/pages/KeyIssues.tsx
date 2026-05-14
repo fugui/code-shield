@@ -160,6 +160,11 @@ function KeyIssues() {
     setRepoSearch('');
   };
 
+  const handleExport = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    window.location.href = `/api/findings/export?${params.toString()}`;
+  };
+
   const handleSort = (field: string) => {
     let newOrder = 'desc';
     if (sortBy === field && sortOrder === 'desc') {
@@ -324,6 +329,9 @@ function KeyIssues() {
         />
         <button onClick={resetFilters} style={{ padding: '0.45rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '0.82rem' }}>
           重置
+        </button>
+        <button onClick={handleExport} style={{ ...filterSelectStyle, background: 'var(--primary-color)', color: '#fff', border: 'none', cursor: 'pointer', padding: '0.45rem 1rem' }}>
+          导出 Excel
         </button>
       </div>
 
