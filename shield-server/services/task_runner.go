@@ -415,7 +415,11 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 		}
 	}
 
-	log.Printf("[TaskRunner] Analysis phase complete: %d findings for ReportID %d\n", len(findings), ctx.report.ID)
+	chunkInfo := ""
+	if ctx.report.ChunkName != "" {
+		chunkInfo = fmt.Sprintf(" [Chunk: %s]", ctx.report.ChunkName)
+	}
+	log.Printf("[TaskRunner] Analysis phase complete: %d findings for ReportID %d%s\n", len(findings), ctx.report.ID, chunkInfo)
 	return findings, nil
 }
 
