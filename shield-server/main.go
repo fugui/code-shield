@@ -115,6 +115,7 @@ func main() {
 		// Analysis findings management (问题清单)
 		api.GET("/findings", handlers.GetFindings)
 		api.GET("/findings/stats", handlers.GetFindingStats)
+		api.GET("/findings/export", handlers.ExportFindings)
 		api.PATCH("/findings/:id", handlers.UpdateFinding)
 
 		api.GET("/schedules", handlers.GetSchedules)
