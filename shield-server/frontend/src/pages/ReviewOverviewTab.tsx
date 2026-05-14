@@ -355,7 +355,7 @@ function TaskOverviewTab() {
                         item.latest_task_status === 'skipped' ? '已跳过' : 
                         item.latest_task_status === 'cloning' ? '克隆中' :
                         item.latest_task_status === 'pre_processing' ? '检查中' :
-                        item.latest_task_status === 'analyzing' ? '分析中' :
+                        item.latest_task_status === 'analyzing' ? (item.total_chunks > 1 ? `分析中 (${item.processed_chunks}/${item.total_chunks})` : '分析中') :
                         item.latest_task_status === 'post_processing' ? '处理中' :
                         item.latest_task_status
                       }

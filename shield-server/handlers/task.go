@@ -229,7 +229,7 @@ func GetTaskOverview(c *gin.Context) {
 	}
 
 	query = query.
-		Select("repositories.*, tr.id as latest_task_id, tr.status as latest_task_status, tr.created_at as latest_task_time, tr.score as latest_task_score, tr.task_type_id, COALESCE(rc.cnt, 0) as report_count").
+		Select("repositories.*, tr.id as latest_task_id, tr.status as latest_task_status, tr.created_at as latest_task_time, tr.score as latest_task_score, tr.task_type_id, COALESCE(rc.cnt, 0) as report_count, tr.total_chunks as latest_total_chunks, tr.processed_chunks as latest_processed_chunks").
 		Joins("LEFT JOIN task_reports tr ON tr.id IN (?) AND tr.repo_id = repositories.id", subQuery).
 		Joins("LEFT JOIN (?) rc ON rc.repo_id = repositories.id", countSubQuery)
 
@@ -250,9 +250,11 @@ func GetTaskOverview(c *gin.Context) {
 		LatestTaskID     *uint
 		LatestTaskStatus *string
 		LatestTaskTime   *string
-		LatestTaskScore  *int
-		TaskTypeID       *uint
-		ReportCount      int
+		LatestTaskScore       *int
+		TaskTypeID            *uint
+		ReportCount           int
+		LatestTotalChunks     *int
+		LatestProcessedChunks *int
 	}
 
 	var results []ResultItem
@@ -269,6 +271,8 @@ func GetTaskOverview(c *gin.Context) {
 		LatestTaskScore  int               `json:"latest_task_score"`
 		TaskTypeID       uint              `json:"task_type_id"`
 		ReportCount      int               `json:"report_count"`
+		TotalChunks      int               `json:"total_chunks"`
+		ProcessedChunks  int               `json:"processed_chunks"`
 	}
 
 	var items []OverviewItem
@@ -295,6 +299,12 @@ func GetTaskOverview(c *gin.Context) {
 			}
 			if res.TaskTypeID != nil {
 				item.TaskTypeID = *res.TaskTypeID
+			}
+			if res.LatestTotalChunks != nil {
+				item.TotalChunks = *res.LatestTotalChunks
+			}
+			if res.LatestProcessedChunks != nil {
+				item.ProcessedChunks = *res.LatestProcessedChunks
 			}
 		} else {
 			item.LatestTaskStatus = "none"
