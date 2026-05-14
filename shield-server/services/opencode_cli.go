@@ -46,7 +46,7 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	fullPrompt := sb.String()
 
 	// 构建 opencode run 参数
-	args := []string{"run", fullPrompt, "-q"}
+	args := []string{"run", fullPrompt, "--pure"}
 
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
 	if timeout <= 0 {
