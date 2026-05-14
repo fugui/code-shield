@@ -98,6 +98,9 @@ process.stdout.write(JSON.stringify(result));
 	os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755)
 	os.WriteFile(models.AppConfig.GetAbsPath(req.PostprocessScript()), []byte(defaultPostprocess), 0755)
 
+	// 同步 opencode agent 文件
+	services.SyncTaskTypeAgents(req)
+
 	c.JSON(http.StatusCreated, req)
 }
 
@@ -191,6 +194,9 @@ func DeleteTaskType(c *gin.Context) {
 		return
 	}
 
+	// 清理关联的 opencode agent 文件
+	services.RemoveTaskTypeAgents(taskType)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Task type deleted"})
 }
 
@@ -270,6 +276,11 @@ func UpdateTaskTypeFile(c *gin.Context) {
 	if err := os.WriteFile(absPath, []byte(req.Content), perm); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write file"})
 		return
+	}
+
+	// 提示词文件变更时同步 opencode agent
+	if fileType == "analysis_prompt" || fileType == "synthesis_prompt" {
+		services.SyncTaskTypeAgents(taskType)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "文件已保存"})
