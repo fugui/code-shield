@@ -203,6 +203,15 @@ function KeyIssues() {
     const repo = repos.find((r: any) => r.id === repoId);
     return repo?.name || `#${repoId}`;
   };
+  const getTaskTypeName = (id: number) => {
+    const t = taskTypes.find((x: any) => x.id === id);
+    return t?.display_name || `#${id}`;
+  };
+  const getMemberName = (id: string) => {
+    if (!id) return '未分配';
+    const m = members.find((x: any) => String(x.id) === id);
+    return m?.name || id;
+  };
 
   const selectStyle: React.CSSProperties = {
     background: 'var(--bg-color)', color: 'var(--text-color)', border: '1px solid var(--border-color)',
@@ -323,7 +332,9 @@ function KeyIssues() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.82rem', textAlign: 'left', background: 'var(--bg-color)' }}>
-              <th style={{ padding: '0.75rem 1rem', width: '35%' }}>问题</th>
+              <th style={{ padding: '0.75rem 1rem', width: '30%' }}>问题</th>
+              <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('task_report_id')}>报告 ID{renderSortIcon('task_report_id')}</th>
+              <th style={{ padding: '0.75rem 0.5rem' }}>任务类型</th>
               <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('repo_id')}>代码仓{renderSortIcon('repo_id')}</th>
               <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('severity')}>级别{renderSortIcon('severity')}</th>
               <th style={{ padding: '0.75rem 0.5rem' }}>分类</th>
@@ -354,6 +365,8 @@ function KeyIssues() {
                       </div>
                     )}
                   </td>
+                  <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.82rem', color: '#64748b' }}>#{f.task_report_id}</td>
+                  <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.82rem', color: '#64748b' }}>{getTaskTypeName(f.task_type_id)}</td>
                   <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.82rem', color: '#94a3b8' }}>{getRepoName(f.repo_id)}</td>
                   <td style={{ padding: '0.75rem 0.5rem' }}>
                     <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: sevStyle.bg, color: sevStyle.color, fontWeight: 600 }}>
@@ -362,17 +375,12 @@ function KeyIssues() {
                   </td>
                   <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.78rem', color: '#64748b' }}>{f.category || '-'}</td>
                   <td style={{ padding: '0.75rem 0.5rem' }}>
-                    <select value={f.status} onChange={e => handleStatusChange(f.id, e.target.value)} style={selectStyle}>
-                      <option value="open">待处理</option>
-                      <option value="processing">处理中</option>
-                      <option value="closed">已关闭</option>
-                    </select>
+                    <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: stStyle.bg, color: stStyle.color, fontWeight: 600 }}>
+                      {stStyle.label}
+                    </span>
                   </td>
-                  <td style={{ padding: '0.75rem 0.5rem' }}>
-                    <select value={f.assignee_id || ''} onChange={e => handleAssigneeChange(f.id, e.target.value)} style={selectStyle}>
-                      <option value="">未分配</option>
-                      {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
+                  <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.82rem', color: 'var(--text-color)' }}>
+                    {getMemberName(f.assignee_id)}
                   </td>
                   <td style={{ padding: '0.75rem 0.5rem', fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
                     {f.created_at ? new Date(f.created_at).toLocaleDateString('zh-CN') : '-'}

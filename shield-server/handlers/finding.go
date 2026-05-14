@@ -63,11 +63,12 @@ func GetFindings(c *gin.Context) {
 	}
 
 	allowedSortFields := map[string]bool{
-		"id":         true,
-		"severity":   true,
-		"status":     true,
-		"created_at": true,
-		"repo_id":    true,
+		"id":             true,
+		"severity":       true,
+		"status":         true,
+		"created_at":     true,
+		"repo_id":        true,
+		"task_report_id": true,
 	}
 	if !allowedSortFields[sortBy] {
 		sortBy = "id"
