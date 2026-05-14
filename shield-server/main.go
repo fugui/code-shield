@@ -42,8 +42,8 @@ func main() {
 	// Sync opencode agent files with current prompt files
 	services.SyncAllAgents()
 
-	// Start worker pool (e.g. 5 concurrent workers)
-	services.StartWorkerPool(5)
+	// Start worker pool with configured concurrency
+	services.StartWorkerPool(models.AppConfig.Server.WorkerCount)
 
 	// Start cron jobs
 	cron_jobs.StartCronJobs()
