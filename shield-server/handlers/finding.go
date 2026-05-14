@@ -55,9 +55,32 @@ func GetFindings(c *gin.Context) {
 	var total int64
 	query.Count(&total)
 
+	sortBy := c.DefaultQuery("sort_by", "id")
+	sortOrder := c.DefaultQuery("sort_order", "desc")
+
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
+	allowedSortFields := map[string]bool{
+		"id":         true,
+		"severity":   true,
+		"status":     true,
+		"created_at": true,
+		"repo_id":    true,
+	}
+	if !allowedSortFields[sortBy] {
+		sortBy = "id"
+	}
+
+	orderClause := sortBy + " " + sortOrder
+	if sortBy != "id" {
+		orderClause += ", id desc"
+	}
+
 	var findings []models.AnalysisFinding
 	offset := (page - 1) * pageSize
-	query.Order("id desc").Offset(offset).Limit(pageSize).Find(&findings)
+	query.Order(orderClause).Offset(offset).Limit(pageSize).Find(&findings)
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 

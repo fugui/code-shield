@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 
 interface Finding {
@@ -47,17 +48,32 @@ function KeyIssues() {
   const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const filterSeverity = searchParams.get('severity') || '';
+  const filterStatus = searchParams.get('status') || '';
+  const filterTeam = searchParams.get('team_id') || '';
+  const filterRepo = searchParams.get('repo_id') || '';
+  const filterTaskType = searchParams.get('task_type_id') || '';
+  const filterKeyword = searchParams.get('keyword') || '';
+  const sortBy = searchParams.get('sort_by') || 'id';
+  const sortOrder = searchParams.get('sort_order') || 'desc';
+
+  const updateParams = useCallback((updates: Record<string, string | undefined>) => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === undefined || value === '') {
+        newParams.delete(key);
+      } else {
+        newParams.set(key, value);
+      }
+    });
+    setSearchParams(newParams);
+  }, [searchParams, setSearchParams]);
+
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
-
-  // Filters
-  const [filterSeverity, setFilterSeverity] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterTeam, setFilterTeam] = useState('');
-  const [filterRepo, setFilterRepo] = useState('');
-  const [filterTaskType, setFilterTaskType] = useState('');
-  const [filterKeyword, setFilterKeyword] = useState('');
 
   // Repo combobox
   const [repoSearch, setRepoSearch] = useState('');
@@ -73,13 +89,9 @@ function KeyIssues() {
 
   const fetchFindings = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
-    if (filterSeverity) params.set('severity', filterSeverity);
-    if (filterStatus) params.set('status', filterStatus);
-    if (filterTeam) params.set('team_id', filterTeam);
-    if (filterRepo) params.set('repo_id', filterRepo);
-    if (filterTaskType) params.set('task_type_id', filterTaskType);
-    if (filterKeyword) params.set('keyword', filterKeyword);
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has('pageSize')) params.set('pageSize', '20');
+    if (!params.has('page')) params.set('page', '1');
     try {
       const res = await fetch(`/api/findings?${params}`);
       if (res.ok) {
@@ -90,7 +102,7 @@ function KeyIssues() {
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, [page, filterSeverity, filterStatus, filterTeam, filterRepo, filterTaskType, filterKeyword]);
+  }, [searchParams]);
 
   const fetchStats = async () => {
     try {
@@ -144,9 +156,38 @@ function KeyIssues() {
   };
 
   const resetFilters = () => {
-    setFilterSeverity(''); setFilterStatus(''); setFilterTeam('');
-    setFilterRepo(''); setRepoSearch(''); setFilterTaskType('');
-    setFilterKeyword(''); setPage(1);
+    setSearchParams(new URLSearchParams());
+    setRepoSearch('');
+  };
+
+  const handleSort = (field: string) => {
+    let newOrder = 'desc';
+    if (sortBy === field && sortOrder === 'desc') {
+      newOrder = 'asc';
+    }
+    updateParams({ sort_by: field, sort_order: newOrder, page: '1' });
+  };
+
+  const renderSortIcon = (field: string) => {
+    if (sortBy !== field) return <span style={{ color: 'transparent', marginLeft: '4px' }}>↓</span>;
+    return <span style={{ marginLeft: '4px' }}>{sortOrder === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const Pagination = () => {
+    if (totalPages <= 1) return null;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center', padding: '0.5rem 0' }}>
+        <button disabled={page <= 1} onClick={() => updateParams({ page: String(page - 1) })}
+          style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.4 : 1, fontSize: '0.8rem' }}>
+          上一页
+        </button>
+        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{page} / {totalPages}（共 {total} 条）</span>
+        <button disabled={page >= totalPages} onClick={() => updateParams({ page: String(page + 1) })}
+          style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? 0.4 : 1, fontSize: '0.8rem' }}>
+          下一页
+        </button>
+      </div>
+    );
   };
 
   // Filtered repos based on selected team + search text
@@ -179,7 +220,7 @@ function KeyIssues() {
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           {(stats.by_status || []).map((s: any) => (
             <div key={s.status} className="card" style={{ padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', minWidth: '100px' }}
-              onClick={() => { setFilterStatus(filterStatus === s.status ? '' : s.status); setPage(1); }}>
+              onClick={() => updateParams({ status: filterStatus === s.status ? '' : s.status, page: '1' })}>
               <div style={{
                 width: 8, height: 8, borderRadius: '50%',
                 background: getStatusStyle(s.status).color,
@@ -196,9 +237,12 @@ function KeyIssues() {
         </div>
       )}
 
+      {/* Pagination Top */}
+      <Pagination />
+
       {/* Filters */}
       <div className="card" style={{ padding: '0.8rem 1rem', marginBottom: '1rem', display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <select style={filterSelectStyle} value={filterSeverity} onChange={e => { setFilterSeverity(e.target.value); setPage(1); }}>
+        <select style={filterSelectStyle} value={filterSeverity} onChange={e => updateParams({ severity: e.target.value, page: '1' })}>
           <option value="">全部级别</option>
           <option value="阻塞">阻塞</option>
           <option value="严重">严重</option>
@@ -209,13 +253,13 @@ function KeyIssues() {
           <option value="中风险">中风险</option>
           <option value="低风险">低风险</option>
         </select>
-        <select style={filterSelectStyle} value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
+        <select style={filterSelectStyle} value={filterStatus} onChange={e => updateParams({ status: e.target.value, page: '1' })}>
           <option value="">全部状态</option>
           <option value="open">待处理</option>
           <option value="processing">处理中</option>
           <option value="closed">已关闭</option>
         </select>
-        <select style={filterSelectStyle} value={filterTeam} onChange={e => { setFilterTeam(e.target.value); setFilterRepo(''); setRepoSearch(''); setPage(1); }}>
+        <select style={filterSelectStyle} value={filterTeam} onChange={e => { updateParams({ team_id: e.target.value, repo_id: '', page: '1' }); setRepoSearch(''); }}>
           <option value="">全部部门</option>
           {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
@@ -224,11 +268,11 @@ function KeyIssues() {
             style={{ ...filterSelectStyle, width: '100%', boxSizing: 'border-box' }}
             placeholder="搜索代码仓..."
             value={repoSearch}
-            onChange={e => { setRepoSearch(e.target.value); setRepoDropdownOpen(true); if (!e.target.value) { setFilterRepo(''); setPage(1); } }}
+            onChange={e => { setRepoSearch(e.target.value); setRepoDropdownOpen(true); if (!e.target.value) updateParams({ repo_id: '', page: '1' }); }}
             onFocus={() => setRepoDropdownOpen(true)}
           />
           {filterRepo && (
-            <span onClick={() => { setFilterRepo(''); setRepoSearch(''); setPage(1); }}
+            <span onClick={() => { updateParams({ repo_id: '', page: '1' }); setRepoSearch(''); }}
               style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1 }}>✕</span>
           )}
           {repoDropdownOpen && filteredRepos.length > 0 && (
@@ -238,13 +282,13 @@ function KeyIssues() {
               maxHeight: '220px', overflowY: 'auto', marginTop: '2px',
               boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
             }}>
-              <div onClick={() => { setFilterRepo(''); setRepoSearch(''); setRepoDropdownOpen(false); setPage(1); }}
+              <div onClick={() => { updateParams({ repo_id: '', page: '1' }); setRepoSearch(''); setRepoDropdownOpen(false); }}
                 style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', cursor: 'pointer', color: '#94a3b8', borderBottom: '1px solid var(--border-color)' }}>
                 全部代码仓
               </div>
               {filteredRepos.map((r: any) => (
                 <div key={r.id}
-                  onClick={() => { setFilterRepo(String(r.id)); setRepoSearch(r.name); setRepoDropdownOpen(false); setPage(1); }}
+                  onClick={() => { updateParams({ repo_id: String(r.id), page: '1' }); setRepoSearch(r.name); setRepoDropdownOpen(false); }}
                   style={{
                     padding: '0.4rem 0.7rem', fontSize: '0.82rem', cursor: 'pointer',
                     color: 'var(--text-color)',
@@ -259,7 +303,7 @@ function KeyIssues() {
             </div>
           )}
         </div>
-        <select style={filterSelectStyle} value={filterTaskType} onChange={e => { setFilterTaskType(e.target.value); setPage(1); }}>
+        <select style={filterSelectStyle} value={filterTaskType} onChange={e => updateParams({ task_type_id: e.target.value, page: '1' })}>
           <option value="">全部任务类型</option>
           {taskTypes.map((t: any) => <option key={t.id} value={t.id}>{t.display_name}</option>)}
         </select>
@@ -267,8 +311,7 @@ function KeyIssues() {
           style={{ ...filterSelectStyle, minWidth: '180px', flex: 1 }}
           placeholder="搜索标题、描述或文件路径..."
           value={filterKeyword}
-          onChange={e => setFilterKeyword(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { setPage(1); fetchFindings(); } }}
+          onChange={e => updateParams({ keyword: e.target.value, page: '1' })}
         />
         <button onClick={resetFilters} style={{ padding: '0.45rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '0.82rem' }}>
           重置
@@ -281,12 +324,12 @@ function KeyIssues() {
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.82rem', textAlign: 'left', background: 'var(--bg-color)' }}>
               <th style={{ padding: '0.75rem 1rem', width: '35%' }}>问题</th>
-              <th style={{ padding: '0.75rem 0.5rem' }}>代码仓</th>
-              <th style={{ padding: '0.75rem 0.5rem' }}>级别</th>
+              <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('repo_id')}>代码仓{renderSortIcon('repo_id')}</th>
+              <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('severity')}>级别{renderSortIcon('severity')}</th>
               <th style={{ padding: '0.75rem 0.5rem' }}>分类</th>
-              <th style={{ padding: '0.75rem 0.5rem' }}>状态</th>
+              <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('status')}>状态{renderSortIcon('status')}</th>
               <th style={{ padding: '0.75rem 0.5rem' }}>处理人</th>
-              <th style={{ padding: '0.75rem 0.5rem' }}>发现时间</th>
+              <th style={{ padding: '0.75rem 0.5rem', cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('created_at')}>发现时间{renderSortIcon('created_at')}</th>
               <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>操作</th>
             </tr>
           </thead>
@@ -348,19 +391,7 @@ function KeyIssues() {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem', alignItems: 'center' }}>
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-            style={{ padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.4 : 1 }}>
-            上一页
-          </button>
-          <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{page} / {totalPages}（共 {total} 条）</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-            style={{ padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? 0.4 : 1 }}>
-            下一页
-          </button>
-        </div>
-      )}
+      <Pagination />
 
       {/* Detail Drawer */}
       {detailFinding && createPortal(
