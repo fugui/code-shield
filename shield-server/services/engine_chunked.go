@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // ChunkConfig 定义分片引擎的配置参数
@@ -56,6 +58,9 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	totalChunks := len(chunks)
 	chunkIndex := 0
 
+	// 记录总分片数
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("total_chunks", totalChunks)
+
 	for name, files := range chunks {
 		chunkIndex++
 		currentIndex := chunkIndex
@@ -66,6 +71,12 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		go func(chunkName string, chunkFiles []string, idx int) {
 			defer wg.Done()
 			defer func() { <-semaphore }() // Release semaphore
+			defer func() {
+				// 原子性递增 processed_chunks
+				models.DB.Model(&models.TaskReport{}).
+					Where("id = ?", ctx.report.ID).
+					UpdateColumn("processed_chunks", gorm.Expr("processed_chunks + ?", 1))
+			}()
 
 			safeName := strings.ReplaceAll(chunkName, "/", "-")
 			chunkCtx := &taskContext{

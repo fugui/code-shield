@@ -120,9 +120,11 @@ type TaskReport struct {
 	Repo        Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskTypeID  uint           `json:"task_type_id"`
 	TaskType    TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	ParentID    uint           `gorm:"default:0" json:"parent_id"`    // 0 if it is a parent or independent task
-	ChunkName   string         `gorm:"default:''" json:"chunk_name"`  // Name of the directory or file group
-	Status      string         `gorm:"default:pending" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
+	ParentID        uint           `gorm:"default:0" json:"parent_id"`    // 0 if it is a parent or independent task
+	ChunkName       string         `gorm:"default:''" json:"chunk_name"`  // Name of the directory or file group
+	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`
+	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`
+	Status          string         `gorm:"default:pending" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
 	CloneStatus string         `gorm:"default:pending" json:"clone_status"`
 	AISummary   string         `json:"ai_summary"`
 	ReportPath  string         `json:"report_path"`
