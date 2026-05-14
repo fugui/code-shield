@@ -17,6 +17,7 @@ type Config struct {
 		WriteTimeout      time.Duration `yaml:"write_timeout"`       // 写入响应超时，默认 15s
 		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 60s
 		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
+		WorkerCount       int           `yaml:"worker_count"`        // 全局任务并发数，默认 5
 	} `yaml:"server"`
 	Storage struct {
 		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
@@ -60,6 +61,9 @@ func LoadConfig(filename string) error {
 	}
 
 	// Server timeout defaults
+	if AppConfig.Server.WorkerCount <= 0 {
+		AppConfig.Server.WorkerCount = 5
+	}
 	if AppConfig.Server.ReadTimeout == 0 {
 		AppConfig.Server.ReadTimeout = 15 * time.Second
 	}

@@ -5,6 +5,7 @@
 # ── HTTP 服务 ──
 server:
   port: ":8080"
+  # worker_count: 5              # 全局任务并发数，默认 5
   # gin_log: true                # 是否打印 GIN 请求日志，默认 false
   # read_timeout: 15s            # 读取请求超时
   # write_timeout: 15s           # 写入响应超时
