@@ -73,6 +73,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 				taskType:   ctx.taskType,
 				repo:       ctx.repo,
 				codesPath:  ctx.codesPath,
+				runParams:  ctx.runParams,
 				reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.md", safeName)),
 				jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.json", safeName)),
 			}
