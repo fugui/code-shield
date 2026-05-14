@@ -355,20 +355,12 @@ function KeyIssues() {
             上一页
           </button>
           <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{page} / {totalPages}（共 {total} 条）</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-            style={{ padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? 0.4 : 1 }}>
-            下一页
-          </button>
-        </div>
-      )}
-
-      {/* Detail Modal */}
+          <button disabled={page >= totalPages}      {/* Detail Drawer */}
       {detailFinding && createPortal(
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={e => { if (e.target === e.currentTarget) setDetailFinding(null); }}>
-          <div className="card" style={{ width: '720px', maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', padding: '1.5rem' }}>
+        <>
+          <div style={{ position: 'fixed', top: 0, right: 0, width: '680px', maxWidth: '100vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', zIndex: 1000, display: 'flex', flexDirection: 'column', animation: 'slideInRight 0.2s ease-out' }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.2rem' }}>
+            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--card-bg)' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <span style={{ fontSize: '0.78rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: getSeverityStyle(detailFinding.severity).bg, color: getSeverityStyle(detailFinding.severity).color, fontWeight: 600 }}>
@@ -383,90 +375,118 @@ function KeyIssues() {
                     {getStatusStyle(detailFinding.status).label}
                   </span>
                 </div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, lineHeight: 1.4 }}>{detailFinding.title}</h3>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, lineHeight: 1.4, color: 'var(--text-color)' }}>{detailFinding.title}</h3>
               </div>
               <button onClick={() => setDetailFinding(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.25rem', color: '#64748b', fontSize: '1.3rem', lineHeight: 1, flexShrink: 0, marginLeft: '1rem' }}>✕</button>
             </div>
 
-            {/* File info */}
-            {detailFinding.file_path && (
-              <div style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.5rem 0.8rem', marginBottom: '1rem', fontFamily: 'monospace', fontSize: '0.82rem', color: '#94a3b8' }}>
-                📄 {detailFinding.file_path}{detailFinding.line_number ? `:${detailFinding.line_number}` : ''}
-                <span style={{ marginLeft: '1rem', color: '#64748b' }}>代码仓: {getRepoName(detailFinding.repo_id)}</span>
-              </div>
-            )}
+            {/* Content (Scrollable) */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+              {/* File info */}
+              {detailFinding.file_path && (
+                <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.5rem 0.8rem', marginBottom: '1rem', fontFamily: 'monospace', fontSize: '0.82rem', color: '#94a3b8' }}>
+                  📄 {detailFinding.file_path}{detailFinding.line_number ? `:${detailFinding.line_number}` : ''}
+                  <span style={{ marginLeft: '1rem', color: '#64748b' }}>代码仓: {getRepoName(detailFinding.repo_id)}</span>
+                </div>
+              )}
 
-            {/* Detail */}
-            {detailFinding.detail && (
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>问题详情</div>
-                <div style={{ fontSize: '0.88rem', lineHeight: 1.7, color: 'var(--text-color)', whiteSpace: 'pre-wrap' }}>{detailFinding.detail}</div>
-              </div>
-            )}
+              {/* Detail */}
+              {detailFinding.detail && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>问题详情</div>
+                  <div style={{ fontSize: '0.88rem', lineHeight: 1.7, color: 'var(--text-color)', whiteSpace: 'pre-wrap' }}>{detailFinding.detail}</div>
+                </div>
+              )}
 
-            {/* Code Snippet */}
-            {detailFinding.code_snippet && (
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>相关代码</div>
-                <pre style={{ background: '#1e293b', color: '#e2e8f0', padding: '1rem', borderRadius: '8px', fontSize: '0.82rem', lineHeight: 1.6, overflowX: 'auto', margin: 0, fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
-                  {detailFinding.code_snippet}
-                </pre>
-              </div>
-            )}
+              {/* Code Snippet */}
+              {detailFinding.code_snippet && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>相关代码</div>
+                  <pre style={{ background: '#1e293b', color: '#e2e8f0', padding: '1rem', borderRadius: '8px', fontSize: '0.82rem', lineHeight: 1.6, overflowX: 'auto', margin: 0, fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+                    {detailFinding.code_snippet}
+                  </pre>
+                </div>
+              )}
 
-            {/* Suggestion */}
-            {detailFinding.suggestion && (
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>修复建议</div>
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.8rem', fontSize: '0.85rem', lineHeight: 1.6, color: '#15803d', whiteSpace: 'pre-wrap' }}>
-                  💡 {detailFinding.suggestion}
+              {/* Suggestion */}
+              {detailFinding.suggestion && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>修复建议</div>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.8rem', fontSize: '0.85rem', lineHeight: 1.6, color: '#15803d', whiteSpace: 'pre-wrap' }}>
+                    💡 {detailFinding.suggestion}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', padding: '1rem', background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.3rem' }}>处理状态</div>
+                  <select value={detailFinding.status} onChange={e => handleStatusChange(detailFinding.id, e.target.value)} style={{ ...selectStyle, width: '100%', background: 'var(--bg-color)' }}>
+                    <option value="open">待处理</option>
+                    <option value="processing">处理中</option>
+                    <option value="closed">已关闭</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.3rem' }}>指派处理人</div>
+                  <select value={detailFinding.assignee_id || ''} onChange={e => handleAssigneeChange(detailFinding.id, e.target.value)} style={{ ...selectStyle, width: '100%', background: 'var(--bg-color)' }}>
+                    <option value="">未分配</option>
+                    {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
                 </div>
               </div>
-            )}
 
-            {/* Actions */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem', padding: '1rem', background: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-              <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.3rem' }}>处理状态</div>
-                <select value={detailFinding.status} onChange={e => handleStatusChange(detailFinding.id, e.target.value)} style={{ ...selectStyle, width: '100%' }}>
-                  <option value="open">待处理</option>
-                  <option value="processing">处理中</option>
-                  <option value="closed">已关闭</option>
-                </select>
+              {/* Feedback */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>
+                  处理反馈
+                  {detailFinding.feedback_at && (
+                    <span style={{ fontWeight: 400, marginLeft: '0.5rem', color: '#94a3b8' }}>
+                      上次反馈: {new Date(detailFinding.feedback_at).toLocaleString('zh-CN')}
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  value={feedbackText}
+                  onChange={e => setFeedbackText(e.target.value)}
+                  placeholder="填写处理进展或反馈..."
+                  style={{ width: '100%', padding: '0.7rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', resize: 'vertical', minHeight: '80px', fontSize: '0.85rem', boxSizing: 'border-box', background: 'var(--card-bg)', color: 'var(--text-color)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                  <button className="btn" onClick={handleFeedbackSubmit}
+                    disabled={feedbackText === (detailFinding.feedback || '')}
+                    style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', opacity: feedbackText === (detailFinding.feedback || '') ? 0.5 : 1 }}>
+                    保存反馈
+                  </button>
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.3rem' }}>指派处理人</div>
-                <select value={detailFinding.assignee_id || ''} onChange={e => handleAssigneeChange(detailFinding.id, e.target.value)} style={{ ...selectStyle, width: '100%' }}>
-                  <option value="">未分配</option>
-                  {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
+
+              {/* Meta */}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', paddingBottom: '1rem', display: 'flex', gap: '1.5rem' }}>
+                <span>ID: {detailFinding.id}</span>
+                <span>报告: #{detailFinding.task_report_id}</span>
+                <span>创建: {new Date(detailFinding.created_at).toLocaleString('zh-CN')}</span>
               </div>
             </div>
-
-            {/* Feedback */}
-            <div style={{ marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', marginBottom: '0.4rem' }}>
-                处理反馈
-                {detailFinding.feedback_at && (
-                  <span style={{ fontWeight: 400, marginLeft: '0.5rem', color: '#94a3b8' }}>
-                    上次反馈: {new Date(detailFinding.feedback_at).toLocaleString('zh-CN')}
-                  </span>
-                )}
-              </div>
-              <textarea
-                value={feedbackText}
-                onChange={e => setFeedbackText(e.target.value)}
-                placeholder="填写处理进展或反馈..."
-                style={{ width: '100%', padding: '0.7rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', resize: 'vertical', minHeight: '80px', fontSize: '0.85rem', boxSizing: 'border-box', background: 'var(--card-bg)', color: 'var(--text-color)' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <button className="btn" onClick={handleFeedbackSubmit}
-                  disabled={feedbackText === (detailFinding.feedback || '')}
-                  style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', opacity: feedbackText === (detailFinding.feedback || '') ? 0.5 : 1 }}>
-                  保存反馈
-                </button>
-              </div>
-            </div>
+          </div>
+          
+          {/* Backdrop */}
+          <div onClick={() => setDetailFinding(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999, animation: 'fadeIn 0.2s ease-out' }} />
+          
+          <style>{`
+            @keyframes slideInRight {
+              from { transform: translateX(100%); }
+              to { transform: translateX(0); }
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+          `}</style>
+        </>, document.body
+      )}
+    </div>>
 
             {/* Meta */}
             <div style={{ fontSize: '0.75rem', color: '#64748b', borderTop: '1px solid var(--border-color)', paddingTop: '0.8rem', display: 'flex', gap: '1.5rem' }}>
