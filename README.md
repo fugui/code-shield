@@ -1,45 +1,43 @@
 # 码盾 · Code-Shield 🛡️
 
-**码盾**（Code-Shield）是一套 AI 驱动的代码质量自动看护系统，专为提升代码质量和安全性而设计。系统通过集成 LLM（如 Claude AI）对代码仓库进行深度分析，重点检测多线程安全、内存泄漏和第三方库漏洞等关键问题，并自动生成检视报告。
+**码盾**（Code-Shield）是一套 AI 驱动的代码质量自动看护系统，专为提升代码质量和安全性而设计。系统通过集成高级 LLM CLI 工具（如 Claude 和 OpenCode）对代码仓库进行深度分析，重点检测多线程安全、内存泄漏和第三方库漏洞等关键问题，并自动生成检视报告、进行问题追踪和通知推送。
 
-## 核心功能
+## 🌟 核心特性
 
-### 🤖 AI 代码检视
-- **智能分析**：利用 LLM 进行深度代码分析，发现潜在问题。
-- **灵活扩展**：支持多种检视任务类型（如通用代码检视、内存泄漏检测等），可自定义 Prompt。
-- **多引擎模式**：支持三种执行引擎，适配不同仓库结构：
-  - **单引擎 (single)**：将整个代码仓作为整体提交给 AI 分析，适合小型项目。
-  - **分片引擎 (chunked)**：按目录深度自动分片，逐片分析后综合，适合大型单体项目。
-  - **模块引擎 (module)**：按顶层子目录拆分为独立模块，逐模块分析后综合，适合多模块 mono-repo。
-- **定向巡检**：重点检测以下领域：
-  - 多线程与并发安全（竞态条件、死锁、资源竞争）
-  - 内存泄漏（未关闭的资源、无法回收的对象）
-  - 第三方库安全（已知漏洞、API 误用）
-- **五级分级**：阻塞、严重、主要、提示、建议。
+### 🤖 强大的 AI 驱动代码检视
+- **灵活的 AI 引擎支持**：支持配置不同的底层 AI 执行器（当前支持 **Claude CLI** 和 **OpenCode CLI**）。
+  - **OpenCode**：支持全局 Agent (`~/.config/opencode/agents/`) 持久化配置、工具调用权限控制。
+- **自定义任务类型**：支持通过 Web UI 动态管理不同的检视任务类型，自由配置阶段提示词（Analysis / Synthesis）、运行时参数（如 `SkipTests`）和执行引擎。
+- **动态解析行号**：支持识别 LLM 吐出的多种行号格式（如单行 `100`，行范围 `100-125`，离散行 `41,42`）。
 
-### 📊 项目管理
-- **系统账号管理**：支持分配系统账号，记录真实姓名，追踪最近登录时间及账号状态。
-- **团队管理**：组织架构管理，支持设置团队负责人。
-- **成员管理**：维护人员信息及邮箱，支持批量导入。
-- **仓库管理**：代码仓库配置，关联团队和负责人。
-- **问题追踪**：关键问题的状态跟踪和指派处理。
+### ⚙️ 多层级执行引擎适配
+为了适应不同体量的代码仓，内置了三种执行引擎（可在任务类型中配置）：
+- **单引擎 (single)**：将整个代码仓作为整体提交给 AI 分析，适合小型项目。
+- **分片引擎 (chunked)**：按目录深度自动分片，多并发（默认 5）向 AI 提交，最后综合汇总。适合大型单体项目，前端支持 **实时展示分片处理进度**（如 `分析中 (12/89)`）。
+- **模块引擎 (module)**：按顶层子目录拆分为独立模块，逐模块分析后综合，适合多模块 Mono-repo。
 
-### ⏰ 自动化调度
-- **定时检视**：支持 Cron 表达式配置检视计划。
-- **多种模式**：支持全部/按分组/按团队/指定仓库等多种触发模式。
-- **手动触发**：随时手动触发检视任务。
+### 📊 全方位项目与数据管理
+- **系统数据看板**：可视化展示近期代码问题走势、底层模型请求次数、平均延迟及耗时数据（支持动态多选模型筛选）。
+- **关键问题 (Issues) 追踪**：将高优的安全问题拦截并建立 Issue，支持按团队/部门/负责人的组合查询，跟踪处理状态。
+- **灵活的权限控制**：系统账号管理支持分配不同权限，支持批量管理团队、仓库与人员信息。
 
-### 📧 通知推送
-- **邮件报告**：自动生成 Word 格式检视报告。
-- **智能投递**：通过 Outlook 发送邮件到项目相关人员（需 Windows 环境）。
-- **即时反馈**：检视完成后自动通知相关人员，支持设置通知阈值。
+### ⏰ 自动化与动态调度
+- **定时调度**：支持 Cron 表达式配置检视计划。
+- **多维度触发**：支持全局/分组/团队/单仓触发，支持在调度配置中 **覆盖任务运行参数**（RunParams）。
+- **高并发控制**：基于 `worker_count` 全局工作池控制最大并行任务数，保护系统资源。
 
-## 系统架构
+### 📧 即时反馈与通知
+- **自动邮件**：支持通过独有的 `notifier` 组件（基于 Win32 GUI + Outlook COM）将精美的报告发送到负责人邮箱。
+- **智能投递**：支持基于检视打分（Score）的阈值触发自动告警。
 
-```
+---
+
+## 🏗️ 系统架构
+
+```text
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   前端 (React)   │────▶│  shield-server  │────▶│   LLM API       │
-│                 │◄────│    (Go/Gin)     │◄────│ (Claude/OpenAI) │
+│   前端 (React)   │────▶│  shield-server  │────▶│  CLI (Claude/   │
+│   (Vite/AntD)   │◄────│    (Go/Gin)     │◄────│   OpenCode)     │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                  │
                                  ▼
@@ -50,272 +48,114 @@
                           └─────────────────┘
 ```
 
-| 组件 | 技术栈 | 端口 | 说明 |
+| 组件 | 技术栈 | 默认端口 | 说明 |
 |------|--------|------|------|
-| shield-server | Go + Gin + GORM + SQLite | 8080 | 主服务，提供 API，内嵌前端静态资源 |
-| notifier | Go + Winigo (Win32 GUI) | 8081 | 邮件通知服务（Windows 桌面应用，内置 GUI，通过 COM 直接操作 Outlook） |
+| **shield-server** | Go 1.21+, Gin, GORM, SQLite | `8080` | 核心主服务，提供 API 接口及任务调度管线 |
+| **notifier** | Go 1.21+, Winigo, Outlook COM | `8081` | 独立的邮件投递微服务（仅限 Windows 运行） |
 
-## 快速开始
+---
 
-### 环境要求
+## 🚀 快速开始
 
-- **shield-server**：Go 1.21+、Node.js 18+（仅用于前端构建）
-- **notifier**：Windows 操作系统、Go 1.21+、Microsoft Outlook 客户端
+### 运行环境
+- **主服务**：Linux / macOS / Windows, Go 1.21+, Node.js 18+（用于前端构建）。
+- **通知服务**：需 Windows 系统并安装 Microsoft Outlook。
+- **AI 依赖**：主机环境中必须可用 `claude` 或 `opencode` 命令行工具。
 
-### 安装步骤
+### 安装与启动
 
-#### 1. 克隆代码
-
+#### 1. 克隆项目
 ```bash
 git clone https://github.com/fugui/code-shield.git
 cd code-shield
 ```
 
-#### 2. 安装依赖
-
+#### 2. 安装依赖并构建
 ```bash
-# 安装 notifier 依赖
-cd notifier && go mod download
+# 编译前端
+cd shield-server/frontend && npm install && npm run build
 
-# 安装前端依赖并构建
-cd ../shield-server/frontend && npm install && npm run build
-```
-
-#### 3. 编译构建
-
-在根目录下执行：
-
-```bash
+# 编译主程序与通知组件
+cd ../../
 make build
 ```
 
-#### 4. 启动服务
+#### 3. 配置系统
+修改 `shield-server/config.yaml`（首次运行会自动生成并读取缺省值）：
+```yaml
+server:
+  port: ":8080"
+  worker_count: 5              # 全局任务池并发度
+storage:
+  root: "/path/to/data"        # 数据落地根目录（代码克隆与结果存储）
+ai:
+  backend: "opencode"          # AI 后端："claude" 或 "opencode"
+notification:
+  webhook: "http://127.0.0.1:8081/api/notify/email"
+```
 
+#### 4. 启动服务
 ```bash
 make run
 ```
-
-该命令会同时启动 `notifier` 和 `shield-server`。
-
-#### 5. 访问系统
-
-打开浏览器访问 http://localhost:8080
-
-默认管理员账号：
-- 用户名：`admin@code-shield.com`
-- 密码：`admin123`
-
-## 使用指南
-
-### 1. 初始化配置
-
-登录系统后，按以下步骤初始化：
-
-1. **创建团队**：进入"团队管理"，添加团队并设置负责人。
-2. **导入成员**：进入"成员管理"，添加团队成员（邮箱用于接收通知）。
-3. **添加仓库**：进入"仓库管理"，配置代码仓库信息。
-4. **系统管理**：在"系统管理"中管理系统账号、配置 AI 检视的 Prompt 任务类型及 Cron 定时调度。
-
-### 2. 检视调度配置
-
-支持多种触发模式：
-
-| 模式 | 说明 |
-|------|------|
-| 全部仓库 | 检视所有已激活的仓库 |
-| 业务分组 | 按服务分组筛选仓库 |
-| 指定团队 | 检视特定团队下的所有仓库 |
-| 指定仓库 | 只检视选定的仓库 |
-
-Cron 表达式示例：
-- `0 9 * * 1`：每周一上午 9 点
-- `0 18 * * 5`：每周五下午 6 点
-- `0 9 * * 1-5`：工作日每天上午 9 点
-
-### 3. 查看检视报告
-
-在"任务中心"页面：
-- 查看所有仓库的检视状态。
-- 点击检视记录查看详细 Markdown 报告。
-- 手动点击"发送通知"触发邮件发送。
-- 支持导出 Word 文档。
-
-## 问题分级标准
-
-系统对发现的问题进行五级分类：
-
-| 级别 | 图标 | 说明 | 处理建议 |
-|------|------|------|----------|
-| 阻塞 | 🔴 | 会导致系统崩溃、数据丢失或严重安全漏洞 | 立即修复 |
-| 严重 | 🟠 | 高风险缺陷，如死锁、内存泄漏、竞态条件 | 优先修复 |
-| 主要 | 🟡 | 影响功能正确性或性能的明显缺陷 | 计划修复 |
-| 提示 | 🔵 | 代码风格、命名不规范、轻微逻辑隐患 | 建议修复 |
-| 建议 | ⚪ | 可选的改进建议，最佳实践推荐 | 酌情处理 |
-
-## 目录结构
-
-```
-code-shield/
-├── shield-server/          # 主服务 (Go)
-│   ├── main.go            # 程序入口
-│   ├── config.yaml        # 配置文件
-│   ├── handlers/          # HTTP 处理器
-│   ├── models/            # 数据模型
-│   ├── services/          # 业务逻辑
-│   │   ├── task_runner.go  # 任务执行管线
-│   │   ├── engine.go       # TaskEngine 接口定义 + 注册表
-│   │   ├── engine_single.go   # 单引擎实现
-│   │   ├── engine_chunked.go  # 分片引擎实现
-│   │   ├── engine_module.go   # 模块引擎实现
-│   │   └── queue.go        # 异步任务队列
-│   ├── cron_jobs/         # 定时任务调度
-│   ├── tasks/             # 检视任务定义 (Prompt/脚本)
-│   │   ├── code-review/
-│   │   └── memory-leak/
-│   └── frontend/          # React 前端
-├── notifier/              # 邮件通知服务 (Go)
-│   └── src/
-│       └── index.js       # 邮件发送逻辑 (Outlook COM)
-├── templates/             # CSV 导入模板
-├── Makefile               # 项目构建脚本
-└── README.md
-```
-
-## 配置说明
-
-### shield-server/config.yaml
-
-```yaml
-server:
-  port: ":8080"                    # 服务端口
-notifier:
-  url: "http://127.0.0.1:8081/api/notify/email"  # 通知服务地址
-review:
-  notify_threshold: 20             # 自动通知的风险分值阈值
-workspace:
-  home: "/path/to/workspace"       # 代码克隆和报告生成的根目录
-```
-
-### 引擎模式配置
-
-在「任务类型管理」中选择执行模式并填写引擎配置（JSON，可选）：
-
-| 引擎 | 配置项 | 默认值 | 说明 |
-|------|--------|--------|------|
-| single | 无 | - | 无需配置 |
-| chunked | `max_files` | `50` | 每个分片最大文件数 |
-| chunked | `depth` | `1` | 按几层目录深度分片 |
-| module | `exclude` | `[".git", "vendor", ...]` | 排除不检视的顶层目录 |
-
-示例：
-
-```json
-// chunked 引擎
-{"max_files": 100, "depth": 2}
-
-// module 引擎
-{"exclude": [".git", "vendor", "docs", "scripts"]}
-```
-
-#### 任务执行管线
-
-每个任务按以下管线顺序执行：
-
-```
-load → prepareAndSync → checkPrecondition → prepareOutputPaths → engine.Run() → runPostProcess → finalize
-```
-
-引擎通过 `TaskEngine` 接口实现插件化，新增引擎只需创建 `engine_xxx.go` 并在 `init()` 中注册。
-
-## API 接口
-
-### 认证
-
-```http
-POST /api/login
-Content-Type: application/json
-
-{
-  "username": "admin@code-shield.com",
-  "password": "admin123"
-}
-```
-
-响应中的 `token` 用于后续请求的 `Authorization: Bearer <token>` 头部。
-
-### 辅助接口
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/me` | GET | 获取当前登录用户信息 |
-| `/api/password` | PATCH | 修改当前用户登录密码 |
-
-### 主要业务接口
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/teams` | GET/POST | 团队管理 |
-| `/api/members` | GET/POST | 成员管理 |
-| `/api/repos` | GET/POST | 仓库管理 |
-| `/api/users` | GET/POST | 系统账号管理（限管理员） |
-| `/api/tasks` | GET/POST | 任务记录与手动触发 |
-| `/api/task-types` | GET/POST | 任务类型配置 |
-| `/api/schedules` | GET/POST | 调度配置 |
-| `/api/issues` | GET/POST | 关键问题管理 |
-| `/api/executions` | GET | 执行日志查看 |
-
-## 开发指南
-
-### 前端开发
-
-```bash
-cd shield-server/frontend
-npm run dev
-```
-
-### 后端开发
-
-```bash
-cd shield-server
-go run main.go
-```
-
-### 数据库
-
-系统使用 SQLite 数据库，数据文件默认位于 `shield-server/code_shield.db`。
-
-## 常见问题
-
-### Q: 邮件发送失败怎么办？
-
-1. 确认 `notifier` 服务已在 Windows 环境启动（显示 GUI 窗口）。
-2. 确认 Outlook 客户端已安装，且至少配置了一个活动的邮箱账户。
-3. 检查 `shield-server` 中的 `notifier.url` 配置是否能正确访问 `notifier` 服务。
-4. 查看 `notifier` GUI 界面中的日志排查 COM 组件执行错误。
-
-### Q: 检视任务一直处于 pending 状态？
-
-1. 检查 `shield-server` 是否正常启动并连接到数据库。
-2. 确认 `services.StartWorkerPool` 已成功启动工作协程。
-3. 检查 `workspace.home` 路径是否有写权限，以及 Git 是否可用。
-
-### Q: 如何修改 AI 检视的提示词？
-
-在系统界面的"任务类型管理"中直接修改，或编辑 `shield-server/tasks/{type}/prompt.md` 文件。
-
-## 技术栈
-
-### 后端
-- **语言**：Go 1.21+
-- **框架**：Gin, GORM, robfig/cron
-
-### 前端
-- **框架**：React 18, Vite, Ant Design
-
-### 邮件服务
-- **运行环境**：Windows (x64)
-- **技术栈**：Go 1.21+, Winigo (Win32 GUI), Outlook COM
+浏览器访问 `http://localhost:8080`。  
+默认管理员账号：`admin@code-shield.com` / `admin123`
 
 ---
 
-**Code-Shield** - 让代码更安全、更可靠 🛡️
+## 📖 核心使用指南
+
+### 1. 配置任务类型 (Task Types)
+管理员可以在 "任务类型管理" 中创建全新的检视任务：
+- **Prompt 维护**：在线编辑 Analysis（切片分析）与 Synthesis（汇总阶段）的提示词。如果是 OpenCode 后端，系统会自动将提示词同步至全局 `~/.config/opencode/agents/`。
+- **引擎选择**：指定 `chunked` 等引擎，并提供 JSON 格式配置（如 `{"max_files": 50, "concurrency": 5}`）控制切片粒度。
+
+### 2. 调度配置 (Schedules)
+- **参数覆盖**：在创建调度时，可以勾选 `SkipTests` 从而覆盖默认行为，跳过测试代码的分析以节省 Token。
+- **避免冲突**：系统内置 409 防并发检测，同一代码仓库如果处于 `pending` / `running` 状态，不会被重复拉起。
+
+### 3. 查看与追踪
+- **实时进度**：大型代码仓进入分析阶段后，前端将展示具体的切片进度 `分析中 (12/89)`。
+- **问题列表**：所有高价值（严重、阻塞等）的检视结果被提取至「问题列表」集中追踪。
+- **统计图表**：访问数据大盘跟踪 API 耗时、成功率、团队代码安全健康度等指标。
+
+---
+
+## 🛠️ 目录结构
+
+```text
+code-shield/
+├── shield-server/          # Go 核心主服务
+│   ├── config.yaml         # 系统配置文件
+│   ├── main.go             # 程序入口
+│   ├── models/             # 数据库模型与全局配置解析
+│   ├── handlers/           # HTTP API 接口路由与处理逻辑
+│   ├── services/           # 核心业务组件
+│   │   ├── task_runner.go  # 任务生命周期状态机
+│   │   ├── engine*.go      # Single / Chunked / Module 执行引擎实现
+│   │   ├── opencode_cli.go # OpenCode AI 后端适配器
+│   │   ├── claude_cli.go   # Claude AI 后端适配器
+│   │   └── agent_sync.go   # OpenCode Agent 配置文件生命周期同步服务
+│   ├── cron_jobs/          # 定时调度逻辑
+│   └── frontend/           # React 前端源码
+├── notifier/               # Windows Outlook 邮件投递代理服务
+├── templates/              # CSV 数据导入模板
+└── Makefile                # 一键构建与启动脚本
+```
+
+---
+
+## ❓ 常见排障
+
+**Q: 执行状态一直卡在 "分析中"，且控制台看到 `max_tokens must be at least 1`？**
+> 检查系统是否传递了负数的 tokens 值。当前网关拦截了负数，如果是下游 LLM 模型配额问题，请通过日志确认。
+
+**Q: OpenCode 引擎报错 `Command Execution Failed`，且未生成有效报告？**
+> 系统开启了 `--dangerously-skip-permissions`，请检查当前宿主机上的 OpenCode CLI 版本，确保符合配置要求。同时，请确认 `~/.config/opencode/agents/` 的写入权限，因为任务类型更新会自动同步至此目录。
+
+**Q: 如何更改全局允许并发执行的最大任务数？**
+> 请修改 `shield-server/config.yaml` 中的 `server.worker_count`，默认为 5。此修改需重启 `shield-server` 生效。
+
+---
+
+*Code-Shield - 让代码更安全、更可靠 🛡️*
