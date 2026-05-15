@@ -431,7 +431,7 @@ function KeyIssues() {
       {/* Detail Drawer */}
       {detailFinding && createPortal(
         <>
-          <div style={{ position: 'fixed', top: 0, right: 0, width: '680px', maxWidth: '100vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', zIndex: 1000, display: 'flex', flexDirection: 'column', animation: 'slideInRight 0.2s ease-out' }}>
+          <div style={{ position: 'fixed', top: 0, right: 0, width: '1200px', maxWidth: '100vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', zIndex: 1000, display: 'flex', flexDirection: 'column', animation: 'slideInRight 0.2s ease-out' }}>
             {/* Header */}
             <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--card-bg)' }}>
               <div style={{ flex: 1 }}>
