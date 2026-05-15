@@ -197,7 +197,7 @@ function KeyIssues() {
   const Pagination = () => {
     if (totalPages <= 1) return null;
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center', padding: '0.5rem 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center', padding: '0.5rem 0' }}>
         <button disabled={page <= 1} onClick={() => updateParams({ page: String(page - 1) })}
           style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-color)', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.4 : 1, fontSize: '0.8rem' }}>
           上一页
@@ -267,8 +267,6 @@ function KeyIssues() {
         </div>
       )}
 
-      {/* Pagination Top */}
-      <Pagination />
 
       {/* Filters */}
       <div className="card" style={{ padding: '0.8rem 1rem', marginBottom: '1rem', display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -349,6 +347,11 @@ function KeyIssues() {
         <button onClick={handleExport} style={{ ...filterSelectStyle, background: 'var(--primary-color)', color: '#fff', border: 'none', cursor: 'pointer', padding: '0.45rem 1rem' }}>
           导出 Excel
         </button>
+      </div>
+
+      {/* Pagination Top */}
+      <div style={{ marginBottom: '0.5rem' }}>
+        <Pagination />
       </div>
 
       {/* Table */}
