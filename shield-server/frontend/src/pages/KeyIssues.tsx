@@ -162,7 +162,23 @@ function KeyIssues() {
 
   const handleExport = () => {
     const params = new URLSearchParams(searchParams.toString());
-    window.location.href = `/api/findings/export?${params.toString()}`;
+    fetch(`/api/findings/export?${params.toString()}`)
+      .then(res => {
+        if (!res.ok) throw new Error('Export failed');
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'findings_export.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('导出失败', 'error');
+      });
   };
 
   const handleSort = (field: string) => {
