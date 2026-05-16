@@ -270,23 +270,6 @@ function KeyIssues() {
 
       {/* Filters */}
       <div className="card" style={{ padding: '0.8rem 1rem', marginBottom: '1rem', display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <select style={filterSelectStyle} value={filterSeverity} onChange={e => updateParams({ severity: e.target.value, page: '1' })}>
-          <option value="">全部级别</option>
-          <option value="阻塞">阻塞</option>
-          <option value="严重">严重</option>
-          <option value="主要">主要</option>
-          <option value="提示">提示</option>
-          <option value="建议">建议</option>
-          <option value="高风险">高风险</option>
-          <option value="中风险">中风险</option>
-          <option value="低风险">低风险</option>
-        </select>
-        <select style={filterSelectStyle} value={filterStatus} onChange={e => updateParams({ status: e.target.value, page: '1' })}>
-          <option value="">全部状态</option>
-          <option value="open">待处理</option>
-          <option value="processing">处理中</option>
-          <option value="closed">已关闭</option>
-        </select>
         <select style={filterSelectStyle} value={filterTeam} onChange={e => { updateParams({ team_id: e.target.value, repo_id: '', page: '1' }); setRepoSearch(''); }}>
           <option value="">全部部门</option>
           {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -334,6 +317,23 @@ function KeyIssues() {
         <select style={filterSelectStyle} value={filterTaskType} onChange={e => updateParams({ task_type_id: e.target.value, page: '1' })}>
           <option value="">全部任务类型</option>
           {taskTypes.map((t: any) => <option key={t.id} value={t.id}>{t.display_name}</option>)}
+        </select>
+        <select style={filterSelectStyle} value={filterSeverity} onChange={e => updateParams({ severity: e.target.value, page: '1' })}>
+          <option value="">全部级别</option>
+          <option value="阻塞">阻塞</option>
+          <option value="严重">严重</option>
+          <option value="主要">主要</option>
+          <option value="提示">提示</option>
+          <option value="建议">建议</option>
+          <option value="高风险">高风险</option>
+          <option value="中风险">中风险</option>
+          <option value="低风险">低风险</option>
+        </select>
+        <select style={filterSelectStyle} value={filterStatus} onChange={e => updateParams({ status: e.target.value, page: '1' })}>
+          <option value="">全部状态</option>
+          <option value="open">待处理</option>
+          <option value="processing">处理中</option>
+          <option value="closed">已关闭</option>
         </select>
         <input
           style={{ ...filterSelectStyle, minWidth: '180px', flex: 1 }}
