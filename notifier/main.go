@@ -225,7 +225,7 @@ func LogMessage(msg string) {
 		
 		runes := []rune(current)
 		if len(runes) > 10000 {
-			current = string(runes[:10000])
+			current = string(runes[:1000])
 		}
 		
 		txtLog.SetText(fmt.Sprintf("[%s] %s\r\n%s", t, msg, current))
