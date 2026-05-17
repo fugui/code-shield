@@ -225,7 +225,8 @@ func LogMessage(msg string) {
 		
 		runes := []rune(current)
 		if len(runes) > 10000 {
-			current = string(runes[:1000])
+			// 清理的时候，只保留日志的最后 1000 个字符， 这样避免频繁截断
+			current = string(runes[len(runes)-1000:])
 		}
 		
 		txtLog.SetText(fmt.Sprintf("[%s] %s\r\n%s", t, msg, current))
