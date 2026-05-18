@@ -127,6 +127,9 @@ func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 	if errMsg != "" {
 		updates["error_message"] = errMsg
 	}
+	if status == "running" {
+		updates["start_time"] = now
+	}
 	if status == models.StatusSuccess || status == models.StatusFailed {
 		updates["end_time"] = &now
 	}
