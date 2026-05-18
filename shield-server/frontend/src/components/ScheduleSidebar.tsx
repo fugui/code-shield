@@ -18,7 +18,7 @@ export interface ScheduleFormData {
   target_values: any[];
   auto_notify: boolean;
   is_active: boolean;
-  run_params: { ai_backend?: string; skip_tests?: boolean };
+  run_params: { ai_backend?: string; target_scope?: string };
 }
 
 const CRON_PRESETS = [
@@ -370,24 +370,25 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
               </select>
 
               <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <label className="sidebar-label" style={{ marginBottom: 0 }}>跳过测试文件</label>
+                <label className="sidebar-label" style={{ marginBottom: 0 }}>处理范围</label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   {[
                     { label: '跟随默认', value: undefined },
-                    { label: '是', value: true },
-                    { label: '否', value: false },
+                    { label: '全部代码', value: 'all' },
+                    { label: '业务代码', value: 'business' },
+                    { label: '测试代码', value: 'test' },
                   ].map(opt => (
                     <button
                       key={String(opt.value)}
                       type="button"
-                      className={`target-segment${form.run_params.skip_tests === opt.value ? ' active' : ''}`}
-                      onClick={() => setForm({ ...form, run_params: { ...form.run_params, skip_tests: opt.value } })}
+                      className={`target-segment${form.run_params.target_scope === opt.value ? ' active' : ''}`}
+                      onClick={() => setForm({ ...form, run_params: { ...form.run_params, target_scope: opt.value } })}
                     >
                       {opt.label}
                     </button>
                   ))}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>跳过 *_test.go、*.spec.ts 等测试文件（仅分片引擎生效）</div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>支持选择全部、仅业务或仅测试代码（目前仅分片引擎生效）</div>
               </div>
             </div>
           </div>

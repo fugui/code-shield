@@ -119,7 +119,7 @@ func UpdateTaskType(c *gin.Context) {
 		EngineMode      *string          `json:"engine_mode"`
 		EngineConfig    *json.RawMessage `json:"engine_config"`
 		AIBackend       *string          `json:"ai_backend"`
-		SkipTests       *bool            `json:"skip_tests"`
+		TargetScope     *string          `json:"target_scope"`
 		NotifyTemplate  *string          `json:"notify_template"`
 		NotifyThreshold *int             `json:"notify_threshold"`
 		NotifyCc        *json.RawMessage `json:"notify_cc"`
@@ -147,8 +147,8 @@ func UpdateTaskType(c *gin.Context) {
 	if req.AIBackend != nil {
 		updates["ai_backend"] = *req.AIBackend
 	}
-	if req.SkipTests != nil {
-		updates["skip_tests"] = *req.SkipTests
+	if req.TargetScope != nil {
+		updates["target_scope"] = *req.TargetScope
 	}
 	if req.NotifyTemplate != nil {
 		updates["notify_template"] = *req.NotifyTemplate
