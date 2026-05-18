@@ -45,6 +45,9 @@ func main() {
 	// Start worker pool with configured concurrency
 	services.StartWorkerPool(models.AppConfig.Server.WorkerCount)
 
+	// Recover tasks that were pending/running before the last shutdown
+	services.RecoverPendingTasks()
+
 	// Start cron jobs
 	cron_jobs.StartCronJobs()
 
