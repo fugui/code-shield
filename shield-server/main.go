@@ -30,11 +30,11 @@ var (
 )
 
 func main() {
-	staleAction := flag.String("stale-action", "recover", "Action for stale (pending/running) tasks found at startup: 'recover' (re-enqueue), 'ignore' (leave as is), 'delete' (delete from database)")
+	staleAction := flag.String("stale", "recover", "Action for stale (pending/running) tasks found at startup: 'recover' (re-enqueue), 'ignore' (leave as is), 'delete' (delete from database)")
 	flag.Parse()
 
 	if *staleAction != "recover" && *staleAction != "ignore" && *staleAction != "delete" {
-		log.Fatalf("Invalid -stale-action option: %q. Allowed values: recover, ignore, delete", *staleAction)
+		log.Fatalf("Invalid -stale option: %q. Allowed values: recover, ignore, delete", *staleAction)
 	}
 
 	log.Printf("Code-Shield Server %s (commit: %s, built: %s)\n", Version, CommitID, BuildTime)
