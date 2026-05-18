@@ -123,11 +123,13 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	}
 
 	if timedOut {
+		metaFile.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution timed out after %v\n", timeout))
 		return fmt.Errorf("AI execution timed out after %v", timeout)
 	}
 
 	if err := runErr; err != nil {
 		if ctxRun.Err() == context.DeadlineExceeded {
+			metaFile.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution timed out after %v\n", timeout))
 			return fmt.Errorf("AI execution timed out after %v", timeout)
 		}
 
@@ -149,6 +151,8 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
+
+		metaFile.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution failed: %s\n", errMsg))
 
 		return fmt.Errorf("AI execution failed: %s", errMsg)
 	}
