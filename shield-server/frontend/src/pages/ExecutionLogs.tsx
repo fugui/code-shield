@@ -54,6 +54,22 @@ function ExecutionLogs() {
     }
   };
 
+  const deletePending = async (logId: number) => {
+    if (!window.confirm('确认删除该排队中的任务？此操作不可恢复。')) return;
+    try {
+      const res = await fetch(`/api/executions/${logId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || '任务已删除', 'success');
+        fetchLogs();
+      } else {
+        showToast(data.error || '删除失败', 'error');
+      }
+    } catch {
+      showToast('网络异常，删除失败', 'error');
+    }
+  };
+
   const handleNotify = async (reportId: number) => {
     try {
       const res = await fetch(`/api/tasks/${reportId}/notify`, { method: 'POST' });
@@ -138,12 +154,13 @@ function ExecutionLogs() {
               <th style={{ padding: '1rem', fontWeight: 600 }}>开始时间</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>执行耗时</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>状态</th>
+              <th style={{ padding: '1rem', fontWeight: 600 }}>操作</th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
+                <td colSpan={10} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
               </tr>
             ) : logs.map(log => {
               const expanded = expandedIds.has(log.id);
@@ -188,11 +205,23 @@ function ExecutionLogs() {
                         )}
                       </div>
                     </td>
+                    <td style={{ padding: '1rem' }}>
+                      {log.status === 'pending' && (
+                        <button
+                          className="btn"
+                          onClick={e => { e.stopPropagation(); deletePending(log.id); }}
+                          style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)', fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
+                          title="删除该排队任务"
+                        >
+                          删除
+                        </button>
+                      )}
+                    </td>
                   </tr>
 
                   {expanded && hasReport && (
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td colSpan={9} style={{ padding: '0 1rem 1.25rem 3.5rem', background: 'var(--bg-color)' }}>
+                      <td colSpan={10} style={{ padding: '0 1rem 1.25rem 3.5rem', background: 'var(--bg-color)' }}>
                         {/* Score */}
                         {report.status === 'success' && (
                           <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>

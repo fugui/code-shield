@@ -191,6 +191,36 @@ func ClearCompletedExecutionLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
 }
 
+// DeletePendingExecution deletes a single pending execution log (and its linked TaskReport).
+// Running/completed tasks cannot be deleted via this endpoint.
+func DeletePendingExecution(c *gin.Context) {
+	id := c.Param("id")
+
+	var execLog models.TaskExecutionLog
+	if err := models.DB.First(&execLog, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+		return
+	}
+
+	if execLog.Status != models.StatusPending {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只能删除状态为「排队中」的任务，运行中或已完成的任务无法删除"})
+		return
+	}
+
+	// Delete the linked TaskReport first (if any)
+	if execLog.TaskReportID != nil {
+		models.DB.Delete(&models.TaskReport{}, *execLog.TaskReportID)
+	}
+
+	// Delete the execution log itself
+	if err := models.DB.Delete(&models.TaskExecutionLog{}, execLog.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已成功删除排队中的任务"})
+}
+
 // TriggerSchedule manually triggers a schedule config and queues jobs for repos immediately
 func TriggerSchedule(c *gin.Context) {
 	id := c.Param("id")
