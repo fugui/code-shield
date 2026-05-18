@@ -137,11 +137,14 @@ func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", logID).Updates(updates)
 }
 
-// RecoverPendingTasks 在进程启动时调用，扫描数据库中未完成的任务并重新入队。
-// 恢复条件：TaskReport 状态不是终态（success/failed/skipped）。
-// 对于执行到一半（例如 cloning, analyzing, post_processing 等）的任务，会先清理已写入的 AnalysisFindings，
-// 再重置状态重新执行，避免重复数据。
-func RecoverPendingTasks() {
+// RecoverPendingTasks 在进程启动时调用，扫描数据库中未完成的任务，并根据指定行为进行恢复、忽略或删除。
+// action: "recover" (重新入队), "ignore" (忽略), "delete" (从 DB 中彻底物理删除)
+func RecoverPendingTasks(action string) {
+	if action == "ignore" {
+		log.Println("[Recovery] Startup stale task action is set to 'ignore'. Skipping stale task processing.")
+		return
+	}
+
 	var staleReports []models.TaskReport
 	terminatedStatuses := []string{models.StatusSuccess, models.StatusFailed, models.StatusSkipped}
 
@@ -157,12 +160,34 @@ func RecoverPendingTasks() {
 	}
 
 	if len(staleReports) == 0 {
-		log.Println("[Recovery] No pending task reports found, nothing to recover.")
+		log.Println("[Recovery] No pending task reports found, nothing to process.")
 		return
 	}
 
-	log.Printf("[Recovery] Found %d stale task report(s) to evaluate.\n", len(staleReports))
+	log.Printf("[Recovery] Found %d stale task report(s). Action: %s\n", len(staleReports), action)
 
+	if action == "delete" {
+		deletedCount := 0
+		for _, report := range staleReports {
+			// 查询关联的执行日志
+			var execLog models.TaskExecutionLog
+			models.DB.Where("task_report_id = ?", report.ID).First(&execLog)
+
+			// 删除关联的分析发现 (findings)
+			models.DB.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{})
+			// 删除任务报告
+			models.DB.Delete(&models.TaskReport{}, report.ID)
+			// 删除执行日志
+			if execLog.ID > 0 {
+				models.DB.Delete(&models.TaskExecutionLog{}, execLog.ID)
+			}
+			deletedCount++
+		}
+		log.Printf("[Recovery] Successfully deleted %d stale task(s) and their associated records.\n", deletedCount)
+		return
+	}
+
+	// 默认恢复 (recover)
 	recovered := 0
 	skipped := 0
 	for _, report := range staleReports {
