@@ -11,7 +11,7 @@ function TaskTypeManagement() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
-    ai_backend: '', skip_tests: true,
+    ai_backend: '', target_scope: 'business',
     notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
   });
   const [ccInput, setCcInput] = useState('');
@@ -34,7 +34,7 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', ai_backend: '', skip_tests: true, notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', ai_backend: '', target_scope: 'business', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
     setEditingId(null);
     setCcInput('');
   };
@@ -51,7 +51,7 @@ function TaskTypeManagement() {
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
-      ai_backend: tt.ai_backend || '', skip_tests: tt.skip_tests !== false,
+      ai_backend: tt.ai_backend || '', target_scope: tt.target_scope || 'business',
       notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
     });
@@ -292,11 +292,13 @@ function TaskTypeManagement() {
                     <option value="opencode">OpenCode</option>
                   </select>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '0.3rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                    <input type="checkbox" checked={form.skip_tests} onChange={e => setForm({...form, skip_tests: e.target.checked})} />
-                    跳过测试文件 <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: '0.78rem' }}>(默认值，定时策略可覆盖)</span>
-                  </label>
+                <div>
+                  <label style={labelStyle}>处理范围 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，可被覆盖)</span></label>
+                  <select style={fieldStyle} value={form.target_scope} onChange={e => setForm({...form, target_scope: e.target.value})}>
+                    <option value="all">全部代码 (源码与测试)</option>
+                    <option value="business">仅业务代码 (跳过测试)</option>
+                    <option value="test">仅测试代码</option>
+                  </select>
                 </div>
               </div>
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>

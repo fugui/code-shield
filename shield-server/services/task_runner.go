@@ -41,8 +41,8 @@ func (ctx *taskContext) resolveRunParams(input models.RunParams) {
 	if ctx.runParams.AIBackend == nil && ctx.taskType.AIBackend != "" {
 		ctx.runParams.AIBackend = &ctx.taskType.AIBackend
 	}
-	if ctx.runParams.SkipTests == nil {
-		ctx.runParams.SkipTests = &ctx.taskType.SkipTests
+	if ctx.runParams.TargetScope == nil {
+		ctx.runParams.TargetScope = &ctx.taskType.TargetScope
 	}
 }
 

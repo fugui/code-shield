@@ -56,8 +56,8 @@ type Repository struct {
 // RunParams 定义任务执行时的运行参数。
 // ScheduleConfig 中可设置此结构覆盖 TaskType 的默认值，nil 字段表示不覆盖。
 type RunParams struct {
-	AIBackend *string `json:"ai_backend,omitempty"` // nil = 不覆盖，使用 TaskType 默认
-	SkipTests *bool   `json:"skip_tests,omitempty"` // nil = 不覆盖，使用 TaskType 默认
+	AIBackend   *string `json:"ai_backend,omitempty"`   // nil = 不覆盖，使用 TaskType 默认
+	TargetScope *string `json:"target_scope,omitempty"` // nil = 不覆盖，使用 TaskType 默认 ("all", "business", "test")
 }
 
 // TaskType 任务类型定义（管理员可配置）
@@ -67,10 +67,10 @@ type TaskType struct {
 	DisplayName     string         `gorm:"not null" json:"display_name"`     // 中文名: "代码检视"
 	Description     string         `json:"description"`                      // 任务说明
 	EngineMode      string         `gorm:"default:single" json:"engine_mode"` // 执行引擎模式: single, chunked
-	EngineConfig    datatypes.JSON `json:"engine_config"`                    // 引擎配置 {"max_files": 50, "depth": 2}
-	AIBackend       string         `gorm:"default:''" json:"ai_backend"`     // AI 后端: 为空时使用全局配置，可选 claude/opencode
-	SkipTests       bool           `gorm:"default:true" json:"skip_tests"`   // 是否跳过测试文件
-	NotifyTemplate  string         `json:"notify_template"`                  // 邮件主题模板
+	EngineConfig    datatypes.JSON `json:"engine_config"`                      // 引擎配置 {"max_files": 50, "depth": 2}
+	AIBackend       string         `gorm:"default:''" json:"ai_backend"`       // AI 后端: 为空时使用全局配置，可选 claude/opencode
+	TargetScope     string         `gorm:"default:'business'" json:"target_scope"` // 处理范围: all (全部), business (仅业务), test (仅测试)
+	NotifyTemplate  string         `json:"notify_template"`                    // 邮件主题模板
 	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"` // score >= 此值才通知
 	NotifyCc        datatypes.JSON `json:"notify_cc"`                        // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
 	Timeout         int            `gorm:"default:30" json:"timeout"`        // AI 执行超时（分钟）
@@ -201,7 +201,7 @@ type ScheduleConfig struct {
 	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time      `json:"created_at"`
-	RunParams    datatypes.JSON `json:"run_params"`                      // 运行参数覆盖 {"ai_backend":"claude","skip_tests":false}
+	RunParams    datatypes.JSON `json:"run_params"`                      // 运行参数覆盖 {"ai_backend":"claude","target_scope":"business"}
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 

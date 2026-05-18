@@ -36,8 +36,11 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		cfg.Concurrency = 5
 	}
 
-	skipTests := ctx.runParams.SkipTests != nil && *ctx.runParams.SkipTests
-	chunks, err := scanAndChunk(ctx.codesPath, cfg, skipTests)
+	targetScope := "all"
+	if ctx.runParams.TargetScope != nil {
+		targetScope = *ctx.runParams.TargetScope
+	}
+	chunks, err := scanAndChunk(ctx.codesPath, cfg, targetScope)
 	if err != nil {
 		return err
 	}
@@ -117,7 +120,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 }
 
 // scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
-func scanAndChunk(codesPath string, cfg ChunkConfig, skipTests bool) (map[string][]string, error) {
+func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[string][]string, error) {
 	cmd := exec.Command("git", "-C", codesPath, "ls-files")
 	output, err := cmd.Output()
 	if err != nil {
@@ -137,8 +140,12 @@ func scanAndChunk(codesPath string, cfg ChunkConfig, skipTests bool) (map[string
 			continue
 		}
 
-		// 过滤测试文件
-		if skipTests && isTestFile(file) {
+		// 根据 TargetScope 过滤文件
+		isTest := isTestFile(file)
+		if targetScope == "business" && isTest {
+			continue
+		}
+		if targetScope == "test" && !isTest {
 			continue
 		}
 
