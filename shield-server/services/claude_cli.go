@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -70,18 +71,54 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 
 	log.Printf("[Claude] WorkDir: %s, Args: %v\n", req.WorkDir, args)
 
-	cmd := exec.CommandContext(ctxRun, "claude", args...)
+	// 不使用 exec.CommandContext 的默认 kill 行为，因为它只 kill 直接子进程。
+	// 改用手动管理：设置独立进程组（Setpgid），timeout 时 kill 整个进程组。
+	cmd := exec.Command("claude", args...)
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
 
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start claude: %w", err)
+	}
+
+	// 在 goroutine 中等待进程结束，并在 timeout 时 kill 整个进程组
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	var runErr error
+	timedOut := false
+	select {
+	case runErr = <-done:
+		// 正常结束
+	case <-ctxRun.Done():
+		timedOut = true
+		// Kill 整个进程组（包括 claude 启动的所有子进程）
+		if cmd.Process != nil {
+			pgid := cmd.Process.Pid
+			log.Printf("[Claude] Timeout reached, killing process group %d\n", pgid)
+			// 负号表示 kill 整个进程组
+			if killErr := syscall.Kill(-pgid, syscall.SIGKILL); killErr != nil {
+				log.Printf("[Claude] Failed to kill process group: %v\n", killErr)
+			}
+		}
+		// 等待进程真正退出
+		<-done
+	}
+
+	if timedOut {
+		return fmt.Errorf("AI execution timed out after %v", timeout)
+	}
+
+	if err := runErr; err != nil {
 		if ctxRun.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("AI execution timed out after %v", timeout)
 		}
+
 
 		// 模拟模式：claude CLI 未安装时返回模拟结果
 		stderrStr := stderrBuf.String()

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -80,9 +81,12 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 
 	log.Printf("[OpenCode] WorkDir: %s, Agent: %s, PromptLen: %d chars\n", req.WorkDir, agentName, len(userPrompt))
 
-	cmd := exec.CommandContext(ctxRun, "opencode", args...)
+	// 不使用 exec.CommandContext 的默认 kill 行为，因为它只 kill 直接子进程。
+	// 改用手动管理：设置独立进程组（Setpgid），timeout 时 kill 整个进程组。
+	cmd := exec.Command("opencode", args...)
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	log.Printf("[OpenCode] Executing command: %s\n", cmd.String())
 
@@ -90,7 +94,39 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
 
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start opencode: %w", err)
+	}
+
+	// 在 goroutine 中等待进程结束，并在 timeout 时 kill 整个进程组
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	var runErr error
+	timedOut := false
+	select {
+	case runErr = <-done:
+		// 正常结束
+	case <-ctxRun.Done():
+		timedOut = true
+		// Kill 整个进程组（包括 opencode 启动的所有子进程）
+		if cmd.Process != nil {
+			pgid := cmd.Process.Pid
+			log.Printf("[OpenCode] Timeout reached, killing process group %d\n", pgid)
+			// 负号表示 kill 整个进程组
+			if killErr := syscall.Kill(-pgid, syscall.SIGKILL); killErr != nil {
+				log.Printf("[OpenCode] Failed to kill process group: %v\n", killErr)
+			}
+		}
+		// 等待进程真正退出
+		<-done
+	}
+
+	if timedOut {
+		return fmt.Errorf("AI execution timed out after %v", timeout)
+	}
+
+	if err := runErr; err != nil {
 		if ctxRun.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("AI execution timed out after %v", timeout)
 		}
