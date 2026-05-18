@@ -129,6 +129,7 @@ func main() {
 
 		api.GET("/executions", handlers.GetExecutionLogs)
 		api.DELETE("/executions/completed", handlers.ClearCompletedExecutionLogs)
+		api.DELETE("/executions/:id", handlers.DeletePendingExecution)
 
 		// Admin only routes
 		admin := api.Group("/")
