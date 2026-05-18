@@ -135,108 +135,102 @@ func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 }
 
 // RecoverPendingTasks 在进程启动时调用，扫描数据库中未完成的任务并重新入队。
-// 恢复条件：TaskExecutionLog.Status 为 "pending" 或 "running"，
-// 且关联的 TaskReport 状态不是终态（success/failed/skipped）。
-// 对于执行到一半（running）的任务，会先清理已写入的 AnalysisFindings，
+// 恢复条件：TaskReport 状态不是终态（success/failed/skipped）。
+// 对于执行到一半（例如 cloning, analyzing, post_processing 等）的任务，会先清理已写入的 AnalysisFindings，
 // 再重置状态重新执行，避免重复数据。
 func RecoverPendingTasks() {
-	var staleLogs []models.TaskExecutionLog
+	var staleReports []models.TaskReport
+	terminatedStatuses := []string{models.StatusSuccess, models.StatusFailed, models.StatusSkipped}
+
+	// 1. 查询所有未完成的核心任务报告
 	err := models.DB.
 		Preload("Repo").
 		Preload("TaskType").
-		Preload("Schedule").
-		Where("status IN ?", []string{models.StatusPending, "running"}).
-		Find(&staleLogs).Error
+		Where("status NOT IN ?", terminatedStatuses).
+		Find(&staleReports).Error
 	if err != nil {
-		log.Printf("[Recovery] Failed to query stale execution logs: %v\n", err)
+		log.Printf("[Recovery] Failed to query stale task reports: %v\n", err)
 		return
 	}
 
-	if len(staleLogs) == 0 {
-		log.Println("[Recovery] No pending tasks found, nothing to recover.")
+	if len(staleReports) == 0 {
+		log.Println("[Recovery] No pending task reports found, nothing to recover.")
 		return
 	}
 
-	log.Printf("[Recovery] Found %d stale execution log(s) to evaluate.\n", len(staleLogs))
+	log.Printf("[Recovery] Found %d stale task report(s) to evaluate.\n", len(staleReports))
 
 	recovered := 0
 	skipped := 0
-	for _, execLog := range staleLogs {
-		if execLog.TaskReportID == nil {
-			// 没有关联的 TaskReport，直接标记为失败
-			log.Printf("[Recovery] ExecLog %d has no TaskReportID, marking as failed.\n", execLog.ID)
-			UpdateTaskExecutionLog(execLog.ID, models.StatusFailed, "进程重启后未找到关联的任务报告")
-			skipped++
-			continue
-		}
-
-		// 查询关联的 TaskReport，过滤掉已完成的终态
-		var report models.TaskReport
-		terminatedStatuses := []string{models.StatusSuccess, models.StatusFailed, models.StatusSkipped}
-		if err := models.DB.Where("id = ? AND status NOT IN ?", *execLog.TaskReportID, terminatedStatuses).
-			First(&report).Error; err != nil {
-			// TaskReport 已处于终态，跳过
-			log.Printf("[Recovery] ExecLog %d: TaskReport %d already in terminal state, skipping.\n",
-				execLog.ID, *execLog.TaskReportID)
-			// 同步修正 ExecLog 状态（防止 ExecLog 和 Report 状态不一致）
-			var finalReport models.TaskReport
-			if models.DB.First(&finalReport, *execLog.TaskReportID).Error == nil {
-				UpdateTaskExecutionLog(execLog.ID, finalReport.Status, "")
+	for _, report := range staleReports {
+		// 2. 反查对应的执行日志
+		var execLog models.TaskExecutionLog
+		if err := models.DB.Preload("Schedule").Where("task_report_id = ?", report.ID).First(&execLog).Error; err != nil {
+			log.Printf("[Recovery] TaskReport %d has no corresponding TaskExecutionLog, creating a fallback one.\n", report.ID)
+			
+			// 容错：如果执行日志不见了，自动创建一个系统恢复类型的执行日志，确保 pipeline 完整
+			execLog = models.TaskExecutionLog{
+				RepoID:       report.RepoID,
+				TaskReportID: &report.ID,
+				TaskTypeID:   report.TaskTypeID,
+				TriggerType:  "system_recovery",
+				Status:       models.StatusPending,
+				StartTime:    time.Now(),
 			}
-			skipped++
-			continue
+			if err := models.DB.Create(&execLog).Error; err != nil {
+				log.Printf("[Recovery] Failed to create fallback TaskExecutionLog for Report %d: %v\n", report.ID, err)
+				skipped++
+				continue
+			}
 		}
 
-		// 若任务执行到一半（running），清理中途产生的不完整 findings，避免重复
-		if execLog.Status == "running" {
+		// 3. 清理已执行到一半（非排队、非就绪）任务的脏 findings 数据
+		if report.Status != models.StatusQueued && report.Status != models.StatusPending {
 			result := models.DB.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{})
 			if result.Error != nil {
-				log.Printf("[Recovery] ExecLog %d: failed to clean partial findings: %v\n", execLog.ID, result.Error)
-			} else {
-				log.Printf("[Recovery] ExecLog %d: cleaned %d partial findings for ReportID %d.\n",
-					execLog.ID, result.RowsAffected, report.ID)
+				log.Printf("[Recovery] ReportID %d: failed to clean partial findings: %v\n", report.ID, result.Error)
+			} else if result.RowsAffected > 0 {
+				log.Printf("[Recovery] ReportID %d: cleaned %d partial findings.\n", report.ID, result.RowsAffected)
 			}
 		}
 
-		// 重置 TaskReport 状态为 queued
+		// 4. 重置 Report 和 Log 的状态
 		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
 			"status":       models.StatusQueued,
 			"clone_status": models.StatusPending,
 		})
-
-		// 重置 TaskExecutionLog 状态为 pending
 		models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
 			"status":        models.StatusPending,
 			"error_message": "",
 			"end_time":      nil,
 		})
 
-		// 从 ScheduleConfig 中恢复 RunParams（若有）
+		// 5. 从 ScheduleConfig 中恢复 RunParams（若有）
 		var runParams models.RunParams
 		if execLog.Schedule != nil && len(execLog.Schedule.RunParams) > 0 {
 			if err := json.Unmarshal(execLog.Schedule.RunParams, &runParams); err != nil {
-				log.Printf("[Recovery] ExecLog %d: failed to unmarshal RunParams: %v, using defaults.\n",
-					execLog.ID, err)
+				log.Printf("[Recovery] ReportID %d: failed to unmarshal RunParams: %v, using defaults.\n", report.ID, err)
 			}
 		}
 
 		task := Task{
-			RepoID:     execLog.RepoID,
+			RepoID:     report.RepoID,
 			ReportID:   report.ID,
-			RepoURL:    execLog.Repo.URL,
-			TaskTypeID: execLog.TaskTypeID,
+			RepoURL:    report.Repo.URL,
+			TaskTypeID: report.TaskTypeID,
 			AutoNotify: execLog.Schedule != nil && execLog.Schedule.AutoNotify,
 			LogID:      execLog.ID,
 			RunParams:  runParams,
 		}
 
+		// 6. 重新入队
 		select {
 		case TaskQueue <- task:
-			log.Printf("[Recovery] Re-queued ExecLog %d → ReportID %d (Repo: %s, TaskType: %s).\n",
-				execLog.ID, report.ID, execLog.Repo.URL, execLog.TaskType.Name)
+			log.Printf("[Recovery] Re-queued ReportID %d (Repo: %s, TaskType: %s, LogID: %d).\n",
+				report.ID, report.Repo.URL, report.TaskType.Name, execLog.ID)
 			recovered++
 		default:
-			log.Printf("[Recovery] Queue is full! Could not re-queue ExecLog %d.\n", execLog.ID)
+			log.Printf("[Recovery] Queue is full! Could not re-queue ReportID %d.\n", report.ID)
 			UpdateTaskExecutionLog(execLog.ID, models.StatusFailed, "进程恢复时队列已满，无法重新入队")
 			skipped++
 		}
