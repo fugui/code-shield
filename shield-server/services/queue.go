@@ -173,7 +173,7 @@ func RecoverPendingTasks() {
 				RepoID:       report.RepoID,
 				TaskReportID: &report.ID,
 				TaskTypeID:   report.TaskTypeID,
-				TriggerType:  "system_recovery",
+				TriggerType:  "recovery",
 				Status:       models.StatusPending,
 				StartTime:    time.Now(),
 			}
