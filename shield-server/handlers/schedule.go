@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/cron_jobs"
 	"code-shield/models"
+	"code-shield/services"
 	"net/http"
 	"time"
 
@@ -191,8 +192,7 @@ func ClearCompletedExecutionLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
 }
 
-// DeletePendingExecution deletes a single pending execution log (and its linked TaskReport).
-// Running/completed tasks cannot be deleted via this endpoint.
+// DeletePendingExecution deletes a single pending or running execution log (and its linked TaskReport).
 func DeletePendingExecution(c *gin.Context) {
 	id := c.Param("id")
 
@@ -202,9 +202,20 @@ func DeletePendingExecution(c *gin.Context) {
 		return
 	}
 
-	if execLog.Status != models.StatusPending {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只能删除状态为「排队中」的任务，运行中或已完成的任务无法删除"})
+	isFinished := execLog.Status == models.StatusSuccess ||
+		execLog.Status == models.StatusFailed ||
+		execLog.Status == models.StatusSkipped
+
+	if isFinished {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "已完成（成功/失败/已跳过）的任务无法删除"})
 		return
+	}
+
+	// If the task is running (i.e. not pending/queued), cancel it first
+	if execLog.Status != models.StatusPending && execLog.Status != models.StatusQueued {
+		if execLog.TaskReportID != nil {
+			services.CancelRunningTask(*execLog.TaskReportID)
+		}
 	}
 
 	// Delete the linked TaskReport first (if any)
@@ -218,7 +229,7 @@ func DeletePendingExecution(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "已成功删除排队中的任务"})
+	c.JSON(http.StatusOK, gin.H{"message": "已成功停止并删除该任务"})
 }
 
 // TriggerSchedule manually triggers a schedule config and queues jobs for repos immediately

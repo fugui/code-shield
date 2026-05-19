@@ -54,8 +54,11 @@ function ExecutionLogs() {
     }
   };
 
-  const deletePending = async (logId: number) => {
-    if (!window.confirm('确认删除该排队中的任务？此操作不可恢复。')) return;
+  const deletePending = async (logId: number, isRunning: boolean) => {
+    const message = isRunning
+      ? '该任务正在分析运行中，确认要【强杀进程】并删除该执行记录吗？\n警告：此操作将立即中断分析任务且不可恢复。'
+      : '确认删除该排队中的任务？此操作不可恢复。';
+    if (!window.confirm(message)) return;
     try {
       const res = await fetch(`/api/executions/${logId}`, { method: 'DELETE' });
       const data = await res.json();
@@ -166,6 +169,9 @@ function ExecutionLogs() {
               const expanded = expandedIds.has(log.id);
               const report = log.task_report;
               const hasReport = !!report;
+              const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(log.status);
+              const isPending = log.status === 'pending' || log.status === 'queued';
+              const canCancel = isRunning || isPending;
 
               return (
                 <React.Fragment key={log.id}>
@@ -206,14 +212,28 @@ function ExecutionLogs() {
                       </div>
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      {log.status === 'pending' && (
+                      {canCancel && (
                         <button
                           className="btn"
-                          onClick={e => { e.stopPropagation(); deletePending(log.id); }}
-                          style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)', fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
-                          title="删除该排队任务"
+                          onClick={e => { e.stopPropagation(); deletePending(log.id, isRunning); }}
+                          style={{
+                            background: 'transparent',
+                            color: 'var(--danger-color)',
+                            border: '1px solid var(--danger-color)',
+                            padding: '0.35rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                          }}
+                          title={isRunning ? "强杀并删除该运行中的任务" : "删除该排队任务"}
                         >
-                          删除
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          </svg>
                         </button>
                       )}
                     </td>

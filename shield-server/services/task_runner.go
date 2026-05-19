@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"code-shield/models"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +26,8 @@ type TaskResult struct {
 
 // taskContext holds all necessary data for a single task execution run
 type taskContext struct {
+	ctx        context.Context
+	cancel     context.CancelFunc
 	report     models.TaskReport
 	taskType   models.TaskType
 	repo       models.Repository
@@ -32,6 +36,22 @@ type taskContext struct {
 	jsonPath   string
 	autoNotify bool
 	runParams  models.RunParams // 合并后的运行参数
+}
+
+var (
+	activeTasksMu sync.Mutex
+	activeTasks   = make(map[uint]*taskContext) // reportID -> taskContext
+)
+
+func CancelRunningTask(reportID uint) bool {
+	activeTasksMu.Lock()
+	defer activeTasksMu.Unlock()
+	if ctx, ok := activeTasks[reportID]; ok {
+		log.Printf("[TaskRunner] Cancelling active task for ReportID %d\n", reportID)
+		ctx.cancel()
+		return true
+	}
+	return false
 }
 
 // resolveRunParams 将外部传入的 RunParams 与 TaskType 默认值合并。
@@ -53,6 +73,20 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	if err := ctx.load(reportID, taskTypeID); err != nil {
 		return err
 	}
+
+	taskCtx, cancel := context.WithCancel(context.Background())
+	ctx.ctx = taskCtx
+	ctx.cancel = cancel
+
+	activeTasksMu.Lock()
+	activeTasks[reportID] = ctx
+	activeTasksMu.Unlock()
+	defer func() {
+		activeTasksMu.Lock()
+		delete(activeTasks, reportID)
+		activeTasksMu.Unlock()
+		cancel()
+	}()
 
 	// Resolve run params: input overrides → TaskType defaults → global config
 	ctx.resolveRunParams(runParams)
@@ -125,10 +159,10 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	var cmd *exec.Cmd
 	if stat, err := os.Stat(filepath.Join(ctx.codesPath, ".git")); err == nil && stat.IsDir() {
 		log.Printf("[TaskRunner] Running git pull in %s\n", ctx.codesPath)
-		cmd = exec.Command("git", "-C", ctx.codesPath, "pull")
+		cmd = exec.CommandContext(ctx.ctx, "git", "-C", ctx.codesPath, "pull")
 	} else {
 		log.Printf("[TaskRunner] Running git clone %s %s\n", repoURL, ctx.codesPath)
-		cmd = exec.Command("git", "clone", repoURL, ctx.codesPath)
+		cmd = exec.CommandContext(ctx.ctx, "git", "clone", repoURL, ctx.codesPath)
 	}
 
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -152,7 +186,7 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 	// Ensure the script is executable
 	os.Chmod(absScript, 0755)
 
-	cmd := exec.Command(absScript, ctx.codesPath)
+	cmd := exec.CommandContext(ctx.ctx, absScript, ctx.codesPath)
 	output, err := cmd.CombinedOutput()
 	outputStr := strings.TrimSpace(string(output))
 
@@ -204,12 +238,13 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
 
 	return invoker.Invoke(AIRequest{
-		WorkDir:    ctx.codesPath,
-		PromptFile: absPrompt,
-		PromptMsg:  promptMsg,
-		InputFiles: fileList,
-		OutputPath: outputPath,
-		TimeoutMin: ctx.taskType.Timeout,
+		ParentContext: ctx.ctx,
+		WorkDir:       ctx.codesPath,
+		PromptFile:    absPrompt,
+		PromptMsg:     promptMsg,
+		InputFiles:    fileList,
+		OutputPath:    outputPath,
+		TimeoutMin:    ctx.taskType.Timeout,
 	})
 }
 
@@ -455,7 +490,7 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	// Ensure the script is executable
 	os.Chmod(absPostScript, 0755)
 
-	cmd := exec.Command(absPostScript, ctx.reportPath)
+	cmd := exec.CommandContext(ctx.ctx, absPostScript, ctx.reportPath)
 	if output, err := cmd.Output(); err == nil {
 		if err := json.Unmarshal(output, &result); err != nil {
 			log.Printf("[TaskRunner] Postprocess JSON error: %v\n", err)
