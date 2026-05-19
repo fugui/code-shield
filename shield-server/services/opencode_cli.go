@@ -60,7 +60,7 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	userPrompt := sb.String()
 
 	// ── 3. 构建 opencode run 参数 ──
-	args := []string{"run", userPrompt, "--dangerously-skip-permissions", "--format", "json"}
+	args := []string{"run", userPrompt, "--dangerously-skip-permissions", "--format", "json", "--thinking"}
 	if agentName != "" {
 		args = append(args, "--agent", agentName)
 	}
