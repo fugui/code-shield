@@ -23,8 +23,9 @@ type Config struct {
 		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
 	} `yaml:"storage"`
 	AI struct {
-		Backend   string `yaml:"backend"`    // CLI 后端：claude 或 opencode，默认 claude
-		DebugLogs bool   `yaml:"debug_logs"` // 是否输出 AI 引擎底层的 debug 级别日志
+		Backend      string `yaml:"backend"`       // CLI 后端：claude 或 opencode，默认 claude
+		DebugLogs    bool   `yaml:"debug_logs"`    // 是否输出 AI 引擎底层的 debug 级别日志
+		OutputFormat string `yaml:"output_format"` // 输出格式：text 或 json，默认 text
 	} `yaml:"ai"`
 	Notification struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
@@ -59,6 +60,9 @@ func LoadConfig(filename string) error {
 	}
 	if AppConfig.AI.Backend == "" {
 		AppConfig.AI.Backend = "claude"
+	}
+	if AppConfig.AI.OutputFormat == "" {
+		AppConfig.AI.OutputFormat = "text"
 	}
 
 	// Server timeout defaults
