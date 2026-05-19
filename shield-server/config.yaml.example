@@ -1,0 +1,26 @@
+# ============================================================
+# Code Shield 服务端配置模版文件 (config.yaml.example)
+# 使用方法：复制本文件为 config.yaml，并根据实际情况修改配置值
+# ============================================================
+
+# ── HTTP 服务 ──
+server:
+  port: ":8080"                  # 服务监听端口
+  # worker_count: 5              # 全局任务并发数，默认 5
+  # gin_log: true                # 是否打印 GIN 框架请求日志，默认 false
+  # read_timeout: 15s            # 读取 HTTP 请求超时时间，默认 15s
+  # write_timeout: 15s           # 写入响应超时时间，默认 15s
+  # idle_timeout: 60s            # keep-alive 空闲连接超时时间，默认 60s
+
+# ── 数据存储 ──
+storage:
+  root: "/home/fugui/test_root"  # 数据根目录，下设 codes/ 和 reports/ 子目录（建议配置为绝对路径）
+
+# ── AI 引擎 ──
+ai:
+  backend: "claude"              # AI 驱动 CLI 后端：可选 claude 或 opencode，默认 claude
+  # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false。开启后会在报告同级目录下生成 .debug.log 文件方便定位
+
+# ── 通知服务 ──
+notification:
+  webhook: "http://127.0.0.1:8081/api/notify/email"  # 分析完毕后发送报告卡片通知的回调地址
