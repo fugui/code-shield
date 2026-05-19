@@ -23,7 +23,8 @@ type Config struct {
 		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
 	} `yaml:"storage"`
 	AI struct {
-		Backend string `yaml:"backend"` // CLI 后端：claude 或 opencode，默认 claude
+		Backend   string `yaml:"backend"`    // CLI 后端：claude 或 opencode，默认 claude
+		DebugLogs bool   `yaml:"debug_logs"` // 是否输出 AI 引擎底层的 debug 级别日志
 	} `yaml:"ai"`
 	Notification struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址

@@ -1,8 +1,10 @@
 package services
 
 import (
+	"code-shield/models"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -63,6 +65,10 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		args = append(args, "--agent", agentName)
 	}
 
+	if models.AppConfig.AI.DebugLogs {
+		args = append(args, "--print-logs", "--log-level", "DEBUG")
+	}
+
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
 	if timeout <= 0 {
 		timeout = 30 * time.Minute
@@ -92,7 +98,19 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
-	cmd.Stderr = &stderrBuf
+	var stderrWriter io.Writer = &stderrBuf
+
+	if models.AppConfig.AI.DebugLogs {
+		debugLogPath := req.OutputPath + ".debug.log"
+		debugLogFile, err := os.Create(debugLogPath)
+		if err == nil {
+			defer debugLogFile.Close()
+			stderrWriter = io.MultiWriter(&stderrBuf, debugLogFile)
+		} else {
+			log.Printf("[OpenCode] Failed to create debug log file %s: %v\n", debugLogPath, err)
+		}
+	}
+	cmd.Stderr = stderrWriter
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start opencode: %w", err)
