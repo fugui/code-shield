@@ -18,6 +18,7 @@ storage:
 # ── AI 引擎 ──
 ai:
   backend: "claude"              # CLI 后端：claude 或 opencode
+  # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false
 
 # ── 通知服务 ──
 notification:
