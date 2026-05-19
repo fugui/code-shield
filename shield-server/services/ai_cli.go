@@ -2,6 +2,7 @@ package services
 
 import (
 	"code-shield/models"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -11,12 +12,13 @@ import (
 
 // AIRequest 封装一次 AI CLI 调用所需的全部参数（与具体 CLI 无关）
 type AIRequest struct {
-	WorkDir    string   // 执行目录（代码仓根目录）
-	PromptFile string   // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
-	PromptMsg  string   // 用户提示消息
-	InputFiles []string // 需要分析的文件列表（相对路径），AI 自行读取
-	OutputPath string   // AI 输出文档的目标路径
-	TimeoutMin int      // 执行超时（分钟），0 表示默认 30 分钟
+	ParentContext context.Context // 父 context，支持提前取消
+	WorkDir       string          // 执行目录（代码仓根目录）
+	PromptFile    string          // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
+	PromptMsg     string          // 用户提示消息
+	InputFiles    []string        // 需要分析的文件列表（相对路径），AI 自行读取
+	OutputPath    string          // AI 输出文档的目标路径
+	TimeoutMin    int             // 执行超时（分钟），0 表示默认 30 分钟
 }
 
 // AIInvoker 定义了 AI CLI 调用的统一接口。

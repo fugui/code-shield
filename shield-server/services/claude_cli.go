@@ -58,7 +58,11 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 		timeout = 30 * time.Minute
 	}
 
-	ctxRun, cancel := context.WithTimeout(context.Background(), timeout)
+	parentCtx := req.ParentContext
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctxRun, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
 	// CLI 元数据输出到独立文件
