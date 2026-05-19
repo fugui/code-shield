@@ -66,7 +66,7 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	}
 
 	if models.AppConfig.AI.DebugLogs {
-		args = append(args, "--print-logs", "--log-level", "DEBUG")
+		args = append(args, "--print-logs", "--log-level", "INFO")
 	}
 
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
