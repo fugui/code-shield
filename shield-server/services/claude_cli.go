@@ -35,8 +35,11 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	}
 	promptMsg += fmt.Sprintf("基于以下文件内容进行分析：\n%s\n", strings.Join(req.InputFiles, "\n"))
 
-	// 构建 claude CLI 参数（不经过 shell，避免引号转义问题）
-	args := []string{"-p", promptMsg, "--output-format", "json", "--disable-slash-commands"}
+	formatVal := "text"
+	if models.AppConfig.AI.OutputFormat == "json" {
+		formatVal = "stream-json"
+	}
+	args := []string{"-p", promptMsg, "--output-format", formatVal, "--disable-slash-commands"}
 
 	// 将提示词文件作为系统提示词注入（优先级高于普通消息）
 	if req.PromptFile != "" {

@@ -19,6 +19,7 @@ storage:
 ai:
   backend: "claude"              # CLI 后端：claude 或 opencode
   # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false
+  # output_format: "text"        # 输出格式：text 或 json，对 claude 为 text/stream-json，对 opencode 为 default/json，默认 text
 
 # ── 通知服务 ──
 notification:
