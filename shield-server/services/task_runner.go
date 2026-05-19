@@ -489,7 +489,10 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 }
 
 func (ctx *taskContext) markFailed(errMsg string) {
-	updateTaskStatus(ctx.report.ID, models.StatusFailed)
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
+		"status":     models.StatusFailed,
+		"ai_summary": fmt.Sprintf("【执行失败】%s", errMsg),
+	})
 }
 
 // NotifyTaskResult sends a notification for a completed task
