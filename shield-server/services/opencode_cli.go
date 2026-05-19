@@ -106,10 +106,12 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
 	var stderrWriter io.Writer = &stderrBuf
+	var debugLogFile *os.File
 
 	if models.AppConfig.AI.DebugLogs {
 		debugLogPath := req.OutputPath + ".debug.log"
-		debugLogFile, err := os.Create(debugLogPath)
+		var err error
+		debugLogFile, err = os.Create(debugLogPath)
 		if err == nil {
 			defer debugLogFile.Close()
 			stderrWriter = io.MultiWriter(&stderrBuf, debugLogFile)
@@ -180,6 +182,16 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		metaFile.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution failed: %s\n", errMsg))
 
 		return fmt.Errorf("AI execution failed: %s", errMsg)
+	}
+
+	metaFile.Close()
+	if debugLogFile != nil {
+		debugLogFile.Close()
+	}
+
+	if stat, err := os.Stat(req.OutputPath); err == nil && stat.Size() > 0 {
+		os.Remove(cliOutputPath)
+		os.Remove(req.OutputPath + ".debug.log")
 	}
 
 	return nil
