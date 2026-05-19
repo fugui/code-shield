@@ -196,6 +196,7 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 			models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
 				"status":     models.StatusSkipped,
 				"ai_summary": outputStr,
+				"created_at": time.Now(),
 			})
 			return true, nil
 		}
@@ -527,6 +528,7 @@ func (ctx *taskContext) markFailed(errMsg string) {
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
 		"status":     models.StatusFailed,
 		"ai_summary": fmt.Sprintf("【执行失败】%s", errMsg),
+		"created_at": time.Now(),
 	})
 }
 
@@ -621,5 +623,8 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 }
 
 func updateTaskStatus(reportID uint, status string) {
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Update("status", status)
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(map[string]interface{}{
+		"status":     status,
+		"created_at": time.Now(),
+	})
 }
