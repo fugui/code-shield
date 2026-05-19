@@ -69,9 +69,9 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	ctxRun, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
-	// CLI 元数据输出到独立文件
-	cliMetaPath := req.OutputPath + ".meta.json"
-	metaFile, err := os.Create(cliMetaPath)
+	// CLI 输出记录到独立文件
+	cliOutputPath := req.OutputPath + ".output.txt"
+	metaFile, err := os.Create(cliOutputPath)
 	if err != nil {
 		return fmt.Errorf("failed to create meta file: %w", err)
 	}
@@ -155,7 +155,7 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 		// 提取错误信息
 		errMsg := strings.TrimSpace(stderrStr)
 		if errMsg == "" {
-			if content, readErr := os.ReadFile(cliMetaPath); readErr == nil {
+			if content, readErr := os.ReadFile(cliOutputPath); readErr == nil {
 				errMsg = strings.TrimSpace(string(content))
 			}
 		}
@@ -174,7 +174,7 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	}
 
 	if stat, err := os.Stat(req.OutputPath); err == nil && stat.Size() > 0 {
-		os.Remove(cliMetaPath)
+		os.Remove(cliOutputPath)
 		os.Remove(req.OutputPath + ".debug.log")
 	}
 
