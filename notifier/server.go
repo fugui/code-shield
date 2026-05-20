@@ -54,6 +54,14 @@ func StartHTTPServer(listener net.Listener) {
 }
 
 func handleEmailNotify(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogMessage(fmt.Sprintf("handleEmailNotify Panic: %v", r))
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(NotifyResponse{Success: false, Error: fmt.Sprintf("Internal Server Error: %v", r)})
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
