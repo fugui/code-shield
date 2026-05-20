@@ -37,7 +37,8 @@ function TaskOverviewTab() {
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
-  const [openMenuRepoId, setOpenMenuRepoId] = useState<number | null>(null);
+  const [selectedRepoIds, setSelectedRepoIds] = useState<number[]>([]);
+  const [openBatchMenu, setOpenBatchMenu] = useState(false);
 
   const [pageSize] = useState<number>(15);
   const [totalItems, setTotalItems] = useState<number>(0);
@@ -68,6 +69,7 @@ function TaskOverviewTab() {
   }, []);
 
   useEffect(() => {
+    setSelectedRepoIds([]);
     fetchOverview();
   }, [page, filterTeam, filterServiceGroup, filterOwner, filterTaskType, sortOrder]);
 
@@ -154,22 +156,47 @@ function TaskOverviewTab() {
     }
   };
 
-  const triggerTask = (repoId: number, taskTypeId: number) => {
-    setOpenMenuRepoId(null);
-    fetch('/api/tasks/trigger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_id: repoId, task_type_id: taskTypeId })
-    }).then(res => {
-      if (res.ok) {
-        showToast('任务已成功下发！', 'success');
-      } else {
-        showToast('触发任务失败', 'error');
-      }
-    }).catch(err => {
-      console.error(err);
-      showToast('网络错误', 'error');
-    });
+  const handleBatchTrigger = async (taskTypeId: number) => {
+    setOpenBatchMenu(false);
+    const count = selectedRepoIds.length;
+    if (count === 0) return;
+
+    showToast(`正在下发 ${count} 个代码仓的任务...`, 'info');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    const promises = selectedRepoIds.map(repoId =>
+      fetch('/api/tasks/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo_id: repoId, task_type_id: taskTypeId })
+      })
+        .then(res => {
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          failCount++;
+        })
+    );
+
+    await Promise.all(promises);
+
+    if (failCount === 0) {
+      showToast(`成功下发全部 ${successCount} 个任务！`, 'success');
+    } else if (successCount === 0) {
+      showToast(`触发任务失败，共 ${failCount} 个失败`, 'error');
+    } else {
+      showToast(`部分下发成功：${successCount} 成功，${failCount} 失败`, 'info');
+    }
+
+    setSelectedRepoIds([]);
+    fetchOverview();
   };
 
   const handleOpenReport = async (reportId: number) => {
@@ -227,31 +254,93 @@ function TaskOverviewTab() {
           <input type="text" placeholder="按服务组过滤..." value={filterServiceGroup} onChange={e => handleFilterChange('sg', e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
           <input type="text" placeholder="按责任人过滤..." value={filterOwner} onChange={e => handleFilterChange('owner', e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
         </div>
-        {isAdmin && (
-          <button 
-            className="btn"
-            onClick={handleClearInvalidReports}
-            style={{ 
-              background: 'transparent', 
-              color: 'var(--danger-color)', 
-              border: '1px solid var(--danger-color)', 
-              padding: '0.4rem 0.8rem', 
-              borderRadius: '4px', 
-              cursor: 'pointer',
-              fontSize: '0.875rem'
-            }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            清除无效报告
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', position: 'relative' }}>
+          <div style={{ position: 'relative' }}>
+            <button
+              className="btn"
+              disabled={selectedRepoIds.length === 0}
+              onClick={() => setOpenBatchMenu(prev => !prev)}
+              style={{
+                padding: '0.4rem 0.8rem',
+                borderRadius: '4px',
+                background: selectedRepoIds.length === 0 ? 'var(--border-color)' : 'var(--primary-color)',
+                color: selectedRepoIds.length === 0 ? '#94a3b8' : 'white',
+                border: 'none',
+                cursor: selectedRepoIds.length === 0 ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem'
+              }}
+            >
+              执行 {selectedRepoIds.length > 0 && `(${selectedRepoIds.length})`} <span style={{ fontSize: '0.7rem' }}>▾</span>
+            </button>
+            {openBatchMenu && selectedRepoIds.length > 0 && (
+              <>
+                <div onClick={() => setOpenBatchMenu(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} />
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: '4px', background: 'white', border: '1px solid var(--border-color)', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', zIndex: 100, minWidth: '160px', overflow: 'hidden' }}>
+                  {taskTypes.map(tt => (
+                    <div
+                      key={tt.id}
+                      onClick={() => handleBatchTrigger(tt.id)}
+                      style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.825rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                      {tt.display_name}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {isAdmin && (
+            <button 
+              className="btn"
+              onClick={handleClearInvalidReports}
+              style={{ 
+                background: 'transparent', 
+                color: 'var(--danger-color)', 
+                border: '1px solid var(--danger-color)', 
+                padding: '0.4rem 0.8rem', 
+                borderRadius: '4px', 
+                cursor: 'pointer',
+                fontSize: '0.875rem'
+              }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              清除无效报告
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, fontSize: '0.875rem' }}>
         <table className="table">
           <thead>
             <tr>
+              <th style={{ width: '40px', textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={items.length > 0 && selectedRepoIds.length === items.length}
+                  ref={input => {
+                    if (input) {
+                      input.indeterminate = selectedRepoIds.length > 0 && selectedRepoIds.length < items.length;
+                    }
+                  }}
+                  onChange={e => {
+                    if (e.target.checked) {
+                      setSelectedRepoIds(items.map(item => item.repo.id));
+                    } else {
+                      setSelectedRepoIds([]);
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+              </th>
               <th style={{ width: '320px' }}>代码仓</th>
               <th style={{ width: '160px' }}>归属部门</th>
               <th>负责人</th>
@@ -274,14 +363,27 @@ function TaskOverviewTab() {
               </th>
               <th>评分</th>
               <th>历史报告</th>
-              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓或任务数据</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓或任务数据</td></tr>
             ) : items.map((item, idx) => (
               <tr key={item.repo.id || idx}>
+                <td style={{ textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedRepoIds.includes(item.repo.id)}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedRepoIds(prev => [...prev, item.repo.id]);
+                      } else {
+                        setSelectedRepoIds(prev => prev.filter(id => id !== item.repo.id));
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </td>
                 <td style={{ fontWeight: 500, width: '320px', maxWidth: '320px' }}>
                   {(() => {
                     const shortName = item.repo.name?.includes(':') ? item.repo.name.split(':').pop() : item.repo.name;
@@ -419,36 +521,7 @@ function TaskOverviewTab() {
                     )}
                   </div>
                 </td>
-                <td>
-                  <div style={{ position: 'relative' }}>
-                    <button 
-                      className="btn" 
-                      onClick={() => setOpenMenuRepoId(openMenuRepoId === item.repo.id ? null : item.repo.id)} 
-                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                    >
-                      执行 <span style={{ fontSize: '0.7rem' }}>▾</span>
-                    </button>
-                    {openMenuRepoId === item.repo.id && (
-                      <>
-                      <div onClick={() => setOpenMenuRepoId(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} />
-                      <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: '4px', background: 'white', border: '1px solid var(--border-color)', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', zIndex: 100, minWidth: '160px', overflow: 'hidden' }}>
-                        {taskTypes.map(tt => (
-                          <div
-                            key={tt.id}
-                            onClick={() => triggerTask(item.repo.id, tt.id)}
-                            style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.825rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            {tt.display_name}
-                          </div>
-                        ))}
-                      </div>
-                      </>
-                    )}
-                  </div>
-                </td>
+
               </tr>
             ))}
           </tbody>
