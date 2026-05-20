@@ -4,7 +4,11 @@ import (
 	"code-shield/models"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -181,6 +185,8 @@ func RecoverPendingTasks(action string) {
 			if execLog.ID > 0 {
 				models.DB.Delete(&models.TaskExecutionLog{}, execLog.ID)
 			}
+			// 清除物理磁盘上的临时文件和报告
+			CleanReportFiles(report.TaskType.Name, report.ID)
 			deletedCount++
 		}
 		log.Printf("[Recovery] Successfully deleted %d stale task(s) and their associated records.\n", deletedCount)
@@ -212,20 +218,30 @@ func RecoverPendingTasks(action string) {
 			}
 		}
 
-		// 3. 清理已执行到一半（非排队、非就绪）任务的脏 findings 数据
+		// 3. 清理已执行到一半（非排队、非就绪）任务的脏 findings 数据和物理磁盘报告文件
 		if report.Status != models.StatusQueued && report.Status != models.StatusPending {
+			// 清除数据库中的 findings
 			result := models.DB.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{})
 			if result.Error != nil {
 				log.Printf("[Recovery] ReportID %d: failed to clean partial findings: %v\n", report.ID, result.Error)
 			} else if result.RowsAffected > 0 {
 				log.Printf("[Recovery] ReportID %d: cleaned %d partial findings.\n", report.ID, result.RowsAffected)
 			}
+
+			// 清除物理磁盘上的临时文件、分片目录和报告
+			CleanReportFiles(report.TaskType.Name, report.ID)
 		}
 
-		// 4. 重置 Report 和 Log 的状态
+		// 4. 重置 Report 和 Log 的状态，完全清理脏数据和指标信息以确保统计正确
 		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
-			"status":       models.StatusQueued,
-			"clone_status": models.StatusPending,
+			"status":           models.StatusQueued,
+			"clone_status":     models.StatusPending,
+			"total_chunks":     0,
+			"processed_chunks": 0,
+			"ai_summary":       "",
+			"report_path":      "",
+			"score":            0,
+			"metrics":          []byte("null"),
 		})
 		models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
 			"status":        models.StatusPending,
@@ -265,4 +281,43 @@ func RecoverPendingTasks(action string) {
 	}
 
 	log.Printf("[Recovery] Done: %d task(s) recovered, %d skipped.\n", recovered, skipped)
+}
+
+// CleanReportFiles 递归遍历指定任务目录，物理删除属于特定 reportID 的所有报告、总结、临时输入及分片目录。
+func CleanReportFiles(taskTypeName string, reportID uint) {
+	reportsBaseDir := filepath.Join(models.AppConfig.Storage.Root, "reports", taskTypeName)
+	if _, err := os.Stat(reportsBaseDir); os.IsNotExist(err) {
+		return
+	}
+
+	log.Printf("[Recovery] Cleaning physical report files for ReportID %d under %s\n", reportID, reportsBaseDir)
+
+	// 遍历 reportsBaseDir 寻找并删除属于此任务报告的所有匹配项
+	filepath.Walk(reportsBaseDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		name := info.Name()
+		isTarget := false
+		
+		// 校验是否归属该 reportID
+		if strings.Contains(name, fmt.Sprintf("report-%d-", reportID)) ||
+			strings.Contains(name, fmt.Sprintf("summary-%d-", reportID)) ||
+			strings.Contains(name, fmt.Sprintf("synthesis-input-%d.", reportID)) ||
+			(info.IsDir() && strings.HasPrefix(name, "chunks-") && strings.HasSuffix(name, fmt.Sprintf("-%d", reportID))) {
+			isTarget = true
+		}
+
+		if isTarget {
+			log.Printf("[Recovery] Deleting: %s\n", path)
+			if info.IsDir() {
+				os.RemoveAll(path)
+				return filepath.SkipDir // 删除了整个目录后跳过进入子项
+			} else {
+				os.Remove(path)
+			}
+		}
+		return nil
+	})
 }
