@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"code-shield/models"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -138,7 +137,7 @@ func ExportFindings(c *gin.Context) {
 	models.DB.Find(&members)
 	memberMap := make(map[string]string)
 	for _, m := range members {
-		memberMap[fmt.Sprintf("%d", m.ID)] = m.Name
+		memberMap[m.ID] = m.Name
 	}
 
 	f := excelize.NewFile()

@@ -97,6 +97,24 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Automatic token renewal: if less than 12 hours remaining, generate a new one
+		if claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) < 12*time.Hour {
+			expirationTime := time.Now().Add(24 * time.Hour)
+			newClaims := &Claims{
+				UserID:   claims.UserID,
+				Username: claims.Username,
+				RegisteredClaims: jwt.RegisteredClaims{
+					ExpiresAt: jwt.NewNumericDate(expirationTime),
+				},
+			}
+			newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
+			newTokenString, err := newToken.SignedString(jwtSecret)
+			if err == nil {
+				c.Header("X-Refresh-Token", newTokenString)
+				c.Header("Access-Control-Expose-Headers", "X-Refresh-Token")
+			}
+		}
+
 		// Set user data in context
 		c.Set("userID", claims.UserID)
 		c.Set("username", claims.Username)

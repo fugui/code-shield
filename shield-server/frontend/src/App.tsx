@@ -35,8 +35,17 @@ window.fetch = async (...args) => {
     var res = await originalFetch(resource, config);
   }
 
-  // Intercept 401 to handle expired tokens globally
-  if (res.status === 401) {
+  // Handle Token Automatic Renewal
+  if (res.ok && resource.toString().includes('/api')) {
+    const newToken = res.headers.get('X-Refresh-Token');
+    if (newToken) {
+      localStorage.setItem('token', newToken);
+      window.dispatchEvent(new Event('auth-change'));
+    }
+  }
+
+  // Intercept 401 to handle expired tokens globally (only for system /api calls)
+  if (res.status === 401 && resource.toString().includes('/api')) {
     localStorage.removeItem('token');
     window.dispatchEvent(new Event('auth-change'));
     const loginPath = BASE_PATH + '/login';
