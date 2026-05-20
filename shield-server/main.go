@@ -222,6 +222,9 @@ func main() {
 	<-ctx.Done()
 	log.Println("Shutting down server ...")
 
+	// Cancel all running tasks to terminate AI processes
+	services.CancelAllRunningTasks()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

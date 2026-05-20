@@ -54,6 +54,17 @@ func CancelRunningTask(reportID uint) bool {
 	return false
 }
 
+// CancelAllRunningTasks cancels all running tasks currently registered in activeTasks
+func CancelAllRunningTasks() {
+	activeTasksMu.Lock()
+	defer activeTasksMu.Unlock()
+	log.Printf("[TaskRunner] Cancelling all %d active tasks\n", len(activeTasks))
+	for id, ctx := range activeTasks {
+		log.Printf("[TaskRunner] Cancelling task for ReportID %d\n", id)
+		ctx.cancel()
+	}
+}
+
 // resolveRunParams 将外部传入的 RunParams 与 TaskType 默认值合并。
 // 优先级：外部 RunParams > TaskType 默认值 > 全局配置
 func (ctx *taskContext) resolveRunParams(input models.RunParams) {
