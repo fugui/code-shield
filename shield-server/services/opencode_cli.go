@@ -99,7 +99,10 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	cmd := exec.Command("opencode", args...)
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGKILL,
+	}
 
 	log.Printf("[OpenCode] Executing command: %s\n", cmd.String())
 

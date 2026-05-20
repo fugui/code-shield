@@ -84,7 +84,10 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = req.WorkDir
 	cmd.Stdout = metaFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGKILL,
+	}
 
 	// 捕获 stderr 用于错误报告
 	var stderrBuf strings.Builder
