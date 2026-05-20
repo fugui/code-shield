@@ -28,12 +28,12 @@ type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// ── 引擎前处理：解析配置并扫描分片 ──
-	cfg := ChunkConfig{MaxFiles: 25, Depth: 1, Concurrency: 5}
+	cfg := ChunkConfig{MaxFiles: 25, Depth: 1, Concurrency: 2}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 5
+		cfg.Concurrency = 2
 	}
 
 	targetScope := "all"
