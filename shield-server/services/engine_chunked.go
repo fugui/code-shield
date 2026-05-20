@@ -118,16 +118,25 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	if len(chunkErrors) > 0 {
 		aggregatedErr := fmt.Errorf("chunk analysis phase failed: %s", strings.Join(chunkErrors, "; "))
 
-		// 写入到最终任务的 output.txt
+		// 写入到最终任务的 output.txt 并记录为 Error 或 Warning
 		cliOutputPath := ctx.reportPath + ".output.txt"
 		if f, createErr := os.Create(cliOutputPath); createErr == nil {
-			f.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution failed: %v\n", aggregatedErr))
+			if len(allFindings) == 0 {
+				f.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution failed: %v\n", aggregatedErr))
+			} else {
+				f.WriteString(fmt.Sprintf("\n\n[Code-Shield Warning] Some chunks failed during analysis: %v\n", aggregatedErr))
+			}
 			f.Close()
 		} else {
 			log.Printf("[ChunkedEngine] Failed to create overall output.txt: %v\n", createErr)
 		}
 
-		return aggregatedErr
+		// 如果所有分片都失败了且没有任何发现，则必须报错返回
+		if len(allFindings) == 0 {
+			return fmt.Errorf("all chunks failed: %w", aggregatedErr)
+		}
+
+		log.Printf("[ChunkedEngine] Warning: %d chunks failed, but proceeding to synthesis with %d findings from successful chunks\n", len(chunkErrors), len(allFindings))
 	}
 
 	if len(allFindings) == 0 && len(chunks) > 0 {

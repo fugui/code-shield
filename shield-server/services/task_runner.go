@@ -386,8 +386,28 @@ func fixUnescapedQuotes(s string) string {
 	return buf.String()
 }
 
-// executeAnalysis runs the analysis phase: AI outputs structured JSON findings
+// executeAnalysis runs the analysis phase: AI outputs structured JSON findings, retrying up to 3 times on failure.
 func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFinding, error) {
+	var lastErr error
+	maxRetries := 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("[TaskRunner] executeAnalysis failed (attempt %d/%d) for ReportID %d, retrying in %ds: %v\n",
+				attempt, maxRetries, ctx.report.ID, attempt*2, lastErr)
+			time.Sleep(time.Duration(attempt*2) * time.Second)
+		}
+
+		findings, err := ctx.executeAnalysisOnce(fileList)
+		if err == nil {
+			return findings, nil
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf("analysis failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// executeAnalysisOnce runs a single attempt of the analysis phase
+func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.AnalysisFinding, error) {
 	if err := ctx.executeAI(fileList, "请以纯 JSON 格式（强调：不要输出 Markdown）输出分析结果", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
 		return nil, err
 	}
