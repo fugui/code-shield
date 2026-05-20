@@ -57,6 +57,8 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	var allFindings []models.AnalysisFinding
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	var chunkErrors []string
+	var errMu sync.Mutex
 	semaphore := make(chan struct{}, cfg.Concurrency)
 	totalChunks := len(chunks)
 	chunkIndex := 0
@@ -99,6 +101,9 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 			findings, err := chunkCtx.executeAnalysis(chunkFiles)
 			if err != nil {
 				log.Printf("[ChunkedEngine] Chunk [%s] analysis failed: %v\n", chunkName, err)
+				errMu.Lock()
+				chunkErrors = append(chunkErrors, fmt.Sprintf("Chunk [%s] failed: %v", chunkName, err))
+				errMu.Unlock()
 				return
 			}
 
@@ -109,6 +114,21 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	}
 
 	wg.Wait()
+
+	if len(chunkErrors) > 0 {
+		aggregatedErr := fmt.Errorf("chunk analysis phase failed: %s", strings.Join(chunkErrors, "; "))
+
+		// 写入到最终任务的 output.txt
+		cliOutputPath := ctx.reportPath + ".output.txt"
+		if f, createErr := os.Create(cliOutputPath); createErr == nil {
+			f.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution failed: %v\n", aggregatedErr))
+			f.Close()
+		} else {
+			log.Printf("[ChunkedEngine] Failed to create overall output.txt: %v\n", createErr)
+		}
+
+		return aggregatedErr
+	}
 
 	if len(allFindings) == 0 && len(chunks) > 0 {
 		log.Printf("[ChunkedEngine] Warning: all %d chunks produced no findings\n", len(chunks))

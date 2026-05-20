@@ -91,6 +91,9 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	// Resolve run params: input overrides → TaskType defaults → global config
 	ctx.resolveRunParams(runParams)
 
+	// Prepare output paths for final report early to ensure output.txt is available for all failure logging
+	ctx.prepareOutputPaths()
+
 	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s (Mode: %s)\n", 
 		ctx.report.ID, repoURL, ctx.taskType.Name, ctx.taskType.EngineMode)
 
@@ -107,9 +110,6 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	} else if skipped {
 		return nil
 	}
-
-	// 4. Prepare output paths for final report
-	ctx.prepareOutputPaths()
 
 	// 5. Dispatch to Engine
 	engine := GetEngine(ctx.taskType.EngineMode)
@@ -414,11 +414,11 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath, backend)
 		if repairErr != nil {
 			log.Printf("[Error] AI JSON repair failed: %v\n", repairErr)
-			return nil, nil
+			return nil, fmt.Errorf("AI JSON repair failed: %w", repairErr)
 		}
 		if err := json.Unmarshal(repairedJSON, &output); err != nil {
 			log.Printf("[Error] Repaired JSON still invalid: %v\n", err)
-			return nil, nil
+			return nil, fmt.Errorf("repaired JSON still invalid: %w", err)
 		}
 		log.Println("[TaskRunner] AI JSON repair successful")
 		// Overwrite the json file with the repaired version for downstream use
@@ -448,6 +448,7 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 	if len(findings) > 0 {
 		if err := models.DB.Create(&findings).Error; err != nil {
 			log.Printf("[TaskRunner] Failed to save analysis findings: %v\n", err)
+			return nil, fmt.Errorf("failed to save analysis findings to database: %w", err)
 		}
 	}
 
@@ -525,11 +526,43 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 }
 
 func (ctx *taskContext) markFailed(errMsg string) {
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"status":     models.StatusFailed,
 		"ai_summary": fmt.Sprintf("【执行失败】%s", errMsg),
 		"created_at": time.Now(),
-	})
+	}
+	if ctx.reportPath != "" {
+		updates["report_path"] = ctx.reportPath
+	}
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(updates)
+
+	if ctx.reportPath != "" {
+		cliOutputPath := ctx.reportPath + ".output.txt"
+		alreadyLogged := false
+		if contentBytes, err := os.ReadFile(cliOutputPath); err == nil {
+			content := string(contentBytes)
+			if strings.Contains(content, "[Code-Shield Error]") && strings.Contains(content, errMsg) {
+				alreadyLogged = true
+			}
+		}
+
+		if !alreadyLogged {
+			var f *os.File
+			var openErr error
+			if _, statErr := os.Stat(cliOutputPath); os.IsNotExist(statErr) {
+				f, openErr = os.Create(cliOutputPath)
+			} else {
+				f, openErr = os.OpenFile(cliOutputPath, os.O_APPEND|os.O_WRONLY, 0644)
+			}
+
+			if openErr == nil {
+				defer f.Close()
+				f.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution failed: %s\n", errMsg))
+			} else {
+				log.Printf("[TaskRunner] Failed to write error to output.txt: %v\n", openErr)
+			}
+		}
+	}
 }
 
 // NotifyTaskResult sends a notification for a completed task
