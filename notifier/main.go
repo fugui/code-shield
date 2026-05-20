@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -12,19 +15,21 @@ import (
 )
 
 var (
-	mainWnd   *ui.Main
-	tabMain   *ui.Tab
-	chkAuto   *ui.CheckBox
-	btnBatch  *ui.Button
-	btnClear  *ui.Button
-	btnQuit   *ui.Button
-	lstDrafts *ui.ListView
-	txtLog    *ui.Edit
+	mainWnd    *ui.Main
+	tabMain    *ui.Tab
+	chkAuto    *ui.CheckBox
+	btnBatch   *ui.Button
+	btnClear   *ui.Button
+	btnOpenLog *ui.Button
+	btnQuit    *ui.Button
+	lstDrafts  *ui.ListView
+	txtLog     *ui.Edit
 
 	txtTemplate     *ui.Edit
 	btnSaveTemplate *ui.Button
 
 	autoSendEnabled = false
+	logFile         *os.File
 )
 
 func GetAutoSend() bool {
@@ -38,9 +43,33 @@ func SetAutoSend(b bool) {
 func main() {
 	runtime.LockOSThread()
 
+	// 1. Single-instance check (prevent duplicate processes and restore existing instance)
+	if hwnd, ok := win.FindWindow(win.ClassNameNone(), "Code-Shield Notifier"); ok {
+		hwnd.ShowWindow(co.SW_SHOW)
+		hwnd.ShowWindow(co.SW_RESTORE)
+		hwnd.SetForegroundWindow()
+		return
+	}
+
+	// Initialize log file
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		logPath := filepath.Join(homeDir, ".code-shield-notifier.log")
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			logFile = f
+		}
+	}
+
+	LogMessage("==============================================")
+	LogMessage("Code-Shield Notifier starting...")
+
 	listener, err := net.Listen("tcp", "0.0.0.0:8081")
 	if err != nil {
-		win.HWND(0).MessageBox("无法绑定端口 8081 (报错: "+err.Error()+")。\nCode-Shield 通知工具可能已经在运行中，或者端口被占用。\n\nFailed to bind port 8081. Is notifier already running?", "启动失败 / Startup Failed", co.MB_OK|co.MB_ICONERROR)
+		errMsg := fmt.Sprintf("无法绑定端口 8081 (报错: %v)。\nCode-Shield 通知工具可能已经在运行中，或者端口被占用。\n\nFailed to bind port 8081. Is notifier already running?", err)
+		LogMessage("Error: " + errMsg)
+		win.HWND(0).MessageBox(errMsg, "启动失败 / Startup Failed", co.MB_OK|co.MB_ICONERROR)
+		if logFile != nil {
+			logFile.Close()
+		}
 		return
 	}
 
@@ -81,6 +110,11 @@ func setupControls() {
 		Position(260, 8).
 		Width(100).Height(24))
 
+	btnOpenLog = ui.NewButton(tabOverview, ui.OptsButton().
+		Text("打开日志文件").
+		Position(370, 8).
+		Width(110).Height(24))
+
 	btnQuit = ui.NewButton(tabOverview, ui.OptsButton().
 		Text("退出程序").
 		Position(490, 8).
@@ -118,6 +152,7 @@ func setupControls() {
 func setupEvents() {
 	var nid win.NOTIFYICONDATA
 	const WM_TRAYICON = co.WM_APP + 1
+	taskbarCreatedMsg, _ := win.RegisterWindowMessage("TaskbarCreated")
 
 	mainWnd.On().WmCreate(func(p ui.WmCreate) int {
 		chkAuto.SetCheck(GetAutoSend())
@@ -179,6 +214,13 @@ func setupEvents() {
 		LogMessage("Local GUI draft history cleared.")
 	})
 
+	btnOpenLog.On().BnClicked(func() {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			logPath := filepath.Join(homeDir, ".code-shield-notifier.log")
+			exec.Command("cmd", "/c", "start", "", logPath).Start()
+		}
+	})
+
 	btnQuit.On().BnClicked(func() {
 		mainWnd.Hwnd().DestroyWindow()
 	})
@@ -192,15 +234,18 @@ func setupEvents() {
 		}
 	})
 
-
-
-
 	mainWnd.On().Wm(WM_TRAYICON, func(p ui.Wm) uintptr {
 		lParam := co.WM(p.LParam)
 		if lParam == co.WM_LBUTTONDBLCLK || lParam == co.WM_LBUTTONUP {
+			mainWnd.Hwnd().ShowWindow(co.SW_SHOW)
 			mainWnd.Hwnd().ShowWindow(co.SW_RESTORE)
 			mainWnd.Hwnd().SetForegroundWindow()
 		}
+		return 0
+	})
+
+	mainWnd.On().Wm(taskbarCreatedMsg, func(p ui.Wm) uintptr {
+		win.Shell_NotifyIcon(co.NIM_ADD, &nid)
 		return 0
 	})
 
@@ -211,11 +256,19 @@ func setupEvents() {
 
 	mainWnd.On().WmDestroy(func() {
 		win.Shell_NotifyIcon(co.NIM_DELETE, &nid)
+		if logFile != nil {
+			logFile.Close()
+		}
 	})
 }
 
 func LogMessage(msg string) {
 	fmt.Println(msg)
+	if logFile != nil {
+		t := time.Now().Format("2006-01-02 15:04:05")
+		logFile.WriteString(fmt.Sprintf("[%s] %s\r\n", t, msg))
+		logFile.Sync()
+	}
 	if mainWnd == nil || mainWnd.Hwnd() == 0 {
 		return
 	}
