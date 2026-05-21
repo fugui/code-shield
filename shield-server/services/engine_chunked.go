@@ -90,8 +90,8 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 				repo:       ctx.repo,
 				codesPath:  ctx.codesPath,
 				runParams:  ctx.runParams,
-				reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.md", safeName)),
-				jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%s.json", safeName)),
+				reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.md", ctx.report.ID, safeName)),
+				jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.report.ID, safeName)),
 			}
 			chunkCtx.report.ChunkName = chunkName
 

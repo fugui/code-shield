@@ -305,6 +305,7 @@ func CleanReportFiles(taskTypeName string, reportID uint) {
 		if strings.Contains(name, fmt.Sprintf("report-%d-", reportID)) ||
 			strings.Contains(name, fmt.Sprintf("summary-%d-", reportID)) ||
 			strings.Contains(name, fmt.Sprintf("synthesis-input-%d.", reportID)) ||
+			strings.Contains(name, fmt.Sprintf("chunk-%d-", reportID)) ||
 			(info.IsDir() && strings.HasPrefix(name, "chunks-") && strings.HasSuffix(name, fmt.Sprintf("-%d", reportID))) {
 			isTarget = true
 		}
