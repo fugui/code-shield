@@ -171,6 +171,46 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 	if !strings.Contains(string(content), "simulated invoke error") {
 		t.Errorf("expected output.txt to contain the error message, got: %s", string(content))
 	}
+
+	// 8. Verify report.json (ChunkExecutionReport) is created and contains correct failure metrics
+	if _, err := os.Stat(ctx.jsonPath); os.IsNotExist(err) {
+		t.Fatal("expected report.json to be created, but it does not exist")
+	}
+
+	reportBytes, err := os.ReadFile(ctx.jsonPath)
+	if err != nil {
+		t.Fatalf("failed to read report.json: %v", err)
+	}
+
+	var execReport ChunkExecutionReport
+	if err := json.Unmarshal(reportBytes, &execReport); err != nil {
+		t.Fatalf("failed to unmarshal report.json: %v", err)
+	}
+
+	if execReport.TotalChunks != 1 {
+		t.Errorf("expected 1 total chunk, got %d", execReport.TotalChunks)
+	}
+	if execReport.FailedChunks != 1 {
+		t.Errorf("expected 1 failed chunk, got %d", execReport.FailedChunks)
+	}
+	if execReport.SuccessfulChunks != 0 {
+		t.Errorf("expected 0 successful chunks, got %d", execReport.SuccessfulChunks)
+	}
+	if len(execReport.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk detail entry, got %d", len(execReport.Chunks))
+	}
+	if execReport.Chunks[0].Status != "failed" {
+		t.Errorf("expected chunk status to be 'failed', got: %s", execReport.Chunks[0].Status)
+	}
+	if execReport.Chunks[0].Attempts != 4 { // 1 initial + 3 retries = 4
+		t.Errorf("expected 4 attempts, got %d", execReport.Chunks[0].Attempts)
+	}
+	if execReport.Chunks[0].Retries != 3 {
+		t.Errorf("expected 3 retries, got %d", execReport.Chunks[0].Retries)
+	}
+	if !strings.Contains(execReport.Chunks[0].ErrorMessage, "simulated invoke error") {
+		t.Errorf("expected chunk error message to contain 'simulated invoke error', got: %s", execReport.Chunks[0].ErrorMessage)
+	}
 }
 
 func TestTaskRunnerEarlyFailureLogging(t *testing.T) {

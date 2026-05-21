@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -21,6 +22,33 @@ type ChunkConfig struct {
 	MaxFiles    int `json:"max_files"`
 	Depth       int `json:"depth"`
 	Concurrency int `json:"concurrency"`
+}
+
+// ChunkDetails records the details of a single chunk execution.
+type ChunkDetails struct {
+	ChunkName       string    `json:"chunk_name"`
+	Files           []string  `json:"files"`
+	Status          string    `json:"status"` // "success" or "failed"
+	Attempts        int       `json:"attempts"`
+	Retries         int       `json:"retries"`
+	StartTime       time.Time `json:"start_time"`
+	EndTime         time.Time `json:"end_time"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// ChunkExecutionReport defines the overall structure of the execution report.
+type ChunkExecutionReport struct {
+	TaskID           uint           `json:"task_id"`
+	RepoName         string         `json:"repo_name"`
+	TaskType         string         `json:"task_type"`
+	TotalChunks      int            `json:"total_chunks"`
+	SuccessfulChunks int            `json:"successful_chunks"`
+	FailedChunks     int            `json:"failed_chunks"`
+	StartTime        time.Time      `json:"start_time"`
+	EndTime          time.Time      `json:"end_time"`
+	DurationSeconds  float64        `json:"duration_seconds"`
+	Chunks           []ChunkDetails `json:"chunks"`
 }
 
 // ChunkedEngine 将代码仓按目录结构拆分成多个分片，逐个提交给 AI 分析后汇总。
@@ -46,6 +74,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	}
 
 	log.Printf("[ChunkedEngine] Chunked mode: Found %d chunks for repo %s\n", len(chunks), ctx.repo.Name)
+	overallStartTime := time.Now()
 
 	// ── 逐片执行分析阶段 ──
 	// 取仓库名最后一段作为目录前缀，增强可读性
@@ -65,6 +94,8 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 
 	// 记录总分片数
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("total_chunks", totalChunks)
+
+	chunkDetailsList := make([]ChunkDetails, totalChunks)
 
 	for name, files := range chunks {
 		chunkIndex++
@@ -98,14 +129,39 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 			log.Printf("[ChunkedEngine] Processing chunk %d/%d [%s] (%d files)\n", idx, totalChunks, chunkName, len(chunkFiles))
 
 			// Phase 1: 分析阶段
+			chunkStartTime := time.Now()
 			findings, err := chunkCtx.executeAnalysis(chunkFiles)
+			chunkEndTime := time.Now()
+
+			retries := chunkCtx.Attempts - 1
+			if retries < 0 {
+				retries = 0
+			}
+
+			details := ChunkDetails{
+				ChunkName:       chunkName,
+				Files:           chunkFiles,
+				Attempts:        chunkCtx.Attempts,
+				Retries:         retries,
+				StartTime:       chunkStartTime,
+				EndTime:         chunkEndTime,
+				DurationSeconds: chunkEndTime.Sub(chunkStartTime).Seconds(),
+			}
+
 			if err != nil {
 				log.Printf("[ChunkedEngine] Chunk [%s] analysis failed: %v\n", chunkName, err)
 				errMu.Lock()
 				chunkErrors = append(chunkErrors, fmt.Sprintf("Chunk [%s] failed: %v", chunkName, err))
 				errMu.Unlock()
+
+				details.Status = "failed"
+				details.ErrorMessage = err.Error()
+				chunkDetailsList[idx-1] = details
 				return
 			}
+
+			details.Status = "success"
+			chunkDetailsList[idx-1] = details
 
 			mu.Lock()
 			allFindings = append(allFindings, findings...)
@@ -114,6 +170,41 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	}
 
 	wg.Wait()
+
+	overallEndTime := time.Now()
+	successfulChunks := 0
+	failedChunks := 0
+	for _, details := range chunkDetailsList {
+		if details.Status == "success" {
+			successfulChunks++
+		} else {
+			failedChunks++
+		}
+	}
+
+	executionReport := ChunkExecutionReport{
+		TaskID:           ctx.report.ID,
+		RepoName:         ctx.repo.Name,
+		TaskType:         ctx.taskType.Name,
+		TotalChunks:      totalChunks,
+		SuccessfulChunks: successfulChunks,
+		FailedChunks:     failedChunks,
+		StartTime:        overallStartTime,
+		EndTime:          overallEndTime,
+		DurationSeconds:  overallEndTime.Sub(overallStartTime).Seconds(),
+		Chunks:           chunkDetailsList,
+	}
+
+	reportData, marshalErr := json.MarshalIndent(executionReport, "", "  ")
+	if marshalErr == nil {
+		if writeErr := os.WriteFile(ctx.jsonPath, reportData, 0644); writeErr != nil {
+			log.Printf("[ChunkedEngine] Failed to write chunk execution report to %s: %v\n", ctx.jsonPath, writeErr)
+		} else {
+			log.Printf("[ChunkedEngine] Successfully saved chunk execution report to %s\n", ctx.jsonPath)
+		}
+	} else {
+		log.Printf("[ChunkedEngine] Failed to marshal execution report: %v\n", marshalErr)
+	}
 
 	if len(chunkErrors) > 0 {
 		aggregatedErr := fmt.Errorf("chunk analysis phase failed: %s", strings.Join(chunkErrors, "; "))
