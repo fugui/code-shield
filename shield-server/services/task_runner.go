@@ -36,6 +36,7 @@ type taskContext struct {
 	jsonPath   string
 	autoNotify bool
 	runParams  models.RunParams // 合并后的运行参数
+	Attempts   int              // 实际尝试次数
 }
 
 var (
@@ -402,6 +403,7 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 	var lastErr error
 	maxRetries := 3
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		ctx.Attempts = attempt + 1
 		if attempt > 0 {
 			log.Printf("[TaskRunner] executeAnalysis failed (attempt %d/%d) for ReportID %d, retrying in %ds: %v\n",
 				attempt, maxRetries, ctx.report.ID, attempt*2, lastErr)
