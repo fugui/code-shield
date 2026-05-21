@@ -225,8 +225,8 @@ func (ctx *taskContext) prepareOutputPaths() {
 	os.MkdirAll(reportsDir, 0755)
 
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
-	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-%s.md", ctx.report.ID, safeRepoName))
-	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("summary-%d-%s.json", ctx.report.ID, safeRepoName))
+	ctx.reportPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-report-%s.md", ctx.report.ID, safeRepoName))
+	ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-%s.json", ctx.report.ID, safeRepoName))
 }
 
 // executeAI constructs the prompt and delegates to the configured AI CLI backend.
@@ -581,7 +581,8 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 
 	// Serialize all findings to a JSON input file
 	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
-	synthesisInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("synthesis-input-%d.json", ctx.report.ID))
+	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
+	synthesisInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("report-%d-synthesis-%s.json", ctx.report.ID, safeRepoName))
 	if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
