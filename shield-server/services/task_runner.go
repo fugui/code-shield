@@ -583,7 +583,6 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
-	defer os.Remove(synthesisInputPath)
 
 	log.Printf("[TaskRunner] Starting synthesis with %d findings for ReportID %d\n", len(allFindings), ctx.report.ID)
 
