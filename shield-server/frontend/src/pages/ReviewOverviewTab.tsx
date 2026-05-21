@@ -238,7 +238,7 @@ function TaskOverviewTab() {
     try {
       const res = await fetch(`/api/tasks/${reportId}/resume`, { method: 'POST' });
       if (res.ok) {
-        showToast('恢复任务已下发，正在重试失败的分片', 'success');
+        showToast('恢复任务已入队，等待排队执行', 'success');
         fetchOverview();
       } else {
         const data = await res.json();

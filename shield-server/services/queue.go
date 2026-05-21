@@ -23,6 +23,7 @@ type Task struct {
 	AutoNotify bool
 	LogID      uint             // ID of TaskExecutionLog
 	RunParams  models.RunParams // 运行时参数（从 ScheduleConfig 传入）
+	IsResume   bool             // true 时 worker 调用 ResumeFailedChunks 而非 RunTaskSync
 }
 
 var TaskQueue = make(chan Task, 300)
@@ -88,18 +89,56 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 	}
 }
 
+// EnqueueResumeTask 将恢复任务放入队列排队执行，而非直接执行。
+func EnqueueResumeTask(report models.TaskReport) error {
+	// 更新状态为 queued，表示排队等待执行
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusQueued)
+
+	task := Task{
+		RepoID:   report.RepoID,
+		ReportID: report.ID,
+		IsResume: true,
+	}
+
+	select {
+	case TaskQueue <- task:
+		log.Printf("[WorkerPool] Enqueued RESUME task for ReportID %d. Queue size: %d\n", report.ID, len(TaskQueue))
+		return nil
+	default:
+		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusFailed)
+		return fmt.Errorf("队列已满，无法入队")
+	}
+}
+
 func worker(id int) {
 	for task := range TaskQueue {
-		log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d)\n", id, task.RepoID, task.TaskTypeID, task.LogID)
+		if task.IsResume {
+			log.Printf("[Worker %d] Picked up RESUME task for ReportID %d (Repo %d)\n", id, task.ReportID, task.RepoID)
+		} else {
+			log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d)\n", id, task.RepoID, task.TaskTypeID, task.LogID)
+		}
 
 		// Update status to running (initial phase)
-		UpdateTaskExecutionLog(task.LogID, "running", "")
-		// Note: Detailed report status is updated inside RunTaskSync (cloning, analyzing, etc.)
+		if task.LogID > 0 {
+			UpdateTaskExecutionLog(task.LogID, "running", "")
+		}
 
-		err := RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
+		var err error
+		if task.IsResume {
+			err = ResumeFailedChunks(task.ReportID)
+		} else {
+			err = RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
+		}
 
 		now := time.Now()
-		if errors.Is(err, ErrSkipped) {
+		if task.LogID == 0 {
+			// Resume tasks without a log entry — just log the result
+			if err != nil {
+				log.Printf("[Worker %d] Resume task failed for ReportID %d: %v\n", id, task.ReportID, err)
+			} else {
+				log.Printf("[Worker %d] Resume task completed for ReportID %d\n", id, task.ReportID)
+			}
+		} else if errors.Is(err, ErrSkipped) {
 			log.Printf("[Worker %d] Skipping Repo %d — precondition not met.\n", id, task.RepoID)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
 				"status":        models.StatusSkipped,
