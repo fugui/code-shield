@@ -351,8 +351,8 @@ func ResumeTask(c *gin.Context) {
 		return
 	}
 
-	if report.Status != "failed" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败状态的任务才能恢复"})
+	if report.Status != "failed" && report.Status != "success" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败或成功状态的任务才能恢复"})
 		return
 	}
 
