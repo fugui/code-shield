@@ -110,6 +110,7 @@ func main() {
 		api.GET("/tasks", handlers.GetTasks)
 		api.POST("/tasks/trigger", handlers.TriggerTask)
 		api.POST("/tasks/:id/notify", handlers.TriggerManualNotification)
+		api.POST("/tasks/:id/resume", handlers.ResumeTask)
 		api.GET("/tasks/:id", handlers.GetTaskDetails)
 		api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
 		api.GET("/tasks/:id/findings", handlers.GetAnalysisFindings)

@@ -94,6 +94,21 @@ function RepoReviewHistory() {
     }
   };
 
+  const handleResume = async (reportId: number) => {
+    try {
+      const res = await fetch(`/api/tasks/${reportId}/resume`, { method: 'POST' });
+      if (res.ok) {
+        showToast('恢复任务已下发，正在重试失败的分片', 'success');
+        fetchReviews();
+      } else {
+        const data = await res.json();
+        showToast(`恢复失败: ${data.error || '未知错误'}`, 'error');
+      }
+    } catch {
+      showToast('网络异常，恢复失败', 'error');
+    }
+  };
+
   const statusLabel = (status: string) => {
     switch (status) {
       case 'success': return { text: '完成', cls: 'success' };
@@ -228,6 +243,21 @@ function RepoReviewHistory() {
                           </svg>
                         </button>
                       </div>
+                    )}
+                    {r.status === 'failed' && (
+                      <button
+                        onClick={() => handleResume(r.id)}
+                        style={{ background: 'transparent', border: '1px solid #f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#f59e0b', fontSize: '0.8rem' }}
+                        title="恢复：重试失败的分片并重新生成报告"
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="1 4 1 10 7 10"></polyline>
+                          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                        </svg>
+                        恢复
+                      </button>
                     )}
                   </td>
                 </tr>

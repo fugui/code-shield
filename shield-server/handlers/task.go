@@ -335,3 +335,37 @@ c.JSON(http.StatusOK, gin.H{
 "deleted": result.RowsAffected,
 })
 }
+
+// ResumeTask resumes a failed chunked task by retrying only the failed chunks
+func ResumeTask(c *gin.Context) {
+	reportID := c.Param("id")
+
+	var report models.TaskReport
+	if err := models.DB.Preload("TaskType").First(&report, reportID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
+		return
+	}
+
+	if report.Status != "failed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败状态的任务才能恢复"})
+		return
+	}
+
+	if report.TaskType.EngineMode != "chunked" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持分片模式(chunked)的任务恢复"})
+		return
+	}
+
+	// Update status to indicate resuming
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", "analyzing")
+
+	go func() {
+		if err := services.ResumeFailedChunks(report.ID); err != nil {
+			// ResumeFailedChunks already calls markFailed internally on error
+			_ = err
+		}
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已下发，正在重试失败的分片"})
+}
+
