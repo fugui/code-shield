@@ -433,7 +433,7 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 	return nil, fmt.Errorf("analysis failed after %d retries: %w", maxRetries, lastErr)
 }
 
-// cleanAnalysisTempFiles 清理一次 analysis attempt 产生的所有临时文件。
+// cleanAnalysisTempFiles 清理一次 analysis attempt 产生的所有临时文件和 AI 误创建的目录。
 // jsonPath 是主 JSON 输出路径，据此推导出关联的辅助文件。
 func cleanAnalysisTempFiles(jsonPath string) {
 	// AI CLI 输出日志
@@ -442,9 +442,68 @@ func cleanAnalysisTempFiles(jsonPath string) {
 	os.Remove(jsonPath + ".debug.log")
 	// RepairJSON 产生的修复中间文件
 	ext := filepath.Ext(jsonPath)
-	os.Remove(strings.TrimSuffix(jsonPath, ext) + ".fixed" + ext)
+	basePath := strings.TrimSuffix(jsonPath, ext)
+	os.Remove(basePath + ".fixed" + ext)
 	// 上次的 JSON 输出本身（避免新 attempt 读到旧数据）
 	os.Remove(jsonPath)
+	// AI 工具有时会创建同名目录（如 chunk-fle-4/ 代替 chunk-fle-4.json），一并清除
+	os.RemoveAll(basePath)
+}
+
+// recoverAIOutput 处理 AI 工具（opencode/claude）将输出文件写入同名目录而非直接创建文件的情况。
+// 例如：AI 被要求写入 chunk-fle-4.json，但实际创建了 chunk-fle-4/chunk-fle-4.json。
+// 此函数检测这种情况，将文件移动到正确位置，并清理 AI 创建的垃圾目录。
+func recoverAIOutput(expectedPath string) {
+	// 如果预期文件已经存在，无需恢复
+	if info, err := os.Stat(expectedPath); err == nil && !info.IsDir() {
+		return
+	}
+
+	// 检查是否存在同名目录（去掉扩展名）
+	ext := filepath.Ext(expectedPath)
+	baseName := filepath.Base(strings.TrimSuffix(expectedPath, ext))
+	dirPath := strings.TrimSuffix(expectedPath, ext)
+
+	info, err := os.Stat(dirPath)
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	// 在目录中查找同名 JSON 文件
+	candidatePath := filepath.Join(dirPath, baseName+ext)
+	if _, err := os.Stat(candidatePath); err == nil {
+		log.Printf("[TaskRunner] Recovering AI output: moving %s → %s\n", candidatePath, expectedPath)
+		// 读取内容并写到正确位置（避免跨设备 rename 失败）
+		if content, readErr := os.ReadFile(candidatePath); readErr == nil {
+			if writeErr := os.WriteFile(expectedPath, content, 0644); writeErr == nil {
+				os.RemoveAll(dirPath)
+				return
+			}
+		}
+	}
+
+	// 候选位置不存在时，搜索目录内的第一个 JSON 文件作为兜底
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ext {
+			fallbackPath := filepath.Join(dirPath, entry.Name())
+			log.Printf("[TaskRunner] Recovering AI output (fallback): moving %s → %s\n", fallbackPath, expectedPath)
+			if content, readErr := os.ReadFile(fallbackPath); readErr == nil {
+				if writeErr := os.WriteFile(expectedPath, content, 0644); writeErr == nil {
+					os.RemoveAll(dirPath)
+					return
+				}
+			}
+			break
+		}
+	}
+
+	// 目录内没有可用文件（空目录），直接清除
+	log.Printf("[TaskRunner] Cleaning up empty AI-created directory: %s\n", dirPath)
+	os.RemoveAll(dirPath)
 }
 
 // executeAnalysisOnce runs a single attempt of the analysis phase.
@@ -454,6 +513,10 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 	if err := ctx.executeAI(fileList, "请以纯 JSON 格式（强调：不要输出 Markdown）输出分析结果", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
 		return nil, err
 	}
+
+	// AI 工具有时会将输出写入同名目录而非文件（如 chunk-fle-4/ 代替 chunk-fle-4.json），
+	// 在此自动检测并恢复到正确路径。
+	recoverAIOutput(ctx.jsonPath)
 
 	// Parse the AI JSON output from the report file
 	rawJSON, err := os.ReadFile(ctx.jsonPath)
