@@ -238,6 +238,7 @@ func RecoverPendingTasks(action string) {
 			"clone_status":     models.StatusPending,
 			"total_chunks":     0,
 			"processed_chunks": 0,
+			"success_chunks":   0,
 			"ai_summary":       "",
 			"report_path":      "",
 			"score":            0,

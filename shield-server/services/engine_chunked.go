@@ -183,6 +183,9 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		}
 	}
 
+	// 记录成功分片数
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("success_chunks", successfulChunks)
+
 	executionReport := ChunkExecutionReport{
 		TaskID:           ctx.report.ID,
 		RepoName:         ctx.repo.Name,
@@ -623,6 +626,9 @@ func ResumeFailedChunks(reportID uint) error {
 	execReport.FailedChunks = failCount
 	execReport.EndTime = time.Now()
 	execReport.DurationSeconds = execReport.EndTime.Sub(execReport.StartTime).Seconds()
+
+	// 更新数据库中的 success_chunks
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Update("success_chunks", successCount)
 
 	if reportData, err := json.MarshalIndent(execReport, "", "  "); err == nil {
 		os.WriteFile(ctx.jsonPath, reportData, 0644)
