@@ -51,7 +51,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// 取仓库名最后一段作为目录前缀，增强可读性
 	nameParts := strings.Split(ctx.repo.Name, "/")
 	repoShort := nameParts[len(nameParts)-1]
-	chunkDir := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("chunks-%s-%d", repoShort, ctx.report.ID))
+	chunkDir := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("chunks-%d-%s", ctx.report.ID, repoShort))
 	os.MkdirAll(chunkDir, 0755)
 
 	var allFindings []models.AnalysisFinding
