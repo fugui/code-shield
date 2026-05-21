@@ -406,10 +406,26 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 			log.Printf("[TaskRunner] executeAnalysis failed (attempt %d/%d) for ReportID %d, retrying in %ds: %v\n",
 				attempt, maxRetries, ctx.report.ID, attempt*2, lastErr)
 			time.Sleep(time.Duration(attempt*2) * time.Second)
+
+			// 重试前清理上次遗留的临时文件，避免脏数据累积
+			cleanAnalysisTempFiles(ctx.jsonPath)
 		}
 
 		findings, err := ctx.executeAnalysisOnce(fileList)
 		if err == nil {
+			// 仅在最终成功时才持久化 findings 到数据库，避免重试导致重复插入
+			if len(findings) > 0 {
+				if dbErr := models.DB.Create(&findings).Error; dbErr != nil {
+					log.Printf("[TaskRunner] Failed to save analysis findings: %v\n", dbErr)
+					return nil, fmt.Errorf("failed to save analysis findings to database: %w", dbErr)
+				}
+			}
+
+			chunkInfo := ""
+			if ctx.report.ChunkName != "" {
+				chunkInfo = fmt.Sprintf(" [Chunk: %s]", ctx.report.ChunkName)
+			}
+			log.Printf("[TaskRunner] Analysis phase complete: %d findings for ReportID %d%s\n", len(findings), ctx.report.ID, chunkInfo)
 			return findings, nil
 		}
 		lastErr = err
@@ -417,7 +433,23 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 	return nil, fmt.Errorf("analysis failed after %d retries: %w", maxRetries, lastErr)
 }
 
-// executeAnalysisOnce runs a single attempt of the analysis phase
+// cleanAnalysisTempFiles 清理一次 analysis attempt 产生的所有临时文件。
+// jsonPath 是主 JSON 输出路径，据此推导出关联的辅助文件。
+func cleanAnalysisTempFiles(jsonPath string) {
+	// AI CLI 输出日志
+	os.Remove(jsonPath + ".output.txt")
+	// AI 调试日志
+	os.Remove(jsonPath + ".debug.log")
+	// RepairJSON 产生的修复中间文件
+	ext := filepath.Ext(jsonPath)
+	os.Remove(strings.TrimSuffix(jsonPath, ext) + ".fixed" + ext)
+	// 上次的 JSON 输出本身（避免新 attempt 读到旧数据）
+	os.Remove(jsonPath)
+}
+
+// executeAnalysisOnce runs a single attempt of the analysis phase.
+// 注意：此函数只负责调用 AI、解析 JSON 并返回 findings 结构体，不写入数据库。
+// 数据库持久化由调用方 executeAnalysis 在确认最终成功后统一执行。
 func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.AnalysisFinding, error) {
 	if err := ctx.executeAI(fileList, "请以纯 JSON 格式（强调：不要输出 Markdown）输出分析结果", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
 		return nil, err
@@ -456,7 +488,7 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 		os.WriteFile(ctx.jsonPath, repairedJSON, 0644)
 	}
 
-	// Convert to model objects and persist
+	// Convert to model objects (不写入数据库，由调用方统一处理)
 	var findings []models.AnalysisFinding
 	for _, f := range output.Findings {
 		finding := models.AnalysisFinding{
@@ -475,19 +507,6 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 		findings = append(findings, finding)
 	}
 
-	// Batch insert into database
-	if len(findings) > 0 {
-		if err := models.DB.Create(&findings).Error; err != nil {
-			log.Printf("[TaskRunner] Failed to save analysis findings: %v\n", err)
-			return nil, fmt.Errorf("failed to save analysis findings to database: %w", err)
-		}
-	}
-
-	chunkInfo := ""
-	if ctx.report.ChunkName != "" {
-		chunkInfo = fmt.Sprintf(" [Chunk: %s]", ctx.report.ChunkName)
-	}
-	log.Printf("[TaskRunner] Analysis phase complete: %d findings for ReportID %d%s\n", len(findings), ctx.report.ID, chunkInfo)
 	return findings, nil
 }
 
