@@ -124,6 +124,7 @@ type TaskReport struct {
 	ChunkName       string         `gorm:"default:''" json:"chunk_name"`  // Name of the directory or file group
 	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`
 	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`
+	SuccessChunks   int            `gorm:"default:0" json:"success_chunks"`
 	Status          string         `gorm:"default:pending" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
 	CloneStatus string         `gorm:"default:pending" json:"clone_status"`
 	AISummary   string         `json:"ai_summary"`

@@ -157,6 +157,7 @@ function RepoReviewHistory() {
               <th style={{ width: '60px' }}>报告 ID</th>
               <th>任务类型</th>
               <th>状态</th>
+              <th>分片进度</th>
               <th>执行时间</th>
               <th>Base Commit</th>
               <th>Head Commit</th>
@@ -167,7 +168,7 @@ function RepoReviewHistory() {
           </thead>
           <tbody>
             {reviews.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
+              <tr><td colSpan={10} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
             ) : reviews.map((r) => {
               const st = statusLabel(r.status);
               return (
@@ -180,6 +181,29 @@ function RepoReviewHistory() {
                   </td>
                   <td>
                     <span className={`badge ${st.cls}`}>{st.text}</span>
+                  </td>
+                  <td>
+                    {r.total_chunks > 0 ? (() => {
+                      const success = r.success_chunks ?? 0;
+                      const total = r.total_chunks;
+                      const allSuccess = success === total;
+                      return (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          background: allSuccess ? 'rgba(34, 197, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                          color: allSuccess ? '#16a34a' : '#d97706',
+                          border: `1px solid ${allSuccess ? 'rgba(34, 197, 94, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+                        }}>
+                          {success}/{total}
+                        </span>
+                      );
+                    })() : (
+                      <span style={{ color: '#aaa', fontSize: '0.8rem' }}>-</span>
+                    )}
                   </td>
                   <td style={{ color: '#64748b', whiteSpace: 'nowrap' }}>
                     {r.created_at ? new Date(r.created_at).toLocaleString() : '-'}
