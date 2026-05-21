@@ -361,16 +361,12 @@ func ResumeTask(c *gin.Context) {
 		return
 	}
 
-	// Update status to indicate resuming
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", "analyzing")
+	// Enqueue resume task into the worker queue
+	if err := services.EnqueueResumeTask(report); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
 
-	go func() {
-		if err := services.ResumeFailedChunks(report.ID); err != nil {
-			// ResumeFailedChunks already calls markFailed internally on error
-			_ = err
-		}
-	}()
-
-	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已下发，正在重试失败的分片"})
+	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已入队，等待排队执行"})
 }
 
