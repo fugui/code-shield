@@ -588,9 +588,8 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 }
 
 
-// executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings
+// executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings, retrying up to 3 times on failure.
 func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
-
 	// Serialize all findings to a JSON input file
 	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
@@ -599,10 +598,54 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
 
-	log.Printf("[TaskRunner] Starting synthesis with %d findings for ReportID %d\n", len(allFindings), ctx.report.ID)
+	var lastErr error
+	maxRetries := 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("[TaskRunner] executeSynthesis failed (attempt %d/%d) for ReportID %d, retrying in %ds: %v\n",
+				attempt, maxRetries, ctx.report.ID, attempt*2, lastErr)
+			time.Sleep(time.Duration(attempt*2) * time.Second)
 
+			// 重试前清理上次遗留的临时和脏产物文件
+			cleanSynthesisTempFiles(ctx.reportPath)
+		}
+
+		err := ctx.executeSynthesisOnce(synthesisInputPath)
+		if err == nil {
+			log.Printf("[TaskRunner] Synthesis phase complete for ReportID %d\n", ctx.report.ID)
+			return nil
+		}
+		lastErr = err
+	}
+	return fmt.Errorf("synthesis failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string) error {
 	// Call AI with synthesis prompt, passing the JSON file as input
-	return ctx.executeAI([]string{synthesisInputPath}, "请基于以下 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile(), ctx.reportPath)
+	if err := ctx.executeAI([]string{synthesisInputPath}, "请基于以下 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile(), ctx.reportPath); err != nil {
+		return err
+	}
+
+	// 校验最终报告是否成功生成且不为空
+	info, err := os.Stat(ctx.reportPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("report file %s was not generated", ctx.reportPath)
+		}
+		return fmt.Errorf("failed to check report file: %w", err)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("generated report file is empty")
+	}
+
+	return nil
+}
+
+// cleanSynthesisTempFiles cleans up temporary files generated during a failed synthesis attempt.
+func cleanSynthesisTempFiles(reportPath string) {
+	os.Remove(reportPath)
+	os.Remove(reportPath + ".output.txt")
+	os.Remove(reportPath + ".debug.log")
 }
 
 // runPostProcess parses the AI output using the task-specific postprocess script

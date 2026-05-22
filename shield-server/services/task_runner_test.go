@@ -493,3 +493,195 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 	}
 }
 
+type MockSynthesisAIInvoker struct {
+	AnalysisCount  int
+	SynthesisCount int
+	FailSynthesisN int
+	WriteEmpty     bool
+}
+
+func (m *MockSynthesisAIInvoker) Name() string { return "mock_synthesis_ai" }
+func (m *MockSynthesisAIInvoker) Invoke(req AIRequest) error {
+	if strings.HasSuffix(req.OutputPath, ".json") {
+		m.AnalysisCount++
+		os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock summary"}`), 0644)
+		return nil
+	}
+
+	m.SynthesisCount++
+	if m.SynthesisCount <= m.FailSynthesisN {
+		return fmt.Errorf("simulated synthesis error %d", m.SynthesisCount)
+	}
+
+	if m.WriteEmpty {
+		os.WriteFile(req.OutputPath, []byte(""), 0644)
+		return nil
+	}
+
+	os.WriteFile(req.OutputPath, []byte("# Synthesis Success Report"), 0644)
+	return nil
+}
+
+func TestSynthesisFailureAndRetries(t *testing.T) {
+	// 1. Initialize isolated in-memory DB
+	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	models.DB = testDB
+	err = models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
+	if err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
+	}
+
+	// 2. Setup mock repository and git structure
+	tempDir, err := os.MkdirTemp("", "test-synthesis-repo-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoCodesPath := filepath.Join(tempDir, "git-source")
+	os.MkdirAll(repoCodesPath, 0755)
+
+	exec.Command("git", "-C", repoCodesPath, "init").Run()
+	os.WriteFile(filepath.Join(repoCodesPath, "file1.go"), []byte("package main"), 0644)
+	exec.Command("git", "-C", repoCodesPath, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", repoCodesPath, "config", "user.email", "test@test.com").Run()
+	exec.Command("git", "-C", repoCodesPath, "add", ".").Run()
+	exec.Command("git", "-C", repoCodesPath, "commit", "-m", "init").Run()
+
+	repo := models.Repository{
+		Name: "test-repo",
+		URL:  repoCodesPath,
+	}
+	models.DB.Create(&repo)
+
+	// Make sure storage config points to our tempDir
+	models.AppConfig.Storage.Root = tempDir
+
+	t.Run("synthesis eventually succeeds", func(t *testing.T) {
+		taskType := models.TaskType{
+			Name:        "code_review_eventual_success",
+			DisplayName: "代码检视",
+			EngineMode:  "single",
+			AIBackend:   "mock_synthesis_eventual_success_backend",
+		}
+		models.DB.Create(&taskType)
+
+		report := models.TaskReport{
+			RepoID:     repo.ID,
+			TaskTypeID: taskType.ID,
+			Status:     "running",
+		}
+		models.DB.Create(&report)
+
+		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 2}
+		RegisterAIInvoker(taskType.AIBackend, invoker)
+
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
+		if err != nil {
+			t.Fatalf("expected RunTaskSync to succeed eventually, got error: %v", err)
+		}
+
+		var updatedReport models.TaskReport
+		models.DB.First(&updatedReport, report.ID)
+		if updatedReport.Status != "success" {
+			t.Errorf("expected report status to be success, got: %s", updatedReport.Status)
+		}
+
+		if invoker.SynthesisCount != 3 {
+			t.Errorf("expected synthesis to be attempted 3 times, got %d", invoker.SynthesisCount)
+		}
+
+		content, err := os.ReadFile(updatedReport.ReportPath)
+		if err != nil {
+			t.Fatalf("failed to read report: %v", err)
+		}
+		if !strings.Contains(string(content), "# Synthesis Success Report") {
+			t.Errorf("expected report to contain success content, got: %s", string(content))
+		}
+	})
+
+	t.Run("synthesis all attempts fail", func(t *testing.T) {
+		taskType := models.TaskType{
+			Name:        "code_review_always_fail",
+			DisplayName: "代码检视",
+			EngineMode:  "single",
+			AIBackend:   "mock_synthesis_always_fail_backend",
+		}
+		models.DB.Create(&taskType)
+
+		report := models.TaskReport{
+			RepoID:     repo.ID,
+			TaskTypeID: taskType.ID,
+			Status:     "running",
+		}
+		models.DB.Create(&report)
+
+		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 5}
+		RegisterAIInvoker(taskType.AIBackend, invoker)
+
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
+		if err == nil {
+			t.Fatal("expected RunTaskSync to fail, got nil")
+		}
+
+		var updatedReport models.TaskReport
+		models.DB.First(&updatedReport, report.ID)
+		if updatedReport.Status != "failed" {
+			t.Errorf("expected report status to be failed, got: %s", updatedReport.Status)
+		}
+
+		if invoker.SynthesisCount != 4 {
+			t.Errorf("expected synthesis to be attempted 4 times (1 initial + 3 retries), got %d", invoker.SynthesisCount)
+		}
+
+		// Verify output.txt exists and contains the failure
+		outputPath := updatedReport.ReportPath + ".output.txt"
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("failed to read output.txt: %v", err)
+		}
+		if !strings.Contains(string(content), "[Code-Shield Error] AI execution failed: synthesis failed after 3 retries") {
+			t.Errorf("expected output.txt to contain synthesis error, got: %s", string(content))
+		}
+	})
+
+	t.Run("synthesis generates empty file", func(t *testing.T) {
+		taskType := models.TaskType{
+			Name:        "code_review_empty_file",
+			DisplayName: "代码检视",
+			EngineMode:  "single",
+			AIBackend:   "mock_synthesis_empty_file_backend",
+		}
+		models.DB.Create(&taskType)
+
+		report := models.TaskReport{
+			RepoID:     repo.ID,
+			TaskTypeID: taskType.ID,
+			Status:     "running",
+		}
+		models.DB.Create(&report)
+
+		invoker := &MockSynthesisAIInvoker{WriteEmpty: true}
+		RegisterAIInvoker(taskType.AIBackend, invoker)
+
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
+		if err == nil {
+			t.Fatal("expected RunTaskSync to fail, got nil")
+		}
+
+		var updatedReport models.TaskReport
+		models.DB.First(&updatedReport, report.ID)
+		if updatedReport.Status != "failed" {
+			t.Errorf("expected report status to be failed, got: %s", updatedReport.Status)
+		}
+
+		if invoker.SynthesisCount != 4 {
+			t.Errorf("expected synthesis to be attempted 4 times, got %d", invoker.SynthesisCount)
+		}
+	})
+}
+
+
