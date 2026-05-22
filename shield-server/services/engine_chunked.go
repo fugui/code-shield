@@ -486,8 +486,12 @@ func ResumeFailedChunks(reportID uint) error {
 
 	ctx.prepareOutputPaths()
 
-	// 4. 更新状态为 analyzing
-	updateTaskStatus(reportID, models.StatusAnalyzing)
+	// 4. 更新状态为 analyzing，并重置已处理分片数为已成功分片数，以便前端正确显示重试进度
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(map[string]interface{}{
+		"status":           models.StatusAnalyzing,
+		"processed_chunks": report.SuccessChunks,
+		"created_at":       time.Now(),
+	})
 
 	// 5. 同步代码
 	if err := ctx.prepareAndSync(ctx.repo.URL); err != nil {
@@ -552,6 +556,12 @@ func ResumeFailedChunks(reportID uint) error {
 		go func(chunk ChunkDetails, chunkIdx int) {
 			defer wg.Done()
 			defer func() { <-semaphore }()
+			defer func() {
+				// 原子性递增已处理分片数以更新恢复进度
+				models.DB.Model(&models.TaskReport{}).
+					Where("id = ?", reportID).
+					UpdateColumn("processed_chunks", gorm.Expr("processed_chunks + ?", 1))
+			}()
 
 			safeName := strings.ReplaceAll(chunk.ChunkName, "/", "-")
 			chunkCtx := &taskContext{
