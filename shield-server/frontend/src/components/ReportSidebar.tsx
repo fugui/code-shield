@@ -36,9 +36,10 @@ interface ReportSidebarProps {
   onClose: () => void;
   markdown: string;
   loading: boolean;
+  reportId?: number;
 }
 
-export default function ReportSidebar({ open, onClose, markdown, loading }: ReportSidebarProps) {
+export default function ReportSidebar({ open, onClose, markdown, loading, reportId }: ReportSidebarProps) {
   const markdownRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
@@ -76,6 +77,27 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadJson = async () => {
+    if (!reportId) return;
+    try {
+      const res = await fetch(`/api/tasks/${reportId}/synthesis`);
+      if (!res.ok) {
+        alert('无法获取问题记录文件，请确认该文件是否存在。');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${reportId}-synthesis.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download synthesis json:', err);
+      alert('下载文件时发生错误。');
+    }
+  };
+
   const showActions = !loading && !!markdown;
 
   return (
@@ -108,6 +130,18 @@ export default function ReportSidebar({ open, onClose, markdown, loading }: Repo
                   </svg>
                   下载 MD
                 </button>
+                {reportId && (
+                  <button
+                    onClick={handleDownloadJson}
+                    style={{ background: 'transparent', border: '1px solid #0284c7', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#0284c7', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                    title="下载全部问题记录 (JSON)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
+                    </svg>
+                    下载 JSON
+                  </button>
+                )}
               </>
             )}
             <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)' }}>&times;</button>
