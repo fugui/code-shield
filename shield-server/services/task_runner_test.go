@@ -184,34 +184,34 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 		t.Fatalf("failed to read report.json: %v", err)
 	}
 
-	var execReport ChunkExecutionReport
+	var execReport TaskSummaryReport
 	if err := json.Unmarshal(reportBytes, &execReport); err != nil {
 		t.Fatalf("failed to unmarshal report.json: %v", err)
 	}
 
-	if execReport.TotalChunks != 1 {
-		t.Errorf("expected 1 total chunk, got %d", execReport.TotalChunks)
+	if execReport.Analysis.TotalChunks != 1 {
+		t.Errorf("expected 1 total chunk, got %d", execReport.Analysis.TotalChunks)
 	}
-	if execReport.FailedChunks != 1 {
-		t.Errorf("expected 1 failed chunk, got %d", execReport.FailedChunks)
+	if execReport.Analysis.FailedChunks != 1 {
+		t.Errorf("expected 1 failed chunk, got %d", execReport.Analysis.FailedChunks)
 	}
-	if execReport.SuccessfulChunks != 0 {
-		t.Errorf("expected 0 successful chunks, got %d", execReport.SuccessfulChunks)
+	if execReport.Analysis.SuccessChunks != 0 {
+		t.Errorf("expected 0 successful chunks, got %d", execReport.Analysis.SuccessChunks)
 	}
-	if len(execReport.Chunks) != 1 {
-		t.Fatalf("expected 1 chunk detail entry, got %d", len(execReport.Chunks))
+	if len(execReport.Analysis.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk detail entry, got %d", len(execReport.Analysis.Chunks))
 	}
-	if execReport.Chunks[0].Status != "failed" {
-		t.Errorf("expected chunk status to be 'failed', got: %s", execReport.Chunks[0].Status)
+	if execReport.Analysis.Chunks[0].Status != "failed" {
+		t.Errorf("expected chunk status to be 'failed', got: %s", execReport.Analysis.Chunks[0].Status)
 	}
-	if execReport.Chunks[0].Attempts != 4 { // 1 initial + 3 retries = 4
-		t.Errorf("expected 4 attempts, got %d", execReport.Chunks[0].Attempts)
+	if execReport.Analysis.Chunks[0].Attempts != 4 { // 1 initial + 3 retries = 4
+		t.Errorf("expected 4 attempts, got %d", execReport.Analysis.Chunks[0].Attempts)
 	}
-	if execReport.Chunks[0].Retries != 0 { // 初始执行失败，恢复轮数应为 0
-		t.Errorf("expected 0 retries (recovery sessions), got %d", execReport.Chunks[0].Retries)
+	if execReport.Analysis.Chunks[0].Retries != 0 { // 初始执行失败，恢复轮数应为 0
+		t.Errorf("expected 0 retries (recovery sessions), got %d", execReport.Analysis.Chunks[0].Retries)
 	}
-	if !strings.Contains(execReport.Chunks[0].ErrorMessage, "simulated invoke error") {
-		t.Errorf("expected chunk error message to contain 'simulated invoke error', got: %s", execReport.Chunks[0].ErrorMessage)
+	if !strings.Contains(execReport.Analysis.Chunks[0].ErrorMessage, "simulated invoke error") {
+		t.Errorf("expected chunk error message to contain 'simulated invoke error', got: %s", execReport.Analysis.Chunks[0].ErrorMessage)
 	}
 }
 
@@ -430,19 +430,21 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 	})
 
 	// Pre-create the summary JSON containing a failed chunk with 4 attempts and 0 retries
-	initialReport := ChunkExecutionReport{
+	initialReport := TaskSummaryReport{
 		TaskID:      report.ID,
 		RepoName:    repo.Name,
 		TaskType:    taskType.Name,
-		TotalChunks: 1,
-		FailedChunks: 1,
-		Chunks: []ChunkDetails{
-			{
-				ChunkName: "root",
-				Files:     []string{"file1.go"},
-				Status:    "failed",
-				Attempts:  4,
-				Retries:   0,
+		Analysis: AnalysisSummary{
+			TotalChunks: 1,
+			FailedChunks: 1,
+			Chunks: []ChunkDetails{
+				{
+					ChunkName: "root",
+					Files:     []string{"file1.go"},
+					Status:    "failed",
+					Attempts:  4,
+					Retries:   0,
+				},
 			},
 		},
 	}
@@ -468,16 +470,16 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 		t.Fatalf("failed to read updated report.json: %v", err)
 	}
 
-	var updatedReport ChunkExecutionReport
+	var updatedReport TaskSummaryReport
 	if err := json.Unmarshal(updatedReportBytes, &updatedReport); err != nil {
 		t.Fatalf("failed to unmarshal updated report.json: %v", err)
 	}
 
-	if len(updatedReport.Chunks) != 1 {
-		t.Fatalf("expected 1 chunk detail, got %d", len(updatedReport.Chunks))
+	if len(updatedReport.Analysis.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk detail, got %d", len(updatedReport.Analysis.Chunks))
 	}
 
-	chunk := updatedReport.Chunks[0]
+	chunk := updatedReport.Analysis.Chunks[0]
 	if chunk.Status != "success" {
 		t.Errorf("expected chunk status to be success, got: %s", chunk.Status)
 	}
@@ -502,7 +504,7 @@ type MockSynthesisAIInvoker struct {
 
 func (m *MockSynthesisAIInvoker) Name() string { return "mock_synthesis_ai" }
 func (m *MockSynthesisAIInvoker) Invoke(req AIRequest) error {
-	if strings.HasSuffix(req.OutputPath, ".json") {
+	if strings.Contains(req.OutputPath, ".json") {
 		m.AnalysisCount++
 		os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock summary"}`), 0644)
 		return nil
