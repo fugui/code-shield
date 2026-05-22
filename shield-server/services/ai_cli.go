@@ -70,7 +70,7 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		PromptMsg:  repairMsg,
 		InputFiles: []string{jsonFilePath},
 		OutputPath: fixedPath,
-		TimeoutMin: 5,
+		TimeoutMin: 30,
 	}); err != nil {
 		return nil, fmt.Errorf("AI repair invocation failed: %w", err)
 	}
