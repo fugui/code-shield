@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"code-shield/models"
 
@@ -282,5 +283,78 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 	if !strings.Contains(string(content), "git operation failed") {
 		t.Errorf("expected output.txt to contain the git failure error, got: %s", string(content))
 	}
+}
+
+func TestPrepareOutputPaths(t *testing.T) {
+	// Setup models config
+	models.AppConfig.Storage.Root = "/tmp/code-shield-test"
+
+	repo := models.Repository{
+		Name: "foo/bar",
+	}
+	taskType := models.TaskType{
+		Name: "test_task",
+	}
+
+	t.Run("ReportPath is set", func(t *testing.T) {
+		createdAt, _ := time.Parse("2006-01-02", "2026-05-20")
+		report := models.TaskReport{
+			ID:         42,
+			ReportPath: "/tmp/code-shield-test/reports/test_task/2026-05-20/report-42-report-foo-bar.md",
+			CreatedAt:  createdAt,
+		}
+		ctx := &taskContext{
+			report:   report,
+			taskType: taskType,
+			repo:     repo,
+		}
+		ctx.prepareOutputPaths()
+		expectedJSON := "/tmp/code-shield-test/reports/test_task/2026-05-20/report-42-summary-foo-bar.json"
+		if ctx.reportPath != report.ReportPath {
+			t.Errorf("expected reportPath %q, got %q", report.ReportPath, ctx.reportPath)
+		}
+		if ctx.jsonPath != expectedJSON {
+			t.Errorf("expected jsonPath %q, got %q", expectedJSON, ctx.jsonPath)
+		}
+	})
+
+	t.Run("ReportPath is empty but CreatedAt is set", func(t *testing.T) {
+		createdAt, _ := time.Parse("2006-01-02", "2026-05-18")
+		report := models.TaskReport{
+			ID:        43,
+			CreatedAt: createdAt,
+		}
+		ctx := &taskContext{
+			report:   report,
+			taskType: taskType,
+			repo:     repo,
+		}
+		ctx.prepareOutputPaths()
+		expectedReport := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-report-foo-bar.md"
+		expectedJSON := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-summary-foo-bar.json"
+		if ctx.reportPath != expectedReport {
+			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.reportPath)
+		}
+		if ctx.jsonPath != expectedJSON {
+			t.Errorf("expected jsonPath %q, got %q", expectedJSON, ctx.jsonPath)
+		}
+	})
+
+	t.Run("Both are empty/default", func(t *testing.T) {
+		report := models.TaskReport{
+			ID: 44,
+		}
+		ctx := &taskContext{
+			report:   report,
+			taskType: taskType,
+			repo:     repo,
+		}
+		ctx.prepareOutputPaths()
+		today := time.Now().Format("2006-01-02")
+		expectedReport := filepath.Join(models.AppConfig.Storage.Root, "reports", taskType.Name, today, "report-44-report-foo-bar.md")
+		if ctx.reportPath != expectedReport {
+			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.reportPath)
+		}
+	})
 }
 
