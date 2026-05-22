@@ -134,16 +134,11 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 			findings, err := chunkCtx.executeAnalysis(chunkFiles)
 			chunkEndTime := time.Now()
 
-			retries := chunkCtx.Attempts - 1
-			if retries < 0 {
-				retries = 0
-			}
-
 			details := ChunkDetails{
 				ChunkName:       chunkName,
 				Files:           chunkFiles,
 				Attempts:        chunkCtx.Attempts,
-				Retries:         retries,
+				Retries:         0, // 初始执行时，恢复轮数为 0
 				StartTime:       chunkStartTime,
 				EndTime:         chunkEndTime,
 				DurationSeconds: chunkEndTime.Sub(chunkStartTime).Seconds(),
@@ -591,11 +586,10 @@ func ResumeFailedChunks(reportID uint) error {
 				detail.StartTime = chunkStartTime
 				detail.EndTime = chunkEndTime
 				detail.DurationSeconds = chunkEndTime.Sub(chunkStartTime).Seconds()
-				detail.Attempts = chunkCtx.Attempts
-				detail.Retries = chunkCtx.Attempts - 1
-				if detail.Retries < 0 {
-					detail.Retries = 0
-				}
+				// 累加历史尝试次数与本次恢复尝试次数
+				detail.Attempts = chunk.Attempts + chunkCtx.Attempts
+				// 累加恢复轮数（增加 1）
+				detail.Retries = chunk.Retries + 1
 
 				if err != nil {
 					detail.Status = "failed"
