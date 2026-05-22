@@ -452,33 +452,57 @@ function TaskOverviewTab() {
                   )}
                 </td>
                 <td>
-                  {item.latest_task_status === 'none' ? (
-                     <span style={{ color: '#aaa', fontSize: '0.875rem' }}>未执行</span>
-                  ) : (
-                    <span className={`badge ${
-                      item.latest_task_status === 'success' ? 'success' : 
-                      item.latest_task_status === 'failed' ? 'danger' : 
-                      item.latest_task_status === 'queued' ? '' : 
-                      (item.latest_task_status === 'running' || 
-                       item.latest_task_status === 'cloning' || 
-                       item.latest_task_status === 'pre_processing' || 
-                       item.latest_task_status === 'analyzing' || 
-                       item.latest_task_status === 'post_processing') ? 'warning' : 'info'
-                    }`}>
-                      {
-                        item.latest_task_status === 'success' ? '完成' : 
-                        item.latest_task_status === 'failed' ? '失败' : 
-                        item.latest_task_status === 'queued' ? '排队中' : 
-                        item.latest_task_status === 'running' ? '执行中' : 
-                        item.latest_task_status === 'skipped' ? '已跳过' : 
-                        item.latest_task_status === 'cloning' ? '克隆中' :
-                        item.latest_task_status === 'pre_processing' ? '检查中' :
-                        item.latest_task_status === 'analyzing' ? (item.total_chunks > 1 ? `分析中 (${item.processed_chunks}/${item.total_chunks})` : '分析中') :
-                        item.latest_task_status === 'post_processing' ? '处理中' :
-                        item.latest_task_status
-                      }
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {item.latest_task_status === 'none' ? (
+                       <span style={{ color: '#aaa', fontSize: '0.875rem' }}>未执行</span>
+                    ) : (
+                      <span className={`badge ${
+                        item.latest_task_status === 'success' ? 'success' : 
+                        item.latest_task_status === 'failed' ? 'danger' : 
+                        item.latest_task_status === 'queued' ? '' : 
+                        (item.latest_task_status === 'running' || 
+                         item.latest_task_status === 'cloning' || 
+                         item.latest_task_status === 'pre_processing' || 
+                         item.latest_task_status === 'analyzing' || 
+                         item.latest_task_status === 'post_processing') ? 'warning' : 'info'
+                      }`}>
+                        {
+                          item.latest_task_status === 'success' ? '完成' : 
+                          item.latest_task_status === 'failed' ? '失败' : 
+                          item.latest_task_status === 'queued' ? '排队中' : 
+                          item.latest_task_status === 'running' ? '执行中' : 
+                          item.latest_task_status === 'skipped' ? '已跳过' : 
+                          item.latest_task_status === 'cloning' ? '克隆中' :
+                          item.latest_task_status === 'pre_processing' ? '检查中' :
+                          item.latest_task_status === 'analyzing' ? (item.total_chunks > 1 ? `分析中 (${item.processed_chunks}/${item.total_chunks})` : '分析中') :
+                          item.latest_task_status === 'post_processing' ? '处理中' :
+                          item.latest_task_status
+                        }
+                      </span>
+                    )}
+                    {(item.latest_task_status === 'success' || item.latest_task_status === 'failed') && item.total_chunks > 0 && (() => {
+                      const success = item.success_chunks ?? 0;
+                      const total = item.total_chunks;
+                      const allSuccess = success === total;
+                      return (
+                        <span 
+                          style={{
+                            display: 'inline-block',
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: allSuccess ? 'rgba(34, 197, 94, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                            color: allSuccess ? '#16a34a' : '#d97706',
+                            border: `1px solid ${allSuccess ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)'}`,
+                          }}
+                          title={`分片进度：成功 ${success} / 总数 ${total}`}
+                        >
+                          {success}/{total}
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </td>
                 <td>
                   {item.latest_task_status === 'success' ? (
@@ -510,22 +534,24 @@ function TaskOverviewTab() {
                               <rect x="2" y="4" width="20" height="16" rx="2"></rect><polyline points="2,4 12,13 22,4"></polyline>
                             </svg>
                           </button>
-                          <button
-                            onClick={() => handleResume(item.latest_task_id)}
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#f59e0b' }}
-                            title="恢复：重试失败的分片并重新生成报告"
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="1 4 1 10 7 10"></polyline>
-                              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                            </svg>
-                          </button>
+                          {item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks && (
+                            <button
+                              onClick={() => handleResume(item.latest_task_id)}
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#f59e0b' }}
+                              title="恢复：重试失败的分片并重新生成报告"
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="1 4 1 10 7 10"></polyline>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                              </svg>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
-                  ) : item.latest_task_status === 'failed' && item.latest_task_id ? (
+                  ) : item.latest_task_status === 'failed' && item.latest_task_id && item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks ? (
                     <button
                       onClick={() => handleResume(item.latest_task_id)}
                       style={{ background: 'transparent', border: '1px solid #f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#f59e0b', fontSize: '0.8rem' }}
