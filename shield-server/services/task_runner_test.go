@@ -74,6 +74,7 @@ func (m *MockAIInvoker) Invoke(req AIRequest) error {
 	if m.FailInvoke {
 		return fmt.Errorf("simulated invoke error")
 	}
+	os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock summary"}`), 0644)
 	return nil
 }
 
@@ -206,8 +207,8 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 	if execReport.Chunks[0].Attempts != 4 { // 1 initial + 3 retries = 4
 		t.Errorf("expected 4 attempts, got %d", execReport.Chunks[0].Attempts)
 	}
-	if execReport.Chunks[0].Retries != 3 {
-		t.Errorf("expected 3 retries, got %d", execReport.Chunks[0].Retries)
+	if execReport.Chunks[0].Retries != 0 { // 初始执行失败，恢复轮数应为 0
+		t.Errorf("expected 0 retries (recovery sessions), got %d", execReport.Chunks[0].Retries)
 	}
 	if !strings.Contains(execReport.Chunks[0].ErrorMessage, "simulated invoke error") {
 		t.Errorf("expected chunk error message to contain 'simulated invoke error', got: %s", execReport.Chunks[0].ErrorMessage)
@@ -356,5 +357,139 @@ func TestPrepareOutputPaths(t *testing.T) {
 			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.reportPath)
 		}
 	})
+}
+
+func TestResumeFailedChunksCumulative(t *testing.T) {
+	// 1. Initialize isolated in-memory DB
+	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	models.DB = testDB
+	err = models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
+	if err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
+	}
+
+	// 2. Register mock success AI invoker
+	mockInvoker := &MockAIInvoker{FailInvoke: false}
+	RegisterAIInvoker("mock_success_backend", mockInvoker)
+
+	// 3. Setup mock repository and git structure
+	tempDir, err := os.MkdirTemp("", "test-resume-repo-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoCodesPath := filepath.Join(tempDir, "git-source")
+	os.MkdirAll(repoCodesPath, 0755)
+
+	exec.Command("git", "-C", repoCodesPath, "init").Run()
+	os.WriteFile(filepath.Join(repoCodesPath, "file1.go"), []byte("package main"), 0644)
+	exec.Command("git", "-C", repoCodesPath, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", repoCodesPath, "config", "user.email", "test@test.com").Run()
+	exec.Command("git", "-C", repoCodesPath, "add", ".").Run()
+	exec.Command("git", "-C", repoCodesPath, "commit", "-m", "init").Run()
+
+	// 4. Setup mock models in DB
+	repo := models.Repository{
+		Name: "test-repo",
+		URL:  repoCodesPath,
+	}
+	models.DB.Create(&repo)
+
+	taskType := models.TaskType{
+		Name:        "code_review",
+		DisplayName: "代码检视",
+		EngineMode:  "chunked",
+		AIBackend:   "mock_success_backend",
+	}
+	models.DB.Create(&taskType)
+
+	// Storage config
+	models.AppConfig.Storage.Root = tempDir
+
+	report := models.TaskReport{
+		RepoID:     repo.ID,
+		TaskTypeID: taskType.ID,
+		Status:     "failed",
+	}
+	models.DB.Create(&report)
+
+	// Mock the JSON report path and content
+	reportsDir := filepath.Join(tempDir, "reports", taskType.Name, time.Now().Format("2006-01-02"))
+	os.MkdirAll(reportsDir, 0755)
+
+	reportPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-report-test-repo.md", report.ID))
+	jsonPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-test-repo.json", report.ID))
+
+	// Update DB to have these paths
+	models.DB.Model(&report).Updates(map[string]interface{}{
+		"report_path": reportPath,
+	})
+
+	// Pre-create the summary JSON containing a failed chunk with 4 attempts and 0 retries
+	initialReport := ChunkExecutionReport{
+		TaskID:      report.ID,
+		RepoName:    repo.Name,
+		TaskType:    taskType.Name,
+		TotalChunks: 1,
+		FailedChunks: 1,
+		Chunks: []ChunkDetails{
+			{
+				ChunkName: "root",
+				Files:     []string{"file1.go"},
+				Status:    "failed",
+				Attempts:  4,
+				Retries:   0,
+			},
+		},
+	}
+	reportData, _ := json.MarshalIndent(initialReport, "", "  ")
+	os.WriteFile(jsonPath, reportData, 0644)
+
+	// Also make sure we have a TaskExecutionLog
+	execLog := models.TaskExecutionLog{
+		TaskReportID: &report.ID,
+		Status:       "failed",
+	}
+	models.DB.Create(&execLog)
+
+	// 5. Run ResumeFailedChunks
+	err = ResumeFailedChunks(report.ID)
+	if err != nil {
+		t.Fatalf("ResumeFailedChunks failed: %v", err)
+	}
+
+	// 6. Verify that summary.json was updated with accumulated values
+	updatedReportBytes, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("failed to read updated report.json: %v", err)
+	}
+
+	var updatedReport ChunkExecutionReport
+	if err := json.Unmarshal(updatedReportBytes, &updatedReport); err != nil {
+		t.Fatalf("failed to unmarshal updated report.json: %v", err)
+	}
+
+	if len(updatedReport.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk detail, got %d", len(updatedReport.Chunks))
+	}
+
+	chunk := updatedReport.Chunks[0]
+	if chunk.Status != "success" {
+		t.Errorf("expected chunk status to be success, got: %s", chunk.Status)
+	}
+
+	// 4 previous attempts + 1 current successful attempt = 5
+	if chunk.Attempts != 5 {
+		t.Errorf("expected cumulative attempts to be 5, got %d", chunk.Attempts)
+	}
+
+	// 0 previous retries + 1 current recovery run = 1
+	if chunk.Retries != 1 {
+		t.Errorf("expected cumulative retries to be 1, got %d", chunk.Retries)
+	}
 }
 
