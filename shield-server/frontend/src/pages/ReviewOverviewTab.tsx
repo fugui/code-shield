@@ -484,6 +484,7 @@ function TaskOverviewTab() {
                       const success = item.success_chunks ?? 0;
                       const total = item.total_chunks;
                       const allSuccess = success === total;
+                      if (allSuccess) return null;
                       return (
                         <span 
                           style={{
@@ -492,9 +493,9 @@ function TaskOverviewTab() {
                             borderRadius: '4px',
                             fontSize: '0.75rem',
                             fontWeight: 600,
-                            background: allSuccess ? 'rgba(34, 197, 94, 0.08)' : 'rgba(245, 158, 11, 0.08)',
-                            color: allSuccess ? '#16a34a' : '#d97706',
-                            border: `1px solid ${allSuccess ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)'}`,
+                            background: 'rgba(245, 158, 11, 0.08)',
+                            color: '#d97706',
+                            border: '1px solid rgba(245, 158, 11, 0.15)',
                           }}
                           title={`分片进度：成功 ${success} / 总数 ${total}`}
                         >
