@@ -25,33 +25,6 @@ type ChunkConfig struct {
 	Concurrency int `json:"concurrency"`
 }
 
-// ChunkDetails records the details of a single chunk execution.
-type ChunkDetails struct {
-	ChunkName       string    `json:"chunk_name"`
-	Files           []string  `json:"files"`
-	Status          string    `json:"status"` // "success" or "failed"
-	Attempts        int       `json:"attempts"`
-	Retries         int       `json:"retries"`
-	StartTime       time.Time `json:"start_time"`
-	EndTime         time.Time `json:"end_time"`
-	DurationSeconds float64   `json:"duration_seconds"`
-	ErrorMessage    string    `json:"error_message,omitempty"`
-}
-
-// ChunkExecutionReport defines the overall structure of the execution report.
-type ChunkExecutionReport struct {
-	TaskID           uint           `json:"task_id"`
-	RepoName         string         `json:"repo_name"`
-	TaskType         string         `json:"task_type"`
-	TotalChunks      int            `json:"total_chunks"`
-	SuccessfulChunks int            `json:"successful_chunks"`
-	FailedChunks     int            `json:"failed_chunks"`
-	StartTime        time.Time      `json:"start_time"`
-	EndTime          time.Time      `json:"end_time"`
-	DurationSeconds  float64        `json:"duration_seconds"`
-	Chunks           []ChunkDetails `json:"chunks"`
-}
-
 // ChunkedEngine 将代码仓按目录结构拆分成多个分片，逐个提交给 AI 分析后汇总。
 type ChunkedEngine struct{}
 
@@ -181,29 +154,24 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// 记录成功分片数
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("success_chunks", successfulChunks)
 
-	executionReport := ChunkExecutionReport{
-		TaskID:           ctx.report.ID,
-		RepoName:         ctx.repo.Name,
-		TaskType:         ctx.taskType.Name,
-		TotalChunks:      totalChunks,
-		SuccessfulChunks: successfulChunks,
-		FailedChunks:     failedChunks,
-		StartTime:        overallStartTime,
-		EndTime:          overallEndTime,
-		DurationSeconds:  overallEndTime.Sub(overallStartTime).Seconds(),
-		Chunks:           chunkDetailsList,
+	// Populate analysis metrics on Summary
+	ctx.Summary.Analysis.StartTime = overallStartTime
+	ctx.Summary.Analysis.EndTime = overallEndTime
+	ctx.Summary.Analysis.DurationSeconds = overallEndTime.Sub(overallStartTime).Seconds()
+	ctx.Summary.Analysis.TotalChunks = totalChunks
+	ctx.Summary.Analysis.SuccessChunks = successfulChunks
+	ctx.Summary.Analysis.FailedChunks = failedChunks
+	ctx.Summary.Analysis.TotalFindings = len(allFindings)
+	ctx.Summary.Analysis.Chunks = chunkDetailsList
+
+	if failedChunks > 0 {
+		ctx.Summary.Analysis.Status = "failed"
+	} else {
+		ctx.Summary.Analysis.Status = "success"
 	}
 
-	reportData, marshalErr := json.MarshalIndent(executionReport, "", "  ")
-	if marshalErr == nil {
-		if writeErr := os.WriteFile(ctx.jsonPath, reportData, 0644); writeErr != nil {
-			log.Printf("[ChunkedEngine] Failed to write chunk execution report to %s: %v\n", ctx.jsonPath, writeErr)
-		} else {
-			log.Printf("[ChunkedEngine] Successfully saved chunk execution report to %s\n", ctx.jsonPath)
-		}
-	} else {
-		log.Printf("[ChunkedEngine] Failed to marshal execution report: %v\n", marshalErr)
-	}
+	// Save task summary report
+	ctx.writeSummaryReport()
 
 	if len(chunkErrors) > 0 {
 		aggregatedErr := fmt.Errorf("chunk analysis phase failed: %s", strings.Join(chunkErrors, "; "))
@@ -502,16 +470,17 @@ func ResumeFailedChunks(reportID uint) error {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	var execReport ChunkExecutionReport
-	if err := json.Unmarshal(summaryData, &execReport); err != nil {
-		errMsg := fmt.Sprintf("failed to parse chunk summary JSON: %v", err)
+	var taskSummary TaskSummaryReport
+	if err := json.Unmarshal(summaryData, &taskSummary); err != nil {
+		errMsg := fmt.Sprintf("failed to parse task summary JSON: %v", err)
 		ctx.markFailed(errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
+	ctx.Summary = taskSummary
 
 	// 7. 提取失败的 chunk
 	var failedChunks []ChunkDetails
-	for _, chunk := range execReport.Chunks {
+	for _, chunk := range ctx.Summary.Analysis.Chunks {
 		if chunk.Status == "failed" {
 			failedChunks = append(failedChunks, chunk)
 		}
@@ -540,8 +509,8 @@ func ResumeFailedChunks(reportID uint) error {
 
 	// 更新 summary 中的 chunk 状态（用于追踪结果）
 	chunkStatusMap := make(map[string]*ChunkDetails)
-	for i := range execReport.Chunks {
-		chunkStatusMap[execReport.Chunks[i].ChunkName] = &execReport.Chunks[i]
+	for i := range ctx.Summary.Analysis.Chunks {
+		chunkStatusMap[ctx.Summary.Analysis.Chunks[i].ChunkName] = &ctx.Summary.Analysis.Chunks[i]
 	}
 
 	for idx, failedChunk := range failedChunks {
@@ -619,24 +588,29 @@ func ResumeFailedChunks(reportID uint) error {
 	// 10. 更新 summary JSON
 	successCount := 0
 	failCount := 0
-	for _, chunk := range execReport.Chunks {
+	for _, chunk := range ctx.Summary.Analysis.Chunks {
 		if chunk.Status == "success" {
 			successCount++
 		} else {
 			failCount++
 		}
 	}
-	execReport.SuccessfulChunks = successCount
-	execReport.FailedChunks = failCount
-	execReport.EndTime = time.Now()
-	execReport.DurationSeconds = execReport.EndTime.Sub(execReport.StartTime).Seconds()
+	ctx.Summary.Analysis.SuccessChunks = successCount
+	ctx.Summary.Analysis.FailedChunks = failCount
+	ctx.Summary.Analysis.EndTime = time.Now()
+	ctx.Summary.Analysis.DurationSeconds = ctx.Summary.Analysis.EndTime.Sub(ctx.Summary.Analysis.StartTime).Seconds()
+
+	if failCount > 0 {
+		ctx.Summary.Analysis.Status = "failed"
+	} else {
+		ctx.Summary.Analysis.Status = "success"
+	}
 
 	// 更新数据库中的 success_chunks
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Update("success_chunks", successCount)
 
-	if reportData, err := json.MarshalIndent(execReport, "", "  "); err == nil {
-		os.WriteFile(ctx.jsonPath, reportData, 0644)
-	}
+	// 保存中间 task summary report
+	ctx.writeSummaryReport()
 
 	// 11. 判断是否还有失败的 chunk
 	if len(chunkErrors) > 0 {

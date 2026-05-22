@@ -24,6 +24,56 @@ type TaskResult struct {
 	Metrics map[string]int `json:"metrics"`
 }
 
+// ChunkDetails records execution details of a single chunk (or single repo run).
+type ChunkDetails struct {
+	ChunkName       string    `json:"chunk_name"`
+	Files           []string  `json:"files,omitempty"`
+	Status          string    `json:"status"` // "success" or "failed"
+	Attempts        int       `json:"attempts"`
+	Retries         int       `json:"retries"`
+	StartTime       time.Time `json:"start_time"`
+	EndTime         time.Time `json:"end_time"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// AnalysisSummary holds metrics and details for the Analysis Phase.
+type AnalysisSummary struct {
+	Status          string         `json:"status"` // "success" or "failed"
+	StartTime       time.Time      `json:"start_time"`
+	EndTime         time.Time      `json:"end_time"`
+	DurationSeconds float64        `json:"duration_seconds"`
+	TotalChunks     int            `json:"total_chunks"`
+	SuccessChunks   int            `json:"success_chunks"`
+	FailedChunks    int            `json:"failed_chunks"`
+	TotalFindings   int            `json:"total_findings"`
+	Chunks          []ChunkDetails `json:"chunks"`
+}
+
+// SynthesisSummary holds metrics and details for the Synthesis Phase.
+type SynthesisSummary struct {
+	Status          string    `json:"status"` // "success" or "failed"
+	Attempts        int       `json:"attempts"`
+	StartTime       time.Time `json:"start_time"`
+	EndTime         time.Time `json:"end_time"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// TaskSummaryReport defines the unified execution summary for the entire task.
+type TaskSummaryReport struct {
+	TaskID          uint             `json:"task_id"`
+	RepoName        string           `json:"repo_name"`
+	TaskType        string           `json:"task_type"`
+	EngineMode      string           `json:"engine_mode"`
+	Status          string           `json:"status"` // "success" or "failed"
+	StartTime       time.Time        `json:"start_time"`
+	EndTime         time.Time        `json:"end_time"`
+	DurationSeconds float64          `json:"duration_seconds"`
+	Analysis        AnalysisSummary  `json:"analysis"`
+	Synthesis       SynthesisSummary `json:"synthesis"`
+}
+
 // taskContext holds all necessary data for a single task execution run
 type taskContext struct {
 	ctx        context.Context
@@ -37,6 +87,7 @@ type taskContext struct {
 	autoNotify bool
 	runParams  models.RunParams // 合并后的运行参数
 	Attempts   int              // 实际尝试次数
+	Summary    TaskSummaryReport
 }
 
 var (
@@ -84,6 +135,14 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	// 1. Initialize and load data
 	if err := ctx.load(reportID, taskTypeID); err != nil {
 		return err
+	}
+
+	ctx.Summary = TaskSummaryReport{
+		TaskID:     reportID,
+		RepoName:   ctx.repo.Name,
+		TaskType:   ctx.taskType.Name,
+		EngineMode: ctx.taskType.EngineMode,
+		StartTime:  time.Now(),
 	}
 
 	taskCtx, cancel := context.WithCancel(context.Background())
@@ -460,13 +519,14 @@ func cleanAnalysisTempFiles(jsonPath string) {
 	os.Remove(basePath + ".fixed" + ext)
 	// 上次的 JSON 输出本身（避免新 attempt 读到旧数据）
 	os.Remove(jsonPath)
+	os.Remove(jsonPath + ".raw")
 	// AI 工具有时会创建同名目录（如 chunk-fle-4/ 代替 chunk-fle-4.json），一并清除
 	os.RemoveAll(basePath)
 }
 
 // recoverAIOutput 处理 AI 工具（opencode/claude）将输出文件写入同名目录而非直接创建文件的情况。
 // 例如：AI 被要求写入 chunk-fle-4.json，但实际创建了 chunk-fle-4/chunk-fle-4.json。
-// 此函数检测这种情况，将文件移动到正确位置，并清理 AI 创建的垃圾目录。
+// 此函数检测这种情况，将文件移动 to 正确位置，并清理 AI 创建的垃圾目录。
 func recoverAIOutput(expectedPath string) {
 	// 如果预期文件已经存在，无需恢复
 	if info, err := os.Stat(expectedPath); err == nil && !info.IsDir() {
@@ -524,16 +584,17 @@ func recoverAIOutput(expectedPath string) {
 // 注意：此函数只负责调用 AI、解析 JSON 并返回 findings 结构体，不写入数据库。
 // 数据库持久化由调用方 executeAnalysis 在确认最终成功后统一执行。
 func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.AnalysisFinding, error) {
-	if err := ctx.executeAI(fileList, "请以纯 JSON 格式（强调：不要输出 Markdown）输出分析结果", ctx.taskType.AnalysisPromptFile(), ctx.jsonPath); err != nil {
+	rawPath := ctx.jsonPath + ".raw"
+	if err := ctx.executeAI(fileList, "请以纯 JSON 格式（强调：不要输出 Markdown）输出分析结果", ctx.taskType.AnalysisPromptFile(), rawPath); err != nil {
 		return nil, err
 	}
 
 	// AI 工具有时会将输出写入同名目录而非文件（如 chunk-fle-4/ 代替 chunk-fle-4.json），
 	// 在此自动检测并恢复到正确路径。
-	recoverAIOutput(ctx.jsonPath)
+	recoverAIOutput(rawPath)
 
 	// Parse the AI JSON output from the report file
-	rawJSON, err := os.ReadFile(ctx.jsonPath)
+	rawJSON, err := os.ReadFile(rawPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read analysis output: %w", err)
 	}
@@ -551,7 +612,7 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 		if ctx.runParams.AIBackend != nil {
 			backend = *ctx.runParams.AIBackend
 		}
-		repairedJSON, repairErr := RepairJSON(ctx.codesPath, ctx.jsonPath, backend)
+		repairedJSON, repairErr := RepairJSON(ctx.codesPath, rawPath, backend)
 		if repairErr != nil {
 			log.Printf("[Error] AI JSON repair failed: %v\n", repairErr)
 			return nil, fmt.Errorf("AI JSON repair failed: %w", repairErr)
@@ -561,8 +622,8 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 			return nil, fmt.Errorf("repaired JSON still invalid: %w", err)
 		}
 		log.Println("[TaskRunner] AI JSON repair successful")
-		// Overwrite the json file with the repaired version for downstream use
-		os.WriteFile(ctx.jsonPath, repairedJSON, 0644)
+		// Overwrite the raw file with the repaired version for downstream use
+		os.WriteFile(rawPath, repairedJSON, 0644)
 	}
 
 	// Convert to model objects (不写入数据库，由调用方统一处理)
@@ -598,9 +659,11 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
 
+	synthStart := time.Now()
 	var lastErr error
 	maxRetries := 3
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		ctx.Summary.Synthesis.Attempts = attempt + 1
 		if attempt > 0 {
 			log.Printf("[TaskRunner] executeSynthesis failed (attempt %d/%d) for ReportID %d, retrying in %ds: %v\n",
 				attempt, maxRetries, ctx.report.ID, attempt*2, lastErr)
@@ -613,10 +676,20 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		err := ctx.executeSynthesisOnce(synthesisInputPath)
 		if err == nil {
 			log.Printf("[TaskRunner] Synthesis phase complete for ReportID %d\n", ctx.report.ID)
+			ctx.Summary.Synthesis.Status = "success"
+			ctx.Summary.Synthesis.StartTime = synthStart
+			ctx.Summary.Synthesis.EndTime = time.Now()
+			ctx.Summary.Synthesis.DurationSeconds = ctx.Summary.Synthesis.EndTime.Sub(synthStart).Seconds()
 			return nil
 		}
 		lastErr = err
 	}
+
+	ctx.Summary.Synthesis.Status = "failed"
+	ctx.Summary.Synthesis.StartTime = synthStart
+	ctx.Summary.Synthesis.EndTime = time.Now()
+	ctx.Summary.Synthesis.DurationSeconds = ctx.Summary.Synthesis.EndTime.Sub(synthStart).Seconds()
+	ctx.Summary.Synthesis.ErrorMessage = lastErr.Error()
 	return fmt.Errorf("synthesis failed after %d retries: %w", maxRetries, lastErr)
 }
 
@@ -673,6 +746,34 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	return result
 }
 
+func (ctx *taskContext) writeSummaryReport() {
+	if ctx.jsonPath == "" {
+		return
+	}
+	ctx.Summary.EndTime = time.Now()
+	ctx.Summary.DurationSeconds = ctx.Summary.EndTime.Sub(ctx.Summary.StartTime).Seconds()
+
+	if ctx.Summary.Status == "" {
+		if ctx.Summary.Analysis.Status == "failed" || ctx.Summary.Synthesis.Status == "failed" {
+			ctx.Summary.Status = "failed"
+		} else {
+			ctx.Summary.Status = "success"
+		}
+	}
+
+	reportData, err := json.MarshalIndent(ctx.Summary, "", "  ")
+	if err != nil {
+		log.Printf("[TaskRunner] Failed to marshal task summary report: %v\n", err)
+		return
+	}
+
+	if err := os.WriteFile(ctx.jsonPath, reportData, 0644); err != nil {
+		log.Printf("[TaskRunner] Failed to write task summary report to %s: %v\n", ctx.jsonPath, err)
+	} else {
+		log.Printf("[TaskRunner] Successfully saved unified task summary report to %s\n", ctx.jsonPath)
+	}
+}
+
 // finalize saves the result to DB and triggers notification
 func (ctx *taskContext) finalize(result TaskResult) error {
 	metricsJSON, _ := json.Marshal(result.Metrics)
@@ -685,6 +786,9 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 		"metrics":     string(metricsJSON),
 		"created_at":  time.Now(),
 	}).Error
+
+	ctx.Summary.Status = "success"
+	ctx.writeSummaryReport()
 
 	if ctx.autoNotify && result.Score >= ctx.taskType.NotifyThreshold {
 		if content, err := os.ReadFile(ctx.reportPath); err == nil {
@@ -705,6 +809,12 @@ func (ctx *taskContext) markFailed(errMsg string) {
 		updates["report_path"] = ctx.reportPath
 	}
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(updates)
+
+	ctx.Summary.Status = "failed"
+	if ctx.Summary.Analysis.Status == "" {
+		ctx.Summary.Analysis.Status = "failed"
+	}
+	ctx.writeSummaryReport()
 
 	if ctx.reportPath != "" {
 		cliOutputPath := ctx.reportPath + ".output.txt"
