@@ -220,7 +220,19 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 // prepareOutputPaths creates the output directory and sets reportPath/jsonPath on the main report context.
 // Note: ChunkedEngine constructs paths for chunk sub-reports independently.
 func (ctx *taskContext) prepareOutputPaths() {
+	if ctx.report.ReportPath != "" {
+		reportsDir := filepath.Dir(ctx.report.ReportPath)
+		os.MkdirAll(reportsDir, 0755)
+		ctx.reportPath = ctx.report.ReportPath
+		safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
+		ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-%s.json", ctx.report.ID, safeRepoName))
+		return
+	}
+
 	currentDate := time.Now().Format("2006-01-02")
+	if !ctx.report.CreatedAt.IsZero() {
+		currentDate = ctx.report.CreatedAt.Format("2006-01-02")
+	}
 	reportsDir := filepath.Join(models.AppConfig.Storage.Root, "reports", ctx.taskType.Name, currentDate)
 	os.MkdirAll(reportsDir, 0755)
 
