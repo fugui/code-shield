@@ -47,6 +47,7 @@ function TaskOverviewTab() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
+  const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
 
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -203,6 +204,7 @@ function TaskOverviewTab() {
     setSidebarOpen(true);
     setLoadingMarkdown(true);
     setCurrentMarkdown('');
+    setCurrentReportId(reportId);
     try {
       const res = await fetch(`/api/tasks/${reportId}/report`);
       if (res.ok) {
@@ -609,7 +611,7 @@ function TaskOverviewTab() {
         </div>
       )}
 
-      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} />
+      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
     </div>
   );
 }

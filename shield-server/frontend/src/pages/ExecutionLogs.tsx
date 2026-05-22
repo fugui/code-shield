@@ -8,6 +8,7 @@ function ExecutionLogs() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMarkdown, setCurrentMarkdown] = useState('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
+  const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
   const { showToast } = useToast();
 
   const fetchLogs = async () => {
@@ -39,6 +40,7 @@ function ExecutionLogs() {
     setSidebarOpen(true);
     setLoadingMarkdown(true);
     setCurrentMarkdown('');
+    setCurrentReportId(reportId);
     try {
       const res = await fetch(`/api/tasks/${reportId}/report`);
       if (res.ok) {
@@ -288,7 +290,7 @@ function ExecutionLogs() {
         </table>
       </div>
 
-      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} />
+      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
     </div>
   );
 }

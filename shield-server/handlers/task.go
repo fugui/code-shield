@@ -3,10 +3,13 @@ package handlers
 import (
 	"code-shield/models"
 	"code-shield/services"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -81,6 +84,32 @@ func GetTaskReportMarkdown(c *gin.Context) {
 	}
 	c.String(http.StatusOK, string(content))
 }
+
+// GetTaskReportSynthesisJSON returns the synthesis JSON file contents
+func GetTaskReportSynthesisJSON(c *gin.Context) {
+	id := c.Param("id")
+	var report models.TaskReport
+	if err := models.DB.Preload("Repo").First(&report, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
+		return
+	}
+	if report.ReportPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Report path is missing"})
+		return
+	}
+
+	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
+	synthesisInputPath := filepath.Join(filepath.Dir(report.ReportPath), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
+
+	content, err := os.ReadFile(synthesisInputPath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Synthesis JSON file not found"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=report-%d-synthesis-%s.json", report.ID, safeRepoName))
+	c.Data(http.StatusOK, "application/json; charset=utf-8", content)
+}
+
 
 // GetAnalysisFindings returns structured analysis findings for a task report
 func GetAnalysisFindings(c *gin.Context) {
