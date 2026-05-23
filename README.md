@@ -103,6 +103,69 @@ make run
 
 ---
 
+## 🌐 子路径（Sub-path）部署
+
+当系统需要运行在非根域名的子路径下（例如 `http://www.cndev.net/shield/`）时，需要对前端进行基准路径（Base Path）打包，并配合反向代理（如 Nginx）进行请求转发。
+
+系统已原生支持子路径配置，具体构建与部署步骤如下：
+
+### 1. 前端子路径打包
+前端使用 Vite 进行构建，支持通过环境变量 `VITE_BASE_PATH` 注入子路径。
+
+在构建系统时，在命令前加上环境变量：
+```bash
+# 在根目录使用 Make 一键构建（注入子路径环境变量）
+VITE_BASE_PATH=/shield/ make build
+
+# 或者手动进入前端目录进行构建
+cd shield-server/frontend
+VITE_BASE_PATH=/shield/ npm run build
+```
+
+> [!NOTE]
+> - 注入的 `VITE_BASE_PATH` 必须以斜杠 `/` 开头和结尾（例如 `/shield/`）。
+> - 这一步会使前端的静态资源引用路径（如 `/shield/assets/...`）以及 React Router 的 `basename` 均自动适配为该子路径。
+
+### 2. Nginx 反向代理配置
+在 Nginx 中配置反向代理，将子路径流量正确分发。静态文件可由 Nginx 直接高效托管，API 请求则转发给后端的 Go 服务。
+
+示例如下：
+
+```nginx
+server {
+    listen 80;
+    server_name www.cndev.net;
+
+    # 1. 托管前端静态资源
+    location /shield/ {
+        # 指向打包生成的 dist 目录绝对路径
+        alias /path/to/code-shield/shield-server/frontend/dist/;
+        index index.html;
+        try_files $uri $uri/ /shield/index.html;
+    }
+
+    # 2. 转发 API 请求至 Go 后端服务 (Gin)
+    location /shield/api/ {
+        # 注意：末尾的斜杠 '/' 非常重要，Nginx 会自动在转发时剥离掉 '/shield/api/' 部分并映射到 '/api/'
+        # 从而使后端 Gin 服务可以直接在常规根路径上处理 '/api/...' 请求，无需修改后端代码
+        proxy_pass http://127.0.0.1:8080/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### 3. 启动后端服务
+后端服务无需做任何特殊修改，按照常规配置启动即可：
+```bash
+make run
+```
+后端服务默认监听 `:8080`，Nginx 会将 `http://www.cndev.net/shield/api/` 的请求平滑转发至 `http://127.0.0.1:8080/api/`。
+
+---
+
 ## 📖 核心使用指南
 
 ### 1. 配置任务类型 (Task Types)
