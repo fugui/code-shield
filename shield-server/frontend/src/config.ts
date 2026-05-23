@@ -16,3 +16,8 @@ export const BASE_PATH = raw.endsWith('/') ? raw.slice(0, -1) : raw;
 export function apiUrl(path: string): string {
   return BASE_PATH + path;
 }
+
+/**
+ * Key used for storing the authentication token in localStorage.
+ */
+export const AUTH_TOKEN_KEY = 'code_shield_token';

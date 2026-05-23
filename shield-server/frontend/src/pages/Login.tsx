@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiUrl } from '../config';
+import { apiUrl, AUTH_TOKEN_KEY } from '../config';
 
 function Login() {
   const [username, setUsername] = useState('');
@@ -22,7 +22,7 @@ function Login() {
     .then(async res => {
       const data = await res.json();
       if (res.ok) {
-        localStorage.setItem('token', data.token);
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
         window.dispatchEvent(new Event('auth-change'));
         navigate('/');
       } else {
