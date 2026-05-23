@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { BASE_PATH, apiUrl } from './config';
+import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY } from './config';
 import TaskManagement from './pages/CodeReviewManagement';
 import RepoTaskHistory from './pages/RepoReviewHistory';
 import KeyIssues from './pages/KeyIssues';
@@ -14,7 +14,7 @@ import { ToastProvider, useToast } from './components/Toast';
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   let [resource, config] = args;
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
   const url = resource.toString();
 
   // Auto-prepend BASE_PATH for absolute /api calls
@@ -39,14 +39,14 @@ window.fetch = async (...args) => {
   if (res.ok && resource.toString().includes('/api')) {
     const newToken = res.headers.get('X-Refresh-Token');
     if (newToken) {
-      localStorage.setItem('token', newToken);
+      localStorage.setItem(AUTH_TOKEN_KEY, newToken);
       window.dispatchEvent(new Event('auth-change'));
     }
   }
 
   // Intercept 401 to handle expired tokens globally (only for system /api calls)
   if (res.status === 401 && resource.toString().includes('/api')) {
-    localStorage.removeItem('token');
+    localStorage.removeItem(AUTH_TOKEN_KEY);
     window.dispatchEvent(new Event('auth-change'));
     const loginPath = BASE_PATH + '/login';
     if (window.location.pathname !== loginPath) {
@@ -58,7 +58,7 @@ window.fetch = async (...args) => {
 };
 
 const PrivateRoute = ({ children }: { children: JSX.Element }) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
   if (!token) return <Navigate to="/login" replace />;
   return children;
 };
@@ -71,7 +71,7 @@ function AuthHeader() {
   const navigate = useNavigate();
 
   const loadUser = () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
     if (token) {
       fetch('/api/me')
         .then(res => res.ok ? res.json() : null)
@@ -92,7 +92,7 @@ function AuthHeader() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(AUTH_TOKEN_KEY);
     window.dispatchEvent(new Event('auth-change'));
     navigate('/login');
   };

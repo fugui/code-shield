@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import TaskTypeManagement from './TaskTypeManagement';
+import { AUTH_TOKEN_KEY } from '../config';
 
 function Configuration() {
   const { showToast } = useToast();
@@ -60,7 +61,7 @@ function Configuration() {
   const fetchUsers = async () => {
     try {
       const res = await fetch('/api/users', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` }
       });
       if (res.ok) {
         setUsers(await res.json());
@@ -113,7 +114,7 @@ function Configuration() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`
         },
         body: JSON.stringify(newUserForm)
       });
@@ -146,7 +147,7 @@ function Configuration() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`
         },
         body: JSON.stringify(payload)
       });
@@ -169,7 +170,7 @@ function Configuration() {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`
         },
         body: JSON.stringify({ is_active: isActive })
       });
@@ -186,7 +187,7 @@ function Configuration() {
     try {
       const res = await fetch(`/api/users/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` }
       });
       if (res.ok) fetchUsers();
       else {
