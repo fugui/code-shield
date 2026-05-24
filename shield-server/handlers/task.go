@@ -110,6 +110,31 @@ func GetTaskReportSynthesisJSON(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", content)
 }
 
+// GetTaskReportSummaryJSON returns the summary JSON file contents (execution trace metrics)
+func GetTaskReportSummaryJSON(c *gin.Context) {
+	id := c.Param("id")
+	var report models.TaskReport
+	if err := models.DB.Preload("Repo").First(&report, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
+		return
+	}
+	if report.ReportPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Report path is missing"})
+		return
+	}
+
+	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
+	summaryPath := filepath.Join(filepath.Dir(report.ReportPath), fmt.Sprintf("report-%d-summary-%s.json", report.ID, safeRepoName))
+
+	content, err := os.ReadFile(summaryPath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Summary JSON file not found"})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", content)
+}
+
+
 
 // GetAnalysisFindings returns structured analysis findings for a task report
 func GetAnalysisFindings(c *gin.Context) {
