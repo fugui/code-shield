@@ -596,7 +596,19 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 	// Parse the AI JSON output from the report file
 	rawJSON, err := os.ReadFile(rawPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read analysis output: %w", err)
+		// Fallback: If rawPath does not exist, try reading from AI stdout log (.output.txt)
+		stdoutPath := rawPath + ".output.txt"
+		if _, statErr := os.Stat(stdoutPath); statErr == nil {
+			log.Printf("[TaskRunner] Fallback: rawPath (%s) not found, reading from AI stdout log: %s\n", rawPath, stdoutPath)
+			rawJSON, err = os.ReadFile(stdoutPath)
+			if err == nil {
+				// Write the raw output to rawPath for consistency and downstream repair use
+				os.WriteFile(rawPath, rawJSON, 0644)
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read analysis output: %w", err)
+		}
 	}
 
 	// Clean the AI output: strip markdown code block markers (```json ... ```)
