@@ -89,10 +89,35 @@ function ExecutionLogs() {
     }
   };
 
+  const [summaries, setSummaries] = useState<Record<number, any>>({});
+  const [loadingSummaries, setLoadingSummaries] = useState<Record<number, boolean>>({});
+
+  const fetchSummary = async (reportId: number) => {
+    setLoadingSummaries(prev => ({ ...prev, [reportId]: true }));
+    try {
+      const res = await fetch(`/api/tasks/${reportId}/summary`);
+      if (res.ok) {
+        const data = await res.json();
+        setSummaries(prev => ({ ...prev, [reportId]: data }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch summary:', err);
+    } finally {
+      setLoadingSummaries(prev => ({ ...prev, [reportId]: false }));
+    }
+  };
+
   const toggleExpand = (id: number) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
+      const isExpanding = !next.has(id);
       next.has(id) ? next.delete(id) : next.add(id);
+
+      const log = logs.find(l => l.id === id);
+      if (isExpanding && log?.task_report?.id && !summaries[log.task_report.id]) {
+        fetchSummary(log.task_report.id);
+      }
+
       return next;
     });
   };
@@ -102,6 +127,12 @@ function ExecutionLogs() {
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const formatDuration = (seconds: number) => {
+    if (seconds == null) return '-';
+    const s = Math.round(seconds);
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -243,43 +274,129 @@ function ExecutionLogs() {
 
                   {expanded && hasReport && (
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td colSpan={10} style={{ padding: '0 1rem 1.25rem 3.5rem', background: 'var(--bg-color)' }}>
-                        {/* Score */}
-                        {report.status === 'success' && (
-                          <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: '1px solid #47556922', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px' }}>
-                              <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? '#ef4444' : report.score >= 10 ? '#f59e0b' : '#22c55e' }}>{report.score ?? 0}</span>
-                              <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>综合评分</span>
-                            </div>
-                          </div>
-                        )}
+                      <td colSpan={10} style={{ padding: '1.25rem 1.5rem 1.5rem 3.5rem', background: 'var(--bg-color)' }}>
+                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                          
+                          {/* Left Panel: Score, Summary & Buttons */}
+                          <div style={{ flex: '1.2', minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {/* Score */}
+                            {report.status === 'success' && (
+                              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: '1px solid #47556922', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                  <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? '#ef4444' : report.score >= 10 ? '#f59e0b' : '#22c55e' }}>{report.score ?? 0}</span>
+                                  <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>综合评分</span>
+                                </div>
+                              </div>
+                            )}
 
-                        {/* AI Summary */}
-                        {report.ai_summary && (
-                          <div style={{ padding: '0.75rem 1rem', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #bae6fd', color: '#0369a1', fontSize: '0.875rem', marginBottom: '0.75rem', lineHeight: 1.6 }}>
-                            {report.ai_summary}
-                          </div>
-                        )}
+                            {/* AI Summary */}
+                            {report.ai_summary && (
+                              <div style={{ padding: '0.75rem 1rem', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #bae6fd', color: '#0369a1', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                                <div style={{ fontWeight: 600, marginBottom: '0.2rem', fontSize: '0.8rem' }}>🤖 AI 审计摘要</div>
+                                {report.ai_summary}
+                              </div>
+                            )}
 
-                        {/* Action buttons */}
-                        {report.status === 'success' && (
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button
-                              className="btn"
-                              onClick={e => { e.stopPropagation(); handleNotify(report.id); }}
-                              style={{ background: 'transparent', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', fontSize: '0.85rem' }}
-                            >
-                              通知责任人
-                            </button>
-                            <button
-                              className="btn"
-                              onClick={e => { e.stopPropagation(); handleOpenReport(report.id); }}
-                              style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', fontSize: '0.85rem' }}
-                            >
-                              查看报告
-                            </button>
+                            {/* Action buttons */}
+                            {report.status === 'success' && (
+                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                <button
+                                  className="btn"
+                                  onClick={e => { e.stopPropagation(); handleNotify(report.id); }}
+                                  style={{ background: 'transparent', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', fontSize: '0.85rem' }}
+                                >
+                                  通知责任人
+                                </button>
+                                <button
+                                  className="btn"
+                                  onClick={e => { e.stopPropagation(); handleOpenReport(report.id); }}
+                                  style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', fontSize: '0.85rem' }}
+                                >
+                                  查看报告
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        )}
+
+                          {/* Right Panel: Diagnostics Snapshot */}
+                          <div style={{ flex: '1', minWidth: '300px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.35rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem', fontWeight: 600 }}>
+                              🔬 运行轨迹与诊断快照
+                            </h4>
+                            {loadingSummaries[report.id] ? (
+                              <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.8rem' }}>
+                                <span className="report-sidebar-spinner" style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(100,116,139,0.3)', borderRadius: '50%', borderTopColor: 'var(--primary-color)', animation: 'report-sidebar-spin 1s infinite', verticalAlign: 'middle', marginRight: '5px' }} />
+                                正在获取运行轨迹...
+                              </div>
+                            ) : summaries[report.id] ? (() => {
+                              const s = summaries[report.id];
+                              const chunks = s.analysis?.chunks || [];
+                              const failedChunk = chunks.find((c: any) => c.status === 'failed');
+                              return (
+                                <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', color: '#475569' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>⏱️ 静态分析耗时:</span>
+                                    <strong style={{ color: '#0f172a' }}>{formatDuration(s.analysis?.duration_seconds)}</strong>
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>🎨 综合报告耗时:</span>
+                                    <strong style={{ color: '#0f172a' }}>{formatDuration(s.synthesis?.duration_seconds)}</strong>
+                                  </div>
+                                  {chunks.length > 0 && (
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                                        <span>🧩 分片扫描进度:</span>
+                                        <strong>{s.analysis?.success_chunks} / {s.analysis?.total_chunks} 成功</strong>
+                                      </div>
+                                      
+                                      {/* Mini Chunk Color Grid */}
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', background: '#f8fafc', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                        {chunks.map((c: any, idx: number) => {
+                                          const isChunkFailed = c.status === 'failed';
+                                          return (
+                                            <div
+                                              key={c.chunk_name || idx}
+                                              style={{
+                                                width: '14px',
+                                                height: '14px',
+                                                borderRadius: '3px',
+                                                background: isChunkFailed ? '#ef4444' : '#10b981',
+                                                border: `1px solid ${isChunkFailed ? '#dc2626' : '#059669'}`,
+                                                cursor: 'pointer',
+                                                transition: 'transform 0.15s ease',
+                                              }}
+                                              title={`${c.chunk_name} (耗时: ${formatDuration(c.duration_seconds)}, 状态: ${c.status === 'success' ? '成功' : '失败'})`}
+                                              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                                              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                            />
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Error diagnosis box */}
+                                  {failedChunk && (
+                                    <div style={{ marginTop: '0.25rem', background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '0.6rem 0.75rem', borderRadius: '6px', fontSize: '0.75rem', lineHeight: '1.4' }}>
+                                      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.2rem' }}>
+                                        <span>🚨 故障分片:</span>
+                                        <span style={{ fontFamily: 'monospace' }}>{failedChunk.chunk_name}</span>
+                                      </div>
+                                      <div style={{ fontFamily: 'monospace', wordBreak: 'break-all', maxHeight: '60px', overflowY: 'auto', background: 'rgba(255,255,255,0.4)', padding: '0.3rem', borderRadius: '4px' }}>
+                                        {failedChunk.error_message}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })() : (
+                              <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic', textAlign: 'center', padding: '1rem 0' }}>
+                                无分片诊断数据 (单次任务模式)
+                              </div>
+                            )}
+                          </div>
+
+                        </div>
                       </td>
                     </tr>
                   )}
