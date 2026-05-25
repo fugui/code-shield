@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -663,13 +664,72 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 
 // executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings, retrying up to 3 times on failure.
 func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
-	// Serialize all findings to a JSON input file
+	// 1. Serialize all findings (complete list) to synthesisInputPath for Outlook attachment and database records.
 	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
 	synthesisInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("report-%d-synthesis-%s.json", ctx.report.ID, safeRepoName))
 	if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
+
+	// 2. Build a simplified list of findings for the AI if count exceeds the threshold to avoid context and output limit issues.
+	var aiFindings []models.AnalysisFinding
+	suffixPrompt := ""
+
+	// Weight mapping for sorting severities (higher weight = higher priority)
+	severityWeight := map[string]int{
+		"阻塞":        5,
+		"blocking":  5,
+		"严重":        4,
+		"critical":  4,
+		"主要":        3,
+		"major":     3,
+		"提示":        2,
+		"info":      2,
+		"建议":        1,
+		"suggestion": 1,
+	}
+
+	// Sort findings by severity weight descending
+	sortedFindings := make([]models.AnalysisFinding, len(allFindings))
+	copy(sortedFindings, allFindings)
+	sort.Slice(sortedFindings, func(i, j int) bool {
+		wI := severityWeight[strings.ToLower(sortedFindings[i].Severity)]
+		wJ := severityWeight[strings.ToLower(sortedFindings[j].Severity)]
+		if wI != wJ {
+			return wI > wJ
+		}
+		// Sort alphabetically by file path on equal severity
+		return sortedFindings[i].FilePath < sortedFindings[j].FilePath
+	})
+
+	const maxFullDetailThreshold = 25
+	if len(sortedFindings) <= maxFullDetailThreshold {
+		aiFindings = sortedFindings
+	} else {
+		log.Printf("[TaskRunner] Findings count %d exceeds %d. Generating simplified findings payload for AI synthesis...\n", len(sortedFindings), maxFullDetailThreshold)
+		for i, f := range sortedFindings {
+			if i < maxFullDetailThreshold {
+				// Keep full details for top 25 high-priority findings
+				aiFindings = append(aiFindings, f)
+			} else {
+				// Stripping large fields (code snippets and details) for lower-priority findings to compress tokens
+				f.CodeSnippet = ""
+				f.Detail = "详细内容请查阅随附的完整版 JSON 发现清单附件。"
+				f.Suggestion = "请查阅完整清单文件获取本项的具体修改建议。"
+				aiFindings = append(aiFindings, f)
+			}
+		}
+		suffixPrompt = fmt.Sprintf("【重要提示】：本次分析发现的问题总数较多（共 %d 处）。为了精炼报告，我们对排在第 %d 位以后的次要或低风险发现进行了简化（隐去了代码片段和详细分析）。在生成『三、发现的问题』章节时，请仅对前 %d 个高风险问题进行详细罗列展示；对于其余的简化问题，请按照文件、分类或影响进行归聚归集（例如：『* 其它低危问题：共 X 处，位于 http_client.go:12 等地方，影响代码健壮性...』），或者简要列举它们的类别及位置，切勿逐个平铺列出，以避免因内容过长而被大模型强制截断。", len(sortedFindings), maxFullDetailThreshold+1, maxFullDetailThreshold)
+	}
+
+	// 3. Serialize simplified findings to a temporary file for AI input
+	aiFindingsJSON, _ := json.MarshalIndent(aiFindings, "", "  ")
+	synthesisAIInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("report-%d-synthesis-%s-for-ai.json", ctx.report.ID, safeRepoName))
+	if err := os.WriteFile(synthesisAIInputPath, aiFindingsJSON, 0644); err != nil {
+		return fmt.Errorf("failed to write AI synthesis input: %w", err)
+	}
+	defer os.Remove(synthesisAIInputPath)
 
 	synthStart := time.Now()
 	var lastErr error
@@ -681,11 +741,11 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 				attempt, maxRetries, ctx.report.ID, attempt*2, lastErr)
 			time.Sleep(time.Duration(attempt*2) * time.Second)
 
-			// 重试前清理上次遗留的临时和脏产物文件
+			// Clean up previous temporary and dirty artifacts
 			cleanSynthesisTempFiles(ctx.reportPath)
 		}
 
-		err := ctx.executeSynthesisOnce(synthesisInputPath)
+		err := ctx.executeSynthesisOnce(synthesisAIInputPath, suffixPrompt)
 		if err == nil {
 			log.Printf("[TaskRunner] Synthesis phase complete for ReportID %d\n", ctx.report.ID)
 			ctx.Summary.Synthesis.Status = "success"
@@ -705,9 +765,13 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	return fmt.Errorf("synthesis failed after %d retries: %w", maxRetries, lastErr)
 }
 
-func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string) error {
+func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPrompt string) error {
+	promptMsg := "请基于以下 JSON 分析发现，生成综合 Markdown 报告"
+	if suffixPrompt != "" {
+		promptMsg += "\n\n" + suffixPrompt
+	}
 	// Call AI with synthesis prompt, passing the JSON file as input
-	if err := ctx.executeAI([]string{synthesisInputPath}, "请基于以下 JSON 分析发现，生成综合 Markdown 报告", ctx.taskType.SynthesisPromptFile(), ctx.reportPath); err != nil {
+	if err := ctx.executeAI([]string{synthesisInputPath}, promptMsg, ctx.taskType.SynthesisPromptFile(), ctx.reportPath); err != nil {
 		return err
 	}
 
