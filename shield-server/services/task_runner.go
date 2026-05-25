@@ -803,9 +803,7 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 	ctx.writeSummaryReport()
 
 	if ctx.autoNotify && result.Score >= ctx.taskType.NotifyThreshold {
-		if content, err := os.ReadFile(ctx.reportPath); err == nil {
-			NotifyTaskResult(ctx.repo, ctx.taskType, result, string(content), "")
-		}
+		NotifyTaskResult(ctx.repo, ctx.taskType, result, "", ctx.report.ID, ctx.reportPath)
 	}
 
 	return err
@@ -858,7 +856,7 @@ func (ctx *taskContext) markFailed(errMsg string) {
 }
 
 // NotifyTaskResult sends a notification for a completed task
-func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result TaskResult, markdownContent string, specificRecipientEmail string) {
+func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result TaskResult, specificRecipientEmail string, reportID uint, reportPath string) {
 	models.DB.Preload("Owner").Preload("Team.Leader").First(&repo, repo.ID)
 
 	toEmails := []string{}
@@ -924,16 +922,46 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	subject := fmt.Sprintf("【%s】%s %s报告（评分: %d）",
 		taskType.DisplayName, repo.Name, taskType.DisplayName, result.Score)
 
+	safeRepoName := strings.ReplaceAll(repo.Name, "/", "-")
+	markdownFilename := ""
+	synthesisJSONFilename := ""
+	synthesisJSONContent := ""
+	markdownContent := ""
+
+	if reportID > 0 && reportPath != "" {
+		if contentBytes, err := os.ReadFile(reportPath); err == nil {
+			markdownContent = string(contentBytes)
+			markdownFilename = fmt.Sprintf("report-%d-report-%s.md", reportID, safeRepoName)
+		} else {
+			log.Printf("[Error] NotifyTaskResult: failed to read markdown report file at %s: %v\n", reportPath, err)
+		}
+		synthesisJSONFilename = fmt.Sprintf("report-%d-synthesis-%s.json", reportID, safeRepoName)
+		synthesisPath := filepath.Join(filepath.Dir(reportPath), synthesisJSONFilename)
+		if contentBytes, err := os.ReadFile(synthesisPath); err == nil {
+			synthesisJSONContent = string(contentBytes)
+		} else {
+			log.Printf("[Warning] NotifyTaskResult: failed to read synthesis JSON file at %s: %v\n", synthesisPath, err)
+		}
+	}
+
 	payload := map[string]interface{}{
 		"task_id":            fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
 		"task_type":          taskType.Name,
 		"task_display_name":  taskType.DisplayName,
 		"repo_name":          repo.Name,
 		"branch":             repo.Branch,
-		"recipients": map[string]interface{}{ "to": toEmails, "cc": ccEmails },
-		"subject":          subject,
-		"summary":          result.Summary,
-		"markdown_content": markdownContent,
+		"recipients":         map[string]interface{}{"to": toEmails, "cc": ccEmails},
+		"subject":            subject,
+		"summary":            result.Summary,
+		"markdown_content":   markdownContent,
+	}
+
+	if markdownFilename != "" {
+		payload["markdown_filename"] = markdownFilename
+	}
+	if synthesisJSONFilename != "" {
+		payload["synthesis_json_filename"] = synthesisJSONFilename
+		payload["synthesis_json_content"]  = synthesisJSONContent
 	}
 
 	targetURL := models.AppConfig.Notification.Webhook
