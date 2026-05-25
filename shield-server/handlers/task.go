@@ -201,14 +201,6 @@ func TriggerManualNotification(c *gin.Context) {
 		return
 	}
 
-	mdContent := ""
-	if report.ReportPath != "" {
-		contentBytes, err := os.ReadFile(report.ReportPath)
-		if err == nil {
-			mdContent = string(contentBytes)
-		}
-	}
-
 	var specificEmail string
 	if userID, exists := c.Get("userID"); exists {
 		var user models.User
@@ -232,7 +224,7 @@ func TriggerManualNotification(c *gin.Context) {
 		Summary: report.AISummary,
 	}
 
-	services.NotifyTaskResult(report.Repo, report.TaskType, result, mdContent, specificEmail)
+	services.NotifyTaskResult(report.Repo, report.TaskType, result, specificEmail, report.ID, report.ReportPath)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Notification dispatched"})
 }

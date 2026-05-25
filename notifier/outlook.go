@@ -19,7 +19,16 @@ var outlookMutex sync.Mutex
 
 // CreateAndHandleEmail creates an email in Outlook COM.
 // If isAutoSend is true, it immediately sends it. Otherwise, it saves it to the Drafts folder.
-func CreateAndHandleEmail(to, cc, subject, htmlBody, pdfPath string, isAutoSend bool) error {
+func CreateAndHandleEmail(to, cc, subject, htmlBody string, attachmentPaths []string, isAutoSend bool) error {
+	// Safely clean up attachment files after function exits
+	defer func() {
+		for _, path := range attachmentPaths {
+			if path != "" {
+				_ = os.Remove(path)
+			}
+		}
+	}()
+
 	outlookMutex.Lock()
 	defer outlookMutex.Unlock()
 
@@ -62,13 +71,18 @@ func CreateAndHandleEmail(to, cc, subject, htmlBody, pdfPath string, isAutoSend 
 	att := attachments.ToIDispatch()
 	defer att.Release()
 
-	if _, err := os.Stat(pdfPath); err == nil {
-		_, err = oleutil.CallMethod(att, "Add", pdfPath)
-		if err != nil {
-			LogMessage(fmt.Sprintf("Warning: could not attach PDF %s: %v", pdfPath, err))
+	for _, path := range attachmentPaths {
+		if path == "" {
+			continue
 		}
-	} else {
-		LogMessage(fmt.Sprintf("Warning: PDF not found at path %s", pdfPath))
+		if _, err := os.Stat(path); err == nil {
+			_, err = oleutil.CallMethod(att, "Add", path)
+			if err != nil {
+				LogMessage(fmt.Sprintf("Warning: could not attach file %s: %v", path, err))
+			}
+		} else {
+			LogMessage(fmt.Sprintf("Warning: file not found at path %s", path))
+		}
 	}
 
 	if isAutoSend {
@@ -82,9 +96,6 @@ func CreateAndHandleEmail(to, cc, subject, htmlBody, pdfPath string, isAutoSend 
 			return fmt.Errorf("could not Save email to drafts: %w", err)
 		}
 	}
-
-	// Safely clean up PDF after Send/Save handles attachment
-	_ = os.Remove(pdfPath)
 
 	return nil
 }

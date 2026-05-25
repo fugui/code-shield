@@ -6,23 +6,28 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 type NotifyPayload struct {
-	TaskID          string `json:"task_id"`
-	TaskType        string `json:"task_type"`
-	TaskDisplayName string `json:"task_display_name"`
-	RepoName        string `json:"repo_name"`
-	Branch          string `json:"branch"`
-	Recipients      struct {
+	TaskID                string `json:"task_id"`
+	TaskType              string `json:"task_type"`
+	TaskDisplayName       string `json:"task_display_name"`
+	RepoName              string `json:"repo_name"`
+	Branch                string `json:"branch"`
+	Recipients            struct {
 		To []string `json:"to"`
 		CC []string `json:"cc"`
 	} `json:"recipients"`
-	Subject         string `json:"subject"`
-	Summary         string `json:"summary"`
-	MarkdownContent string `json:"markdown_content"`
+	Subject               string `json:"subject"`
+	Summary               string `json:"summary"`
+	MarkdownContent       string `json:"markdown_content"`
+	MarkdownFilename      string `json:"markdown_filename,omitempty"`
+	SynthesisJSONFilename string `json:"synthesis_json_filename,omitempty"`
+	SynthesisJSONContent  string `json:"synthesis_json_content,omitempty"`
 }
 
 type NotifyResponse struct {
@@ -133,8 +138,43 @@ func processEmailPayload(payload NotifyPayload) {
 	// Log to GUI View
 	timeStr := time.Now().Format("01-02 15:04:05")
 	LogMessage(fmt.Sprintf("Ready to interact with Outlook for task: %s", payload.TaskID))
-	
-	err = CreateAndHandleEmail(toEmails, ccEmails, payload.Subject, finalHtmlBody, pdfPath, GetAutoSend())
+
+	// Create a temp directory for additional attachments (Markdown and JSON synthesis)
+	tempDir := filepath.Join(os.TempDir(), "code-shield-notifier")
+	os.MkdirAll(tempDir, 0755)
+
+	var markdownPath string
+	if payload.MarkdownFilename != "" {
+		markdownPath = filepath.Join(tempDir, payload.MarkdownFilename)
+		err = os.WriteFile(markdownPath, []byte(payload.MarkdownContent), 0644)
+		if err != nil {
+			LogMessage(fmt.Sprintf("Failed to write Markdown file: %v", err))
+			markdownPath = ""
+		}
+	}
+
+	var synthesisPath string
+	if payload.SynthesisJSONFilename != "" && payload.SynthesisJSONContent != "" {
+		synthesisPath = filepath.Join(tempDir, payload.SynthesisJSONFilename)
+		err = os.WriteFile(synthesisPath, []byte(payload.SynthesisJSONContent), 0644)
+		if err != nil {
+			LogMessage(fmt.Sprintf("Failed to write Synthesis JSON file: %v", err))
+			synthesisPath = ""
+		}
+	}
+
+	attachmentPaths := []string{}
+	if pdfPath != "" {
+		attachmentPaths = append(attachmentPaths, pdfPath)
+	}
+	if markdownPath != "" {
+		attachmentPaths = append(attachmentPaths, markdownPath)
+	}
+	if synthesisPath != "" {
+		attachmentPaths = append(attachmentPaths, synthesisPath)
+	}
+
+	err = CreateAndHandleEmail(toEmails, ccEmails, payload.Subject, finalHtmlBody, attachmentPaths, GetAutoSend())
 	if err != nil {
 		LogMessage(fmt.Sprintf("Failed to Create/Send email via Outlook: %v", err))
 		AddDraftLogToView("失败", toEmails, payload.Subject, timeStr)
