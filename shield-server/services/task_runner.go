@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -672,9 +673,57 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
 
-	// 2. Build a simplified list of findings for the AI if count exceeds the threshold to avoid context and output limit issues.
-	var aiFindings []models.AnalysisFinding
+	// 2. Count all findings by severity for 100% accurate prompt injection
+	counts := map[string]int{
+		"阻塞":        0,
+		"blocking":  0,
+		"严重":        0,
+		"critical":  0,
+		"主要":        0,
+		"major":     0,
+		"提示":        0,
+		"info":      0,
+		"建议":        0,
+		"suggestion": 0,
+		"合格":        0,
+		"pass":      0,
+		"高风险":       0,
+		"high":      0,
+		"high_risk": 0,
+		"中风险":       0,
+		"medium":    0,
+		"medium_risk": 0,
+		"低风险":       0,
+		"low":       0,
+		"low_risk":  0,
+	}
+	for _, f := range allFindings {
+		counts[strings.ToLower(f.Severity)]++
+	}
+
+	blockingCount := counts["阻塞"] + counts["blocking"]
+	criticalCount := counts["严重"] + counts["critical"]
+	majorCount := counts["主要"] + counts["major"]
+	infoCount := counts["提示"] + counts["info"]
+	suggestionCount := counts["建议"] + counts["suggestion"]
+
+	highCount := counts["高风险"] + counts["high"] + counts["high_risk"]
+	mediumCount := counts["中风险"] + counts["medium"] + counts["medium_risk"]
+	lowCount := counts["低风险"] + counts["low"] + counts["low_risk"]
+
+	// Inject 100% accurate pre-calculated severity summary to the AI prompt
 	suffixPrompt := ""
+	isCodeReview := strings.Contains(strings.ToLower(ctx.taskType.Name), "review")
+	if isCodeReview {
+		suffixPrompt = fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n阻塞：%d，严重：%d，主要：%d，提示：%d，建议：%d\n```",
+			blockingCount, criticalCount, majorCount, infoCount, suggestionCount)
+	} else {
+		suffixPrompt = fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n高风险：%d，中风险：%d，低风险：%d\n```",
+			highCount, mediumCount, lowCount)
+	}
+
+	// 3. Build a simplified list of findings for the AI if count exceeds the threshold to avoid context and output limit issues.
+	var aiFindings []models.AnalysisFinding
 
 	// Weight mapping for sorting severities (higher weight = higher priority)
 	severityWeight := map[string]int{
@@ -688,7 +737,17 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		"info":      2,
 		"建议":        1,
 		"suggestion": 1,
-		"合格": 0,
+		"合格":        0,
+		"pass":      0,
+		"高风险":       5,
+		"high":      5,
+		"high_risk": 5,
+		"中风险":       3,
+		"medium":    3,
+		"medium_risk": 3,
+		"low":       1,
+		"低风险":       1,
+		"low_risk":  1,
 	}
 
 	// Sort findings by severity weight descending
@@ -721,10 +780,11 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 				aiFindings = append(aiFindings, f)
 			}
 		}
-		suffixPrompt = fmt.Sprintf("【重要提示】：本次分析发现的问题总数较多（共 %d 处）。为了精炼报告，我们对排在第 %d 位以后的次要或低风险发现进行了简化（隐去了代码片段和详细分析）。在生成『三、发现的问题』章节时，请仅对前 %d 个高风险问题进行详细罗列展示；对于其余的简化问题，请按照文件、分类或影响进行归聚归集（例如：『* 其它低危问题：共 X 处，位于 http_client.go:12 等地方，影响代码健壮性...』），或者简要列举它们的类别及位置，切勿逐个平铺列出，以避免因内容过长而被大模型强制截断。", len(sortedFindings), maxFullDetailThreshold+1, maxFullDetailThreshold)
+		suffixPrompt += fmt.Sprintf("\n\n此外，本次分析发现的问题总数较多（共 %d 处）。为了精炼报告，我们在输入的 JSON 中对排在第 %d 位以后的次要或低风险发现进行了简化（隐去了代码片段和详细分析）。在生成『三、发现的问题』章节时，请仅对前 %d 个高风险问题进行详细罗列展示；对于其余的简化问题，请按照文件、分类或影响进行归聚归集（例如：『* 其它低危问题：共 X 处，位于 http_client.go:12 等地方，影响代码健壮性...』），或者简要列举它们的类别及位置，切勿逐个平铺列出，以避免因内容过长而被大模型强制截断。",
+			len(sortedFindings), maxFullDetailThreshold+1, maxFullDetailThreshold)
 	}
 
-	// 3. Serialize simplified findings to a temporary file for AI input
+	// 4. Serialize simplified findings to a temporary file for AI input
 	aiFindingsJSON, _ := json.MarshalIndent(aiFindings, "", "  ")
 	synthesisAIInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("report-%d-synthesis-%s-for-ai.json", ctx.report.ID, safeRepoName))
 	if err := os.WriteFile(synthesisAIInputPath, aiFindingsJSON, 0644); err != nil {
@@ -803,23 +863,89 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	updateTaskStatus(ctx.report.ID, models.StatusPostProcessing)
 	var result TaskResult
 
-	absPostScript := models.AppConfig.GetAbsPath(ctx.taskType.PostprocessScript())
-	if _, err := os.Stat(absPostScript); os.IsNotExist(err) {
-		return result
+	// 1. Load all findings for this report from the database to calculate score and metrics
+	var findings []models.AnalysisFinding
+	severityWeight := map[string]int{
+		"阻塞":        5,
+		"blocking":  5,
+		"严重":        4,
+		"critical":  4,
+		"主要":        3,
+		"major":     3,
+		"提示":        2,
+		"info":      2,
+		"建议":        1,
+		"suggestion": 1,
+		"合格":        0,
+		"pass":      0,
+		"高风险":       5,
+		"high":      5,
+		"high_risk": 5,
+		"中风险":       3,
+		"medium":    3,
+		"medium_risk": 3,
+		"low":       1,
+		"低风险":       1,
+		"low_risk":  1,
 	}
-	log.Printf("[TaskRunner] Running postprocess: %s\n", absPostScript)
 
-	// Ensure the script is executable
-	os.Chmod(absPostScript, 0755)
+	metrics := map[string]int{}
+	score := 0
+	if err := models.DB.Where("task_report_id = ?", ctx.report.ID).Find(&findings).Error; err == nil {
+		for _, f := range findings {
+			sev := strings.ToLower(f.Severity)
+			weight := severityWeight[sev]
+			score += weight
 
-	cmd := exec.CommandContext(ctx.ctx, absPostScript, ctx.reportPath)
-	if output, err := cmd.Output(); err == nil {
-		if err := json.Unmarshal(output, &result); err != nil {
-			log.Printf("[TaskRunner] Postprocess JSON error: %v\n", err)
+			key := sev
+			switch sev {
+			case "阻塞", "blocking":
+				key = "blocking"
+			case "严重", "critical":
+				key = "critical"
+			case "主要", "major":
+				key = "major"
+			case "提示", "info":
+				key = "hint"
+			case "建议", "suggestion":
+				key = "suggestion"
+			case "高风险", "high", "high_risk":
+				key = "high_risk"
+			case "中风险", "medium", "medium_risk":
+				key = "medium_risk"
+			case "低风险", "low", "low_risk":
+				key = "low_risk"
+			}
+			metrics[key]++
 		}
-	} else {
-		log.Printf("[TaskRunner] Postprocess script failed: %v\n", err)
 	}
+	result.Score = score
+	result.Metrics = metrics
+
+	// 2. Extract summary from the generated Markdown file using Regex
+	result.Summary = "未提取到摘要"
+	if ctx.reportPath != "" {
+		if contentBytes, err := os.ReadFile(ctx.reportPath); err == nil {
+			content := string(contentBytes)
+			// Match "## 检视摘要" or similar headings and capture up to the next heading
+			re := regexp.MustCompile(`(?im)^##\s+.*(?:摘要|概述|概要).*\n([\s\S]*?)(?:\n##\s|$)`)
+			match := re.FindStringSubmatch(content)
+			if len(match) > 1 {
+				summary := strings.TrimSpace(match[1])
+				lines := strings.Split(summary, "\n")
+				if len(lines) > 5 {
+					lines = lines[:5]
+				}
+				summary = strings.Join(lines, " ")
+				if len(summary) > 500 {
+					summary = summary[:500]
+				}
+				result.Summary = summary
+			}
+		}
+	}
+
+	log.Printf("[TaskRunner] Postprocess calculated in Go - Score: %d, Summary len: %d, Metrics: %v\n", score, len(result.Summary), metrics)
 	return result
 }
 
