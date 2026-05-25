@@ -72,6 +72,8 @@ func main() {
 	auth := r.Group("/api")
 	{
 		auth.POST("/login", handlers.Login)
+		auth.GET("/public/tasks/:id", handlers.GetPublicTaskDetails)
+		auth.GET("/public/tasks/:id/findings", handlers.GetPublicAnalysisFindings)
 	}
 
 	// Register API routes (protected)

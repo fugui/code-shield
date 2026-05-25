@@ -8,6 +8,7 @@ import Configuration from './pages/Configuration';
 import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
 import OpenSourceManagement from './pages/OpenSourceManagement';
+import PublicReportFindings from './pages/PublicReportFindings';
 import { ToastProvider, useToast } from './components/Toast';
 
 // Setup global fetch interceptor to inject JWT token and prepend BASE_PATH
@@ -268,8 +269,8 @@ function Sidebar() {
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  // Don't show sidebar on login page
-  if (location.pathname === '/login') {
+  // Don't show sidebar on login page or public read-only pages
+  if (location.pathname === '/login' || location.pathname.startsWith('/public/')) {
     return <>{children}</>;
   }
 
@@ -310,6 +311,7 @@ function App() {
             <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
             <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
             <Route path="/config/:tab" element={<PrivateRoute><Configuration /></PrivateRoute>} />
+            <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
           </Routes>
         </MainLayout>
       </ToastProvider>
