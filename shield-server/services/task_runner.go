@@ -688,6 +688,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		"info":      2,
 		"建议":        1,
 		"suggestion": 1,
+		"合格": 0,
 	}
 
 	// Sort findings by severity weight descending
