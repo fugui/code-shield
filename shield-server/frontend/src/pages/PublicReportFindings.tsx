@@ -489,9 +489,11 @@ function PublicReportFindings() {
 
                 {/* Suggestion */}
                 {f.suggestion && (
-                  <div className="suggestion-box">
-                    <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem' }}>💡 修复建议:</strong>
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{f.suggestion}</div>
+                  <div style={{ marginTop: '1.25rem' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#15803d', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>💡 修复建议</div>
+                    <div className="suggestion-box" style={{ marginTop: 0 }}>
+                      <div style={{ whiteSpace: 'pre-wrap' }}>{f.suggestion}</div>
+                    </div>
                   </div>
                 )}
               </div>
