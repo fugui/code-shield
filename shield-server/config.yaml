@@ -5,6 +5,7 @@
 # ── HTTP 服务 ──
 server:
   port: ":8080"
+  # external_url: "http://127.0.0.1:8080"  # 外部访问基准 URL（邮件等通知链接跳转，缺省默认为本地端口地址）
   # worker_count: 5              # 全局任务并发数，默认 5
   # gin_log: true                # 是否打印 GIN 请求日志，默认 false
   # read_timeout: 15s            # 读取请求超时

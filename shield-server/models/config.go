@@ -3,6 +3,7 @@ package models
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -18,6 +19,7 @@ type Config struct {
 		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 60s
 		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
 		WorkerCount       int           `yaml:"worker_count"`        // 全局任务并发数，默认 5
+		ExternalURL       string        `yaml:"external_url"`        // 外部访问基准 URL，用于通知和邮件跳转，如 http://127.0.0.1:8080
 	} `yaml:"server"`
 	Storage struct {
 		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
@@ -66,6 +68,14 @@ func LoadConfig(filename string) error {
 	}
 
 	// Server timeout defaults
+	if AppConfig.Server.ExternalURL == "" {
+		port := AppConfig.Server.Port
+		if strings.HasPrefix(port, ":") {
+			AppConfig.Server.ExternalURL = "http://127.0.0.1" + port
+		} else {
+			AppConfig.Server.ExternalURL = "http://127.0.0.1:8080"
+		}
+	}
 	if AppConfig.Server.WorkerCount <= 0 {
 		AppConfig.Server.WorkerCount = 5
 	}

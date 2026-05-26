@@ -28,6 +28,7 @@ type NotifyPayload struct {
 	MarkdownFilename      string `json:"markdown_filename,omitempty"`
 	SynthesisJSONFilename string `json:"synthesis_json_filename,omitempty"`
 	SynthesisJSONContent  string `json:"synthesis_json_content,omitempty"`
+	ReportURL             string `json:"report_url,omitempty"`
 }
 
 type NotifyResponse struct {
