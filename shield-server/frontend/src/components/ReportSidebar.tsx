@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { BASE_PATH } from '../config';
 
 // 仅注册报告中常用的语言，避免打包全部 ~290 种语言定义
 import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
@@ -143,6 +144,11 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
     }
   };
 
+  const handleOpenPublicDetails = () => {
+    if (!reportId) return;
+    window.open(`${BASE_PATH}/public/reports/${reportId}`, '_blank');
+  };
+
   const handleCopyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     alert('已复制报错日志到剪贴板');
@@ -192,6 +198,33 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
                       </svg>
                       下载 JSON
+                    </button>
+                  )}
+                  {reportId && (
+                    <button
+                      onClick={handleOpenPublicDetails}
+                      style={{ 
+                        background: 'var(--primary-color)', 
+                        border: 'none', 
+                        cursor: 'pointer', 
+                        padding: '0.3rem 0.8rem', 
+                        borderRadius: '4px', 
+                        color: 'white', 
+                        fontSize: '0.825rem', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.35rem',
+                        fontWeight: 600,
+                        boxShadow: '0 2px 4px rgba(37,99,235,0.1)'
+                      }}
+                      title="在新窗口查看全部问题详情及打印导出排版"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                      </svg>
+                      查看详情
                     </button>
                   )}
                 </>
