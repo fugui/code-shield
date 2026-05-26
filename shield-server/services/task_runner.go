@@ -1118,6 +1118,11 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	synthesisJSONFilename := ""
 	synthesisJSONContent := ""
 	markdownContent := ""
+	reportURL := ""
+	if reportID > 0 {
+		baseURL := strings.TrimSuffix(models.AppConfig.Server.ExternalURL, "/")
+		reportURL = fmt.Sprintf("%s/public/reports/%d", baseURL, reportID)
+	}
 
 	if reportID > 0 && reportPath != "" {
 		if contentBytes, err := os.ReadFile(reportPath); err == nil {
@@ -1145,6 +1150,7 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		"subject":            subject,
 		"summary":            result.Summary,
 		"markdown_content":   markdownContent,
+		"report_url":         reportURL,
 	}
 
 	if markdownFilename != "" {

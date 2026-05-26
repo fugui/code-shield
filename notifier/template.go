@@ -50,12 +50,25 @@ func RenderTemplate(templateStr string, payload NotifyPayload, summaryText strin
 	result = strings.ReplaceAll(result, "${TASK.DISPLAYNAME}", payload.TaskDisplayName)
 	// fallback if display name wasn't provided but they used the placeholder
 	if payload.TaskDisplayName == "" && strings.Contains(result, "${TASK.DISPLAYNAME}") {
-	    // just fallback to task_type if empty
+		// just fallback to task_type if empty
 		result = strings.ReplaceAll(result, "${TASK.DISPLAYNAME}", payload.TaskType) 
 	}
 	
 	result = strings.ReplaceAll(result, "${REPO.NAME}", payload.RepoName)
 	result = strings.ReplaceAll(result, "${BRANCH}", payload.Branch)
 	result = strings.ReplaceAll(result, "${BODY}", summaryText)
+
+	// Replace the REPORT_URL placeholder if present, or automatically append a premium link section
+	if strings.Contains(result, "${REPORT_URL}") {
+		result = strings.ReplaceAll(result, "${REPORT_URL}", payload.ReportURL)
+	} else if payload.ReportURL != "" {
+		reportLinkBlock := "\n\n---\n\n#### 🔗 快速查看完整问题详情及打印排版\n您也可以直接点击下方链接免登录在线查看完整的问题清单、JetBrains Mono 相关代码段及打印导出 PDF 排版：\n\n👉 [**点击此处在线查看完整报告**](" + payload.ReportURL + ")\n\n"
+		if strings.Contains(result, "谢谢。") {
+			result = strings.ReplaceAll(result, "谢谢。", reportLinkBlock + "谢谢。")
+		} else {
+			result += reportLinkBlock
+		}
+	}
+
 	return result
 }
