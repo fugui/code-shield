@@ -70,6 +70,7 @@ function PublicReportFindings() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSeverities, setSelectedSeverities] = useState<string[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -85,8 +86,10 @@ function PublicReportFindings() {
 
         const findingsRes = await fetch(`/api/public/tasks/${reportId}/findings`);
         if (findingsRes.ok) {
-          const findingsData = await findingsRes.json();
+          const findingsData: Finding[] = await findingsRes.json();
           setFindings(findingsData);
+          const uniqueSevs = Array.from(new Set(findingsData.map(f => f.severity)));
+          setSelectedSeverities(uniqueSevs);
         }
       } catch (err: any) {
         setError(err.message || '加载报告数据失败');
@@ -136,6 +139,8 @@ function PublicReportFindings() {
   findings.forEach(f => {
     severityCounts[f.severity] = (severityCounts[f.severity] || 0) + 1;
   });
+
+  const filteredFindings = findings.filter(f => selectedSeverities.includes(f.severity));
 
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '2.5rem 2rem', boxSizing: 'border-box', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#1e293b' }}>
@@ -239,6 +244,17 @@ function PublicReportFindings() {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+          .severity-metric-card {
+            border: 1px solid #cbd5e1 !important;
+            opacity: 1 !important;
+            box-shadow: none !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .filter-checkbox {
+            display: none !important;
+          }
           @page {
             size: A4;
             margin: 1.6cm 1.2cm;
@@ -303,7 +319,13 @@ function PublicReportFindings() {
               <div style={{ width: '4px', height: '36px', background: '#e2e8f0', borderRadius: '2px' }} />
               <div>
                 <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>全部问题</span>
-                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>{findings.length} 个</span>
+                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+                  {selectedSeverities.length === Array.from(new Set(findings.map(f => f.severity))).length ? (
+                    `${findings.length} 个`
+                  ) : (
+                    `${findings.filter(f => selectedSeverities.includes(f.severity)).length} / ${findings.length} 个`
+                  )}
+                </span>
               </div>
             </div>
           </div>
@@ -326,14 +348,64 @@ function PublicReportFindings() {
             .map(([name, style]) => {
               const count = severityCounts[name] || 0;
               if (count === 0) return null;
+              
+              const isSelected = selectedSeverities.includes(name);
+              const toggleSelection = () => {
+                if (isSelected) {
+                  setSelectedSeverities(selectedSeverities.filter(s => s !== name));
+                } else {
+                  setSelectedSeverities([...selectedSeverities, name]);
+                }
+              };
+
               return (
-                <div key={name} style={{ flex: '1 1 150px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', boxShadow: '0 1px 2px rgba(0,0,0,0.01)' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{name}</span>
+                <div 
+                  key={name}
+                  onClick={toggleSelection}
+                  className="severity-metric-card"
+                  style={{ 
+                    flex: '1 1 150px', 
+                    background: 'white', 
+                    border: isSelected ? `1.5px solid ${style.color}` : '1.5px solid #e2e8f0', 
+                    borderRadius: '12px', 
+                    padding: '1rem 1.25rem', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '0.25rem', 
+                    boxShadow: isSelected ? '0 4px 6px -1px rgba(0,0,0,0.02)' : '0 1px 2px rgba(0,0,0,0.01)',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    position: 'relative',
+                    transition: 'all 0.2s',
+                    opacity: isSelected ? 1 : 0.55
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{name}</span>
+                    {/* Modern stylized checkbox */}
+                    <div className="filter-checkbox" style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '4px',
+                      border: isSelected ? `none` : '2px solid #cbd5e1',
+                      background: isSelected ? style.color : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.15s'
+                    }}>
+                      {isSelected && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      )}
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '1.5rem', fontWeight: 700, color: style.color }}>{count}</span>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 700, color: isSelected ? style.color : '#64748b' }}>{count}</span>
                     <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>个</span>
                   </div>
-                  <div style={{ height: '3px', background: style.color, borderRadius: '1.5px', marginTop: '0.25rem' }} />
+                  <div style={{ height: '3px', background: isSelected ? style.color : '#e2e8f0', borderRadius: '1.5px', marginTop: '0.25rem' }} />
                 </div>
               );
             })}
@@ -342,7 +414,7 @@ function PublicReportFindings() {
         {/* Section Heading */}
         <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#334155', margin: '0 0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ width: '4px', height: '16px', background: '#2563eb', borderRadius: '2px', display: 'inline-block' }}></span>
-          完整问题清单 ({findings.length})
+          完整问题清单 ({filteredFindings.length})
         </h2>
 
         {/* Stacking Findings Cards */}
@@ -352,8 +424,14 @@ function PublicReportFindings() {
             <h3 style={{ margin: '0 0 0.25rem', fontWeight: 600, color: '#1e293b' }}>未发现任何严重问题</h3>
             <p style={{ margin: 0, fontSize: '0.875rem' }}>本次代码检视结果良好，未检测出符合规则的问题。</p>
           </div>
+        ) : filteredFindings.length === 0 ? (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '4rem 2rem', textAlign: 'center', color: '#64748b' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🔍</div>
+            <h3 style={{ margin: '0 0 0.25rem', fontWeight: 600, color: '#1e293b' }}>无符合筛选条件的问题</h3>
+            <p style={{ margin: 0, fontSize: '0.875rem' }}>您已在上方取消勾选了所有类别，请点击上方分类卡片进行过滤恢复。</p>
+          </div>
         ) : (
-          findings.map((f, index) => {
+          filteredFindings.map((f, index) => {
             const sevStyle = getSeverityStyle(f.severity);
             return (
               <div key={f.id} className="findings-card">
