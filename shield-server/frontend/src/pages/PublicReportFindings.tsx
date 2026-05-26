@@ -321,19 +321,22 @@ function PublicReportFindings() {
 
         {/* Severity Metrics Dashboard */}
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
-          {Object.entries(severityColors).filter(([k]) => !['blocking', 'critical', 'high', 'high_risk', 'major', 'medium', 'info', 'low', 'suggestion', 'pass'].includes(k)).map(([name, style]) => {
-            const count = severityCounts[name] || 0;
-            return (
-              <div key={name} style={{ flex: '1 1 150px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', boxShadow: '0 1px 2px rgba(0,0,0,0.01)' }}>
-                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{name}</span>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '1.5rem', fontWeight: 700, color: count > 0 ? style.color : '#94a3b8' }}>{count}</span>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>个</span>
+          {Object.entries(severityColors)
+            .filter(([k]) => !['blocking', 'critical', 'high', 'high_risk', 'major', 'medium', 'info', 'low', 'suggestion', 'pass'].includes(k))
+            .map(([name, style]) => {
+              const count = severityCounts[name] || 0;
+              if (count === 0) return null;
+              return (
+                <div key={name} style={{ flex: '1 1 150px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', boxShadow: '0 1px 2px rgba(0,0,0,0.01)' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{name}</span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 700, color: style.color }}>{count}</span>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>个</span>
+                  </div>
+                  <div style={{ height: '3px', background: style.color, borderRadius: '1.5px', marginTop: '0.25rem' }} />
                 </div>
-                <div style={{ height: '3px', background: count > 0 ? style.color : '#e2e8f0', borderRadius: '1.5px', marginTop: '0.25rem', opacity: count > 0 ? 1 : 0.4 }} />
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
 
         {/* Section Heading */}
@@ -417,6 +420,27 @@ function PublicReportFindings() {
             );
           })
         )}
+
+        {/* Footer */}
+        <footer style={{ 
+          marginTop: '3rem', 
+          paddingTop: '1.5rem', 
+          borderTop: '1px solid #e2e8f0', 
+          textAlign: 'center', 
+          color: '#64748b', 
+          fontSize: '0.825rem',
+          lineHeight: '1.6'
+        }}>
+          <p style={{ margin: '0 0 0.25rem', fontWeight: 500 }}>
+            由 <strong>码盾（Code Shield）</strong> 采用先进 AI 技术进行智能扫描与安全分析
+          </p>
+          <p style={{ margin: '0 0 0.25rem', color: '#94a3b8' }}>
+            报告生成时间：{report.created_at ? new Date(report.created_at).toLocaleString('zh-CN') : '-'}
+          </p>
+          <p style={{ margin: 0, color: '#cbd5e1', fontSize: '0.75rem' }}>
+            * 免责声明：以上检视与扫描分析信息基于 AI 大模型生成，仅供参考，不构成绝对的安全与质量保证。
+          </p>
+        </footer>
 
       </div>
     </div>

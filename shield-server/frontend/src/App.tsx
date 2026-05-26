@@ -312,6 +312,7 @@ function App() {
             <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
             <Route path="/config/:tab" element={<PrivateRoute><Configuration /></PrivateRoute>} />
             <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
+            <Route path="/public/reports/:reportId" element={<PublicReportFindings />} />
           </Routes>
         </MainLayout>
       </ToastProvider>
