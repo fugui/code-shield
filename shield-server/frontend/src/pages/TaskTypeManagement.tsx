@@ -195,6 +195,8 @@ function TaskTypeManagement() {
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left', background: 'var(--bg-color)' }}>
               <th style={{ padding: '1rem' }}>名称</th>
               <th style={{ padding: '1rem' }}>标识</th>
+              <th style={{ padding: '1rem' }}>执行引擎</th>
+              <th style={{ padding: '1rem' }}>AI 后端</th>
               <th style={{ padding: '1rem' }}>超时(分钟)</th>
               <th style={{ padding: '1rem' }}>通知阈值</th>
               <th style={{ padding: '1rem' }}>状态</th>
@@ -203,7 +205,7 @@ function TaskTypeManagement() {
           </thead>
           <tbody>
             {taskTypes.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>暂无任务类型</td></tr>
+              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>暂无任务类型</td></tr>
             ) : taskTypes.map(tt => (
               <tr key={tt.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <td style={{ padding: '1rem', fontWeight: 500 }}>
@@ -211,6 +213,22 @@ function TaskTypeManagement() {
                   {tt.is_builtin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: '#dbeafe', color: '#2563eb', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>内置</span>}
                 </td>
                 <td style={{ padding: '1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{tt.name}</td>
+                <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                  {tt.engine_mode === 'chunked' ? (
+                    <span style={{ color: '#0284c7', background: 'rgba(2,132,199,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>分片引擎</span>
+                  ) : (
+                    <span style={{ color: '#64748b', background: 'rgba(100,116,139,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>单引擎</span>
+                  )}
+                </td>
+                <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                  {tt.ai_backend === 'claude' ? (
+                    <span style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>Claude</span>
+                  ) : tt.ai_backend === 'opencode' ? (
+                    <span style={{ color: '#2563eb', background: 'rgba(37,99,237,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>OpenCode</span>
+                  ) : (
+                    <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>跟随全局</span>
+                  )}
+                </td>
                 <td style={{ padding: '1rem' }}>{tt.timeout}</td>
                 <td style={{ padding: '1rem' }}>{tt.notify_threshold}</td>
                 <td style={{ padding: '1rem' }}>
