@@ -72,12 +72,6 @@ func InitDB() {
 }
 
 func seedBuiltinTaskTypes() {
-	// Smooth Migration: rename old tasks in db to retain ID, schedules, reports, etc.
-	DB.Model(&TaskType{}).Where("name = ?", "ut_validate").Update("name", "ut_quality")
-	DB.Model(&TaskType{}).Where("name = ?", "ut_dashboard").Update("name", "ut_effectiveness")
-	DB.Model(&TaskType{}).Where("name = ?", "full_review").Update("name", "deep_review")
-	DB.Model(&TaskType{}).Where("name = ?", "mr_review").Update("name", "change_review")
-
 	tasksDir := "tasks"
 
 	entries, err := os.ReadDir(tasksDir)
