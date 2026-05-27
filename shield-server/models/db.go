@@ -137,4 +137,31 @@ func seedBuiltinTaskTypes() {
 			}
 		}
 	}
+
+	// Clean up orphan tasks that exist in database but are missing on disk
+	var dbTasks []TaskType
+	if err := DB.Find(&dbTasks).Error; err == nil {
+		for _, dbTask := range dbTasks {
+			expectedDir := strings.ReplaceAll(dbTask.Name, "_", "-")
+			dirPath := filepath.Join(tasksDir, expectedDir)
+
+			if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+				var reportCount int64
+				DB.Model(&TaskReport{}).Where("task_type_id = ?", dbTask.ID).Count(&reportCount)
+
+				if reportCount == 0 {
+					// Safe to physically delete if there are no historical execution reports
+					if err := DB.Unscoped().Delete(&dbTask).Error; err == nil {
+						log.Printf("Orphan Cleanup: Successfully deleted unused task type %q from database", dbTask.Name)
+					}
+				} else if dbTask.IsActive {
+					// Deactivate if there are execution reports to preserve GORM foreign keys
+					dbTask.IsActive = false
+					if err := DB.Model(&dbTask).Update("is_active", false).Error; err == nil {
+						log.Printf("Orphan Cleanup: Successfully deactivated task type %q in database", dbTask.Name)
+					}
+				}
+			}
+		}
+	}
 }
