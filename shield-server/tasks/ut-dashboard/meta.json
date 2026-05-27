@@ -2,7 +2,7 @@
   "name": "ut_dashboard",
   "display_name": "测试用例质量评估",
   "description": "对测试代码进行深度审计，从断言有效性、提前返回、功能单一性等多维度进行质量评估",
-  "engine_mode": "single",
+  "engine_mode": "chunked",
   "engine_config": {},
   "ai_backend": "",
   "target_scope": "business",
