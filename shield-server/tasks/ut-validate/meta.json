@@ -1,5 +1,5 @@
 {
-  "name": "ut_vaildate",
+  "name": "ut_validate",
   "display_name": "单元测试有效性校验",
   "description": "对测试代码仓库进行有效性审计，识别无效测试，确保测试用例能真实独立验证业务逻辑",
   "engine_mode": "single",
