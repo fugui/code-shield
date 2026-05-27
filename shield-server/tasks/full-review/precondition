@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# 输入: $1 = 代码仓本地路径
+# 退出码: 0=继续, 1=跳过, 2=失败
+# 标准输出: 跳过/失败原因
+
+CODES_PATH="$1"
+
+if [ -z "$CODES_PATH" ]; then
+    echo "未提供代码路径参数"
+    exit 2
+fi
+
+if [ ! -d "$CODES_PATH/.git" ]; then
+    echo "指定路径不是 git 仓库"
+    exit 2
+fi
+
+# 切换到目标目录
+if ! cd "$CODES_PATH" 2>/dev/null; then
+    echo "无法切换到目录: $CODES_PATH"
+    exit 2
+fi
+
+# 查找 C/C++/Python/Java 源代码文件
+result=$(find . -type f \( \
+    -name "*.c" -o \
+    -name "*.cpp" -o \
+    -name "*.cc" -o \
+    -name "*.cxx" -o \
+    -name "*.h" -o \
+    -name "*.hpp" -o \
+    -name "*.hxx" -o \
+    -name "*.py" -o \
+    -name "*.java" \
+\) 2>/dev/null | head -1)
+
+if [ -n "$result" ]; then
+    echo "Found source code in codebase."
+    echo "Found in: $result"
+    exit 0
+else
+    echo "非源码仓，没找到 C/C++、Python、Java 源代码"
+    exit 1
+fi

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# 启用递归通配符
+shopt -s globstar nullglob
+
+# 收集所有匹配的文件
+files=(**/*.c **/*.cc **/*.cpp **/*.cxx **/*.c++ **/*.h **/*.hh **/*.hpp **/*.hxx)
+
+if [ ${#files[@]} -gt 0 ]; then
+    exit 0
+else
+    echo "当前项目没有 C/C++ 源代码"
+    exit 1
+fi
