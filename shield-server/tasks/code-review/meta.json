@@ -1,0 +1,14 @@
+{
+  "name": "code_review",
+  "display_name": "代码检视",
+  "description": "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
+  "engine_mode": "single",
+  "engine_config": {},
+  "ai_backend": "",
+  "target_scope": "business",
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 20,
+  "notify_cc": [],
+  "timeout": 30,
+  "is_active": true
+}

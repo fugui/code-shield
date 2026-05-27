@@ -1,7 +1,11 @@
 package models
 
 import (
+	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
@@ -68,36 +72,68 @@ func InitDB() {
 }
 
 func seedBuiltinTaskTypes() {
-	builtins := []TaskType{
-		{
-			Name:            "code_review",
-			DisplayName:     "代码检视",
-			Description:     "对代码仓库进行全面的 AI 代码审查，检查多线程安全、内存泄漏、第三方库等问题",
-			NotifyTemplate:  "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-			NotifyThreshold: 20,
-			Timeout:         30,
-			IsActive:        true,
-			IsBuiltin:       true,
-		},
-		{
-			Name:            "memory_leak",
-			DisplayName:     "内存泄漏检测",
-			Description:     "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
-			NotifyTemplate:  "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-			NotifyThreshold: 10,
-			Timeout:         30,
-			IsActive:        true,
-			IsBuiltin:       true,
-		},
+	tasksDir := "tasks"
+
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		log.Printf("Warning: failed to read tasks directory: %v", err)
+		return
 	}
 
-	for _, bt := range builtins {
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		dirName := entry.Name()
+		metaFilePath := filepath.Join(tasksDir, dirName, "meta.json")
+
+		if _, err := os.Stat(metaFilePath); os.IsNotExist(err) {
+			continue
+		}
+
+		metaBytes, err := os.ReadFile(metaFilePath)
+		if err != nil {
+			log.Printf("Error: failed to read %s: %v", metaFilePath, err)
+			continue
+		}
+
+		var taskType TaskType
+		if err := json.Unmarshal(metaBytes, &taskType); err != nil {
+			log.Printf("Error: failed to parse %s: %v", metaFilePath, err)
+			continue
+		}
+
+		expectedDir := strings.ReplaceAll(taskType.Name, "_", "-")
+		if dirName != expectedDir {
+			log.Printf("Error: task name %q does not match its directory name %q (expected %q)", 
+				taskType.Name, dirName, expectedDir)
+			continue
+		}
+
 		var existing TaskType
-		if err := DB.Where("name = ?", bt.Name).First(&existing).Error; err != nil {
-			if err := DB.Create(&bt).Error; err != nil {
-				log.Printf("failed to seed task type %s: %v", bt.Name, err)
+		if err := DB.Where("name = ?", taskType.Name).First(&existing).Error; err != nil {
+			if err := DB.Create(&taskType).Error; err != nil {
+				log.Printf("Error: failed to create task type %s in db: %v", taskType.Name, err)
 			} else {
-				log.Printf("Built-in task type created: %s (%s)", bt.Name, bt.DisplayName)
+				log.Printf("Successfully loaded new task type from disk: %s (%s)", taskType.Name, taskType.DisplayName)
+			}
+		} else {
+			updates := map[string]interface{}{
+				"display_name":     taskType.DisplayName,
+				"description":      taskType.Description,
+				"engine_mode":      taskType.EngineMode,
+				"engine_config":    taskType.EngineConfig,
+				"ai_backend":       taskType.AIBackend,
+				"target_scope":     taskType.TargetScope,
+				"notify_template":  taskType.NotifyTemplate,
+				"notify_threshold": taskType.NotifyThreshold,
+				"notify_cc":        taskType.NotifyCc,
+				"timeout":          taskType.Timeout,
+				"is_active":        taskType.IsActive,
+			}
+			if err := DB.Model(&existing).Updates(updates).Error; err != nil {
+				log.Printf("Error: failed to update task type %s in db: %v", taskType.Name, err)
 			}
 		}
 	}

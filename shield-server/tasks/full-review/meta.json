@@ -1,0 +1,14 @@
+{
+  "name": "full_review",
+  "display_name": "全量代码检视",
+  "description": "对整个代码仓的全量存量代码进行严格的代码审查与质量评估",
+  "engine_mode": "single",
+  "engine_config": {},
+  "ai_backend": "",
+  "target_scope": "business",
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 20,
+  "notify_cc": [],
+  "timeout": 30,
+  "is_active": true
+}

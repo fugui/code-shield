@@ -75,7 +75,6 @@ type TaskType struct {
 	NotifyCc        datatypes.JSON `json:"notify_cc"`                        // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
 	Timeout         int            `gorm:"default:30" json:"timeout"`        // AI 执行超时（分钟）
 	IsActive        bool           `gorm:"default:true" json:"is_active"`
-	IsBuiltin       bool           `gorm:"default:false" json:"is_builtin"` // 内置任务不可删除
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
