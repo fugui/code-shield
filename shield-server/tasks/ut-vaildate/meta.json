@@ -1,0 +1,14 @@
+{
+  "name": "ut_vaildate",
+  "display_name": "单元测试有效性校验",
+  "description": "对测试代码仓库进行有效性审计，识别无效测试，确保测试用例能真实独立验证业务逻辑",
+  "engine_mode": "single",
+  "engine_config": {},
+  "ai_backend": "",
+  "target_scope": "business",
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "notify_cc": [],
+  "timeout": 30,
+  "is_active": true
+}

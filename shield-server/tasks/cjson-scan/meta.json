@@ -1,0 +1,14 @@
+{
+  "name": "cjson_scan",
+  "display_name": "cJSON 内存泄漏扫描",
+  "description": "检测代码中 cJSON 库相关的内存申请与释放（内存泄漏）问题",
+  "engine_mode": "single",
+  "engine_config": {},
+  "ai_backend": "",
+  "target_scope": "business",
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "notify_cc": [],
+  "timeout": 30,
+  "is_active": true
+}

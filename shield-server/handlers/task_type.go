@@ -45,8 +45,6 @@ func CreateTaskType(c *gin.Context) {
 		return
 	}
 
-	req.IsBuiltin = false
-
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
 	}
@@ -97,6 +95,10 @@ process.stdout.write(JSON.stringify(result));
 	os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644)
 	os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755)
 	os.WriteFile(models.AppConfig.GetAbsPath(req.PostprocessScript()), []byte(defaultPostprocess), 0755)
+
+	// 写入 meta.json
+	metaBytes, _ := json.MarshalIndent(req, "", "  ")
+	os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
 
 	// 同步 opencode agent 文件
 	services.SyncTaskTypeAgents(req)
@@ -172,10 +174,17 @@ func UpdateTaskType(c *gin.Context) {
 	}
 
 	models.DB.First(&taskType, id)
+
+	// 将最新元数据重写回磁盘的 meta.json
+	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
+	os.MkdirAll(absTaskDir, 0755)
+	metaBytes, _ := json.MarshalIndent(taskType, "", "  ")
+	os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
+
 	c.JSON(http.StatusOK, taskType)
 }
 
-// DeleteTaskType deletes a task type (built-in types cannot be deleted)
+// DeleteTaskType deletes a task type
 func DeleteTaskType(c *gin.Context) {
 	id := c.Param("id")
 	var taskType models.TaskType
@@ -184,15 +193,14 @@ func DeleteTaskType(c *gin.Context) {
 		return
 	}
 
-	if taskType.IsBuiltin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "内置任务类型不可删除"})
-		return
-	}
-
 	if err := models.DB.Delete(&taskType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task type"})
 		return
 	}
+
+	// 物理删除磁盘文件夹，防止重启后再次被扫出装载
+	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
+	os.RemoveAll(absTaskDir)
 
 	// 清理关联的 opencode agent 文件
 	services.RemoveTaskTypeAgents(taskType)
