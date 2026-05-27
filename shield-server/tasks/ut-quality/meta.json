@@ -1,7 +1,7 @@
 {
-  "name": "ut_validate",
-  "display_name": "单元测试有效性校验",
-  "description": "对测试代码仓库进行有效性审计，识别无效测试，确保测试用例能真实独立验证业务逻辑",
+  "name": "ut_quality",
+  "display_name": "单元测试代码质量审计",
+  "description": "针对单元测试的代码质量进行审计，识别代码坏味道、脆弱测试、资源泄漏、过度 Mock 及硬编码等工程质量问题",
   "engine_mode": "chunked",
   "engine_config": {},
   "ai_backend": "",
