@@ -1,5 +1,6 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { appNavigatePath } from '../config';
 import TaskOverviewTab from './ReviewOverviewTab';
 import ExecutionLogs from './ExecutionLogs';
 
@@ -12,7 +13,7 @@ function TaskManagement() {
   const activeTab: TaskTab = (tab as TaskTab) || 'overview';
 
   const setActiveTab = (t: TaskTab) => {
-    navigate(`/tasks/${t}`, { replace: true });
+    navigate(appNavigatePath(`/tasks/${t}`), { replace: true });
   };
 
   const tabStyle = (t: TaskTab) => ({

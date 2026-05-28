@@ -1,5 +1,6 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { appNavigatePath } from '../config';
 import TeamsTab from './TeamsTab';
 import MembersTab from './MembersTab';
 import Repositories from './Repositories';
@@ -13,7 +14,7 @@ function TeamManagement() {
   const activeTab: TeamTab = (tab as TeamTab) || 'departments';
 
   const setActiveTab = (t: TeamTab) => {
-    navigate(`/teams/${t}`, { replace: true });
+    navigate(appNavigatePath(`/teams/${t}`), { replace: true });
   };
 
   const tabStyle = (t: TeamTab) => ({

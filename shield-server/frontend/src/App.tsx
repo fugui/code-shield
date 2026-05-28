@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY } from './config';
+import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
 import TaskManagement from './pages/CodeReviewManagement';
 import RepoTaskHistory from './pages/RepoReviewHistory';
 import KeyIssues from './pages/KeyIssues';
@@ -60,7 +60,7 @@ window.fetch = async (...args) => {
 
 const PrivateRoute = ({ children }: { children: JSX.Element }) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
   return children;
 };
 
@@ -95,7 +95,7 @@ function AuthHeader() {
   const handleLogout = () => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     window.dispatchEvent(new Event('auth-change'));
-    navigate('/login');
+    navigate(appNavigatePath('/login'));
   };
 
   const [showDropdown, setShowDropdown] = useState(false);
@@ -245,9 +245,10 @@ function Sidebar() {
       <nav style={{ padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
 
         {navItems.map(item => {
-          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+          const itemPath = appNavigatePath(item.path);
+          const isActive = location.pathname === itemPath || location.pathname.startsWith(itemPath + '/');
           return (
-            <Link key={item.path} to={item.path} style={{
+            <Link key={item.path} to={itemPath} style={{
               display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
               borderRadius: '8px', textDecoration: 'none',
               color: isActive ? 'var(--primary-color)' : '#64748b',
@@ -304,7 +305,7 @@ function AppContent() {
       <MainLayout>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Navigate to="/tasks" replace />} />
+          <Route path="/" element={<Navigate to={appNavigatePath("/tasks")} replace />} />
           <Route path="/tasks" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
           <Route path="/tasks/:tab" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
           <Route path="/tasks/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
