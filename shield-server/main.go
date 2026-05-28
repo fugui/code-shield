@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-//go:embed frontend/dist/*
+//go:embed all:frontend/dist
 var frontendFS embed.FS
 
 // 构建时通过 -ldflags 注入
@@ -181,11 +182,23 @@ func main() {
 				return
 			}
 
-			if path != "/" {
-				f, err := distFS.Open(path[1:])
+			// If the user visits the root / or exact /shield (no slash), redirect to /shield/
+			if path == "/" || path == "/shield" {
+				c.Redirect(http.StatusFound, "/shield/")
+				return
+			}
+
+			// Strip /shield prefix if present to match internal dist directory structure
+			cleanPath := path
+			if strings.HasPrefix(path, "/shield") {
+				cleanPath = strings.TrimPrefix(path, "/shield")
+			}
+
+			if cleanPath != "" && cleanPath != "/" {
+				f, err := distFS.Open(cleanPath[1:])
 				if err == nil {
 					f.Close()
-					c.FileFromFS(path, httpFS)
+					c.FileFromFS(cleanPath, httpFS)
 					return
 				}
 			}
