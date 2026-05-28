@@ -235,7 +235,7 @@ function Sidebar() {
   return (
     <aside style={{ width: '260px', background: 'var(--card-bg)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0 }}>
       <div style={{ height: '70px', padding: '0 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem', boxSizing: 'border-box' }}>
-        <img src={apiUrl('/madun-logo.png')} alt="码盾" style={{ width: '34px', height: '34px', objectFit: 'contain', flexShrink: 0 }} />
+        <img src={apiUrl('/assets/madun-logo.png')} alt="码盾" style={{ width: '34px', height: '34px', objectFit: 'contain', flexShrink: 0 }} />
         <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-color)', letterSpacing: '0.5px', fontWeight: 700 }}>码盾，守护代码质量</h2>
           <span style={{ fontSize: '0.7rem', color: '#94a3b8', letterSpacing: '0.3px' }}>Code Shield</span>
@@ -275,12 +275,14 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const isEmbedded = React.useContext(EmbeddedContext);
 
   // Don't show sidebar on login page or public read-only pages
-  if (location.pathname === '/login' || location.pathname.startsWith('/public/')) {
+  const isLoginPath = location.pathname.endsWith('/login');
+  const isPublicPath = location.pathname.includes('/public/');
+  if (isLoginPath || isPublicPath) {
     return <>{children}</>;
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: isEmbedded ? 'auto' : '100vh', background: 'var(--bg-color)' }}>
+    <div className={isEmbedded ? "embedded" : ""} style={{ display: 'flex', minHeight: isEmbedded ? 'auto' : '100vh', background: 'var(--bg-color)', flex: 1 }}>
       {!isEmbedded && <Sidebar />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>

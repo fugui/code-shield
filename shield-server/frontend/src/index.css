@@ -370,3 +370,106 @@ body {
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
+
+/* ===== Portal Embedded Dark Theme Adaptor ===== */
+.embedded {
+  --primary-color: #3b82f6;
+  --bg-color: #0f172a;
+  --text-color: #f8fafc;
+  --card-bg: #1e293b;
+  --border-color: #334155;
+}
+
+.embedded .table th {
+  color: #94a3b8;
+}
+
+.embedded .sidebar-panel {
+  background: #1e293b;
+  border-left: 1px solid #334155;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.3);
+}
+
+.embedded .sidebar-header {
+  border-bottom: 1px solid #334155;
+  color: #f8fafc;
+}
+
+.embedded .sidebar-footer {
+  border-top: 1px solid #334155;
+  background: #1e293b;
+}
+
+.embedded .sidebar-section {
+  background: #0f172a;
+  border: 1px solid #334155;
+}
+
+.embedded .sidebar-input {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #f8fafc;
+}
+
+.embedded .sidebar-input:focus {
+  border-color: #3b82f6;
+}
+
+.embedded .sidebar-close-btn {
+  background: #0f172a;
+  color: #94a3b8;
+}
+
+.embedded .sidebar-label {
+  color: #f8fafc;
+}
+
+.embedded .cron-preset-chip {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #94a3b8;
+}
+
+.embedded .cron-preset-chip:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.embedded .cron-preset-chip.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.embedded .target-segments {
+  background: #1e293b;
+  border: 1px solid #334155;
+}
+
+.embedded .target-segment {
+  color: #94a3b8;
+}
+
+.embedded .target-segment:not(:last-child)::after {
+  background: #334155;
+}
+
+.embedded .target-segment:hover {
+  background: rgba(59, 130, 246, 0.08);
+  color: #f8fafc;
+}
+
+.embedded .target-segment.active {
+  background: #3b82f6;
+  color: white;
+}
+
+.embedded .sidebar-btn-cancel {
+  border: 1px solid #334155;
+  color: #f8fafc;
+}
+
+.embedded .sidebar-btn-cancel:hover {
+  background: #0f172a;
+}
