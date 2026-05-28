@@ -216,9 +216,18 @@ func main() {
 	if port == "" {
 		port = ":8080"
 	}
+
+	// Wrap standard handler to strip /shield prefix for API requests before passing to Gin
+	var httpHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/shield/api") {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/shield")
+		}
+		r.ServeHTTP(w, req)
+	})
+
 	srv := &http.Server{
 		Addr:              port,
-		Handler:           r,
+		Handler:           httpHandler,
 		ReadTimeout:       models.AppConfig.Server.ReadTimeout,
 		ReadHeaderTimeout: models.AppConfig.Server.ReadHeaderTimeout,
 		WriteTimeout:      models.AppConfig.Server.WriteTimeout,
