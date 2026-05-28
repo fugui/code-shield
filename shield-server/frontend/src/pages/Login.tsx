@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiUrl, AUTH_TOKEN_KEY } from '../config';
+import { apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from '../config';
 
 function Login() {
   const [username, setUsername] = useState('');
@@ -24,7 +24,7 @@ function Login() {
       if (res.ok) {
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
         window.dispatchEvent(new Event('auth-change'));
-        navigate('/');
+        navigate(appNavigatePath('/'));
       } else {
         setError(data.error || '登录失败，可能是密码错误或账号被禁用');
       }
