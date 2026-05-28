@@ -21,3 +21,15 @@ export function apiUrl(path: string): string {
  * Key used for storing the authentication token in localStorage.
  */
 export const AUTH_TOKEN_KEY = 'code_shield_token';
+
+/**
+ * Helper to compute absolute navigation paths that dynamically prefix BASE_PATH
+ * only when running in embedded portal mode.
+ */
+export function appNavigatePath(path: string): string {
+  const isEmbeddedMode = !!(window as any).__POWERED_BY_PORTAL__;
+  if (isEmbeddedMode) {
+    return BASE_PATH + path;
+  }
+  return path;
+}
