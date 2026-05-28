@@ -3,7 +3,6 @@ package handlers
 import (
 	"code-shield/models"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -149,10 +148,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		err = models.DB.Where("username = ?", unifiedClaims.Username).First(&user).Error
 		if err != nil {
 			// Auto-register user in Code Shield DB if authenticated by SSO Portal
-			email := unifiedClaims.Email
-			if email == "" {
-				email = unifiedClaims.Username + "@code-shield.com"
-			}
 			name := unifiedClaims.Name
 			if name == "" {
 				name = unifiedClaims.Username
@@ -161,7 +156,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			user = models.User{
 				Username:  unifiedClaims.Username,
 				Name:      name,
-				Email:     email,
 				IsAdmin:   unifiedClaims.IsAdmin,
 				IsActive:  true,
 				Password:  "$2a$10$wS2/7R1/x0WjG.y2B2P2Xe/r5a1p1o1s1y1s1t1e1m1p1a1s1s1w", // Disable password bypass
