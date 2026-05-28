@@ -10,3 +10,5 @@ export const menuItems: SubMenuItem[] = [
   { path: '/teams', label: '团队管理' },
   { path: '/config', label: '系统管理' }
 ];
+
+export default menuItems;
