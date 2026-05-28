@@ -267,16 +267,20 @@ function Sidebar() {
   );
 }
 
+export const EmbeddedContext = React.createContext(false);
+
 function MainLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const isEmbedded = React.useContext(EmbeddedContext);
+
   // Don't show sidebar on login page or public read-only pages
   if (location.pathname === '/login' || location.pathname.startsWith('/public/')) {
     return <>{children}</>;
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-color)' }}>
-      <Sidebar />
+    <div style={{ display: 'flex', minHeight: isEmbedded ? 'auto' : '100vh', background: 'var(--bg-color)' }}>
+      {!isEmbedded && <Sidebar />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
           <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
@@ -294,28 +298,50 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function App() {
+function AppContent() {
+  return (
+    <ToastProvider>
+      <MainLayout>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<Navigate to="/tasks" replace />} />
+          <Route path="/tasks" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
+          <Route path="/tasks/:tab" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
+          <Route path="/tasks/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
+          <Route path="/opensource" element={<PrivateRoute><OpenSourceManagement /></PrivateRoute>} />
+          <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
+          <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
+          <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
+          <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
+          <Route path="/config/:tab" element={<PrivateRoute><Configuration /></PrivateRoute>} />
+          <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
+          <Route path="/public/reports/:reportId" element={<PublicReportFindings />} />
+        </Routes>
+      </MainLayout>
+    </ToastProvider>
+  );
+}
+
+interface AppProps {
+  isEmbedded?: boolean;
+}
+
+function App({ isEmbedded = false }: AppProps) {
+  const isEmbeddedMode = isEmbedded || !!(window as any).__POWERED_BY_PORTAL__;
+
+  if (isEmbeddedMode) {
+    return (
+      <EmbeddedContext.Provider value={true}>
+        <AppContent />
+      </EmbeddedContext.Provider>
+    );
+  }
+
   return (
     <BrowserRouter basename={BASE_PATH}>
-      <ToastProvider>
-        <MainLayout>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Navigate to="/tasks" replace />} />
-            <Route path="/tasks" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
-            <Route path="/tasks/:tab" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
-            <Route path="/tasks/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
-            <Route path="/opensource" element={<PrivateRoute><OpenSourceManagement /></PrivateRoute>} />
-            <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
-            <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-            <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-            <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
-            <Route path="/config/:tab" element={<PrivateRoute><Configuration /></PrivateRoute>} />
-            <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
-            <Route path="/public/reports/:reportId" element={<PublicReportFindings />} />
-          </Routes>
-        </MainLayout>
-      </ToastProvider>
+      <EmbeddedContext.Provider value={false}>
+        <AppContent />
+      </EmbeddedContext.Provider>
     </BrowserRouter>
   );
 }
