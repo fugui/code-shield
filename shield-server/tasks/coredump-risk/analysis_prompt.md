@@ -97,7 +97,7 @@
       "severity": "严重",
       "category": "内存管理问题-空指针解引用",
       "file_path": "src/network/session.cpp",
-      "line_number": 142,
+      "line_number": "142-145",
       "code_snippet": "void process(Session* s) {\n    int id = s->get_id();\n    log_info(\"session id: %d\", id);\n}",
       "title": "未对输入指针进行空值校验直接解引用",
       "detail": "在多线程网络回调中，传入的指针 s 可能由于对端断开连接已被置为 nullptr。代码未做校验直接调用 s->get_id() 将导致段错误 (Segmentation fault) 并触发 Coredump。",
