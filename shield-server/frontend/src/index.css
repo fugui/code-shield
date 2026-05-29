@@ -1,9 +1,10 @@
 :root {
-  --primary-color: #2563eb;
-  --bg-color: #f8fafc;
-  --text-color: #334155;
-  --card-bg: #ffffff;
-  --border-color: #e2e8f0;
+  --primary-color: var(--portal-primary-color, #2563eb);
+  --bg-color: var(--portal-bg-color, #f8fafc);
+  --text-color: var(--portal-text-color, #334155);
+  --card-bg: var(--portal-card-bg, #ffffff);
+  --border-color: var(--portal-border-color, #e2e8f0);
+  --text-secondary: var(--portal-text-secondary, #94a3b8);
   --success-color: #10b981;
   --danger-color: #ef4444;
   --warning-color: #f59e0b;
