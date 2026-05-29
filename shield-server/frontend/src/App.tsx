@@ -285,27 +285,29 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     <div className={isEmbedded ? "embedded" : ""} style={{ display: 'flex', minHeight: isEmbedded ? 'auto' : '100vh', background: 'var(--bg-color)', flex: 1 }}>
       {!isEmbedded && <Sidebar />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
-          <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
-            {(() => {
-              const relativePath = location.pathname.startsWith(BASE_PATH)
-                ? location.pathname.slice(BASE_PATH.length)
-                : location.pathname;
-              return relativePath.startsWith('/tasks')
-                ? '任务中心'
-                : relativePath.startsWith('/opensource')
-                  ? '开源管理'
-                  : relativePath.startsWith('/config')
-                    ? '系统管理'
-                    : relativePath.startsWith('/teams')
-                      ? '团队组织架构与代码仓配置'
-                      : '问题清单';
-            })()}
-          </h1>
-          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-            <AuthHeader />
-          </div>
-        </header>
+        {!isEmbedded && (
+          <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
+            <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
+              {(() => {
+                const relativePath = location.pathname.startsWith(BASE_PATH)
+                  ? location.pathname.slice(BASE_PATH.length)
+                  : location.pathname;
+                return relativePath.startsWith('/tasks')
+                  ? '任务中心'
+                  : relativePath.startsWith('/opensource')
+                    ? '开源管理'
+                    : relativePath.startsWith('/config')
+                      ? '系统管理'
+                      : relativePath.startsWith('/teams')
+                        ? '团队组织架构与代码仓配置'
+                        : '问题清单';
+              })()}
+            </h1>
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+              <AuthHeader />
+            </div>
+          </header>
+        )}
         <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
             {children}
         </main>
