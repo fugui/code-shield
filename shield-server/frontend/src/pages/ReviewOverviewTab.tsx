@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 import ReportSidebar from '../components/ReportSidebar';
+import { appNavigatePath } from '../config';
 
 type SortOrder = 'latest_task_time_desc' | 'latest_task_time_asc' | 'status_desc' | 'status_asc';
 
@@ -579,7 +580,7 @@ function TaskOverviewTab() {
                     </span>
                     {item.report_count > 0 && (
                       <button
-                        onClick={() => navigate(`/tasks/repo/${item.repo.id}`, { state: { returnSearch: searchParams.toString() } })}
+                        onClick={() => navigate(appNavigatePath(`/tasks/repo/${item.repo.id}`), { state: { returnSearch: searchParams.toString() } })}
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem', borderRadius: '4px', color: 'var(--primary-color)' }}
                         title="查看历史报告"
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
