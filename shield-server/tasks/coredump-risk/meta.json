@@ -1,0 +1,14 @@
+{
+  "name": "coredump_risk",
+  "display_name": "C/C++ Coredump 风险分析",
+  "description": "专项分析 C/C++ 代码中可能引发进程崩溃（Coredump）的高危风险，如空指针解引用、缓冲区溢出、野指针、除零异常及未捕获信号等问题",
+  "engine_mode": "chunked",
+  "engine_config": {},
+  "ai_backend": "",
+  "target_scope": "business",
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "notify_cc": [],
+  "timeout": 60,
+  "is_active": true
+}
