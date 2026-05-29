@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# 搜索 C/C++ 代码中的源文件，判断是否包含 C/C++ 项目
+# 输入: $1 = 代码仓本地路径
+# 退出码: 0=继续, 1=跳过, 2=失败
+# 标准输出: 跳过/失败原因
+
+CODES_PATH="$1"
+
+if [ -z "$CODES_PATH" ]; then
+    echo "未提供代码路径参数"
+    exit 2
+fi
+
+if [ ! -d "$CODES_PATH" ]; then
+    echo "目录不存在: $CODES_PATH"
+    exit 2
+fi
+
+# 切换到目标目录
+if ! cd "$CODES_PATH" 2>/dev/null; then
+    echo "无法切换到目录: $CODES_PATH"
+    exit 2
+fi
+
+# 搜索 C/C++ 常见源文件和头文件后缀
+result=$(find . -type f \( -name "*.c" -o -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.h" -o -name "*.hpp" -o -name "*.hxx" \) -print -quit 2>/dev/null)
+
+if [ -n "$result" ]; then
+    echo "C/C++ files detected in codebase."
+    exit 0
+else
+    echo "代码中没有检测到 C/C++ 源文件（*.c, *.cpp, *.cc, *.h 等）"
+    exit 1
+fi
