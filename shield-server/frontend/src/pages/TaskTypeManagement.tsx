@@ -12,7 +12,7 @@ function TaskTypeManagement() {
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
     ai_backend: '', target_scope: 'business',
-    notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 30, is_active: true
+    notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 60, is_active: true
   });
   const [ccInput, setCcInput] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -34,7 +34,7 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', ai_backend: '', target_scope: 'business', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 30, is_active: true });
+    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', ai_backend: '', target_scope: 'business', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 60, is_active: true });
     setEditingId(null);
     setCcInput('');
   };
@@ -53,7 +53,7 @@ function TaskTypeManagement() {
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
       ai_backend: tt.ai_backend || '', target_scope: tt.target_scope || 'business',
       notify_template: tt.notify_template || '',
-      notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 30, is_active: tt.is_active
+      notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 60, is_active: tt.is_active
     });
     setCcInput('');
     setEditingId(tt.id);
@@ -325,7 +325,7 @@ function TaskTypeManagement() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={labelStyle}>执行超时（分钟）</label>
-                  <input type="number" style={fieldStyle} value={form.timeout} onChange={e => setForm({...form, timeout: parseInt(e.target.value) || 30})} />
+                  <input type="number" style={fieldStyle} value={form.timeout} onChange={e => setForm({...form, timeout: parseInt(e.target.value) || 60})} />
                 </div>
                 <div>
                   <label style={labelStyle}>通知阈值（评分≥此值才通知）</label>

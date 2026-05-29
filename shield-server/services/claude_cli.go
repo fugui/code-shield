@@ -59,7 +59,7 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
 	if timeout <= 0 {
-		timeout = 30 * time.Minute
+		timeout = 60 * time.Minute
 	}
 
 	parentCtx := req.ParentContext
