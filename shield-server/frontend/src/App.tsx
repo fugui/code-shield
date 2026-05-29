@@ -287,7 +287,20 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
           <h1 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 600 }}>
-            {location.pathname.startsWith('/tasks') ? '任务中心' : location.pathname === '/opensource' ? '开源管理' : location.pathname === '/config' ? '系统管理' : location.pathname.startsWith('/teams') ? '团队组织架构与代码仓配置' : '问题清单'}
+            {(() => {
+              const relativePath = location.pathname.startsWith(BASE_PATH)
+                ? location.pathname.slice(BASE_PATH.length)
+                : location.pathname;
+              return relativePath.startsWith('/tasks')
+                ? '任务中心'
+                : relativePath.startsWith('/opensource')
+                  ? '开源管理'
+                  : relativePath.startsWith('/config')
+                    ? '系统管理'
+                    : relativePath.startsWith('/teams')
+                      ? '团队组织架构与代码仓配置'
+                      : '问题清单';
+            })()}
           </h1>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
             <AuthHeader />
