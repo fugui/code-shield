@@ -373,11 +373,12 @@ body {
 
 /* ===== Portal Embedded Theme Adaptor ===== */
 .embedded {
-  --primary-color: var(--primary-color);
-  --bg-color: var(--bg-color);
-  --text-color: var(--text-color);
-  --card-bg: var(--card-bg);
-  --border-color: var(--border-color);
+  --primary-color: var(--portal-primary-color, #3b82f6);
+  --bg-color: var(--portal-bg-color, #0f172a);
+  --text-color: var(--portal-text-color, #f8fafc);
+  --card-bg: var(--portal-card-bg, #1e293b);
+  --border-color: var(--portal-border-color, #334155);
+  --text-secondary: var(--portal-text-secondary, #94a3b8);
 }
 
 .embedded .table th {
