@@ -58,43 +58,68 @@ func CreateTaskType(c *gin.Context) {
 	absTaskDir := models.AppConfig.GetAbsPath(req.TaskDir())
 	os.MkdirAll(absTaskDir, 0755)
 
-	defaultAnalysisPrompt := "# " + req.DisplayName + " 分析指令\n\n请对当前代码仓库执行" + req.DisplayName + "任务。\n\n## 要求\n\n1. 仔细检查代码\n2. 输出结构化 JSON 分析结果\n\n## 输出格式\n\n请严格按照以下 JSON 格式输出：\n\n```json\n{\n  \"findings\": [\n    {\n      \"severity\": \"严重程度\",\n      \"category\": \"问题分类\",\n      \"file_path\": \"文件路径\",\n      \"line_number\": 0,\n      \"code_snippet\": \"相关代码片段\",\n      \"title\": \"问题标题\",\n      \"detail\": \"详细说明\",\n      \"suggestion\": \"修复建议\"\n    }\n  ],\n  \"summary\": \"整体评估摘要\"\n}\n```\n"
-	defaultSynthesisPrompt := "# " + req.DisplayName + " 综合报告生成指令\n\n你将收到一份 JSON 格式的分析发现清单。请基于这些发现，生成一份面向技术管理者的 Markdown 综合报告。\n\n## 输出格式\n\n请输出 Markdown 文档，包含以下部分：\n\n1. 检视结果概要\n2. 检视摘要（300字）\n3. 发现的问题（逐条列出）\n4. 总结建议\n"
+	defaultAnalysisPrompt := "# " + req.DisplayName + " 分析指令\n\n" +
+		"你是一个软件开发经验非常丰富的顶级技术专家与安全审计专家。请对当前代码仓进行 " + req.DisplayName + " 专项分析任务。\n\n" +
+		"## 要求\n\n" +
+		"1. 深入分析代码中与 " + req.DisplayName + " 相关的潜在安全漏洞与质量缺陷。\n" +
+		"2. 排除测试代码，仅对业务核心代码进行分析。\n" +
+		"3. 仅报告确实存在或极大概率触发缺陷的代码，拒绝虚报。\n" +
+		"4. 必须精准指出问题发生的行号（使用字符串表示，支持单行如 \"42\" 或范围如 \"42-50\"），截取 3-10 行核心代码段。\n\n" +
+		"## 输出格式约束\n\n" +
+		"必须直接输出纯 JSON 字符串。绝对不得包含 ```json ... ``` 等 Markdown 代码块标记，并且 findings 字段必须符合规范。\n\n" +
+		"```json\n" +
+		"{\n" +
+		"  \"findings\": [\n" +
+		"    {\n" +
+		"      \"severity\": \"阻塞|严重|主要|提示|建议\",\n" +
+		"      \"category\": \"问题分类-具体子问题\",\n" +
+		"      \"file_path\": \"src/example.cpp\",\n" +
+		"      \"line_number\": \"42-45\",\n" +
+		"      \"code_snippet\": \"原始核心代码片段（3-10行）\",\n" +
+		"      \"title\": \"问题简述（一句话概括）\",\n" +
+		"      \"detail\": \"详细描述风险触发路径与缺陷逻辑\",\n" +
+		"      \"suggestion\": \"具体的代码修复建议与最佳实践\"\n" +
+		"    }\n" +
+		"  ],\n" +
+		"  \"summary\": \"200-300字的整体评估摘要，描述主要隐患及其风险影响\"\n" +
+		"}\n" +
+		"```\n"
+	defaultSynthesisPrompt := "# " + req.DisplayName + " 综合报告生成指令\n\n" +
+		"你将收到一份 JSON 格式的分析发现清单（基于 @analysis_prompt.md 提示词进行的分析）。请基于这些发现，生成一份指导开发者进行安全修复的综合评估报告。\n\n" +
+		"## 输出格式要求\n\n" +
+		"请使用简体中文，以 Markdown 格式输出，内容包括\"概要\"、\"问题清单\"、\"总结与建议\"三部分组成。\n\n" +
+		"### 一、概要\n" +
+		"- 介绍本次审查的目的与主要方法。\n" +
+		"- 问题总数： 3 个\n\n" +
+		"> ⚠️ **概要部分的最后一行，格式约束（机器解析，不得违反）**： 必须严格使用 `问题总数： N 个` 的格式，关键字和标点均不得更改， N 为非负整数，无则填 `0`。\n\n" +
+		"### 二、问题清单\n" +
+		"- 按照严重程度从高到低对风险列表进行整理排版。\n" +
+		"- 给出文件定位、风险分类、严重级别、原始代码片段以及具体可靠的修复代码方案。\n\n" +
+		"### 三、总结与建议\n" +
+		"- 一个简洁的问题缺陷总结和预防改进指导。\n"
 	defaultPrecondition := `#!/bin/bash
 # 前置检查脚本
 # exit 0 = 继续执行, exit 1 = 跳过, exit 2 = 失败
 REPO_DIR="$1"
-# 检查 7 天内是否有新提交
-RECENT=$(git -C "$REPO_DIR" log --since="7 days ago" --oneline 2>/dev/null | head -1)
-if [ -z "$RECENT" ]; then
-    echo "最近 7 天无新提交"
+
+if [ -z "$REPO_DIR" ] || [ ! -d "$REPO_DIR" ]; then
+    echo "代码仓路径不存在或未提供"
+    exit 2
+fi
+
+# 检查代码仓是否为空目录
+if [ -z "$(ls -A "$REPO_DIR" 2>/dev/null)" ]; then
+    echo "代码仓为空目录，无需执行扫描"
     exit 1
 fi
+
+echo "代码仓校验成功，开始执行扫描。"
 exit 0
-`
-	defaultPostprocess := `#!/usr/bin/env node
-const fs = require('fs');
-const reportPath = process.argv[2];
-
-if (!reportPath || !fs.existsSync(reportPath)) {
-    console.log(JSON.stringify({ score: 0, summary: "报告文件未找到", metrics: {} }));
-    process.exit(0);
-}
-
-const content = fs.readFileSync(reportPath, 'utf8');
-// TODO: 根据 AI 报告内容解析分数和指标
-const result = {
-    score: 0,
-    summary: "待完善后置分析逻辑",
-    metrics: {}
-};
-process.stdout.write(JSON.stringify(result));
 `
 
 	os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644)
 	os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644)
 	os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755)
-	os.WriteFile(models.AppConfig.GetAbsPath(req.PostprocessScript()), []byte(defaultPostprocess), 0755)
 
 	// 写入 meta.json
 	metaBytes, _ := json.MarshalIndent(req, "", "  ")
