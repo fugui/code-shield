@@ -19,6 +19,7 @@ yarn-debug.log*
 shield-server/code_shield.db
 shield-server/codes/
 shield-server/review-reports/
+shield-server/reports/
 
 # Binary executables
 shield-server/code-shield-server
