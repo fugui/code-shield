@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import TaskTypeManagement from './TaskTypeManagement';
-import { AUTH_TOKEN_KEY } from '../config';
+import { AUTH_TOKEN_KEY, appNavigatePath } from '../config';
 
 function Configuration() {
   const { showToast } = useToast();
@@ -260,7 +260,7 @@ function Configuration() {
     <div className="card">
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem', gap: '2rem' }}>
         <button 
-          onClick={() => navigate('/config/users')}
+          onClick={() => navigate(appNavigatePath('/config/users'))}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
             fontSize: '0.875rem', fontWeight: 600,
@@ -273,7 +273,7 @@ function Configuration() {
         </button>
 
         <button 
-          onClick={() => navigate('/config/task-types')}
+          onClick={() => navigate(appNavigatePath('/config/task-types'))}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
             fontSize: '0.875rem', fontWeight: 600,
@@ -286,7 +286,7 @@ function Configuration() {
         </button>
 
         <button 
-          onClick={() => navigate('/config/tasks')}
+          onClick={() => navigate(appNavigatePath('/config/tasks'))}
           style={{ 
             background: 'transparent', border: 'none', padding: '1rem 0.5rem', cursor: 'pointer',
             fontSize: '0.875rem', fontWeight: 600,

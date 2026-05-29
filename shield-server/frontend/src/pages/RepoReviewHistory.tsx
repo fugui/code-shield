@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import ReportSidebar from '../components/ReportSidebar';
+import { appNavigatePath } from '../config';
 
 function RepoReviewHistory() {
   const { repoId } = useParams<{ repoId: string }>();
@@ -128,7 +129,7 @@ function RepoReviewHistory() {
       {/* Header with back button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <button
-          onClick={() => navigate(`/tasks/overview${returnSearch ? '?' + returnSearch : ''}`)}
+          onClick={() => navigate(appNavigatePath(`/tasks/overview${returnSearch ? '?' + returnSearch : ''}`))}
           style={{
             background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px',
             cursor: 'pointer', padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
