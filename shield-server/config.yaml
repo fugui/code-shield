@@ -14,11 +14,11 @@ server:
 
 # ── 数据存储 ──
 storage:
-  root: "/home/fugui/test_root"  # 数据根目录，下设 codes/ 和 reports/ 子目录
+  root: "."  # 数据根目录，下设 codes/ 和 reports/ 子目录
 
 # ── AI 引擎 ──
 ai:
-  backend: "claude"              # CLI 后端：claude 或 opencode
+  backend: "opencode"              # CLI 后端：claude 或 opencode
   # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false
   # output_format: "text"        # 输出格式：text 或 json，对 claude 为 text/stream-json，对 opencode 为 default/json，默认 text
 
