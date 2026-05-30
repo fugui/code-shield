@@ -239,12 +239,27 @@ func exchangeCodeForToken(cfg models.OAuth2Config, code, codeVerifier string) (m
 	return result, nil
 }
 
-// fetchUserInfo calls the OAuth2 UserInfo endpoint with the access token.
+// fetchUserInfo calls the custom OAuth2 UserInfo endpoint using POST with client info.
 func fetchUserInfo(userInfoURL, accessToken string) (map[string]interface{}, error) {
-	req, err := http.NewRequest("GET", userInfoURL, nil)
+	oauth2Cfg := models.AppConfig.Auth.OAuth2
+
+	// 1. Build the non-standard POST JSON request body
+	requestBody, err := json.Marshal(map[string]string{
+		"client_id":    oauth2Cfg.ClientID,
+		"access_token": accessToken,
+		"scope":        strings.Join(oauth2Cfg.Scopes, " "),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal userinfo request body: %w", err)
+	}
+
+	// 2. Create POST request
+	req, err := http.NewRequest("POST", userInfoURL, strings.NewReader(string(requestBody)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create userinfo request: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
+	// Also keep the Bearer token in the header in case the IdP does hybrid checks
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	client := &http.Client{Timeout: 10 * time.Second}
