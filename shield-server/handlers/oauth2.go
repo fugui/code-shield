@@ -127,7 +127,7 @@ func OAuth2Callback(c *gin.Context) {
 
 	// Extract user attributes using field mapping
 	mapping := oauth2Cfg.FieldMapping
-	email := getStringField(userInfo, mapping.Email)
+	email := parseSSOAttribute(getStringField(userInfo, mapping.Email))
 	name := getStringField(userInfo, mapping.Name)
 	employeeID := getStringField(userInfo, mapping.EmployeeID)
 	uniqueID := getStringField(userInfo, mapping.UniqueID)
@@ -135,7 +135,7 @@ func OAuth2Callback(c *gin.Context) {
 
 	// Fallback: if email is empty, try mapping.Username
 	if email == "" {
-		email = getStringField(userInfo, mapping.Username)
+		email = parseSSOAttribute(getStringField(userInfo, mapping.Username))
 	}
 
 	if email == "" {
@@ -317,6 +317,31 @@ func getStringField(data map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+// parseSSOAttribute parses a LDAP-style CN/EN username string (e.g. "cn=傅贵 en=fugui" or "en=fugui")
+// and returns cn if present, en if not, or the original string if neither exists.
+func parseSSOAttribute(val string) string {
+	if val == "" {
+		return ""
+	}
+	// Look for cn=
+	if idx := strings.Index(val, "cn="); idx != -1 {
+		sub := val[idx+3:]
+		if end := strings.Index(sub, " "); end != -1 {
+			return sub[:end]
+		}
+		return sub
+	}
+	// Look for en=
+	if idx := strings.Index(val, "en="); idx != -1 {
+		sub := val[idx+3:]
+		if end := strings.Index(sub, " "); end != -1 {
+			return sub[:end]
+		}
+		return sub
+	}
+	return val
 }
 
 // buildFrontendCallbackURL constructs the frontend OAuth callback URL with the JWT token.
