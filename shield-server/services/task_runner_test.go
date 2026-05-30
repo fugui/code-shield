@@ -686,4 +686,184 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 	})
 }
 
+func TestIsSourceFileWithTaskExtensions(t *testing.T) {
+	tests := []struct {
+		name           string
+		file           string
+		taskExtensions map[string]bool
+		expected       bool
+	}{
+		// ── nil taskExtensions → 回退到全局白名单 ──
+		{name: "nil extensions, .go file", file: "main.go", taskExtensions: nil, expected: true},
+		{name: "nil extensions, .py file", file: "app.py", taskExtensions: nil, expected: true},
+		{name: "nil extensions, .txt file", file: "readme.txt", taskExtensions: nil, expected: false},
+		{name: "nil extensions, Makefile", file: "Makefile", taskExtensions: nil, expected: true},
+		{name: "nil extensions, Dockerfile", file: "Dockerfile", taskExtensions: nil, expected: true},
 
+		// ── Python-only filter ──
+		{name: "py filter, .py file", file: "app.py", taskExtensions: map[string]bool{".py": true}, expected: true},
+		{name: "py filter, .go file rejected", file: "main.go", taskExtensions: map[string]bool{".py": true}, expected: false},
+		{name: "py filter, .java file rejected", file: "App.java", taskExtensions: map[string]bool{".py": true}, expected: false},
+		{name: "py filter, .c file rejected", file: "core.c", taskExtensions: map[string]bool{".py": true}, expected: false},
+		{name: "py filter, nested .py file", file: "services/billing.py", taskExtensions: map[string]bool{".py": true}, expected: true},
+		{name: "py filter, extensionless Makefile rejected", file: "Makefile", taskExtensions: map[string]bool{".py": true}, expected: false},
+
+		// ── C/C++ filter ──
+		{name: "cpp filter, .c file", file: "core.c", taskExtensions: map[string]bool{".c": true, ".cpp": true, ".h": true, ".hpp": true}, expected: true},
+		{name: "cpp filter, .cpp file", file: "engine.cpp", taskExtensions: map[string]bool{".c": true, ".cpp": true, ".h": true, ".hpp": true}, expected: true},
+		{name: "cpp filter, .h file", file: "include/api.h", taskExtensions: map[string]bool{".c": true, ".cpp": true, ".h": true, ".hpp": true}, expected: true},
+		{name: "cpp filter, .py rejected", file: "script.py", taskExtensions: map[string]bool{".c": true, ".cpp": true, ".h": true, ".hpp": true}, expected: false},
+		{name: "cpp filter, .go rejected", file: "server.go", taskExtensions: map[string]bool{".c": true, ".cpp": true, ".h": true, ".hpp": true}, expected: false},
+
+		// ── 隐藏目录和 vendor 目录排除（无论 taskExtensions 如何都应排除）──
+		{name: "hidden dir excluded with filter", file: ".github/workflows/ci.py", taskExtensions: map[string]bool{".py": true}, expected: false},
+		{name: "vendor dir excluded with filter", file: "vendor/lib.py", taskExtensions: map[string]bool{".py": true}, expected: false},
+		{name: "node_modules excluded with filter", file: "node_modules/pkg/index.js", taskExtensions: map[string]bool{".js": true}, expected: false},
+		{name: "__pycache__ excluded with filter", file: "__pycache__/mod.py", taskExtensions: map[string]bool{".py": true}, expected: false},
+
+		// ── 大小写不敏感 ──
+		{name: "case insensitive .PY", file: "app.PY", taskExtensions: map[string]bool{".py": true}, expected: true},
+		{name: "case insensitive .Cpp", file: "main.Cpp", taskExtensions: map[string]bool{".cpp": true}, expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isSourceFile(tt.file, tt.taskExtensions)
+			if got != tt.expected {
+				t.Errorf("isSourceFile(%q, %v) = %v, want %v", tt.file, tt.taskExtensions, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestScanAndChunkWithFileExtensions(t *testing.T) {
+	// Setup a temp git repo with mixed language files
+	tempDir, err := os.MkdirTemp("", "test-scan-chunk-ext-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	exec.Command("git", "-C", tempDir, "init").Run()
+	exec.Command("git", "-C", tempDir, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.com").Run()
+
+	// Create mixed files
+	files := map[string]string{
+		"app.py":            "print('hello')",
+		"utils/calc.py":     "def add(a, b): return a + b",
+		"main.go":           "package main",
+		"server.go":         "package main",
+		"core.c":            "int main() {}",
+		"include/api.h":     "#pragma once",
+		"lib.java":          "public class Lib {}",
+		"README.md":         "# Readme",
+		"test_app.py":       "import pytest",
+	}
+	for name, content := range files {
+		fullPath := filepath.Join(tempDir, name)
+		os.MkdirAll(filepath.Dir(fullPath), 0755)
+		os.WriteFile(fullPath, []byte(content), 0644)
+	}
+	exec.Command("git", "-C", tempDir, "add", ".").Run()
+	exec.Command("git", "-C", tempDir, "commit", "-m", "init").Run()
+
+	t.Run("no file_extensions filter (all source files)", func(t *testing.T) {
+		cfg := ChunkConfig{MaxFiles: 100, Depth: 1}
+		chunks, err := scanAndChunk(tempDir, cfg, "all")
+		if err != nil {
+			t.Fatalf("scanAndChunk failed: %v", err)
+		}
+
+		totalFiles := 0
+		for _, files := range chunks {
+			totalFiles += len(files)
+		}
+		// Should include .py(3), .go(2), .c(1), .h(1), .java(1) = 8 source files, exclude .md
+		if totalFiles != 8 {
+			t.Errorf("expected 8 source files with no filter, got %d", totalFiles)
+			for name, files := range chunks {
+				t.Logf("chunk %q: %v", name, files)
+			}
+		}
+	})
+
+	t.Run("Python-only filter", func(t *testing.T) {
+		cfg := ChunkConfig{MaxFiles: 100, Depth: 1, FileExtensions: []string{".py"}}
+		chunks, err := scanAndChunk(tempDir, cfg, "all")
+		if err != nil {
+			t.Fatalf("scanAndChunk failed: %v", err)
+		}
+
+		totalFiles := 0
+		for _, files := range chunks {
+			totalFiles += len(files)
+			for _, f := range files {
+				if !strings.HasSuffix(f, ".py") {
+					t.Errorf("unexpected non-.py file in chunk: %s", f)
+				}
+			}
+		}
+		// Should include app.py, utils/calc.py, test_app.py
+		if totalFiles != 3 {
+			t.Errorf("expected 3 .py files, got %d", totalFiles)
+		}
+	})
+
+	t.Run("Python-only with business scope", func(t *testing.T) {
+		cfg := ChunkConfig{MaxFiles: 100, Depth: 1, FileExtensions: []string{".py"}}
+		chunks, err := scanAndChunk(tempDir, cfg, "business")
+		if err != nil {
+			t.Fatalf("scanAndChunk failed: %v", err)
+		}
+
+		totalFiles := 0
+		for _, files := range chunks {
+			totalFiles += len(files)
+		}
+		// Should include app.py, utils/calc.py (test_app.py excluded by business scope)
+		if totalFiles != 2 {
+			t.Errorf("expected 2 business .py files, got %d", totalFiles)
+		}
+	})
+
+	t.Run("C/C++ filter", func(t *testing.T) {
+		cfg := ChunkConfig{MaxFiles: 100, Depth: 1, FileExtensions: []string{".c", ".h"}}
+		chunks, err := scanAndChunk(tempDir, cfg, "all")
+		if err != nil {
+			t.Fatalf("scanAndChunk failed: %v", err)
+		}
+
+		totalFiles := 0
+		for _, files := range chunks {
+			totalFiles += len(files)
+			for _, f := range files {
+				ext := strings.ToLower(filepath.Ext(f))
+				if ext != ".c" && ext != ".h" {
+					t.Errorf("unexpected file in chunk: %s (ext=%s)", f, ext)
+				}
+			}
+		}
+		// Should include core.c, include/api.h
+		if totalFiles != 2 {
+			t.Errorf("expected 2 C/H files, got %d", totalFiles)
+		}
+	})
+
+	t.Run("extension without dot prefix", func(t *testing.T) {
+		cfg := ChunkConfig{MaxFiles: 100, Depth: 1, FileExtensions: []string{"py"}}
+		chunks, err := scanAndChunk(tempDir, cfg, "all")
+		if err != nil {
+			t.Fatalf("scanAndChunk failed: %v", err)
+		}
+
+		totalFiles := 0
+		for _, files := range chunks {
+			totalFiles += len(files)
+		}
+		// "py" should be auto-normalized to ".py"
+		if totalFiles != 3 {
+			t.Errorf("expected 3 .py files with 'py' (no dot), got %d", totalFiles)
+		}
+	})
+}

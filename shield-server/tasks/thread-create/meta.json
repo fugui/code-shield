@@ -3,7 +3,7 @@
   "display_name": "新建线程分析",
   "description": "分析 C/C++ 代码中显式创建线程的合理性与生命周期管理方式",
   "engine_mode": "chunked",
-  "engine_config": {},
+  "engine_config": {"file_extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx"]},
   "ai_backend": "",
   "target_scope": "business",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",

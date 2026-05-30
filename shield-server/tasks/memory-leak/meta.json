@@ -3,7 +3,7 @@
   "display_name": "内存泄漏检测",
   "description": "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
   "engine_mode": "chunked",
-  "engine_config": {},
+  "engine_config": {"file_extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx"]},
   "ai_backend": "",
   "target_scope": "business",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
