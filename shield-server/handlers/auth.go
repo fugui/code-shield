@@ -37,7 +37,7 @@ func getPortalJWTSecret() []byte {
 
 type Claims struct {
 	UserID   uint   `json:"user_id"`
-	Username string `json:"username"`
+	Email    string `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -52,7 +52,6 @@ type PortalClaims struct {
 
 type UnifiedClaims struct {
 	UserID   uint
-	Username string
 	Email    string
 	Name     string
 	IsAdmin  bool
@@ -74,7 +73,7 @@ func parseToken(tokenString string) (*UnifiedClaims, error) {
 	if err == nil && token.Valid {
 		return &UnifiedClaims{
 			UserID:   shieldClaims.UserID,
-			Username: shieldClaims.Username,
+			Email:    shieldClaims.Email,
 		}, nil
 	}
 
@@ -89,9 +88,13 @@ func parseToken(tokenString string) (*UnifiedClaims, error) {
 			return portalSecret, nil
 		})
 		if err == nil && token.Valid {
+			// Portal SSO maps Username to Email if Email is blank, but we prefer Email
+			email := portalClaims.Email
+			if email == "" {
+				email = portalClaims.Username
+			}
 			return &UnifiedClaims{
-				Username: portalClaims.Username,
-				Email:    portalClaims.Email,
+				Email:    email,
 				Name:     portalClaims.Name,
 				IsAdmin:  portalClaims.IsAdmin,
 			}, nil
@@ -109,7 +112,7 @@ func Login(c *gin.Context) {
 	}
 
 	var req struct {
-		Username string `json:"username" binding:"required"`
+		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -118,7 +121,7 @@ func Login(c *gin.Context) {
 	}
 
 	var user models.User
-	if err := models.DB.Where("username = ?", req.Username).First(&user).Error; err != nil {
+	if err := models.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
@@ -138,7 +141,7 @@ func Login(c *gin.Context) {
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
 		UserID:   user.ID,
-		Username: user.Username,
+		Email:    user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
@@ -186,19 +189,20 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 2. Automated user provisioning
 		var user models.User
-		err = models.DB.Where("username = ?", unifiedClaims.Username).First(&user).Error
+		err = models.DB.Where("email = ?", unifiedClaims.Email).First(&user).Error
 		if err != nil {
 			// Auto-register user in Code Shield DB if authenticated by SSO Portal
 			name := unifiedClaims.Name
 			if name == "" {
-				name = unifiedClaims.Username
+				name = unifiedClaims.Email
 			}
 
 			user = models.User{
-				Username:  unifiedClaims.Username,
+				Email:     unifiedClaims.Email,
 				Name:      name,
 				IsAdmin:   unifiedClaims.IsAdmin,
 				IsActive:  true,
+				RegMethod: "sso",
 				Password:  "$2a$10$wS2/7R1/x0WjG.y2B2P2Xe/r5a1p1o1s1y1s1t1e1m1p1a1s1s1w", // Disable password bypass
 			}
 			if err := models.DB.Create(&user).Error; err != nil {
@@ -223,7 +227,7 @@ func AuthMiddleware() gin.HandlerFunc {
 				newExp := time.Now().Add(24 * time.Hour)
 				newClaims := &Claims{
 					UserID:   user.ID,
-					Username: user.Username,
+					Email:    user.Email,
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(newExp),
 					},
@@ -238,7 +242,8 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 4. Inject user data into context
 		c.Set("userID", user.ID)
-		c.Set("username", user.Username)
+		c.Set("username", user.Email)
+		c.Set("email", user.Email)
 		c.Next()
 	}
 }

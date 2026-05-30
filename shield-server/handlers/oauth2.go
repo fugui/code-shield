@@ -127,49 +127,72 @@ func OAuth2Callback(c *gin.Context) {
 
 	// Extract user attributes using field mapping
 	mapping := oauth2Cfg.FieldMapping
-	username := getStringField(userInfo, mapping.Username)
 	email := getStringField(userInfo, mapping.Email)
 	name := getStringField(userInfo, mapping.Name)
+	employeeID := getStringField(userInfo, mapping.EmployeeID)
+	uniqueID := getStringField(userInfo, mapping.UniqueID)
+	employeeType := getStringField(userInfo, mapping.EmployeeType)
 
-	// Username is required for local user matching
-	if username == "" {
-		// Fallback to email as username if preferred_username is not available
-		username = email
+	// Fallback: if email is empty, try mapping.Username
+	if email == "" {
+		email = getStringField(userInfo, mapping.Username)
 	}
-	if username == "" {
-		log.Printf("[OAuth2] No username found in userinfo: %v", userInfo)
-		redirectToLoginWithError(c, "SSO 未返回用户标识信息")
+
+	if email == "" {
+		log.Printf("[OAuth2] No email/username found in userinfo: %v", userInfo)
+		redirectToLoginWithError(c, "SSO 未返回用户邮箱或标识信息")
 		return
 	}
 
 	// Auto-provision or match local user
 	var user models.User
-	err = models.DB.Where("username = ?", username).First(&user).Error
+	err = models.DB.Where("email = ?", email).First(&user).Error
 	if err != nil {
 		// Create new user via SSO auto-provisioning
 		displayName := name
 		if displayName == "" {
-			displayName = username
+			displayName = email
 		}
 
 		user = models.User{
-			Username: username,
-			Name:     displayName,
-			IsAdmin:  false, // Admin privileges are managed manually by administrators
-			IsActive: true,
-			Password: "$2a$10$SSO_USER_NO_PASSWORD_LOGIN", // Marker: SSO user, password login disabled
+			Email:        email,
+			Name:         displayName,
+			EmployeeID:   employeeID,
+			UniqueID:     uniqueID,
+			EmployeeType: employeeType,
+			RegMethod:    "sso",
+			IsAdmin:      false, // Admin privileges are managed manually by administrators
+			IsActive:     true,
+			Password:     "$2a$10$SSO_USER_NO_PASSWORD_LOGIN", // Marker: SSO user, password login disabled
 		}
 		if err := models.DB.Create(&user).Error; err != nil {
-			log.Printf("[OAuth2] Failed to auto-provision user %s: %v", username, err)
+			log.Printf("[OAuth2] Failed to auto-provision user %s: %v", email, err)
 			redirectToLoginWithError(c, "SSO 用户自动开通失败")
 			return
 		}
-		log.Printf("[OAuth2] Auto-provisioned new user: %s (%s)", username, displayName)
+		log.Printf("[OAuth2] Auto-provisioned new user: %s (%s)", email, displayName)
 	} else {
-		// Update name from IdP if it changed
+		// Update attributes from IdP if they changed
+		updates := map[string]interface{}{}
 		if name != "" && name != user.Name {
-			models.DB.Model(&user).Update("name", name)
+			updates["name"] = name
 			user.Name = name
+		}
+		if employeeID != "" && employeeID != user.EmployeeID {
+			updates["employee_id"] = employeeID
+			user.EmployeeID = employeeID
+		}
+		if uniqueID != "" && uniqueID != user.UniqueID {
+			updates["unique_id"] = uniqueID
+			user.UniqueID = uniqueID
+		}
+		if employeeType != "" && employeeType != user.EmployeeType {
+			updates["employee_type"] = employeeType
+			user.EmployeeType = employeeType
+		}
+		if len(updates) > 0 {
+			models.DB.Model(&user).Updates(updates)
+			log.Printf("[OAuth2] Updated info for user %s: %+v", email, updates)
 		}
 	}
 
@@ -187,7 +210,7 @@ func OAuth2Callback(c *gin.Context) {
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
 		UserID:   user.ID,
-		Username: user.Username,
+		Email:    user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},

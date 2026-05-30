@@ -28,6 +28,7 @@ func InitDB() {
 	sqlDB.Exec("DROP TABLE IF EXISTS review_reports")
 	sqlDB.Exec("DROP TABLE IF EXISTS key_issues")
 	sqlDB.Exec("DROP TABLE IF EXISTS task_execution_logs")
+	sqlDB.Exec("DROP TABLE IF EXISTS users")
 
 	// Auto Migrate
 	err = DB.AutoMigrate(
@@ -54,16 +55,17 @@ func InitDB() {
 	if count == 0 {
 		hashed, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 		admin := User{
-			Username: "admin@code-shield.com",
-			Name:     "管理员",
-			Password: string(hashed),
-			IsAdmin:  true,
-			IsActive: true,
+			Email:     "admin@code-shield.com",
+			Name:      "管理员",
+			Password:  string(hashed),
+			IsAdmin:   true,
+			IsActive:  true,
+			RegMethod: "local",
 		}
 		if err := DB.Create(&admin).Error; err != nil {
 			log.Printf("failed to seed admin user: %v", err)
 		} else {
-			log.Println("Admin user created (username: admin@code-shield.com, password: admin123)")
+			log.Println("Admin user created (email: admin@code-shield.com, password: admin123)")
 		}
 	}
 

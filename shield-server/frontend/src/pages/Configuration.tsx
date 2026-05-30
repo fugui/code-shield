@@ -17,11 +17,11 @@ function Configuration() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamLeader, setNewTeamLeader] = useState('');
-  const [newUserForm, setNewUserForm] = useState({ username: '', name: '', password: '', is_admin: false });
+  const [newUserForm, setNewUserForm] = useState({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
-  const [editUserForm, setEditUserForm] = useState({ name: '', is_admin: false, password: '' });
+  const [editUserForm, setEditUserForm] = useState({ name: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false, password: '' });
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
 
@@ -108,7 +108,7 @@ function Configuration() {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserForm.username || !newUserForm.password) return;
+    if (!newUserForm.email || !newUserForm.password) return;
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -119,7 +119,7 @@ function Configuration() {
         body: JSON.stringify(newUserForm)
       });
       if (res.ok) {
-        setNewUserForm({ username: '', name: '', password: '', is_admin: false });
+        setNewUserForm({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false });
         setIsUserModalOpen(false);
         fetchUsers();
       } else {
@@ -133,7 +133,14 @@ function Configuration() {
 
   const handleEditUser = (user: any) => {
     setEditingUser(user);
-    setEditUserForm({ name: user.name || '', is_admin: user.is_admin, password: '' });
+    setEditUserForm({
+      name: user.name || '',
+      employee_id: user.employee_id || '',
+      unique_id: user.unique_id || '',
+      employee_type: user.employee_type || '',
+      is_admin: user.is_admin,
+      password: ''
+    });
     setIsEditUserModalOpen(true);
   };
 
@@ -141,7 +148,13 @@ function Configuration() {
     e.preventDefault();
     if (!editingUser) return;
     try {
-      const payload: any = { name: editUserForm.name, is_admin: editUserForm.is_admin };
+      const payload: any = {
+        name: editUserForm.name,
+        employee_id: editUserForm.employee_id,
+        unique_id: editUserForm.unique_id,
+        employee_type: editUserForm.employee_type,
+        is_admin: editUserForm.is_admin
+      };
       if (editUserForm.password) payload.password = editUserForm.password;
       const res = await fetch(`/api/users/${editingUser.id}`, {
         method: 'PUT',
@@ -309,8 +322,12 @@ function Configuration() {
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left' }}>
                 <th style={{ padding: '1rem 0' }}>系统 ID</th>
-                <th style={{ padding: '1rem 0' }}>邮箱账号</th>
+                <th style={{ padding: '1rem 0' }}>登录邮箱</th>
                 <th style={{ padding: '1rem 0' }}>姓名</th>
+                <th style={{ padding: '1rem 0' }}>工号</th>
+                <th style={{ padding: '1rem 0' }}>唯一 ID</th>
+                <th style={{ padding: '1rem 0' }}>员工类型</th>
+                <th style={{ padding: '1rem 0' }}>录入方式</th>
                 <th style={{ padding: '1rem 0' }}>角色标识</th>
                 <th style={{ padding: '1rem 0' }}>账号状态</th>
                 <th style={{ padding: '1rem 0' }}>最近登录时间</th>
@@ -320,14 +337,22 @@ function Configuration() {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
+                  <td colSpan={11} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
                 </tr>
               ) : (
                 users.map(u => (
                   <tr key={u.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '1rem 0' }}>#{u.id}</td>
-                    <td style={{ padding: '1rem 0', fontWeight: 500 }}>{u.username}</td>
+                    <td style={{ padding: '1rem 0', fontWeight: 500 }}>{u.email || u.username}</td>
                     <td style={{ padding: '1rem 0' }}>{u.name || '-'}</td>
+                    <td style={{ padding: '1rem 0' }}>{u.employee_id || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
+                    <td style={{ padding: '1rem 0' }}>{u.unique_id || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
+                    <td style={{ padding: '1rem 0' }}>{u.employee_type || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
+                    <td style={{ padding: '1rem 0' }}>
+                      {u.reg_method === 'sso' ? 
+                        <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', fontSize: '0.75rem', fontWeight: 600 }}>SSO 单点</span> : 
+                        <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: '0.75rem', fontWeight: 600 }}>本地录入</span>}
+                    </td>
                     <td style={{ padding: '1rem 0' }}>
                       {u.is_admin ? 
                         <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontSize: '0.75rem', fontWeight: 600 }}>管理员</span> : 
@@ -476,21 +501,37 @@ function Configuration() {
 
       {isUserModalOpen && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', width: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', width: '480px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
             <h3 style={{ margin: '0 0 1.5rem 0' }}>分配新系统账号</h3>
             <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>真实姓名</label>
-                <input required value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} placeholder="如: 张三" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>真实姓名</label>
+                  <input required value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} placeholder="如: 张三" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工工号</label>
+                  <input value={newUserForm.employee_id} onChange={e => setNewUserForm({...newUserForm, employee_id: e.target.value})} placeholder="如: 00124" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>登录邮箱账号</label>
-                  <input required type="email" value={newUserForm.username} onChange={e => setNewUserForm({...newUserForm, username: e.target.value})} placeholder="如: zhangsan@company.com" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                  <input required type="email" value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} placeholder="如: zhangsan@company.com" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>初始密码</label>
                   <input required type="password" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} placeholder="不少于6位" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>唯一ID (身份证)</label>
+                  <input value={newUserForm.unique_id} onChange={e => setNewUserForm({...newUserForm, unique_id: e.target.value})} placeholder="如: 1101011990..." style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工类型</label>
+                  <input value={newUserForm.employee_type} onChange={e => setNewUserForm({...newUserForm, employee_type: e.target.value})} placeholder="如: 正式员工" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
@@ -508,16 +549,32 @@ function Configuration() {
 
       {isEditUserModalOpen && editingUser && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', width: '400px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', width: '480px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
             <h3 style={{ margin: '0 0 1.5rem 0' }}>编辑用户</h3>
             <form onSubmit={handleSaveEditUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: '#64748b', fontWeight: 500 }}>登录邮箱</label>
-                <div style={{ padding: '0.6rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem' }}>{editingUser.username}</div>
+                <div style={{ padding: '0.6rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem' }}>{editingUser.email || editingUser.username}</div>
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>真实姓名</label>
-                <input required value={editUserForm.name} onChange={e => setEditUserForm({...editUserForm, name: e.target.value})} placeholder="如: 张三" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>真实姓名</label>
+                  <input required value={editUserForm.name} onChange={e => setEditUserForm({...editUserForm, name: e.target.value})} placeholder="如: 张三" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工工号</label>
+                  <input value={editUserForm.employee_id} onChange={e => setEditUserForm({...editUserForm, employee_id: e.target.value})} placeholder="如: 00124" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>唯一ID (身份证)</label>
+                  <input value={editUserForm.unique_id} onChange={e => setEditUserForm({...editUserForm, unique_id: e.target.value})} placeholder="如: 1101011990..." style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工类型</label>
+                  <input value={editUserForm.employee_type} onChange={e => setEditUserForm({...editUserForm, employee_type: e.target.value})} placeholder="如: 正式员工" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>重置密码 <span style={{ color: '#94a3b8', fontWeight: 400 }}>(留空表示不修改)</span></label>

@@ -13,9 +13,12 @@ import (
 )
 
 type FieldMappingConfig struct {
-	Username string `yaml:"username"` // IdP 用户名字段，默认 "preferred_username"
-	Email    string `yaml:"email"`    // IdP 邮箱字段，默认 "email"
-	Name     string `yaml:"name"`     // IdP 姓名字段，默认 "name"
+	Username     string `yaml:"username"`      // IdP 用户名字段，默认 "preferred_username"
+	Email        string `yaml:"email"`         // IdP 邮箱字段，默认 "email"
+	Name         string `yaml:"name"`          // IdP 姓名字段，默认 "name"
+	EmployeeID   string `yaml:"employee_id"`   // IdP 工号字段，默认 "employee_id"
+	UniqueID     string `yaml:"unique_id"`     // IdP 唯一ID字段，默认 "unique_id"
+	EmployeeType string `yaml:"employee_type"` // IdP 员工类型字段，默认 "employee_type"
 }
 
 type OAuth2Config struct {
@@ -155,6 +158,15 @@ func LoadConfig(filename string) error {
 		}
 		if AppConfig.Auth.OAuth2.FieldMapping.Name == "" {
 			AppConfig.Auth.OAuth2.FieldMapping.Name = "name"
+		}
+		if AppConfig.Auth.OAuth2.FieldMapping.EmployeeID == "" {
+			AppConfig.Auth.OAuth2.FieldMapping.EmployeeID = "employee_id"
+		}
+		if AppConfig.Auth.OAuth2.FieldMapping.UniqueID == "" {
+			AppConfig.Auth.OAuth2.FieldMapping.UniqueID = "unique_id"
+		}
+		if AppConfig.Auth.OAuth2.FieldMapping.EmployeeType == "" {
+			AppConfig.Auth.OAuth2.FieldMapping.EmployeeType = "employee_type"
 		}
 		// Default redirect URL based on external URL
 		if AppConfig.Auth.OAuth2.RedirectURL == "" {
