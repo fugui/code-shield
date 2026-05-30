@@ -325,7 +325,6 @@ function Configuration() {
                 <th style={{ padding: '1rem 0' }}>登录邮箱</th>
                 <th style={{ padding: '1rem 0' }}>姓名</th>
                 <th style={{ padding: '1rem 0' }}>工号</th>
-                <th style={{ padding: '1rem 0' }}>唯一 ID</th>
                 <th style={{ padding: '1rem 0' }}>员工类型</th>
                 <th style={{ padding: '1rem 0' }}>录入方式</th>
                 <th style={{ padding: '1rem 0' }}>角色标识</th>
@@ -337,7 +336,7 @@ function Configuration() {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
+                  <td colSpan={10} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
                 </tr>
               ) : (
                 users.map(u => (
@@ -346,7 +345,6 @@ function Configuration() {
                     <td style={{ padding: '1rem 0', fontWeight: 500 }}>{u.email || u.username}</td>
                     <td style={{ padding: '1rem 0' }}>{u.name || '-'}</td>
                     <td style={{ padding: '1rem 0' }}>{u.employee_id || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
-                    <td style={{ padding: '1rem 0' }}>{u.unique_id || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
                     <td style={{ padding: '1rem 0' }}>{u.employee_type || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
                     <td style={{ padding: '1rem 0' }}>
                       {u.reg_method === 'sso' ? 
@@ -526,10 +524,6 @@ function Configuration() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>唯一ID (身份证)</label>
-                  <input value={newUserForm.unique_id} onChange={e => setNewUserForm({...newUserForm, unique_id: e.target.value})} placeholder="如: 1101011990..." style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
-                </div>
-                <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工类型</label>
                   <input value={newUserForm.employee_type} onChange={e => setNewUserForm({...newUserForm, employee_type: e.target.value})} placeholder="如: 正式员工" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
                 </div>
@@ -567,10 +561,6 @@ function Configuration() {
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>唯一ID (身份证)</label>
-                  <input value={editUserForm.unique_id} onChange={e => setEditUserForm({...editUserForm, unique_id: e.target.value})} placeholder="如: 1101011990..." style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
-                </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工类型</label>
                   <input value={editUserForm.employee_type} onChange={e => setEditUserForm({...editUserForm, employee_type: e.target.value})} placeholder="如: 正式员工" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
