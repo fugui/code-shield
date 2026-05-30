@@ -20,9 +20,10 @@ import (
 
 // ChunkConfig 定义分片引擎的配置参数
 type ChunkConfig struct {
-	MaxFiles    int `json:"max_files"`
-	Depth       int `json:"depth"`
-	Concurrency int `json:"concurrency"`
+	MaxFiles       int      `json:"max_files"`
+	Depth          int      `json:"depth"`
+	Concurrency    int      `json:"concurrency"`
+	FileExtensions []string `json:"file_extensions"` // 任务级文件扩展名白名单，为空时使用全局 sourceExtensions
 }
 
 // ChunkedEngine 将代码仓按目录结构拆分成多个分片，逐个提交给 AI 分析后汇总。
@@ -214,6 +215,19 @@ func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[st
 		return nil, fmt.Errorf("git ls-files failed: %w", err)
 	}
 
+	// 构建任务级扩展名白名单（为空时 isSourceFile 回退到全局白名单）
+	var taskExtensions map[string]bool
+	if len(cfg.FileExtensions) > 0 {
+		taskExtensions = make(map[string]bool, len(cfg.FileExtensions))
+		for _, ext := range cfg.FileExtensions {
+			if !strings.HasPrefix(ext, ".") {
+				ext = "." + ext
+			}
+			taskExtensions[strings.ToLower(ext)] = true
+		}
+		log.Printf("[ChunkedEngine] Using task-level file extensions filter: %v\n", cfg.FileExtensions)
+	}
+
 	files := strings.Split(strings.TrimSpace(string(output)), "\n")
 	rawChunks := make(map[string][]string)
 
@@ -222,8 +236,8 @@ func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[st
 			continue
 		}
 
-		// 过滤非源码文件
-		if !isSourceFile(file) {
+		// 过滤非源码文件（任务级白名单优先于全局白名单）
+		if !isSourceFile(file, taskExtensions) {
 			continue
 		}
 
@@ -297,8 +311,9 @@ var sourceExtensions = map[string]bool{
 	".dockerfile": true,
 }
 
-// isSourceFile 根据扩展名判断是否为源码文件
-func isSourceFile(file string) bool {
+// isSourceFile 根据扩展名判断是否为源码文件。
+// taskExtensions 为任务级白名单，非 nil 时优先使用；为 nil 时回退到全局 sourceExtensions。
+func isSourceFile(file string, taskExtensions map[string]bool) bool {
 	// 跳过 . 开头的目录（如 .github/, .vscode/, .idea/ 等）
 	for _, part := range strings.Split(file, "/") {
 		if strings.HasPrefix(part, ".") && part != "." {
@@ -317,10 +332,18 @@ func isSourceFile(file string) bool {
 	ext := strings.ToLower(filepath.Ext(file))
 	if ext == "" {
 		// 无扩展名的特殊文件（如 Dockerfile, Makefile）
+		// 任务级白名单不包含无扩展名文件时直接跳过
+		if taskExtensions != nil {
+			return false
+		}
 		base := strings.ToLower(filepath.Base(file))
 		return base == "dockerfile" || base == "makefile" || base == "rakefile" || base == "gemfile"
 	}
 
+	// 任务级白名单优先
+	if taskExtensions != nil {
+		return taskExtensions[ext]
+	}
 	return sourceExtensions[ext]
 }
 
