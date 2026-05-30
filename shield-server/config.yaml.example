@@ -42,6 +42,7 @@ auth:
     userinfo_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/userinfo" # UserInfo Endpoint
     redirect_url: ""                 # 回调地址（留空则自动根据 external_url 推导为 <external_url>/api/oauth2/callback）
     scopes: ["openid", "profile", "email"]  # 请求的 OAuth2 Scopes
+    # admin_list: ["fugui", "admin@company.com"]  # SSO 登录自动提权为系统管理员的邮箱/用户名白名单列表
     field_mapping:                   # IdP 返回的用户属性字段映射
       username: "preferred_username" # 映射为系统用户名的字段
       email: "email"                 # 映射为邮箱的字段
