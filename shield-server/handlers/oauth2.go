@@ -127,15 +127,23 @@ func OAuth2Callback(c *gin.Context) {
 
 	// Extract user attributes using field mapping
 	mapping := oauth2Cfg.FieldMapping
-	email := parseSSOAttribute(getStringField(userInfo, mapping.Email))
-	name := getStringField(userInfo, mapping.Name)
+	email := getStringField(userInfo, mapping.Email)
+
+	// Parse the LDAP-style cn=... en=... string from the username mapping
+	// to get the display Name (priority cn, fallback en)
+	rawUsername := getStringField(userInfo, mapping.Username)
+	name := parseSSOAttribute(rawUsername)
+	if customName := getStringField(userInfo, mapping.Name); customName != "" {
+		name = customName
+	}
+
 	employeeID := getStringField(userInfo, mapping.EmployeeID)
 	uniqueID := getStringField(userInfo, mapping.UniqueID)
 	employeeType := getStringField(userInfo, mapping.EmployeeType)
 
-	// Fallback: if email is empty, try mapping.Username
+	// Fallback: if email is empty, try extracting the unique English login name (priority en, fallback cn) from rawUsername
 	if email == "" {
-		email = parseSSOAttribute(getStringField(userInfo, mapping.Username))
+		email = parseSSOEnglishName(rawUsername)
 	}
 
 	if email == "" {
@@ -335,6 +343,31 @@ func parseSSOAttribute(val string) string {
 	}
 	// Look for en=
 	if idx := strings.Index(val, "en="); idx != -1 {
+		sub := val[idx+3:]
+		if end := strings.Index(sub, " "); end != -1 {
+			return sub[:end]
+		}
+		return sub
+	}
+	return val
+}
+
+// parseSSOEnglishName parses a LDAP-style CN/EN username string (e.g. "cn=傅贵 en=fugui" or "en=fugui")
+// and returns en if present, cn if not, or the original string if neither exists (ideal for unique login ID fallback).
+func parseSSOEnglishName(val string) string {
+	if val == "" {
+		return ""
+	}
+	// Look for en=
+	if idx := strings.Index(val, "en="); idx != -1 {
+		sub := val[idx+3:]
+		if end := strings.Index(sub, " "); end != -1 {
+			return sub[:end]
+		}
+		return sub
+	}
+	// Look for cn=
+	if idx := strings.Index(val, "cn="); idx != -1 {
 		sub := val[idx+3:]
 		if end := strings.Index(sub, " "); end != -1 {
 			return sub[:end]
