@@ -153,6 +153,14 @@ func OAuth2Callback(c *gin.Context) {
 	}
 
 	// Auto-provision or match local user
+	isAdmin := false
+	for _, adminEmail := range oauth2Cfg.AdminList {
+		if strings.EqualFold(strings.TrimSpace(adminEmail), strings.TrimSpace(email)) {
+			isAdmin = true
+			break
+		}
+	}
+
 	var user models.User
 	err = models.DB.Where("email = ?", email).First(&user).Error
 	if err != nil {
@@ -169,7 +177,7 @@ func OAuth2Callback(c *gin.Context) {
 			UniqueID:     uniqueID,
 			EmployeeType: employeeType,
 			RegMethod:    "sso",
-			IsAdmin:      false, // Admin privileges are managed manually by administrators
+			IsAdmin:      isAdmin,
 			IsActive:     true,
 			Password:     "$2a$10$SSO_USER_NO_PASSWORD_LOGIN", // Marker: SSO user, password login disabled
 		}
@@ -178,7 +186,7 @@ func OAuth2Callback(c *gin.Context) {
 			redirectToLoginWithError(c, "SSO 用户自动开通失败")
 			return
 		}
-		log.Printf("[OAuth2] Auto-provisioned new user: %s (%s)", email, displayName)
+		log.Printf("[OAuth2] Auto-provisioned new user: %s (%s, isAdmin: %v)", email, displayName, isAdmin)
 	} else {
 		// Update attributes from IdP if they changed
 		updates := map[string]interface{}{}
@@ -197,6 +205,12 @@ func OAuth2Callback(c *gin.Context) {
 		if employeeType != "" && employeeType != user.EmployeeType {
 			updates["employee_type"] = employeeType
 			user.EmployeeType = employeeType
+		}
+		// If user is not admin yet, but is in the config's AdminList, promote them automatically
+		if !user.IsAdmin && isAdmin {
+			updates["is_admin"] = true
+			user.IsAdmin = true
+			log.Printf("[OAuth2] Automatically promoted existing user %s to Admin based on config whitelist", email)
 		}
 		if len(updates) > 0 {
 			models.DB.Model(&user).Updates(updates)

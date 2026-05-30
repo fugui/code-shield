@@ -30,6 +30,7 @@ type OAuth2Config struct {
 	UserInfoURL  string             `yaml:"userinfo_url"`  // UserInfo Endpoint URL
 	RedirectURL  string             `yaml:"redirect_url"`  // 回调地址 (如 https://shield.company.com/api/oauth2/callback)
 	Scopes       []string           `yaml:"scopes"`        // 请求的 Scopes，默认 ["openid", "profile", "email"]
+	AdminList    []string           `yaml:"admin_list"`    // 自动提权为管理员的邮箱/用户名列表
 	FieldMapping FieldMappingConfig `yaml:"field_mapping"` // 用户属性字段映射
 }
 

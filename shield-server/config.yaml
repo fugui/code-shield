@@ -25,3 +25,27 @@ ai:
 # ── 通知服务 ──
 notification:
   webhook: "http://127.0.0.1:8081/api/notify/email"  # 通知回调地址
+
+# ── 认证 ──
+auth:
+  jwt_secret: ""                     # JWT 签名密钥（留空随机生成）
+  password_login_enabled: false      # 是否启用密码登录
+
+  oauth2:
+    enabled: false                   # 是否启用 OAuth2 / OIDC 单点登录
+    client_id: "code-shield"         # Client ID
+    client_secret: ""                # Client Secret
+    auth_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/auth"
+    token_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/token"
+    userinfo_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/userinfo"
+    redirect_url: ""                 # 回调地址，留空自动推导
+    scopes: ["openid", "profile", "email"]
+    admin_list: ["fugui", "admin@company.com"]  # SSO 登录自动提权为系统管理员的邮箱/用户名白名单列表
+    field_mapping:
+      username: "preferred_username"
+      email: "email"
+      name: "name"
+      employee_id: "employee_id"
+      unique_id: "unique_id"
+      employee_type: "employee_type"
+
