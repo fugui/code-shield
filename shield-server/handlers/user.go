@@ -47,10 +47,13 @@ func GetUsers(c *gin.Context) {
 
 func CreateUser(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"`
-		Name     string `json:"name" binding:"required"`
-		Password string `json:"password" binding:"required"`
-		IsAdmin  bool   `json:"is_admin"`
+		Email        string `json:"email" binding:"required"`
+		Name         string `json:"name" binding:"required"`
+		Password     string `json:"password" binding:"required"`
+		EmployeeID   string `json:"employee_id"`
+		UniqueID     string `json:"unique_id"`
+		EmployeeType string `json:"employee_type"`
+		IsAdmin      bool   `json:"is_admin"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,8 +61,8 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	if _, err := mail.ParseAddress(req.Username); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Login username must be a valid email address"})
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Login email must be a valid email address"})
 		return
 	}
 
@@ -70,15 +73,19 @@ func CreateUser(c *gin.Context) {
 	}
 
 	user := models.User{
-		Username: req.Username,
-		Name:     req.Name,
-		Password: string(hashed),
-		IsActive: true,
-		IsAdmin:  req.IsAdmin,
+		Email:        req.Email,
+		Name:         req.Name,
+		Password:     string(hashed),
+		EmployeeID:   req.EmployeeID,
+		UniqueID:     req.UniqueID,
+		EmployeeType: req.EmployeeType,
+		RegMethod:    "local",
+		IsActive:     true,
+		IsAdmin:      req.IsAdmin,
 	}
 
 	if err := models.DB.Create(&user).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already exists"})
 		return
 	}
 
@@ -92,9 +99,12 @@ func UpdateUser(c *gin.Context) {
 	id := c.Param("id")
 
 	var req struct {
-		Name     string `json:"name"`
-		IsAdmin  *bool  `json:"is_admin"`
-		Password string `json:"password"`
+		Name         string `json:"name"`
+		IsAdmin      *bool  `json:"is_admin"`
+		Password     string `json:"password"`
+		EmployeeID   string `json:"employee_id"`
+		UniqueID     string `json:"unique_id"`
+		EmployeeType string `json:"employee_type"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -121,6 +131,15 @@ func UpdateUser(c *gin.Context) {
 			return
 		}
 		user.Password = string(hashed)
+	}
+	if req.EmployeeID != "" {
+		user.EmployeeID = req.EmployeeID
+	}
+	if req.UniqueID != "" {
+		user.UniqueID = req.UniqueID
+	}
+	if req.EmployeeType != "" {
+		user.EmployeeType = req.EmployeeType
 	}
 
 	if err := models.DB.Save(&user).Error; err != nil {

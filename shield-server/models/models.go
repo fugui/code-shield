@@ -18,14 +18,18 @@ type Member struct {
 }
 
 type User struct {
-	ID        uint       `gorm:"primaryKey" json:"id"`
-	Username  string     `gorm:"uniqueIndex;not null" json:"username"`
-	Name      string     `gorm:"not null;default:''" json:"name"`
-	Password  string     `gorm:"not null" json:"-"` // Omit password in JSON
-	IsActive  bool       `gorm:"default:true" json:"is_active"`
-	IsAdmin   bool       `gorm:"default:false" json:"is_admin"`
-	LastLogin *time.Time `json:"last_login"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	Email        string     `gorm:"uniqueIndex;not null" json:"email"`
+	Name         string     `gorm:"not null;default:''" json:"name"`
+	Password     string     `gorm:"not null" json:"-"` // Omit password in JSON
+	EmployeeID   string     `gorm:"default:''" json:"employee_id"`
+	UniqueID     string     `gorm:"default:''" json:"unique_id"`
+	EmployeeType string     `gorm:"default:''" json:"employee_type"`
+	RegMethod    string     `gorm:"default:'local'" json:"reg_method"` // "local" or "sso"
+	IsActive     bool       `gorm:"default:true" json:"is_active"`
+	IsAdmin      bool       `gorm:"default:false" json:"is_admin"`
+	LastLogin    *time.Time `json:"last_login"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type Team struct {

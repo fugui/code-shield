@@ -46,3 +46,6 @@ auth:
       username: "preferred_username" # 映射为系统用户名的字段
       email: "email"                 # 映射为邮箱的字段
       name: "name"                   # 映射为显示名称的字段
+      employee_id: "employee_id"     # 映射为工号的字段
+      unique_id: "unique_id"         # 映射为身份证等唯一ID的字段
+      employee_type: "employee_type" # 映射为员工类型的字段

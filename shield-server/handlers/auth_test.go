@@ -28,13 +28,13 @@ func setupTestDB(t *testing.T) {
 	}
 	// Seed test users that match token claims below
 	models.DB.Create(&models.User{
-		Username: "test@user.com",
+		Email:    "test@user.com",
 		Name:     "Test User",
 		Password: "$2a$10$placeholder",
 		IsActive: true,
 	})
 	models.DB.Create(&models.User{
-		Username: "test2@user.com",
+		Email:    "test2@user.com",
 		Name:     "Test User 2",
 		Password: "$2a$10$placeholder",
 		IsActive: true,
@@ -56,7 +56,7 @@ func TestAuthMiddleware_AutomaticRenewal(t *testing.T) {
 		exp := time.Now().Add(23 * time.Hour)
 		claims := &Claims{
 			UserID:   1,
-			Username: "test@user.com",
+			Email:    "test@user.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(exp),
 			},
@@ -78,7 +78,7 @@ func TestAuthMiddleware_AutomaticRenewal(t *testing.T) {
 		exp := time.Now().Add(10 * time.Hour)
 		claims := &Claims{
 			UserID:   2,
-			Username: "test2@user.com",
+			Email:    "test2@user.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(exp),
 			},
@@ -104,7 +104,7 @@ func TestAuthMiddleware_AutomaticRenewal(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, parsedToken.Valid)
 		assert.Equal(t, uint(2), newClaims.UserID)
-		assert.Equal(t, "test2@user.com", newClaims.Username)
+		assert.Equal(t, "test2@user.com", newClaims.Email)
 		assert.True(t, time.Until(newClaims.ExpiresAt.Time) > 23*time.Hour)
 	})
 }

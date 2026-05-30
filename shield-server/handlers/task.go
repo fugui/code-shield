@@ -205,15 +205,15 @@ func TriggerManualNotification(c *gin.Context) {
 	if userID, exists := c.Get("userID"); exists {
 		var user models.User
 		if err := models.DB.First(&user, userID).Error; err == nil && !user.IsAdmin {
-			if _, err := mail.ParseAddress(user.Username); err == nil {
-				specificEmail = user.Username
+			if _, err := mail.ParseAddress(user.Email); err == nil {
+				specificEmail = user.Email
 			} else {
 				var member models.Member
-				models.DB.Where("id = ? OR name = ?", user.Username, user.Username).First(&member)
+				models.DB.Where("id = ? OR name = ?", user.Email, user.Email).First(&member)
 				if member.Email != "" {
 					specificEmail = member.Email
 				} else {
-					specificEmail = user.Username
+					specificEmail = user.Email
 				}
 			}
 		}
