@@ -327,7 +327,7 @@ func getStringField(data map[string]interface{}, key string) string {
 	return ""
 }
 
-// parseSSOAttribute parses a LDAP-style CN/EN username string (e.g. "cn=傅贵 en=fugui" or "en=fugui")
+// parseSSOAttribute parses a LDAP-style CN/EN username string (e.g. "cn=傅贵,en=fugui" or "en=fugui")
 // and returns cn if present, en if not, or the original string if neither exists.
 func parseSSOAttribute(val string) string {
 	if val == "" {
@@ -336,7 +336,7 @@ func parseSSOAttribute(val string) string {
 	// Look for cn=
 	if idx := strings.Index(val, "cn="); idx != -1 {
 		sub := val[idx+3:]
-		if end := strings.Index(sub, " "); end != -1 {
+		if end := strings.IndexAny(sub, ", "); end != -1 {
 			return sub[:end]
 		}
 		return sub
@@ -344,7 +344,7 @@ func parseSSOAttribute(val string) string {
 	// Look for en=
 	if idx := strings.Index(val, "en="); idx != -1 {
 		sub := val[idx+3:]
-		if end := strings.Index(sub, " "); end != -1 {
+		if end := strings.IndexAny(sub, ", "); end != -1 {
 			return sub[:end]
 		}
 		return sub
@@ -352,7 +352,7 @@ func parseSSOAttribute(val string) string {
 	return val
 }
 
-// parseSSOEnglishName parses a LDAP-style CN/EN username string (e.g. "cn=傅贵 en=fugui" or "en=fugui")
+// parseSSOEnglishName parses a LDAP-style CN/EN username string (e.g. "cn=傅贵,en=fugui" or "en=fugui")
 // and returns en if present, cn if not, or the original string if neither exists (ideal for unique login ID fallback).
 func parseSSOEnglishName(val string) string {
 	if val == "" {
@@ -361,7 +361,7 @@ func parseSSOEnglishName(val string) string {
 	// Look for en=
 	if idx := strings.Index(val, "en="); idx != -1 {
 		sub := val[idx+3:]
-		if end := strings.Index(sub, " "); end != -1 {
+		if end := strings.IndexAny(sub, ", "); end != -1 {
 			return sub[:end]
 		}
 		return sub
@@ -369,7 +369,7 @@ func parseSSOEnglishName(val string) string {
 	// Look for cn=
 	if idx := strings.Index(val, "cn="); idx != -1 {
 		sub := val[idx+3:]
-		if end := strings.Index(sub, " "); end != -1 {
+		if end := strings.IndexAny(sub, ", "); end != -1 {
 			return sub[:end]
 		}
 		return sub
