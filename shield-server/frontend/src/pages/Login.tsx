@@ -1,13 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from '../config';
+
+interface AuthConfig {
+  oauth2_enabled: boolean;
+  password_login_enabled: boolean;
+}
 
 function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const navigate = useNavigate();
+
+  // Fetch auth config to determine available login methods
+  useEffect(() => {
+    fetch('/api/auth/config')
+      .then(res => res.json())
+      .then((data: AuthConfig) => {
+        setAuthConfig(data);
+        // If only password login is available, show the form directly
+        if (!data.oauth2_enabled && data.password_login_enabled) {
+          setShowPasswordForm(true);
+        }
+      })
+      .catch(() => {
+        // Fallback: assume password login only (backward compat)
+        setAuthConfig({ oauth2_enabled: false, password_login_enabled: true });
+        setShowPasswordForm(true);
+      });
+
+    // Check for SSO error in URL params
+    const params = new URLSearchParams(window.location.search);
+    const ssoError = params.get('sso_error');
+    if (ssoError) {
+      setError(ssoError);
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const handleSSOLogin = () => {
+    // Redirect to backend OAuth2 authorize endpoint
+    window.location.href = apiUrl('/api/oauth2/authorize');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +108,9 @@ function Login() {
         @keyframes shimmer {
           0% { background-position: -200% center; }
           100% { background-position: 200% center; }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
         .login-input:focus {
           border-color: #3b82f6 !important;
@@ -226,75 +268,107 @@ function Login() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.5px' }}>用户名</label>
-              <div style={{ position: 'relative' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                  <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          {/* SSO Login Button */}
+          {authConfig?.oauth2_enabled && (
+            <div style={{ marginBottom: authConfig.password_login_enabled ? '1.5rem' : '0' }}>
+              <button
+                id="sso-login-btn"
+                onClick={handleSSOLogin}
+                className="login-btn"
+                style={{
+                  width: '100%', padding: '0.85rem', fontSize: '0.95rem',
+                  fontWeight: 600, border: 'none', borderRadius: '10px', cursor: 'pointer',
+                  color: 'white', letterSpacing: '1px',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
+                  boxShadow: '0 4px 20px rgba(59,130,246,0.35)',
+                  transition: 'all 0.3s ease',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem'
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
                 </svg>
-                <input
-                  className="login-input"
-                  required
-                  type="text"
-                  placeholder="请输入用户名"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  style={{
-                    width: '100%', padding: '0.8rem 0.875rem 0.8rem 2.75rem', borderRadius: '10px',
-                    border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)',
-                    color: '#f1f5f9', fontSize: '0.9rem', boxSizing: 'border-box',
-                    transition: 'all 0.25s ease', outline: 'none'
-                  }}
-                />
-              </div>
+                企业 SSO 登录
+              </button>
             </div>
+          )}
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.5px' }}>密码</label>
-              <div style={{ position: 'relative' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
-                </svg>
-                <input
-                  className="login-input"
-                  required
-                  type="password"
-                  placeholder="请输入密码"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  style={{
-                    width: '100%', padding: '0.8rem 0.875rem 0.8rem 2.75rem', borderRadius: '10px',
-                    border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)',
-                    color: '#f1f5f9', fontSize: '0.9rem', boxSizing: 'border-box',
-                    transition: 'all 0.25s ease', outline: 'none'
-                  }}
-                />
-              </div>
+          {/* Divider (when both methods available) */}
+          {authConfig?.oauth2_enabled && authConfig?.password_login_enabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
+              <button
+                onClick={() => setShowPasswordForm(!showPasswordForm)}
+                style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: '#64748b', fontSize: '0.8rem', padding: '0.25rem 0.5rem',
+                  transition: 'color 0.2s', whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#94a3b8')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#64748b')}
+              >
+                {showPasswordForm ? '收起' : '使用账号密码登录'}
+              </button>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
             </div>
+          )}
 
-            <button
-              type="submit"
-              className="login-btn"
-              disabled={loading}
-              style={{
-                width: '100%', padding: '0.85rem', marginTop: '0.5rem', fontSize: '0.95rem',
-                fontWeight: 600, border: 'none', borderRadius: '10px', cursor: loading ? 'not-allowed' : 'pointer',
-                color: 'white', letterSpacing: '1px',
-                background: loading
-                  ? '#475569'
-                  : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-                boxShadow: '0 4px 20px rgba(59,130,246,0.35)',
-                transition: 'all 0.3s ease',
-                opacity: loading ? 0.7 : 1
-              }}
-            >
-              {loading ? '登录中...' : '登 录'}
-            </button>
-          </form>
+          {/* Password Login Form */}
+          {authConfig?.password_login_enabled && showPasswordForm && (
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.5px' }}>用户名</label>
+                <div style={{ position: 'relative' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                  </svg>
+                  <input id="login-username" className="login-input" required type="text" placeholder="请输入用户名" value={username} onChange={e => setUsername(e.target.value)}
+                    style={{ width: '100%', padding: '0.8rem 0.875rem 0.8rem 2.75rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#f1f5f9', fontSize: '0.9rem', boxSizing: 'border-box', transition: 'all 0.25s ease', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.5px' }}>密码</label>
+                <div style={{ position: 'relative' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+                  </svg>
+                  <input id="login-password" className="login-input" required type="password" placeholder="请输入密码" value={password} onChange={e => setPassword(e.target.value)}
+                    style={{ width: '100%', padding: '0.8rem 0.875rem 0.8rem 2.75rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#f1f5f9', fontSize: '0.9rem', boxSizing: 'border-box', transition: 'all 0.25s ease', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              <button id="login-submit-btn" type="submit" className="login-btn" disabled={loading}
+                style={{
+                  width: '100%', padding: '0.85rem', marginTop: '0.5rem', fontSize: '0.95rem',
+                  fontWeight: 600, borderRadius: '10px', cursor: loading ? 'not-allowed' : 'pointer',
+                  color: 'white', letterSpacing: '1px',
+                  background: loading ? '#475569' : authConfig?.oauth2_enabled ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
+                  boxShadow: authConfig?.oauth2_enabled ? 'none' : '0 4px 20px rgba(59,130,246,0.35)',
+                  transition: 'all 0.3s ease', opacity: loading ? 0.7 : 1,
+                  border: authConfig?.oauth2_enabled ? '1px solid rgba(255,255,255,0.1)' : 'none'
+                }}
+              >
+                {loading ? '登录中...' : '登 录'}
+              </button>
+            </form>
+          )}
+
+          {/* Loading state */}
+          {!authConfig && (
+            <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', margin: '0 auto 0.75rem', border: '2px solid rgba(59,130,246,0.2)', borderTop: '2px solid #3b82f6', animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>加载中...</p>
+            </div>
+          )}
 
           <div style={{ marginTop: '2rem', textAlign: 'center', fontSize: '0.8rem', color: '#475569', lineHeight: 1.6 }}>
-            系统不对外开放注册<br/>如需开通账号请联系管理员
+            {authConfig?.oauth2_enabled
+              ? <>使用企业 SSO 账号登录<br/>首次登录将自动开通系统账号</>
+              : <>系统不对外开放注册<br/>如需开通账号请联系管理员</>
+            }
           </div>
 
           {/* Security badge */}

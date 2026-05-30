@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
 import OpenSourceManagement from './pages/OpenSourceManagement';
 import PublicReportFindings from './pages/PublicReportFindings';
+import OAuthCallback from './pages/OAuthCallback';
 import { ToastProvider, useToast } from './components/Toast';
 
 // Setup global fetch interceptor to inject JWT token and prepend BASE_PATH
@@ -274,10 +275,11 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isEmbedded = React.useContext(EmbeddedContext);
 
-  // Don't show sidebar on login page or public read-only pages
+  // Don't show sidebar on login page, OAuth callback, or public read-only pages
   const isLoginPath = location.pathname.endsWith('/login');
   const isPublicPath = location.pathname.includes('/public/');
-  if (isLoginPath || isPublicPath) {
+  const isOAuthPath = location.pathname.includes('/oauth2/');
+  if (isLoginPath || isPublicPath || isOAuthPath) {
     return <>{children}</>;
   }
 
@@ -322,6 +324,7 @@ function AppContent() {
       <MainLayout>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/oauth2/callback" element={<OAuthCallback />} />
           <Route path="/" element={<Navigate to={appNavigatePath("/tasks")} replace />} />
           <Route path="/tasks" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
           <Route path="/tasks/:tab" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />

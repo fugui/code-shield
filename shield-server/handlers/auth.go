@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"code-shield/models"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,8 +11,29 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("super-secret-key-for-code-shield") // In production, move to env vars!
-var portalJwtSecret = []byte("portal-shared-secret-key")    // Portal shared SSO secret
+var jwtSecret = []byte("super-secret-key-for-code-shield") // DEPRECATED: kept for test backward compat only, overridden at runtime
+var portalJwtSecret = []byte("portal-shared-secret-key")    // DEPRECATED: kept for test backward compat only, overridden at runtime
+
+// getJWTSecret returns the JWT signing key from configuration.
+func getJWTSecret() []byte {
+	if s := models.AppConfig.Auth.JWTSecret; s != "" {
+		return []byte(s)
+	}
+	return jwtSecret // fallback for tests where config is not loaded
+}
+
+// getPortalJWTSecret returns the Portal SSO JWT key from configuration.
+// Returns nil if portal JWT is not configured (disables portal token parsing).
+func getPortalJWTSecret() []byte {
+	if s := models.AppConfig.Auth.PortalJWTSecret; s != "" {
+		return []byte(s)
+	}
+	if models.AppConfig.Auth.JWTSecret != "" {
+		// Config is loaded but portal secret is empty — portal SSO disabled
+		return nil
+	}
+	return portalJwtSecret // fallback for tests
+}
 
 type Claims struct {
 	UserID   uint   `json:"user_id"`
@@ -38,10 +60,16 @@ type UnifiedClaims struct {
 
 // Unified parser that validates tokens from both Code-Shield and Portal (SSO)
 func parseToken(tokenString string) (*UnifiedClaims, error) {
+	secret := getJWTSecret()
+
 	// Try 1: Parse using local Code-Shield secret
 	shieldClaims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, shieldClaims, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
+		// Reject 'none' algorithm — hardcode expected algorithm
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return secret, nil
 	})
 	if err == nil && token.Valid {
 		return &UnifiedClaims{
@@ -50,24 +78,36 @@ func parseToken(tokenString string) (*UnifiedClaims, error) {
 		}, nil
 	}
 
-	// Try 2: Parse using Portal shared secret
-	portalClaims := &PortalClaims{}
-	token, err = jwt.ParseWithClaims(tokenString, portalClaims, func(token *jwt.Token) (interface{}, error) {
-		return portalJwtSecret, nil
-	})
-	if err == nil && token.Valid {
-		return &UnifiedClaims{
-			Username: portalClaims.Username,
-			Email:    portalClaims.Email,
-			Name:     portalClaims.Name,
-			IsAdmin:  portalClaims.IsAdmin,
-		}, nil
+	// Try 2: Parse using Portal shared secret (if configured)
+	portalSecret := getPortalJWTSecret()
+	if portalSecret != nil {
+		portalClaims := &PortalClaims{}
+		token, err = jwt.ParseWithClaims(tokenString, portalClaims, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return portalSecret, nil
+		})
+		if err == nil && token.Valid {
+			return &UnifiedClaims{
+				Username: portalClaims.Username,
+				Email:    portalClaims.Email,
+				Name:     portalClaims.Name,
+				IsAdmin:  portalClaims.IsAdmin,
+			}, nil
+		}
 	}
 
 	return nil, err
 }
 
 func Login(c *gin.Context) {
+	// Check if password login is enabled
+	if !models.AppConfig.Auth.PasswordLoginEnabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Password login is disabled. Please use SSO login."})
+		return
+	}
+
 	var req struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
@@ -93,7 +133,8 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Generate JWT
+	// Generate JWT using config-based secret
+	secret := getJWTSecret()
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
 		UserID:   user.ID,
@@ -103,7 +144,7 @@ func Login(c *gin.Context) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtSecret)
+	tokenString, err := token.SignedString(secret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
@@ -167,7 +208,35 @@ func AuthMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// 3. Inject user data into context
+		// 3. Automatic token renewal — if less than 12h remaining, issue a fresh 24h token
+		shieldClaims := &Claims{}
+		secret := getJWTSecret()
+		parsedToken, parseErr := jwt.ParseWithClaims(tokenString, shieldClaims, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return secret, nil
+		})
+		if parseErr == nil && parsedToken.Valid && shieldClaims.ExpiresAt != nil {
+			remaining := time.Until(shieldClaims.ExpiresAt.Time)
+			if remaining > 0 && remaining < 12*time.Hour {
+				newExp := time.Now().Add(24 * time.Hour)
+				newClaims := &Claims{
+					UserID:   user.ID,
+					Username: user.Username,
+					RegisteredClaims: jwt.RegisteredClaims{
+						ExpiresAt: jwt.NewNumericDate(newExp),
+					},
+				}
+				newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
+				if signed, err := newToken.SignedString(secret); err == nil {
+					c.Header("X-Refresh-Token", signed)
+					c.Header("Access-Control-Expose-Headers", "X-Refresh-Token")
+				}
+			}
+		}
+
+		// 4. Inject user data into context
 		c.Set("userID", user.ID)
 		c.Set("username", user.Username)
 		c.Next()

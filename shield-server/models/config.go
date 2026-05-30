@@ -1,6 +1,9 @@
 package models
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +11,24 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+type FieldMappingConfig struct {
+	Username string `yaml:"username"` // IdP 用户名字段，默认 "preferred_username"
+	Email    string `yaml:"email"`    // IdP 邮箱字段，默认 "email"
+	Name     string `yaml:"name"`     // IdP 姓名字段，默认 "name"
+}
+
+type OAuth2Config struct {
+	Enabled      bool               `yaml:"enabled"`       // 是否启用 OAuth2 SSO
+	ClientID     string             `yaml:"client_id"`     // OAuth2 Client ID
+	ClientSecret string             `yaml:"client_secret"` // OAuth2 Client Secret
+	AuthURL      string             `yaml:"auth_url"`      // Authorization Endpoint URL
+	TokenURL     string             `yaml:"token_url"`     // Token Endpoint URL
+	UserInfoURL  string             `yaml:"userinfo_url"`  // UserInfo Endpoint URL
+	RedirectURL  string             `yaml:"redirect_url"`  // 回调地址 (如 https://shield.company.com/api/oauth2/callback)
+	Scopes       []string           `yaml:"scopes"`        // 请求的 Scopes，默认 ["openid", "profile", "email"]
+	FieldMapping FieldMappingConfig `yaml:"field_mapping"` // 用户属性字段映射
+}
 
 type Config struct {
 	Server struct {
@@ -32,6 +53,12 @@ type Config struct {
 	Notification struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
 	} `yaml:"notification"`
+	Auth struct {
+		JWTSecret            string       `yaml:"jwt_secret"`              // JWT 签名密钥（替代硬编码，留空则启动时随机生成临时密钥）
+		PasswordLoginEnabled bool         `yaml:"password_login_enabled"` // 是否启用密码登录，默认 false
+		PortalJWTSecret      string       `yaml:"portal_jwt_secret"`       // Portal SSO 共享密钥（兼容旧版，留空禁用）
+		OAuth2               OAuth2Config `yaml:"oauth2"`
+	} `yaml:"auth"`
 }
 
 var AppConfig Config
@@ -99,6 +126,41 @@ func LoadConfig(filename string) error {
 	absRoot, err := filepath.Abs(AppConfig.Storage.Root)
 	if err == nil {
 		AppConfig.Storage.Root = absRoot
+	}
+
+	// Auth defaults
+	if AppConfig.Auth.JWTSecret == "" {
+		// Generate ephemeral random secret. Instance-isolated, sessions lost on restart.
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			log.Fatalf("Failed to generate random JWT secret: %v", err)
+		}
+		AppConfig.Auth.JWTSecret = hex.EncodeToString(randomBytes)
+		log.Println("[Auth] WARNING: jwt_secret not configured. Using ephemeral random secret. Sessions will be lost on restart. Set auth.jwt_secret in config.yaml for production use.")
+	}
+	// If neither OAuth2 nor password login is explicitly enabled, enable password login as fallback
+	if !AppConfig.Auth.OAuth2.Enabled && !AppConfig.Auth.PasswordLoginEnabled {
+		AppConfig.Auth.PasswordLoginEnabled = true
+	}
+	// OAuth2 defaults
+	if AppConfig.Auth.OAuth2.Enabled {
+		if len(AppConfig.Auth.OAuth2.Scopes) == 0 {
+			AppConfig.Auth.OAuth2.Scopes = []string{"openid", "profile", "email"}
+		}
+		if AppConfig.Auth.OAuth2.FieldMapping.Username == "" {
+			AppConfig.Auth.OAuth2.FieldMapping.Username = "preferred_username"
+		}
+		if AppConfig.Auth.OAuth2.FieldMapping.Email == "" {
+			AppConfig.Auth.OAuth2.FieldMapping.Email = "email"
+		}
+		if AppConfig.Auth.OAuth2.FieldMapping.Name == "" {
+			AppConfig.Auth.OAuth2.FieldMapping.Name = "name"
+		}
+		// Default redirect URL based on external URL
+		if AppConfig.Auth.OAuth2.RedirectURL == "" {
+			AppConfig.Auth.OAuth2.RedirectURL = strings.TrimRight(AppConfig.Server.ExternalURL, "/") + "/api/oauth2/callback"
+			log.Printf("[Auth] OAuth2 redirect_url auto-derived: %s", AppConfig.Auth.OAuth2.RedirectURL)
+		}
 	}
 
 	return nil
