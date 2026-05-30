@@ -118,6 +118,13 @@ func OAuth2Callback(c *gin.Context) {
 		return
 	}
 
+	// DEBUG: Print userinfo to console as JSON
+	if userInfoBytes, err := json.Marshal(userInfo); err == nil {
+		log.Printf("[OAuth2] DEBUG - Received UserInfo: %s", string(userInfoBytes))
+	} else {
+		log.Printf("[OAuth2] DEBUG - Received UserInfo (Go representation): %+v", userInfo)
+	}
+
 	// Extract user attributes using field mapping
 	mapping := oauth2Cfg.FieldMapping
 	username := getStringField(userInfo, mapping.Username)
