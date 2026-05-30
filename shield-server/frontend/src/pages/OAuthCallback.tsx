@@ -30,9 +30,8 @@ function OAuthCallback() {
       localStorage.setItem(AUTH_TOKEN_KEY, token);
       window.dispatchEvent(new Event('auth-change'));
 
-      // Replace the URL to remove the token from browser history
-      window.history.replaceState({}, '', appNavigatePath('/'));
-      navigate(appNavigatePath('/'), { replace: true });
+      // Cleanly navigate to the tasks page and replace history entry (removing token from history)
+      navigate(appNavigatePath('/tasks'), { replace: true });
     } else {
       setError('SSO 登录失败：未收到有效的认证凭证');
       setTimeout(() => navigate(appNavigatePath('/login')), 3000);

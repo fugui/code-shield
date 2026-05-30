@@ -23,13 +23,6 @@ func InitDB() {
 
 	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
 
-	// Drop old tables that are being replaced
-	sqlDB, _ := DB.DB()
-	sqlDB.Exec("DROP TABLE IF EXISTS review_reports")
-	sqlDB.Exec("DROP TABLE IF EXISTS key_issues")
-	sqlDB.Exec("DROP TABLE IF EXISTS task_execution_logs")
-	sqlDB.Exec("DROP TABLE IF EXISTS users")
-
 	// Auto Migrate
 	err = DB.AutoMigrate(
 		&User{},
