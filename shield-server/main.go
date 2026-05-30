@@ -73,6 +73,9 @@ func main() {
 	auth := r.Group("/api")
 	{
 		auth.POST("/login", handlers.Login)
+		auth.GET("/auth/config", handlers.GetAuthConfig)
+		auth.GET("/oauth2/authorize", handlers.StartOAuth2Flow)
+		auth.GET("/oauth2/callback", handlers.OAuth2Callback)
 		auth.GET("/public/tasks/:id", handlers.GetPublicTaskDetails)
 		auth.GET("/public/tasks/:id/findings", handlers.GetPublicAnalysisFindings)
 	}
