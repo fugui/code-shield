@@ -7,10 +7,7 @@ import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
 import PublicReportFindings from './pages/PublicReportFindings';
 import OAuthCallback from './pages/OAuthCallback';
-import ScanManagement from './pages/ScanManagement';
-import TaskTypeManagement from './pages/TaskTypeManagement';
-import UserManagement from './pages/UserManagement';
-import ExecutionLogs from './pages/ExecutionLogs';
+import AdminManagement from './pages/AdminManagement';
 import UTAnalysis from './pages/UTAnalysis';
 import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
@@ -306,12 +303,8 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                   : location.pathname;
                 if (relativePath.startsWith('/tasks/repo')) return '历史报告';
                 if (relativePath.startsWith('/tasks')) return '报告概览';
-                if (relativePath.startsWith('/config/analysis/ut')) return '测试有效性分析';
-                if (relativePath.startsWith('/config/scan')) return '扫描任务管理';
-                if (relativePath.startsWith('/config/task-types')) return '任务类型管理';
+                if (relativePath.startsWith('/issues')) return '测试有效性分析';
                 if (relativePath.startsWith('/teams')) return '团队与代码仓管理';
-                if (relativePath.startsWith('/config/users')) return '用户管理';
-                if (relativePath.startsWith('/config/activity')) return '执行日志';
                 if (relativePath.startsWith('/config')) return '管理中心';
                 return '报告概览';
               })()}
@@ -343,16 +336,15 @@ function AppContent() {
           <Route path="/tasks/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
 
           {/* 专项分析 */}
-          <Route path="/config/analysis/ut" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
+          <Route path="/issues" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
 
-          {/* 管理中心 */}
-          <Route path="/config/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
-          <Route path="/config/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
-          <Route path="/config/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
+          {/* 团队与代码仓 */}
           <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
           <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-          <Route path="/config/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />
-          <Route path="/config/activity" element={<PrivateRoute><ExecutionLogs /></PrivateRoute>} />
+
+          {/* 管理中心 */}
+          <Route path="/config" element={<PrivateRoute><AdminManagement /></PrivateRoute>} />
+          <Route path="/config/*" element={<Navigate to={appNavigatePath("/config")} replace />} />
 
           {/* 公开报告 */}
           <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
@@ -361,14 +353,13 @@ function AppContent() {
           {/* 兼容旧/新路由重定向 */}
           <Route path="/reports" element={<Navigate to={appNavigatePath("/tasks")} replace />} />
           <Route path="/reports/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
-          <Route path="/analysis/ut" element={<Navigate to={appNavigatePath("/config/analysis/ut")} replace />} />
-          <Route path="/admin/scan" element={<Navigate to={appNavigatePath("/config/scan")} replace />} />
-          <Route path="/admin/task-types" element={<Navigate to={appNavigatePath("/config/task-types")} replace />} />
+          <Route path="/analysis/ut" element={<Navigate to={appNavigatePath("/issues")} replace />} />
+          <Route path="/config/analysis/ut" element={<Navigate to={appNavigatePath("/issues")} replace />} />
+          <Route path="/admin/scan" element={<Navigate to={appNavigatePath("/config")} replace />} />
+          <Route path="/admin/task-types" element={<Navigate to={appNavigatePath("/config")} replace />} />
           <Route path="/admin/teams" element={<Navigate to={appNavigatePath("/teams")} replace />} />
-          <Route path="/admin/users" element={<Navigate to={appNavigatePath("/config/users")} replace />} />
-          <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/config/activity")} replace />} />
-          <Route path="/issues" element={<Navigate to={appNavigatePath("/tasks")} replace />} />
-          <Route path="/config" element={<Navigate to={appNavigatePath("/config/scan")} replace />} />
+          <Route path="/admin/users" element={<Navigate to={appNavigatePath("/config")} replace />} />
+          <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/config")} replace />} />
         </Routes>
       </MainLayout>
     </ToastProvider>
