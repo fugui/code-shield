@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -464,5 +465,67 @@ func GetPublicAnalysisFindings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, findings)
+}
+
+// TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days
+func TriggerMissingTasks(c *gin.Context) {
+	var req struct {
+		TaskTypeID uint `json:"task_type_id" binding:"required"`
+		Days       int  `json:"days" binding:"required,min=1"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var taskType models.TaskType
+	if err := models.DB.First(&taskType, req.TaskTypeID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务类型不存在"})
+		return
+	}
+
+	// 1. Find all active repositories
+	var repos []models.Repository
+	if err := models.DB.Where("is_active = ?", true).Find(&repos).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取代码仓失败: " + err.Error()})
+		return
+	}
+
+	// 2. Query repo IDs that successfully ran a task of this task type in the last N days
+	var scannedRepoIDs []uint
+	timeLimit := time.Now().AddDate(0, 0, -req.Days)
+	if err := models.DB.Model(&models.TaskExecutionLog{}).
+		Where("task_type_id = ? AND status = ? AND created_at >= ?", req.TaskTypeID, models.StatusSuccess, timeLimit).
+		Pluck("repo_id", &scannedRepoIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询执行日志失败: " + err.Error()})
+		return
+	}
+
+	// 3. Filter repos to only those that have not been successfully scanned
+	scannedMap := make(map[uint]bool)
+	for _, rid := range scannedRepoIDs {
+		scannedMap[rid] = true
+	}
+
+	var missingRepos []models.Repository
+	for _, r := range repos {
+		if !scannedMap[r.ID] {
+			missingRepos = append(missingRepos, r)
+		}
+	}
+
+	if len(missingRepos) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("所有代码仓在过去 %d 天内均已完成 [%s] 扫描任务，无需补扫", req.Days, taskType.DisplayName)})
+		return
+	}
+
+	// 4. Enqueue tasks for each missing repo
+	for _, repo := range missingRepos {
+		services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务", len(missingRepos), taskType.DisplayName),
+	})
 }
 

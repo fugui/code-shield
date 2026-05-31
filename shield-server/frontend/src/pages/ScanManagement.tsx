@@ -31,6 +31,8 @@ function ScanManagement() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
+  const [gapTaskTypeId, setGapTaskTypeId] = useState<string>('');
+  const [gapDays, setGapDays] = useState<number>(7);
 
   // --- Invalid Reports ---
   const [invalidReportCount, setInvalidReportCount] = useState<number | null>(null);
@@ -206,6 +208,30 @@ function ScanManagement() {
         showToast('触发失败: ' + d.error, 'error');
       }
     } catch (err) { console.error(err); }
+  };
+
+  const handleTriggerGapScan = async () => {
+    if (!gapTaskTypeId) return;
+    try {
+      showToast('正在分析漏扫代码仓，并触发补扫任务...', 'info');
+      const res = await fetch('/api/tasks/trigger-missing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_type_id: Number(gapTaskTypeId),
+          days: gapDays
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || '补扫任务已成功触发', 'success');
+      } else {
+        showToast('触发补扫失败: ' + data.error, 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('网络请求异常，触发补扫失败', 'error');
+    }
   };
 
   const handleOpenReport = async (reportId: number) => {
@@ -627,6 +653,77 @@ function ScanManagement() {
 
       {activeTab === 'schedules' && (
         <div>
+          {/* 漏扫快速补扫 Block */}
+          <div className="card" style={{ marginBottom: '2rem', background: 'linear-gradient(135deg, var(--card-bg) 0%, rgba(37, 99, 235, 0.02) 100%)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.5rem' }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)', fontSize: '1.1rem', fontWeight: 700 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              漏扫快速补扫 (Gap Scan Backfill)
+            </h3>
+            <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+              一键对过去指定时间内，<strong>未进行成功扫描</strong>的全部代码仓发起立即扫描任务，用于快速补充分析空白。
+            </p>
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1', minWidth: '200px' }}>
+                <label className="sidebar-label" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>任务类型</label>
+                <select
+                  value={gapTaskTypeId}
+                  onChange={e => setGapTaskTypeId(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', fontSize: '0.875rem', height: '40px' }}
+                >
+                  <option value="">请选择任务类型...</option>
+                  {taskTypes.map(tt => (
+                    <option key={tt.id} value={tt.id}>{tt.display_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ flex: '1', minWidth: '150px' }}>
+                <label className="sidebar-label" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>未扫描时间范围</label>
+                <select
+                  value={gapDays}
+                  onChange={e => setGapDays(Number(e.target.value))}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', fontSize: '0.875rem', height: '40px' }}
+                >
+                  <option value={3}>过去 3 天内未扫描</option>
+                  <option value={7}>过去 7 天内未扫描 (一周)</option>
+                  <option value={14}>过去 14 天内未扫描 (两周)</option>
+                  <option value={30}>过去 30 天内未扫描 (一月)</option>
+                </select>
+              </div>
+
+              <button
+                className="btn"
+                onClick={handleTriggerGapScan}
+                disabled={!gapTaskTypeId}
+                style={{
+                  height: '40px',
+                  padding: '0 1.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  background: !gapTaskTypeId ? 'var(--border-color)' : 'linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%)',
+                  color: !gapTaskTypeId ? '#cbd5e1' : 'white',
+                  cursor: !gapTaskTypeId ? 'not-allowed' : 'pointer',
+                  border: 'none',
+                  borderRadius: '6px',
+                  boxShadow: !gapTaskTypeId ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.2)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                立即开始补扫
+              </button>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <h3 style={{ margin: 0 }}>定时任务策略配置</h3>
             <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }}>

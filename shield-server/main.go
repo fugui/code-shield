@@ -125,6 +125,7 @@ func main() {
 		api.GET("/tasks/overview", handlers.GetTaskOverview)
 		api.GET("/tasks", handlers.GetTasks)
 		api.POST("/tasks/trigger", handlers.TriggerTask)
+		api.POST("/tasks/trigger-missing", handlers.TriggerMissingTasks)
 		api.POST("/tasks/:id/notify", handlers.TriggerManualNotification)
 		api.POST("/tasks/:id/resume", handlers.ResumeTask)
 		api.GET("/tasks/:id", handlers.GetTaskDetails)
