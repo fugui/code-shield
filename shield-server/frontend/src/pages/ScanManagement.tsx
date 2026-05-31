@@ -24,6 +24,8 @@ function ScanManagement() {
   const [currentMarkdown, setCurrentMarkdown] = useState('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   // --- Schedule State ---
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -97,6 +99,14 @@ function ScanManagement() {
     if (filterSearch && !r.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
     return true;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterTeam, filterSearch]);
+
+  const totalPages = Math.ceil(filteredRepos.length / pageSize) || 1;
+  const activePage = currentPage > totalPages ? totalPages : currentPage;
+  const paginatedRepos = filteredRepos.slice((activePage - 1) * pageSize, activePage * pageSize);
 
   const handleBatchTrigger = async (taskTypeId: number) => {
     setOpenBatchMenu(false);
@@ -404,9 +414,9 @@ function ScanManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRepos.length === 0 ? (
+                {paginatedRepos.length === 0 ? (
                   <tr><td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓数据</td></tr>
-                ) : filteredRepos.map(r => {
+                ) : paginatedRepos.map(r => {
                   const statusInfo = getRepoStatus(r.id);
                   const canCancel = statusInfo.isRunning || statusInfo.isPending;
                   return (
@@ -513,6 +523,99 @@ function ScanManagement() {
             </table>
           </div>
 
+          {/* Pagination Controls */}
+          {filteredRepos.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem 1rem', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              <div style={{ color: '#64748b', fontSize: '0.875rem' }}>
+                共 {filteredRepos.length} 个代码仓
+                {selectedRepoIds.length > 0 && (
+                  <span style={{ marginLeft: '1rem', color: 'var(--primary-color)', fontWeight: 500 }}>
+                    已选择 {selectedRepoIds.length} 个
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  disabled={activePage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  style={{
+                    padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
+                    borderRadius: '4px', cursor: activePage === 1 ? 'not-allowed' : 'pointer',
+                    color: activePage === 1 ? '#cbd5e1' : 'var(--text-color)', fontSize: '0.825rem',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => { if (activePage !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  上一页
+                </button>
+                
+                {/* Page numbers */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum = activePage;
+                  if (activePage <= 3) pageNum = i + 1;
+                  else if (activePage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                  else pageNum = activePage - 2 + i;
+
+                  // Guard pageNum bounds
+                  if (pageNum < 1 || pageNum > totalPages) return null;
+
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      style={{
+                        minWidth: '28px', height: '28px', padding: '0 0.3rem',
+                        border: '1px solid',
+                        borderColor: activePage === pageNum ? 'var(--primary-color)' : 'var(--border-color)',
+                        background: activePage === pageNum ? 'var(--primary-color)' : 'transparent',
+                        color: activePage === pageNum ? 'white' : 'var(--text-color)',
+                        borderRadius: '4px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: activePage === pageNum ? 600 : 400,
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => { if (activePage !== pageNum) e.currentTarget.style.background = 'rgba(37,99,235,0.04)'; }}
+                      onMouseLeave={e => { if (activePage !== pageNum) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+
+                <button
+                  disabled={activePage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  style={{
+                    padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
+                    borderRadius: '4px', cursor: activePage === totalPages ? 'not-allowed' : 'pointer',
+                    color: activePage === totalPages ? '#cbd5e1' : 'var(--text-color)', fontSize: '0.825rem',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => { if (activePage !== totalPages) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  下一页
+                </button>
+
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  style={{
+                    padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)',
+                    fontSize: '0.825rem', outline: 'none', background: 'transparent', color: 'var(--text-color)', marginLeft: '0.5rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="15">15 条/页</option>
+                  <option value="30">30 条/页</option>
+                  <option value="50">50 条/页</option>
+                  <option value="100">100 条/页</option>
+                </select>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
