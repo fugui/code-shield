@@ -14,7 +14,7 @@ function TeamManagement() {
   const activeTab: TeamTab = (tab as TeamTab) || 'departments';
 
   const setActiveTab = (t: TeamTab) => {
-    navigate(appNavigatePath(`/admin/teams/${t}`), { replace: true });
+    navigate(appNavigatePath(`/teams/${t}`), { replace: true });
   };
 
   const tabStyle = (t: TeamTab) => ({

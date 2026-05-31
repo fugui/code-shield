@@ -129,7 +129,7 @@ function RepoReviewHistory() {
       {/* Header with back button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <button
-          onClick={() => navigate(appNavigatePath(`/reports${returnSearch ? '?' + returnSearch : ''}`))}
+          onClick={() => navigate(appNavigatePath(`/tasks${returnSearch ? '?' + returnSearch : ''}`))}
           style={{
             background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px',
             cursor: 'pointer', padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
