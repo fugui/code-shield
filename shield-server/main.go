@@ -138,6 +138,13 @@ func main() {
 		api.GET("/findings/export", handlers.ExportFindings)
 		api.PATCH("/findings/:id", handlers.UpdateFinding)
 
+		// UT Effectiveness Dashboard
+		api.GET("/analysis/ut/repos", handlers.GetUTRepos)
+		api.GET("/analysis/ut/findings", handlers.GetUTFindings)
+		api.PATCH("/analysis/ut/findings/:id", handlers.UpdateUTFinding)
+		api.GET("/analysis/ut/departments", handlers.GetUTDepartments)
+		api.GET("/analysis/ut/trends", handlers.GetUTTrends)
+
 		api.GET("/schedules", handlers.GetSchedules)
 		api.POST("/schedules", handlers.CreateSchedule)
 		api.PUT("/schedules/:id", handlers.UpdateSchedule)

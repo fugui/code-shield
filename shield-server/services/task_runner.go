@@ -1030,6 +1030,9 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 		"created_at":  time.Now(),
 	}).Error
 
+	// Trigger task hooks (if any registered for this task type)
+	ctx.executeHooks(ctx.findings)
+
 	ctx.Summary.Status = "success"
 	ctx.writeSummaryReport()
 

@@ -36,6 +36,7 @@ func InitDB() {
 		&SystemConfig{},
 		&ScheduleConfig{},
 		&TaskExecutionLog{},
+		&TestCaseFinding{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)

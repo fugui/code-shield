@@ -160,6 +160,29 @@ type AnalysisFinding struct {
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
+// TestCaseFinding 记录 "测试用例有效性评估" (ut_effectiveness) 任务的测试用例级扫描结果
+type TestCaseFinding struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	RepoID       uint           `gorm:"uniqueIndex:idx_repo_file_name;index" json:"repo_id"`
+	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID uint           `gorm:"index" json:"task_report_id"`
+	FilePath     string         `gorm:"uniqueIndex:idx_repo_file_name;size:500;not null" json:"file_path"`
+	LineNumber   string         `json:"line_number"`
+	TestCaseName string         `gorm:"uniqueIndex:idx_repo_file_name;size:255;not null;column:test_case_name" json:"test_case_name"` // 测试用例名称
+	Detail       string         `gorm:"type:text" json:"detail"`
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 合格、阻塞、严重、主要、提示、建议
+	Category     string         `gorm:"size:100" json:"category"`
+	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
+	Suggestion   string         `gorm:"type:text" json:"suggestion"`
+	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (问题解决), closed (问题关闭), invalid (无效问题)
+	AssigneeID   string         `json:"assignee_id"`
+	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	StatusLog    datatypes.JSON `json:"status_log"` // 用于记录时间节点：[{"status":"open","time":"2026-06-01...","user":"xxx"}]
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+
 const (
 	StatusPending        = "pending"
 	StatusQueued         = "queued"
