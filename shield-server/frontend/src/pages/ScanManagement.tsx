@@ -29,8 +29,11 @@ function ScanManagement() {
 
   const fetchRepos = async () => {
     try {
-      const res = await fetch('/api/repos');
-      if (res.ok) setRepos(await res.json());
+      const res = await fetch('/api/repos?pageSize=10000');
+      if (res.ok) {
+        const data = await res.json();
+        setRepos(data.items || data || []);
+      }
     } catch (err) { console.error(err); }
   };
 
