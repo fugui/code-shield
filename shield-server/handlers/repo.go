@@ -28,8 +28,11 @@ func GetRepos(c *gin.Context) {
 	if page < 1 {
 		page = 1
 	}
-	if pageSize < 1 || pageSize > 1000 {
+	if pageSize < 1 {
 		pageSize = 15
+	}
+	if pageSize > 10000 {
+		pageSize = 10000
 	}
 
 	query := models.DB.Model(&models.Repository{})
