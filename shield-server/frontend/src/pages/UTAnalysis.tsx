@@ -77,11 +77,13 @@ function UTAnalysis() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [workflowAssignee, setWorkflowAssignee] = useState('');
   const [workflowComment, setWorkflowComment] = useState('');
+  const [utTaskTypeId, setUtTaskTypeId] = useState<number | null>(null);
   
   // Fetch lists
   useEffect(() => {
     fetchDepartments();
     fetchMembers();
+    fetchTaskTypeId();
   }, []);
 
   useEffect(() => {
@@ -113,6 +115,19 @@ function UTAnalysis() {
       .then(data => {
         const list = Array.isArray(data) ? data : (data.items || []);
         setMembers(list);
+      })
+      .catch(console.error);
+  };
+
+  const fetchTaskTypeId = () => {
+    fetch(apiUrl('/api/task-types'))
+      .then(res => res.json())
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.items || []);
+        const utTask = list.find((t: any) => t.name === 'ut_effectiveness');
+        if (utTask) {
+          setUtTaskTypeId(utTask.id || utTask.ID);
+        }
       })
       .catch(console.error);
   };
@@ -286,16 +301,23 @@ function UTAnalysis() {
 
   // Trigger scan task manually
   const triggerScan = (repoId: number) => {
+    if (!utTaskTypeId) {
+      showToast('正在初始化扫描任务，请稍等或刷新重试。', 'info');
+      // Fetch fallback just in case
+      fetchTaskTypeId();
+      return;
+    }
+
     fetch(apiUrl('/api/tasks/trigger'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_id: repoId, task_type_name: 'ut_effectiveness' }),
+      body: JSON.stringify({ repo_id: repoId, task_type_id: utTaskTypeId }),
     })
       .then(res => {
         if (res.ok) {
           showToast('成功触发测试有效性扫描，后台执行中...', 'success');
         } else {
-          showToast('启动扫描失败，请检查任务类型是否启用', 'error');
+          showToast('启动扫描任务失败，请检查是否已有在排队执行中的相同任务', 'error');
         }
       })
       .catch(err => {
