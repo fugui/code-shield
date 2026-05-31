@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/models"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -101,8 +102,8 @@ func GetCoredumpRepos(c *gin.Context) {
 	models.DB.Where("name = ?", "coredump_risk").First(&taskType)
 
 	type DbScanTime struct {
-		RepoID    uint      `gorm:"column:repo_id"`
-		CreatedAt time.Time `gorm:"column:created_at"`
+		RepoID    uint   `gorm:"column:repo_id"`
+		CreatedAt string `gorm:"column:created_at"`
 	}
 	var scanTimes []DbScanTime
 	if taskType.ID > 0 {
@@ -115,7 +116,27 @@ func GetCoredumpRepos(c *gin.Context) {
 
 	scanTimeMap := make(map[uint]time.Time)
 	for _, st := range scanTimes {
-		scanTimeMap[st.RepoID] = st.CreatedAt
+		if st.CreatedAt != "" {
+			layouts := []string{
+				"2006-01-02 15:04:05.999999999-07:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05",
+				time.RFC3339,
+			}
+			var parsedTime time.Time
+			var err error
+			for _, layout := range layouts {
+				parsedTime, err = time.Parse(layout, st.CreatedAt)
+				if err == nil {
+					break
+				}
+			}
+			if err == nil {
+				scanTimeMap[st.RepoID] = parsedTime
+			} else {
+				log.Printf("Failed to parse coredump scan time %q: %v", st.CreatedAt, err)
+			}
+		}
 	}
 
 	// 6. Aggregate metrics
