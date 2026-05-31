@@ -77,6 +77,8 @@ function UTAnalysis() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [workflowAssignee, setWorkflowAssignee] = useState('');
   const [workflowComment, setWorkflowComment] = useState('');
+  const [assigneeSearch, setAssigneeSearch] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [utTaskTypeId, setUtTaskTypeId] = useState<number | null>(null);
   
   // Fetch lists
@@ -263,8 +265,13 @@ function UTAnalysis() {
   const startWorkflow = (finding: any) => {
     setEditingFinding(finding);
     setWorkflowStatus(finding.status);
-    setWorkflowAssignee(finding.assignee_id || '');
+    const mId = finding.assignee_id || '';
+    setWorkflowAssignee(mId);
     setWorkflowComment('');
+
+    // Set search string based on assignee
+    const current = members.find(m => (m.id || m.ID) === mId);
+    setAssigneeSearch(current ? `${current.name} (${current.id || current.ID})` : '');
   };
 
   const submitWorkflow = (e: React.FormEvent) => {
@@ -1153,14 +1160,112 @@ function UTAnalysis() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', color: '#64748b', fontWeight: 600, marginBottom: '0.375rem' }}>指派修复责任人</label>
-                  <select 
-                    value={workflowAssignee}
-                    onChange={e => setWorkflowAssignee(e.target.value)}
-                    style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--card-bg)' }}
-                  >
-                    <option value="">-- 未指派 --</option>
-                    {members.map(m => <option key={m.id} value={m.id}>{m.name} ({m.id})</option>)}
-                  </select>
+                  <div style={{ position: 'relative' }}>
+                    <input 
+                      type="text"
+                      placeholder="🔍 搜索责任人 (姓名/工号/部门)..."
+                      value={assigneeSearch}
+                      onFocus={() => setDropdownOpen(true)}
+                      onChange={e => {
+                        setAssigneeSearch(e.target.value);
+                        setDropdownOpen(true);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--card-bg)',
+                        color: 'var(--text-color)',
+                        fontSize: '0.85rem',
+                        boxSizing: 'border-box',
+                        outline: 'none'
+                      }}
+                    />
+                    {dropdownOpen && (
+                      <>
+                        <div 
+                          onClick={() => {
+                            setDropdownOpen(false);
+                            const current = members.find(m => (m.id || m.ID) === workflowAssignee);
+                            setAssigneeSearch(current ? `${current.name} (${current.id || current.ID})` : '');
+                          }} 
+                          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000 }} 
+                        />
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          width: '100%',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          background: 'white',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                          zIndex: 1001,
+                          marginTop: '4px'
+                        }}>
+                          <div 
+                            onClick={() => {
+                              setWorkflowAssignee('');
+                              setAssigneeSearch('');
+                              setDropdownOpen(false);
+                            }}
+                            style={{
+                              padding: '0.5rem 0.75rem',
+                              cursor: 'pointer',
+                              fontSize: '0.825rem',
+                              color: '#64748b',
+                              borderBottom: '1px solid #f1f5f9',
+                              textAlign: 'left'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            -- 未指派 --
+                          </div>
+                          {members.filter(m => {
+                            const name = m.name || '';
+                            const id = m.id || m.ID || '';
+                            const dept = m.department || '';
+                            const q = assigneeSearch.toLowerCase();
+                            return name.toLowerCase().includes(q) || id.toLowerCase().includes(q) || dept.toLowerCase().includes(q);
+                          }).slice(0, 50).map(m => {
+                            const mId = m.id || m.ID;
+                            return (
+                              <div 
+                                key={mId}
+                                onClick={() => {
+                                  setWorkflowAssignee(mId);
+                                  setAssigneeSearch(`${m.name} (${mId})`);
+                                  setDropdownOpen(false);
+                                }}
+                                style={{
+                                  padding: '0.5rem 0.75rem',
+                                  cursor: 'pointer',
+                                  fontSize: '0.825rem',
+                                  borderBottom: '1px solid #f1f5f9',
+                                  background: workflowAssignee === mId ? 'rgba(37, 99, 235, 0.05)' : 'transparent',
+                                  fontWeight: workflowAssignee === mId ? 600 : 400,
+                                  color: 'var(--text-color)',
+                                  textAlign: 'left'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <strong>{m.name}</strong>
+                                  <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{mId}</span>
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.15rem' }}>{m.department || '未分配部门'}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
