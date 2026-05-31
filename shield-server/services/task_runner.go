@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -922,27 +921,37 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	result.Score = score
 	result.Metrics = metrics
 
-	// 2. Extract summary from the generated Markdown file using Regex
-	result.Summary = "未提取到摘要"
-	if ctx.reportPath != "" {
-		if contentBytes, err := os.ReadFile(ctx.reportPath); err == nil {
-			content := string(contentBytes)
-			// Match "## 检视摘要" or similar headings and capture up to the next heading
-			re := regexp.MustCompile(`(?im)^##\s+.*(?:摘要|概述|概要).*\n([\s\S]*?)(?:\n##\s|$)`)
-			match := re.FindStringSubmatch(content)
-			if len(match) > 1 {
-				summary := strings.TrimSpace(match[1])
-				lines := strings.Split(summary, "\n")
-				if len(lines) > 5 {
-					lines = lines[:5]
-				}
-				summary = strings.Join(lines, " ")
-				if len(summary) > 500 {
-					summary = summary[:500]
-				}
-				result.Summary = summary
-			}
-		}
+	// 2. Construct clean summary directly from findings severity metrics
+	var summaryParts []string
+	if result.Metrics["blocking"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("阻塞：%d个", result.Metrics["blocking"]))
+	}
+	if result.Metrics["critical"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("严重：%d个", result.Metrics["critical"]))
+	}
+	if result.Metrics["major"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("主要：%d个", result.Metrics["major"]))
+	}
+	if result.Metrics["hint"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("提示：%d个", result.Metrics["hint"]))
+	}
+	if result.Metrics["suggestion"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("建议：%d个", result.Metrics["suggestion"]))
+	}
+	if result.Metrics["high_risk"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("高风险：%d个", result.Metrics["high_risk"]))
+	}
+	if result.Metrics["medium_risk"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("中风险：%d个", result.Metrics["medium_risk"]))
+	}
+	if result.Metrics["low_risk"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("低风险：%d个", result.Metrics["low_risk"]))
+	}
+
+	if len(summaryParts) == 0 {
+		result.Summary = "未发现任何问题，代码质量极佳！"
+	} else {
+		result.Summary = strings.Join(summaryParts, "，")
 	}
 
 	log.Printf("[TaskRunner] Postprocess calculated in Go - Score: %d, Summary len: %d, Metrics: %v\n", score, len(result.Summary), metrics)

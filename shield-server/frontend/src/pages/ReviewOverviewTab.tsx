@@ -221,6 +221,35 @@ function TaskOverviewTab() {
     );
   };
 
+  const getOverviewText = (item: any) => {
+    if (item.status !== 'success') return '';
+
+    if (item.metrics) {
+      try {
+        const m = typeof item.metrics === 'string' ? JSON.parse(item.metrics) : item.metrics;
+        const parts: string[] = [];
+        
+        if (m.blocking > 0) parts.push(`阻塞:${m.blocking}个`);
+        if (m.critical > 0) parts.push(`严重:${m.critical}个`);
+        if (m.major > 0) parts.push(`主要:${m.major}个`);
+        if (m.hint > 0) parts.push(`提示:${m.hint}个`);
+        if (m.suggestion > 0) parts.push(`建议:${m.suggestion}个`);
+
+        if (m.high_risk > 0) parts.push(`高风险:${m.high_risk}个`);
+        if (m.medium_risk > 0) parts.push(`中风险:${m.medium_risk}个`);
+        if (m.low_risk > 0) parts.push(`低风险:${m.low_risk}个`);
+
+        if (parts.length > 0) {
+          return parts.join('，');
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+
+    return item.ai_summary || '未发现任何问题，代码质量极佳！';
+  };
+
   return (
     <div>
       {/* Search and Filters */}
@@ -345,21 +374,46 @@ function TaskOverviewTab() {
         <table className="table">
           <thead>
             <tr>
+              <th style={{ width: '80px' }}>报告 ID</th>
+              <th style={{ width: '130px' }}>任务类型</th>
               <th style={{ width: '220px' }}>代码仓</th>
               <th style={{ width: '130px' }}>归属部门</th>
               <th style={{ width: '100px' }}>负责人</th>
-              <th style={{ width: '130px' }}>任务类型</th>
               <th style={{ width: '160px' }}>执行时间</th>
               <th style={{ width: '100px' }}>状态</th>
               <th style={{ width: '120px' }}>评分 / 报告</th>
-              <th>AI 摘要与评分概览</th>
+              <th>问题统计与分析摘要</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
             ) : items.map((item, idx) => (
               <tr key={item.id || idx}>
+                <td>
+                  {item.status === 'success' ? (
+                    <span 
+                      onClick={() => handleOpenReport(item.id)}
+                      style={{ color: 'var(--primary-color)', cursor: 'pointer', fontWeight: 600, fontFamily: 'monospace' }}
+                      onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                      onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                      title="点击查看详细报告"
+                    >
+                      #{item.id}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#64748b', fontFamily: 'monospace' }}>#{item.id}</span>
+                  )}
+                </td>
+                <td>
+                  {item.task_type ? (
+                    <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
+                      {item.task_type.display_name}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#aaa' }}>-</span>
+                  )}
+                </td>
                 <td style={{ fontWeight: 500, width: '220px', maxWidth: '220px' }}>
                   {item.repo ? (() => {
                     const shortName = item.repo.name?.includes(':') ? item.repo.name.split(':').pop() : item.repo.name;
@@ -393,15 +447,6 @@ function TaskOverviewTab() {
                     </span>
                   ) : (
                     <span style={{ color: '#94a3b8' }}>{item.repo?.owner_id || '-'}</span>
-                  )}
-                </td>
-                <td>
-                  {item.task_type ? (
-                    <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
-                      {item.task_type.display_name}
-                    </span>
-                  ) : (
-                    <span style={{ color: '#aaa' }}>-</span>
                   )}
                 </td>
                 <td style={{ color: '#64748b' }}>
@@ -474,11 +519,14 @@ function TaskOverviewTab() {
                   )}
                 </td>
                 <td style={{ verticalAlign: 'middle' }}>
-                  {item.status === 'success' ? (
-                    <div style={{ color: '#475569', fontSize: '0.825rem', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={item.ai_summary}>
-                      {item.ai_summary || <span style={{ color: '#aaa', fontStyle: 'italic' }}>无摘要内容</span>}
-                    </div>
-                  ) : item.status === 'failed' ? (
+                  {item.status === 'success' ? (() => {
+                    const text = getOverviewText(item);
+                    return (
+                      <div style={{ color: '#1e293b', fontSize: '0.825rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={text}>
+                        {text}
+                      </div>
+                    );
+                  })() : item.status === 'failed' ? (
                     <div style={{ color: 'var(--danger-color)', fontSize: '0.825rem', fontStyle: 'italic' }}>
                       任务执行失败，AI 审计中断。
                     </div>
