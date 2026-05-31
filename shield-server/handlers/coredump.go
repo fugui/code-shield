@@ -278,12 +278,47 @@ func GetCoredumpFindings(c *gin.Context) {
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 
+	severityStats := make(map[string]int)
+	statusStats := make(map[string]int)
+
+	if repoIDStr != "" {
+		var severityCounts []struct {
+			Severity string
+			Count    int
+		}
+		models.DB.Model(&models.CoredumpFinding{}).
+			Select("severity, count(*) as count").
+			Where("repo_id = ?", repoID).
+			Group("severity").
+			Scan(&severityCounts)
+
+		for _, sc := range severityCounts {
+			severityStats[sc.Severity] = sc.Count
+		}
+
+		var statusCounts []struct {
+			Status string
+			Count  int
+		}
+		models.DB.Model(&models.CoredumpFinding{}).
+			Select("status, count(*) as count").
+			Where("repo_id = ?", repoID).
+			Group("status").
+			Scan(&statusCounts)
+
+		for _, sc := range statusCounts {
+			statusStats[sc.Status] = sc.Count
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"items":      findings,
-		"total":      total,
-		"page":       page,
-		"pageSize":   pageSize,
-		"totalPages": totalPages,
+		"items":         findings,
+		"total":         total,
+		"page":          page,
+		"pageSize":      pageSize,
+		"totalPages":    totalPages,
+		"severityStats": severityStats,
+		"statusStats":   statusStats,
 	})
 }
 
