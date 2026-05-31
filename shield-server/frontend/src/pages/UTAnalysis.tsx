@@ -743,31 +743,45 @@ function UTAnalysis() {
                         </td>
                         <td style={{ ...styles.tableCell }}>
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <button 
-                              onClick={() => openWorkspace(r.repo_id, r.repo_name)}
-                              title="用例审计"
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'var(--primary-color)',
-                                cursor: 'pointer',
-                                padding: '0.4rem',
-                                borderRadius: '50%',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'background-color 0.2s'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)'}
-                              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <circle cx="10" cy="13" r="2"></circle>
-                                <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
-                              </svg>
-                            </button>
+                            {(() => {
+                              const hasNotScanned = !r.last_scan_time || r.last_scan_time === '0001-01-01T00:00:00Z';
+                              return (
+                                <button 
+                                  disabled={hasNotScanned}
+                                  onClick={() => openWorkspace(r.repo_id, r.repo_name)}
+                                  title={hasNotScanned ? "代码仓未进行首次分析，无法审计" : "用例审计"}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: hasNotScanned ? '#cbd5e1' : 'var(--primary-color)',
+                                    cursor: hasNotScanned ? 'not-allowed' : 'pointer',
+                                    padding: '0.4rem',
+                                    borderRadius: '50%',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'background-color 0.2s'
+                                  }}
+                                  onMouseEnter={e => {
+                                    if (!hasNotScanned) {
+                                      e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)';
+                                    }
+                                  }}
+                                  onMouseLeave={e => {
+                                    if (!hasNotScanned) {
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                    }
+                                  }}
+                                >
+                                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <circle cx="10" cy="13" r="2"></circle>
+                                    <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
+                                  </svg>
+                                </button>
+                              );
+                            })()}
                           </div>
                         </td>
                       </tr>
