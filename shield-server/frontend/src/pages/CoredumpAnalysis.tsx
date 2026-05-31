@@ -49,6 +49,8 @@ export default function CoredumpAnalysis() {
   const [activeTab, setActiveTab] = useState<'repos' | 'depts' | 'trends'>('repos');
   const [departments, setDepartments] = useState<string[]>([]);
   const [selectedDept, setSelectedDept] = useState('');
+  const [repoPage, setRepoPage] = useState(1);
+  const repoPageSize = 10;
   const [keyword, setKeyword] = useState('');
   
   // Sorting state
@@ -141,6 +143,7 @@ export default function CoredumpAnalysis() {
 
   const fetchReposData = () => {
     setLoading(true);
+    setRepoPage(1);
     const params = new URLSearchParams({
       sort_by: sortField,
       sort_order: sortOrder,
@@ -549,6 +552,11 @@ export default function CoredumpAnalysis() {
   const totalBlocking = repos.reduce((acc, r) => acc + r.blocking, 0);
   const totalCritical = repos.reduce((acc, r) => acc + r.critical, 0);
 
+  // Repository list pagination calculations
+  const totalRepoPages = Math.ceil(repos.length / repoPageSize) || 1;
+  const startIndex = (repoPage - 1) * repoPageSize;
+  const paginatedRepos = repos.slice(startIndex, startIndex + repoPageSize);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', color: 'var(--text-color)', fontFamily: 'Inter, system-ui, sans-serif' }}>
       
@@ -648,6 +656,34 @@ export default function CoredumpAnalysis() {
                 <SearchIcon />
               </span>
             </div>
+            <select
+              value={selectedDept}
+              onChange={e => {
+                setSelectedDept(e.target.value);
+                setRepoPage(1);
+              }}
+              style={{
+                padding: '0.4rem 2rem 0.4rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--card-bg)',
+                color: 'var(--text-color)',
+                fontSize: '0.85rem',
+                outline: 'none',
+                cursor: 'pointer',
+                minWidth: '150px',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 8px center',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="">所有归属部门</option>
+              {departments.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
             <button className="btn" onClick={fetchReposData} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>查询</button>
           </div>
         )}
@@ -701,7 +737,7 @@ export default function CoredumpAnalysis() {
                       </td>
                     </tr>
                   ) : (
-                    repos.map(r => (
+                    paginatedRepos.map(r => (
                       <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <td style={{ ...styles.tableCell, fontWeight: 600 }}>{r.repo_name}</td>
                         <td style={styles.tableCell}>{r.department || '-'}</td>
@@ -774,6 +810,32 @@ export default function CoredumpAnalysis() {
                   )}
                 </tbody>
               </table>
+
+              {totalRepoPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', background: 'var(--card-bg)' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    显示第 {startIndex + 1} - {Math.min(startIndex + repoPageSize, repos.length)} 条，共 {repos.length} 个代码仓 (第 {repoPage} / {totalRepoPages} 页)
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button 
+                      className="btn" 
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', background: repoPage === 1 ? 'rgba(0,0,0,0.03)' : 'var(--primary-color)', color: repoPage === 1 ? '#94a3b8' : 'white', cursor: repoPage === 1 ? 'not-allowed' : 'pointer', border: repoPage === 1 ? '1px solid var(--border-color)' : 'none', borderRadius: '4px' }}
+                      disabled={repoPage === 1}
+                      onClick={() => setRepoPage(prev => Math.max(prev - 1, 1))}
+                    >
+                      上一页
+                    </button>
+                    <button 
+                      className="btn" 
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', background: repoPage >= totalRepoPages ? 'rgba(0,0,0,0.03)' : 'var(--primary-color)', color: repoPage >= totalRepoPages ? '#94a3b8' : 'white', cursor: repoPage >= totalRepoPages ? 'not-allowed' : 'pointer', border: repoPage >= totalRepoPages ? '1px solid var(--border-color)' : 'none', borderRadius: '4px' }}
+                      disabled={repoPage >= totalRepoPages}
+                      onClick={() => setRepoPage(prev => Math.min(prev + 1, totalRepoPages))}
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
