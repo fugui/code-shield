@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
-import TaskManagement from './pages/CodeReviewManagement';
+import ReportsOverview from './pages/ReportsOverview';
 import RepoTaskHistory from './pages/RepoReviewHistory';
 import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
@@ -339,7 +339,7 @@ function AppContent() {
           <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
 
           {/* 报告中心 */}
-          <Route path="/reports" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
+          <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
           <Route path="/reports/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
 
           {/* 专项分析 */}
