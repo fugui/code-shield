@@ -249,3 +249,25 @@ type TaskExecutionLog struct {
 	EndTime        *time.Time      `json:"end_time"`
 	CreatedAt      time.Time       `json:"created_at"`
 }
+
+// CoredumpFinding 记录 "C/C++ Coredump 风险分析" (coredump_risk) 任务的扫描结果与跟踪
+type CoredumpFinding struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	RepoID       uint           `gorm:"uniqueIndex:idx_repo_file_line_title;index" json:"repo_id"`
+	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID uint           `gorm:"index" json:"task_report_id"`
+	FilePath     string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:50" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255;not null" json:"title"`
+	Detail       string         `gorm:"type:text" json:"detail"`
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 阻塞、严重、主要、提示、建议
+	Category     string         `gorm:"size:100" json:"category"`
+	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
+	Suggestion   string         `gorm:"type:text" json:"suggestion"`
+	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	AssigneeID   string         `json:"assignee_id"`
+	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
