@@ -34,3 +34,7 @@ shield-server/*.exe
 .idea/
 .DS_Store
 shield-server/task-reports/
+
+# Local configuration
+config.yaml
+shield-server/settings.json
