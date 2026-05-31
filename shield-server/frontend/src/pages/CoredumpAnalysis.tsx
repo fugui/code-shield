@@ -75,6 +75,8 @@ export default function CoredumpAnalysis() {
   const [wsStatus, setWsStatus] = useState('');
   const [wsCategory, setWsCategory] = useState('');
   const [wsKeyword, setWsKeyword] = useState('');
+  const [severityStats, setSeverityStats] = useState<Record<string, number>>({});
+  const [statusStats, setStatusStats] = useState<Record<string, number>>({});
   
   // Workflows (edit issue dialog)
   const [editingFinding, setEditingFinding] = useState<any | null>(null);
@@ -238,6 +240,8 @@ export default function CoredumpAnalysis() {
       .then(data => {
         setWorkspaceFindings(data.items || []);
         setWorkspaceTotalPages(data.totalPages || 1);
+        if (data.severityStats) setSeverityStats(data.severityStats);
+        if (data.statusStats) setStatusStats(data.statusStats);
       })
       .catch(err => {
         console.error(err);
@@ -992,11 +996,11 @@ export default function CoredumpAnalysis() {
                 style={{ padding: '0.35rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.8rem' }}
               >
                 <option value="">全部严重度</option>
-                <option value="阻塞">阻塞</option>
-                <option value="严重">严重</option>
-                <option value="主要">主要</option>
-                <option value="提示">提示</option>
-                <option value="建议">建议</option>
+                <option value="阻塞">阻塞 ({severityStats['阻塞'] || 0})</option>
+                <option value="严重">严重 ({severityStats['严重'] || 0})</option>
+                <option value="主要">主要 ({severityStats['主要'] || 0})</option>
+                <option value="提示">提示 ({severityStats['提示'] || 0})</option>
+                <option value="建议">建议 ({severityStats['建议'] || 0})</option>
               </select>
 
               <select 
@@ -1005,11 +1009,11 @@ export default function CoredumpAnalysis() {
                 style={{ padding: '0.35rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.8rem' }}
               >
                 <option value="">全部状态</option>
-                <option value="open">待处理</option>
-                <option value="analyzing">问题分析</option>
-                <option value="resolved">已解决</option>
-                <option value="closed">已关闭</option>
-                <option value="invalid">忽略/误报</option>
+                <option value="open">待处理 ({statusStats['open'] || 0})</option>
+                <option value="analyzing">问题分析 ({statusStats['analyzing'] || 0})</option>
+                <option value="resolved">已解决 ({statusStats['resolved'] || 0})</option>
+                <option value="closed">已关闭 ({statusStats['closed'] || 0})</option>
+                <option value="invalid">忽略/误报 ({statusStats['invalid'] || 0})</option>
               </select>
 
               <input 
