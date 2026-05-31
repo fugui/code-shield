@@ -69,7 +69,7 @@ function ScanManagement() {
       const res = await fetch('/api/executions');
       if (res.ok) {
         const data = await res.json();
-        setRecentLogs(data.slice(0, 10));
+        setRecentLogs(data);
       }
     } catch (err) {
       console.error('Failed to fetch recent execution logs:', err);
@@ -237,6 +237,60 @@ function ScanManagement() {
     }
   };
 
+  const getRepoStatus = (repoId: number) => {
+    const latestLog = recentLogs.find(log => log.repo_id === repoId);
+    if (!latestLog) return { status: 'none', text: '未分析', badgeCls: 'info', isRunning: false, isPending: false, log: null };
+
+    const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(latestLog.status);
+    const isPending = latestLog.status === 'pending' || latestLog.status === 'queued';
+
+    let text = latestLog.status;
+    let badgeCls = 'info';
+
+    switch (latestLog.status) {
+      case 'success':
+        text = '完成';
+        badgeCls = 'success';
+        break;
+      case 'failed':
+        text = '失败';
+        badgeCls = 'danger';
+        break;
+      case 'skipped':
+        text = '已跳过';
+        badgeCls = 'info';
+        break;
+      case 'pending':
+      case 'queued':
+        text = '排队中';
+        badgeCls = 'warning';
+        break;
+      case 'cloning':
+        text = '克隆中';
+        badgeCls = 'primary';
+        break;
+      case 'pre_processing':
+        text = '前置检查';
+        badgeCls = 'primary';
+        break;
+      case 'analyzing':
+        const report = latestLog.task_report;
+        if (report && report.total_chunks > 1) {
+          text = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
+        } else {
+          text = '分析中';
+        }
+        badgeCls = 'primary';
+        break;
+      case 'post_processing':
+        text = '结果分析';
+        badgeCls = 'primary';
+        break;
+    }
+
+    return { status: latestLog.status, text, badgeCls, isRunning, isPending, log: latestLog };
+  };
+
   const tabStyle = (t: ScanTab) => ({
     background: 'transparent',
     border: 'none',
@@ -345,169 +399,53 @@ function ScanManagement() {
                   <th>归属部门</th>
                   <th>负责人</th>
                   <th>服务组</th>
+                  <th style={{ width: '150px' }}>状态</th>
+                  <th style={{ width: '180px', textAlign: 'right' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRepos.length === 0 ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓数据</td></tr>
-                ) : filteredRepos.map(r => (
-                  <tr key={r.id}>
-                    <td style={{ textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedRepoIds.includes(r.id)}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setSelectedRepoIds(prev => [...prev, r.id]);
-                          } else {
-                            setSelectedRepoIds(prev => prev.filter(id => id !== r.id));
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                    </td>
-                    <td style={{ fontWeight: 500 }}>{r.name}</td>
-                    <td>{r.team?.name || teams.find(t => t.id === r.team_id)?.name || '-'}</td>
-                    <td>{r.owner?.name || r.owner_id || '-'}</td>
-                    <td style={{ color: '#64748b' }}>{r.service_group || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Recent Task Status */}
-          <div className="card" style={{ marginTop: '2rem', padding: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span role="img" aria-label="clock">⏱️</span> 最近任务执行状态 (实时监控)
-              </h3>
-              <button 
-                className="btn" 
-                onClick={fetchRecentLogs} 
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-color)' }}
-              >
-                刷新状态
-              </button>
-            </div>
-
-            <table className="table" style={{ fontSize: '0.825rem' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: '70px' }}>任务 ID</th>
-                  <th style={{ width: '220px' }}>代码仓</th>
-                  <th style={{ width: '130px' }}>任务类型</th>
-                  <th style={{ width: '90px' }}>触发方式</th>
-                  <th style={{ width: '150px' }}>开始时间</th>
-                  <th style={{ width: '80px' }}>耗时</th>
-                  <th style={{ width: '160px' }}>执行状态</th>
-                  <th style={{ width: '100px', textAlign: 'right' }}>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>暂无最近的任务执行记录，可在上方选择仓库下发任务。</td>
-                  </tr>
-                ) : recentLogs.map(log => {
-                  const report = log.task_report;
-                  const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(log.status);
-                  const isPending = log.status === 'pending' || log.status === 'queued';
-                  const canCancel = isRunning || isPending;
-
-                  // Render detailed progress in status badge
-                  let badgeText = log.status;
-                  let badgeCls = 'info';
-                  
-                  switch (log.status) {
-                    case 'success':
-                      badgeText = '完成';
-                      badgeCls = 'success';
-                      break;
-                    case 'failed':
-                      badgeText = '失败';
-                      badgeCls = 'danger';
-                      break;
-                    case 'skipped':
-                      badgeText = '已跳过';
-                      badgeCls = 'info';
-                      break;
-                    case 'pending':
-                    case 'queued':
-                      badgeText = '排队中';
-                      badgeCls = 'warning';
-                      break;
-                    case 'cloning':
-                      badgeText = '克隆中';
-                      badgeCls = 'primary';
-                      break;
-                    case 'pre_processing':
-                      badgeText = '前置检查';
-                      badgeCls = 'primary';
-                      break;
-                    case 'analyzing':
-                      if (report && report.total_chunks > 1) {
-                        badgeText = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
-                      } else {
-                        badgeText = '分析中';
-                      }
-                      badgeCls = 'primary';
-                      break;
-                    case 'post_processing':
-                      badgeText = '结果分析';
-                      badgeCls = 'primary';
-                      break;
-                    default:
-                      badgeCls = 'primary';
-                  }
-
-                  const formatTime = (timeStr: string) => {
-                    if (!timeStr) return '-';
-                    return timeStr.replace('T', ' ').substring(0, 19);
-                  };
-
-                  const calcDuration = (startStr: string, endStr: string) => {
-                    if (!startStr) return '-';
-                    const end = endStr ? new Date(endStr).getTime() : Date.now();
-                    const start = new Date(startStr).getTime();
-                    const diff = Math.floor((end - start) / 1000);
-                    if (isNaN(diff) || diff < 0) return '-';
-                    return diff < 60 ? `${diff}秒` : `${Math.floor(diff / 60)}分${diff % 60}秒`;
-                  };
-
-                  const triggerTextMap: Record<string, string> = {
-                    manual: '手动触发',
-                    cron: '定时策略',
-                    webhook: 'Webhook'
-                  };
-
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓数据</td></tr>
+                ) : filteredRepos.map(r => {
+                  const statusInfo = getRepoStatus(r.id);
+                  const canCancel = statusInfo.isRunning || statusInfo.isPending;
                   return (
-                    <tr key={log.id}>
-                      <td style={{ fontFamily: 'monospace', color: '#64748b' }}>#{log.id}</td>
-                      <td style={{ fontWeight: 500 }} title={log.repo_name}>{log.repo_name}</td>
-                      <td>
-                        <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
-                          {log.task_type_name || '-'}
-                        </span>
+                    <tr key={r.id}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRepoIds.includes(r.id)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSelectedRepoIds(prev => [...prev, r.id]);
+                            } else {
+                              setSelectedRepoIds(prev => prev.filter(id => id !== r.id));
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        />
                       </td>
-                      <td>
-                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                          {triggerTextMap[log.trigger_type] || log.trigger_type}
-                        </span>
-                      </td>
-                      <td style={{ color: '#64748b' }}>{formatTime(log.start_time)}</td>
-                      <td style={{ color: '#64748b' }}>{calcDuration(log.start_time, log.end_time)}</td>
+                      <td style={{ fontWeight: 500 }}>{r.name}</td>
+                      <td>{r.team?.name || teams.find(t => t.id === r.team_id)?.name || '-'}</td>
+                      <td>{r.owner?.name || r.owner_id || '-'}</td>
+                      <td style={{ color: '#64748b' }}>{r.service_group || '-'}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span className={`badge ${badgeCls}`}>{badgeText}</span>
-                          {isRunning && <span className="spinner-mini" />}
+                          {statusInfo.status !== 'none' ? (
+                            <>
+                              <span className={`badge ${statusInfo.badgeCls}`}>{statusInfo.text}</span>
+                              {statusInfo.isRunning && <span className="spinner-mini" />}
+                            </>
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>未分析</span>
+                          )}
                         </div>
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                          {log.status === 'success' && report && (
+                          {statusInfo.status === 'success' && statusInfo.log.task_report && (
                             <button
-                              onClick={() => handleOpenReport(report.id)}
+                              onClick={() => handleOpenReport(statusInfo.log.task_report.id)}
                               style={{
                                 background: 'transparent',
                                 border: '1px solid var(--primary-color)',
@@ -532,7 +470,7 @@ function ScanManagement() {
                           )}
                           {canCancel && (
                             <button
-                              onClick={() => deletePending(log.id, isRunning)}
+                              onClick={() => deletePending(statusInfo.log.id, statusInfo.isRunning)}
                               style={{
                                 background: 'transparent',
                                 border: '1px solid var(--danger-color)',
@@ -546,7 +484,7 @@ function ScanManagement() {
                                 gap: '0.2rem',
                                 transition: 'all 0.2s',
                               }}
-                              title={isRunning ? "强杀进程并删除该任务" : "取消排队任务"}
+                              title={statusInfo.isRunning ? "强杀进程并删除该任务" : "取消排队任务"}
                               onMouseEnter={e => {
                                 e.currentTarget.style.backgroundColor = 'var(--danger-color)';
                                 e.currentTarget.style.color = 'white';
@@ -560,10 +498,10 @@ function ScanManagement() {
                                 <polyline points="3 6 5 6 21 6"></polyline>
                                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                               </svg>
-                              {isRunning ? "终止" : "取消"}
+                              {statusInfo.isRunning ? "终止" : "取消"}
                             </button>
                           )}
-                          {!canCancel && log.status !== 'success' && (
+                          {!canCancel && statusInfo.status !== 'success' && (
                             <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>-</span>
                           )}
                         </div>
@@ -574,6 +512,8 @@ function ScanManagement() {
               </tbody>
             </table>
           </div>
+
+
         </div>
       )}
 
@@ -679,6 +619,10 @@ function ScanManagement() {
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
           display: inline-block;
+        }
+        .badge.primary {
+          background: rgba(37, 99, 235, 0.12);
+          color: var(--primary-color);
         }
         @keyframes spin {
           to { transform: rotate(360deg); }
