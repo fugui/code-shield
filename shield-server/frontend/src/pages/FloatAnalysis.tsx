@@ -54,7 +54,7 @@ export default function FloatAnalysis() {
   const [keyword, setKeyword] = useState('');
   
   // Sorting state
-  const [sortField, setSortField] = useState('fix_rate');
+  const [sortField, setSortField] = useState('total_issues');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   // Trend dimension
@@ -411,7 +411,7 @@ export default function FloatAnalysis() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
         <div style={{ display: 'flex', gap: '1.5rem' }}>
           <button 
-            onClick={() => { setActiveTab('repos'); setSortField('fix_rate'); }}
+            onClick={() => { setActiveTab('repos'); setSortField('total_issues'); }}
             style={{ padding: '0.75rem 0.25rem', border: 'none', background: 'transparent', borderBottom: activeTab === 'repos' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'repos' ? 'var(--primary-color)' : '#64748b', fontWeight: activeTab === 'repos' ? 600 : 500, cursor: 'pointer', fontSize: '0.9rem' }}
           >
             代码仓看板
