@@ -8,13 +8,7 @@ type ScanTab = 'trigger' | 'schedules';
 
 function ScanManagement() {
   const { showToast } = useToast();
-  const { tab } = useParams<{ tab: string }>();
-  const navigate = useNavigate();
-  const activeTab: ScanTab = (tab as ScanTab) || 'trigger';
-
-  const setActiveTab = (t: ScanTab) => {
-    navigate(appNavigatePath(`/config/scan/${t}`), { replace: true });
-  };
+  const [activeTab, setActiveTab] = useState<ScanTab>('trigger');
 
   // --- Manual Trigger State ---
   const [repos, setRepos] = useState<any[]>([]);
