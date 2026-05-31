@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
+import ReportSidebar from '../components/ReportSidebar';
 
 type ScanTab = 'trigger' | 'schedules';
 
@@ -18,6 +19,11 @@ function ScanManagement() {
   const [openBatchMenu, setOpenBatchMenu] = useState(false);
   const [filterTeam, setFilterTeam] = useState('');
   const [filterSearch, setFilterSearch] = useState('');
+  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentMarkdown, setCurrentMarkdown] = useState('');
+  const [loadingMarkdown, setLoadingMarkdown] = useState(false);
+  const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
 
   // --- Schedule State ---
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -58,11 +64,31 @@ function ScanManagement() {
     } catch (err) { console.error(err); }
   };
 
+  const fetchRecentLogs = async () => {
+    try {
+      const res = await fetch('/api/executions');
+      if (res.ok) {
+        const data = await res.json();
+        setRecentLogs(data.slice(0, 10));
+      }
+    } catch (err) {
+      console.error('Failed to fetch recent execution logs:', err);
+    }
+  };
+
   useEffect(() => {
     fetchTeams();
     fetchTaskTypes();
     if (activeTab === 'trigger') fetchRepos();
     if (activeTab === 'schedules') { fetchSchedules(); fetchRepos(); }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'trigger') {
+      fetchRecentLogs();
+      const interval = setInterval(fetchRecentLogs, 5000);
+      return () => clearInterval(interval);
+    }
   }, [activeTab]);
 
   // Filter repos
@@ -100,6 +126,7 @@ function ScanManagement() {
       showToast(`部分下发成功：${successCount} 成功，${failCount} 失败`, 'info');
     }
     setSelectedRepoIds([]);
+    fetchRecentLogs();
   };
 
   const handleClearInvalidReports = async () => {
@@ -169,6 +196,45 @@ function ScanManagement() {
         showToast('触发失败: ' + d.error, 'error');
       }
     } catch (err) { console.error(err); }
+  };
+
+  const handleOpenReport = async (reportId: number) => {
+    setSidebarOpen(true);
+    setLoadingMarkdown(true);
+    setCurrentMarkdown('');
+    setCurrentReportId(reportId);
+    try {
+      const res = await fetch(`/api/tasks/${reportId}/report`);
+      if (res.ok) {
+        setCurrentMarkdown(await res.text());
+      } else {
+        const err = await res.json();
+        setCurrentMarkdown(`### 获取报告失败\n\n原因: ${err.error || 'Server error'}`);
+      }
+    } catch {
+      setCurrentMarkdown('### 获取报告失败\n\n原因: 网络请求异常。');
+    } finally {
+      setLoadingMarkdown(false);
+    }
+  };
+
+  const deletePending = async (logId: number, isRunning: boolean) => {
+    const message = isRunning
+      ? '该任务正在分析运行中，确认要【强杀进程】并删除该执行记录吗？\n警告：此操作将立即中断分析任务且不可恢复。'
+      : '确认删除该排队中的任务？此操作不可恢复。';
+    if (!window.confirm(message)) return;
+    try {
+      const res = await fetch(`/api/executions/${logId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || '任务已删除', 'success');
+        fetchRecentLogs();
+      } else {
+        showToast(data.error || '删除失败', 'error');
+      }
+    } catch {
+      showToast('网络异常，删除失败', 'error');
+    }
   };
 
   const tabStyle = (t: ScanTab) => ({
@@ -309,6 +375,205 @@ function ScanManagement() {
               </tbody>
             </table>
           </div>
+
+          {/* Recent Task Status */}
+          <div className="card" style={{ marginTop: '2rem', padding: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span role="img" aria-label="clock">⏱️</span> 最近任务执行状态 (实时监控)
+              </h3>
+              <button 
+                className="btn" 
+                onClick={fetchRecentLogs} 
+                style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-color)' }}
+              >
+                刷新状态
+              </button>
+            </div>
+
+            <table className="table" style={{ fontSize: '0.825rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '70px' }}>任务 ID</th>
+                  <th style={{ width: '220px' }}>代码仓</th>
+                  <th style={{ width: '130px' }}>任务类型</th>
+                  <th style={{ width: '90px' }}>触发方式</th>
+                  <th style={{ width: '150px' }}>开始时间</th>
+                  <th style={{ width: '80px' }}>耗时</th>
+                  <th style={{ width: '160px' }}>执行状态</th>
+                  <th style={{ width: '100px', textAlign: 'right' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>暂无最近的任务执行记录，可在上方选择仓库下发任务。</td>
+                  </tr>
+                ) : recentLogs.map(log => {
+                  const report = log.task_report;
+                  const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(log.status);
+                  const isPending = log.status === 'pending' || log.status === 'queued';
+                  const canCancel = isRunning || isPending;
+
+                  // Render detailed progress in status badge
+                  let badgeText = log.status;
+                  let badgeCls = 'info';
+                  
+                  switch (log.status) {
+                    case 'success':
+                      badgeText = '完成';
+                      badgeCls = 'success';
+                      break;
+                    case 'failed':
+                      badgeText = '失败';
+                      badgeCls = 'danger';
+                      break;
+                    case 'skipped':
+                      badgeText = '已跳过';
+                      badgeCls = 'info';
+                      break;
+                    case 'pending':
+                    case 'queued':
+                      badgeText = '排队中';
+                      badgeCls = 'warning';
+                      break;
+                    case 'cloning':
+                      badgeText = '克隆中';
+                      badgeCls = 'primary';
+                      break;
+                    case 'pre_processing':
+                      badgeText = '前置检查';
+                      badgeCls = 'primary';
+                      break;
+                    case 'analyzing':
+                      if (report && report.total_chunks > 1) {
+                        badgeText = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
+                      } else {
+                        badgeText = '分析中';
+                      }
+                      badgeCls = 'primary';
+                      break;
+                    case 'post_processing':
+                      badgeText = '结果分析';
+                      badgeCls = 'primary';
+                      break;
+                    default:
+                      badgeCls = 'primary';
+                  }
+
+                  const formatTime = (timeStr: string) => {
+                    if (!timeStr) return '-';
+                    return timeStr.replace('T', ' ').substring(0, 19);
+                  };
+
+                  const calcDuration = (startStr: string, endStr: string) => {
+                    if (!startStr) return '-';
+                    const end = endStr ? new Date(endStr).getTime() : Date.now();
+                    const start = new Date(startStr).getTime();
+                    const diff = Math.floor((end - start) / 1000);
+                    if (isNaN(diff) || diff < 0) return '-';
+                    return diff < 60 ? `${diff}秒` : `${Math.floor(diff / 60)}分${diff % 60}秒`;
+                  };
+
+                  const triggerTextMap: Record<string, string> = {
+                    manual: '手动触发',
+                    cron: '定时策略',
+                    webhook: 'Webhook'
+                  };
+
+                  return (
+                    <tr key={log.id}>
+                      <td style={{ fontFamily: 'monospace', color: '#64748b' }}>#{log.id}</td>
+                      <td style={{ fontWeight: 500 }} title={log.repo_name}>{log.repo_name}</td>
+                      <td>
+                        <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
+                          {log.task_type_name || '-'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          {triggerTextMap[log.trigger_type] || log.trigger_type}
+                        </span>
+                      </td>
+                      <td style={{ color: '#64748b' }}>{formatTime(log.start_time)}</td>
+                      <td style={{ color: '#64748b' }}>{calcDuration(log.start_time, log.end_time)}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span className={`badge ${badgeCls}`}>{badgeText}</span>
+                          {isRunning && <span className="spinner-mini" />}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          {log.status === 'success' && report && (
+                            <button
+                              onClick={() => handleOpenReport(report.id)}
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid var(--primary-color)',
+                                color: 'var(--primary-color)',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.backgroundColor = 'var(--primary-color)';
+                                e.currentTarget.style.color = 'white';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.color = 'var(--primary-color)';
+                              }}
+                            >
+                              查看报告
+                            </button>
+                          )}
+                          {canCancel && (
+                            <button
+                              onClick={() => deletePending(log.id, isRunning)}
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid var(--danger-color)',
+                                color: 'var(--danger-color)',
+                                padding: '0.2rem 0.4rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                transition: 'all 0.2s',
+                              }}
+                              title={isRunning ? "强杀进程并删除该任务" : "取消排队任务"}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.backgroundColor = 'var(--danger-color)';
+                                e.currentTarget.style.color = 'white';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.color = 'var(--danger-color)';
+                              }}
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              </svg>
+                              {isRunning ? "终止" : "取消"}
+                            </button>
+                          )}
+                          {!canCancel && log.status !== 'success' && (
+                            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>-</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -401,6 +666,24 @@ function ScanManagement() {
           />
         </div>
       )}
+
+      {/* Slideout report viewer sidebar */}
+      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
+
+      <style>{`
+        .spinner-mini {
+          width: 12px;
+          height: 12px;
+          border: 2px solid rgba(37, 99, 235, 0.15);
+          border-top-color: var(--primary-color);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+          display: inline-block;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
