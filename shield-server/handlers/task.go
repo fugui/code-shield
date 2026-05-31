@@ -19,7 +19,15 @@ func GetTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
 	repoID := c.Query("repo_id")
-	taskType := c.Query("task_type")
+	taskTypeID := c.Query("task_type_id")
+	if taskTypeID == "" {
+		taskTypeID = c.Query("task_type")
+	}
+	teamID := c.Query("team_id")
+	serviceGroup := c.Query("service_group")
+	owner := c.Query("owner")
+	status := c.Query("status")
+	search := c.Query("search")
 
 	if page < 1 {
 		page = 1
@@ -28,12 +36,31 @@ func GetTasks(c *gin.Context) {
 		pageSize = 15
 	}
 
-	query := models.DB.Model(&models.TaskReport{})
+	query := models.DB.Model(&models.TaskReport{}).
+		Select("task_reports.*").
+		Joins("LEFT JOIN repositories ON task_reports.repo_id = repositories.id")
+
 	if repoID != "" {
-		query = query.Where("repo_id = ?", repoID)
+		query = query.Where("task_reports.repo_id = ?", repoID)
 	}
-	if taskType != "" {
-		query = query.Where("task_type_id = ?", taskType)
+	if taskTypeID != "" {
+		query = query.Where("task_reports.task_type_id = ?", taskTypeID)
+	}
+	if teamID != "" {
+		query = query.Where("repositories.team_id = ?", teamID)
+	}
+	if serviceGroup != "" {
+		query = query.Where("repositories.service_group LIKE ?", "%"+serviceGroup+"%")
+	}
+	if owner != "" {
+		query = query.Joins("LEFT JOIN members ON repositories.owner_id = members.id").
+			Where("members.name LIKE ? OR repositories.owner_id LIKE ?", "%"+owner+"%", "%"+owner+"%")
+	}
+	if status != "" {
+		query = query.Where("task_reports.status = ?", status)
+	}
+	if search != "" {
+		query = query.Where("repositories.name LIKE ? OR task_reports.ai_summary LIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
 	var total int64
@@ -41,7 +68,8 @@ func GetTasks(c *gin.Context) {
 
 	var reports []models.TaskReport
 	offset := (page - 1) * pageSize
-	query.Preload("Repo").Preload("TaskType").Order("created_at desc").Offset(offset).Limit(pageSize).Find(&reports)
+	query.Preload("Repo").Preload("Repo.Team").Preload("Repo.Owner").Preload("TaskType").
+		Order("task_reports.created_at desc").Offset(offset).Limit(pageSize).Find(&reports)
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 
