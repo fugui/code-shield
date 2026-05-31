@@ -5,7 +5,7 @@ import { sshToHttps } from '../utils/urlUtils';
 import ReportSidebar from '../components/ReportSidebar';
 import { appNavigatePath } from '../config';
 
-function TaskOverviewTab() {
+function ReportsOverview() {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -608,4 +608,4 @@ function TaskOverviewTab() {
   );
 }
 
-export default TaskOverviewTab;
+export default ReportsOverview;
