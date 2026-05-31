@@ -34,7 +34,7 @@ type FloatRepoSummary struct {
 
 // GetFloatRepos lists all repositories with aggregated python float comparison statistics
 func GetFloatRepos(c *gin.Context) {
-	sortBy := c.DefaultQuery("sort_by", "fix_rate")
+	sortBy := c.DefaultQuery("sort_by", "total_issues")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 	keyword := c.Query("keyword")
 	department := c.Query("department")
