@@ -369,6 +369,16 @@ func isTestFile(file string) bool {
 		return true
 	}
 
+	// C/C++: test_*.cpp/cc/c/cxx/h/hpp/hxx, *_test.cpp/cc/..., *_unittest.cpp/cc/...
+	for _, ext := range []string{".cpp", ".cc", ".c", ".cxx", ".h", ".hpp", ".hxx"} {
+		if strings.HasSuffix(lower, ext) {
+			nameNoExt := strings.TrimSuffix(lower, ext)
+			if strings.HasPrefix(nameNoExt, "test_") || strings.HasSuffix(nameNoExt, "_test") || strings.HasSuffix(nameNoExt, "_unittest") {
+				return true
+			}
+		}
+	}
+
 	// 测试目录
 	lowerPath := strings.ToLower(file)
 	for _, dir := range []string{"test/", "tests/", "__tests__/", "spec/", "testdata/"} {
