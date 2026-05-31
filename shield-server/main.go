@@ -152,6 +152,14 @@ func main() {
 		api.GET("/analysis/coredump/departments", handlers.GetCoredumpDepartments)
 		api.GET("/analysis/coredump/trends", handlers.GetCoredumpTrends)
 
+		// Python Float Campaign Dashboard
+		api.GET("/analysis/float/repos", handlers.GetFloatRepos)
+		api.GET("/analysis/float/findings", handlers.GetFloatFindings)
+		api.PATCH("/analysis/float/findings/:id", handlers.UpdateFloatFinding)
+		api.GET("/analysis/float/departments", handlers.GetFloatDepartments)
+		api.GET("/analysis/float/trends", handlers.GetFloatTrends)
+
+
 		api.GET("/schedules", handlers.GetSchedules)
 		api.POST("/schedules", handlers.CreateSchedule)
 		api.PUT("/schedules/:id", handlers.UpdateSchedule)
