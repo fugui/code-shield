@@ -118,10 +118,13 @@ type ExecutionLogResponse struct {
 
 // ExecutionReportBrief contains only the fields the frontend needs for the expanded row.
 type ExecutionReportBrief struct {
-	ID        uint   `json:"id"`
-	Status    string `json:"status"`
-	Score     int    `json:"score"`
-	AISummary string `json:"ai_summary"`
+	ID              uint   `json:"id"`
+	Status          string `json:"status"`
+	Score           int    `json:"score"`
+	AISummary       string `json:"ai_summary"`
+	TotalChunks     int    `json:"total_chunks"`
+	ProcessedChunks int    `json:"processed_chunks"`
+	SuccessChunks   int    `json:"success_chunks"`
 }
 
 func GetExecutionLogs(c *gin.Context) {
@@ -166,10 +169,13 @@ func GetExecutionLogs(c *gin.Context) {
 		}
 		if log.TaskReport != nil {
 			item.TaskReport = &ExecutionReportBrief{
-				ID:        log.TaskReport.ID,
-				Status:    log.TaskReport.Status,
-				Score:     log.TaskReport.Score,
-				AISummary: log.TaskReport.AISummary,
+				ID:              log.TaskReport.ID,
+				Status:          log.TaskReport.Status,
+				Score:           log.TaskReport.Score,
+				AISummary:       log.TaskReport.AISummary,
+				TotalChunks:     log.TaskReport.TotalChunks,
+				ProcessedChunks: log.TaskReport.ProcessedChunks,
+				SuccessChunks:   log.TaskReport.SuccessChunks,
 			}
 		}
 		result = append(result, item)

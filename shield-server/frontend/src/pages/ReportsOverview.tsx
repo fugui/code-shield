@@ -15,7 +15,6 @@ function ReportsOverview() {
   const filterServiceGroup = searchParams.get('sg') || '';
   const filterOwner = searchParams.get('owner') || '';
   const filterTaskType = searchParams.get('tt') || '';
-  const filterStatus = searchParams.get('status') || '';
   const filterSearch = searchParams.get('search') || '';
   const page = parseInt(searchParams.get('page') || '1', 10) || 1;
 
@@ -52,12 +51,12 @@ function ReportsOverview() {
     const params = new URLSearchParams({
       page: page.toString(),
       pageSize: pageSize.toString(),
+      status: 'success', // Only show successful reports
     });
     if (filterTeam) params.append('team_id', filterTeam);
     if (filterServiceGroup) params.append('service_group', filterServiceGroup);
     if (filterOwner) params.append('owner', filterOwner);
     if (filterTaskType) params.append('task_type_id', filterTaskType);
-    if (filterStatus) params.append('status', filterStatus);
     if (filterSearch) params.append('search', filterSearch);
 
     fetch(`/api/tasks?${params.toString()}`)
@@ -68,7 +67,7 @@ function ReportsOverview() {
         setTotalPages(data.totalPages || 0);
       })
       .catch(console.error);
-  }, [page, pageSize, filterTeam, filterServiceGroup, filterOwner, filterTaskType, filterStatus, filterSearch]);
+  }, [page, pageSize, filterTeam, filterServiceGroup, filterOwner, filterTaskType, filterSearch]);
 
   useEffect(() => {
     fetchOverview();
@@ -151,75 +150,7 @@ function ReportsOverview() {
     }
   };
 
-  const renderStatusBadge = (status: string, total: number, processed: number, success: number) => {
-    let text = status;
-    let cls = 'info';
 
-    switch (status) {
-      case 'success':
-        text = '完成';
-        cls = 'success';
-        break;
-      case 'failed':
-        text = '失败';
-        cls = 'danger';
-        break;
-      case 'queued':
-        text = '排队中';
-        cls = 'info';
-        break;
-      case 'running':
-        text = '执行中';
-        cls = 'warning';
-        break;
-      case 'skipped':
-        text = '已跳过';
-        cls = 'info';
-        break;
-      case 'cloning':
-        text = '克隆中';
-        cls = 'warning';
-        break;
-      case 'pre_processing':
-        text = '检查中';
-        cls = 'warning';
-        break;
-      case 'analyzing':
-        text = total > 1 ? `分析中 (${processed}/${total})` : '分析中';
-        cls = 'warning';
-        break;
-      case 'post_processing':
-        text = '处理中';
-        cls = 'warning';
-        break;
-    }
-
-    const chunkBadge = status !== 'none' && total > 0 && success !== total && (
-      <span 
-        style={{
-          display: 'inline-block',
-          padding: '0.1rem 0.4rem',
-          borderRadius: '4px',
-          fontSize: '0.75rem',
-          fontWeight: 600,
-          background: 'rgba(245, 158, 11, 0.08)',
-          color: '#d97706',
-          border: '1px solid rgba(245, 158, 11, 0.15)',
-          marginLeft: '0.5rem'
-        }}
-        title={`分片进度：成功 ${success} / 总数 ${total}`}
-      >
-        {success}/{total}
-      </span>
-    );
-
-    return (
-      <div style={{ display: 'inline-flex', alignItems: 'center' }}>
-        <span className={`badge ${cls}`}>{text}</span>
-        {chunkBadge}
-      </div>
-    );
-  };
 
   const getOverviewText = (item: any) => {
     if (item.status !== 'success') return '';
@@ -292,22 +223,7 @@ function ReportsOverview() {
           </select>
         </div>
 
-        {/* Status */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '120px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>任务状态</label>
-          <select
-            value={filterStatus}
-            onChange={e => handleFilterChange('status', e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer' }}
-          >
-            <option value="">全部状态</option>
-            <option value="success">完成</option>
-            <option value="failed">失败</option>
-            <option value="running">执行中</option>
-            <option value="queued">排队中</option>
-            <option value="skipped">已跳过</option>
-          </select>
-        </div>
+
 
         {/* Service Group */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '150px' }}>
@@ -335,7 +251,7 @@ function ReportsOverview() {
 
         {/* Reset Filters */}
         <div style={{ display: 'flex', alignItems: 'flex-end', height: '38px', marginTop: 'auto' }}>
-          {(filterTeam || filterServiceGroup || filterOwner || filterTaskType || filterStatus || filterSearch) && (
+          {(filterTeam || filterServiceGroup || filterOwner || filterTaskType || filterSearch) && (
             <button
               onClick={() => {
                 setSearchParams(new URLSearchParams(), { replace: true });
@@ -380,14 +296,13 @@ function ReportsOverview() {
               <th style={{ width: '130px' }}>归属部门</th>
               <th style={{ width: '100px' }}>负责人</th>
               <th style={{ width: '160px' }}>执行时间</th>
-              <th style={{ width: '100px' }}>状态</th>
               <th style={{ width: '120px' }}>评分 / 报告</th>
               <th>问题统计与分析摘要</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
             ) : items.map((item, idx) => (
               <tr key={item.id || idx}>
                 <td>
@@ -452,9 +367,7 @@ function ReportsOverview() {
                 <td style={{ color: '#64748b' }}>
                   {item.created_at ? item.created_at.replace('T', ' ').substring(0, 19) : '-'}
                 </td>
-                <td>
-                  {renderStatusBadge(item.status, item.total_chunks, item.processed_chunks, item.success_chunks)}
-                </td>
+
                 <td>
                   {item.status === 'success' ? (
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
