@@ -204,6 +204,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 
 	// ── Phase 2: 综合阶段 ──
 	log.Printf("[ChunkedEngine] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
+	ctx.findings = allFindings
 	return ctx.executeSynthesis(allFindings)
 }
 
@@ -646,11 +647,22 @@ func ResumeFailedChunks(reportID uint) error {
 	ctx.writeSummaryReport()
 
 	// 11. 判断是否还有失败的 chunk
+	var existingFindings []models.AnalysisFinding
+	for _, chunk := range ctx.Summary.Analysis.Chunks {
+		if chunk.Status == "success" {
+			safeName := strings.ReplaceAll(chunk.ChunkName, "/", "-")
+			chunkJsonPath := filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.report.ID, safeName))
+			findings, err := ctx.loadFindingsFromChunkFile(chunkJsonPath)
+			if err != nil {
+				log.Printf("[ResumeFailedChunks] Warning: failed to load findings for successful chunk [%s]: %v\n", chunk.ChunkName, err)
+				continue
+			}
+			existingFindings = append(existingFindings, findings...)
+		}
+	}
+
 	if len(chunkErrors) > 0 {
 		if len(newFindings) == 0 {
-			// 查询已有的成功 findings
-			var existingFindings []models.AnalysisFinding
-			models.DB.Where("task_report_id = ?", reportID).Find(&existingFindings)
 			if len(existingFindings) == 0 {
 				errMsg := fmt.Sprintf("resume failed: all retried chunks failed: %s", strings.Join(chunkErrors, "; "))
 				ctx.markFailed(errMsg)
@@ -660,9 +672,9 @@ func ResumeFailedChunks(reportID uint) error {
 		log.Printf("[ResumeFailedChunks] Warning: %d chunks still failed, proceeding with available findings\n", len(chunkErrors))
 	}
 
-	// 12. 合并所有 findings（DB 中已有的 + 新重试成功的）
+	// 12. 合并所有 findings（分片缓存文件中的 + 新重试成功的）
 	var allFindings []models.AnalysisFinding
-	models.DB.Where("task_report_id = ?", reportID).Find(&allFindings)
+	allFindings = append(allFindings, existingFindings...)
 	allFindings = append(allFindings, newFindings...)
 
 	if len(allFindings) == 0 {
@@ -671,6 +683,7 @@ func ResumeFailedChunks(reportID uint) error {
 
 	// 13. 重新生成综合报告
 	log.Printf("[ResumeFailedChunks] Starting synthesis with %d total findings for ReportID %d\n", len(allFindings), reportID)
+	ctx.findings = allFindings
 	if err := ctx.executeSynthesis(allFindings); err != nil {
 		ctx.markFailed(err.Error())
 		return err
