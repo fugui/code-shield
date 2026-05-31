@@ -145,6 +145,13 @@ func main() {
 		api.GET("/analysis/ut/departments", handlers.GetUTDepartments)
 		api.GET("/analysis/ut/trends", handlers.GetUTTrends)
 
+		// Core Dump Campaign Dashboard
+		api.GET("/analysis/coredump/repos", handlers.GetCoredumpRepos)
+		api.GET("/analysis/coredump/findings", handlers.GetCoredumpFindings)
+		api.PATCH("/analysis/coredump/findings/:id", handlers.UpdateCoredumpFinding)
+		api.GET("/analysis/coredump/departments", handlers.GetCoredumpDepartments)
+		api.GET("/analysis/coredump/trends", handlers.GetCoredumpTrends)
+
 		api.GET("/schedules", handlers.GetSchedules)
 		api.POST("/schedules", handlers.CreateSchedule)
 		api.PUT("/schedules/:id", handlers.UpdateSchedule)
