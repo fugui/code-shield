@@ -13,7 +13,7 @@ function ScanManagement() {
   const activeTab: ScanTab = (tab as ScanTab) || 'trigger';
 
   const setActiveTab = (t: ScanTab) => {
-    navigate(appNavigatePath(`/admin/scan/${t}`), { replace: true });
+    navigate(appNavigatePath(`/config/scan/${t}`), { replace: true });
   };
 
   // --- Manual Trigger State ---

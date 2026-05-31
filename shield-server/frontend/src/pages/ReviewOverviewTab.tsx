@@ -422,7 +422,7 @@ function TaskOverviewTab() {
                     </span>
                     {item.report_count > 0 && (
                       <button
-                        onClick={() => navigate(appNavigatePath(`/reports/repo/${item.repo.id}`), { state: { returnSearch: searchParams.toString() } })}
+                        onClick={() => navigate(appNavigatePath(`/tasks/repo/${item.repo.id}`), { state: { returnSearch: searchParams.toString() } })}
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.2rem', borderRadius: '4px', color: 'var(--primary-color)' }}
                         title="查看历史报告"
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
