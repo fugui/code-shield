@@ -22,7 +22,7 @@ if ! cd "$CODES_PATH" 2>/dev/null; then
     exit 2
 fi
 
-# 查找 C/C++/Python/Java 源代码文件
+# 查找 C/C++/Python/Java/Go 源代码文件
 result=$(find . -type f \( \
     -name "*.c" -o \
     -name "*.cpp" -o \
@@ -32,7 +32,8 @@ result=$(find . -type f \( \
     -name "*.hpp" -o \
     -name "*.hxx" -o \
     -name "*.py" -o \
-    -name "*.java" \
+    -name "*.java" -o \
+    -name "*.go" \
 \) 2>/dev/null | head -1)
 
 if [ -n "$result" ]; then
@@ -40,6 +41,6 @@ if [ -n "$result" ]; then
     echo "Found in: $result"
     exit 0
 else
-    echo "代码中没有 C/C++、Python、Java 源代码"
+    echo "代码中没有 C/C++、Python、Java、Go 源代码"
     exit 1
 fi
