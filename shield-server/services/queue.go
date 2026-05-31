@@ -38,6 +38,18 @@ func StartWorkerPool(workers int) {
 
 // EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
 func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) {
+	// Check if this repository + task type is already pending or running to prevent duplicate queues
+	var count int64
+	models.DB.Model(&models.TaskExecutionLog{}).
+		Where("repo_id = ? AND task_type_id = ? AND status IN (?, ?)",
+			repoID, taskTypeID, "pending", "running").
+		Count(&count)
+
+	if count > 0 {
+		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) because it is already pending or running.\n", repoID, taskTypeID)
+		return
+	}
+
 	// 1. Create a pending execution log
 	execLog := models.TaskExecutionLog{
 		ScheduleID:  scheduleID,
