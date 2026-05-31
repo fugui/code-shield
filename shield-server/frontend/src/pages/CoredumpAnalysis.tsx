@@ -628,14 +628,6 @@ export default function CoredumpAnalysis() {
 
         {activeTab === 'repos' && (
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <select 
-              value={selectedDept} 
-              onChange={e => { setSelectedDept(e.target.value); }}
-              style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.85rem', outline: 'none' }}
-            >
-              <option value="">全部部门</option>
-              {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
-            </select>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <input 
                 type="text" 
@@ -728,20 +720,31 @@ export default function CoredumpAnalysis() {
                           )}
                         </td>
                         <td style={{ ...styles.tableCell }}>
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                             <button 
-                              className="btn" 
                               onClick={() => openWorkspace(r.repo_id, r.repo_name)}
-                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)' }}
+                              title="问题审计"
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--primary-color)',
+                                cursor: 'pointer',
+                                padding: '0.4rem',
+                                borderRadius: '50%',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'background-color 0.2s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)'}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              问题审计
-                            </button>
-                            <button 
-                              className="btn" 
-                              onClick={() => triggerScan(r.repo_id)}
-                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--success-color)', color: 'var(--success-color)' }}
-                            >
-                              一键扫描
+                              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <circle cx="10" cy="13" r="2"></circle>
+                                <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
+                              </svg>
                             </button>
                           </div>
                         </td>
