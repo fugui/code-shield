@@ -3,13 +3,16 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation 
 import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
 import TaskManagement from './pages/CodeReviewManagement';
 import RepoTaskHistory from './pages/RepoReviewHistory';
-import KeyIssues from './pages/KeyIssues';
-import Configuration from './pages/Configuration';
 import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
-import OpenSourceManagement from './pages/OpenSourceManagement';
 import PublicReportFindings from './pages/PublicReportFindings';
 import OAuthCallback from './pages/OAuthCallback';
+import ScanManagement from './pages/ScanManagement';
+import TaskTypeManagement from './pages/TaskTypeManagement';
+import UserManagement from './pages/UserManagement';
+import ExecutionLogs from './pages/ExecutionLogs';
+import UTAnalysis from './pages/UTAnalysis';
+import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
 
 // Setup global fetch interceptor to inject JWT token and prepend BASE_PATH
@@ -225,14 +228,6 @@ function Sidebar() {
       .catch(() => {});
   }, []);
 
-  const navItems = [
-    { path: '/tasks', label: '任务中心', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
-    { path: '/issues', label: '问题清单', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
-    { path: '/opensource', label: '开源管理', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' },
-    { path: '/teams', label: '团队管理', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
-    ...(isAdmin ? [{ path: '/config', label: '系统管理', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' }] : [])
-  ];
-
   return (
     <aside style={{ width: '260px', background: 'var(--card-bg)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0 }}>
       <div style={{ height: '70px', padding: '0 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.75rem', boxSizing: 'border-box' }}>
@@ -243,25 +238,40 @@ function Sidebar() {
         </div>
       </div>
 
-      <nav style={{ padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
-
-        {navItems.map(item => {
-          const itemPath = appNavigatePath(item.path);
-          const isActive = location.pathname === itemPath || location.pathname.startsWith(itemPath + '/');
+      <nav style={{ padding: '1rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1, overflowY: 'auto' }}>
+        {menuGroups.map((group, groupIdx) => {
+          if (group.adminOnly && !isAdmin) return null;
           return (
-            <Link key={item.path} to={itemPath} style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem',
-              borderRadius: '8px', textDecoration: 'none',
-              color: isActive ? 'var(--primary-color)' : '#64748b',
-              background: isActive ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
-              fontWeight: isActive ? 600 : 500,
-              transition: 'all 0.2s'
-            }}>
-              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d={item.icon}></path>
-              </svg>
-              {item.label}
-            </Link>
+            <React.Fragment key={group.title}>
+              {groupIdx > 0 && (
+                <div style={{ height: '1px', background: 'var(--border-color)', margin: '0.75rem 0.5rem' }} />
+              )}
+              <div style={{ padding: '0.5rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
+                {group.title}
+              </div>
+              {group.items.map(item => {
+                const itemPath = appNavigatePath(item.path);
+                const isActive = location.pathname === itemPath || location.pathname.startsWith(itemPath + '/');
+                return (
+                  <Link key={item.path} to={itemPath} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem',
+                    borderRadius: '8px', textDecoration: 'none',
+                    color: isActive ? 'var(--primary-color)' : '#64748b',
+                    background: isActive ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                    fontWeight: isActive ? 600 : 500,
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s'
+                  }}>
+                    {item.icon && (
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d={item.icon}></path>
+                      </svg>
+                    )}
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </React.Fragment>
           );
         })}
       </nav>
@@ -294,15 +304,16 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                 const relativePath = location.pathname.startsWith(BASE_PATH)
                   ? location.pathname.slice(BASE_PATH.length)
                   : location.pathname;
-                return relativePath.startsWith('/tasks')
-                  ? '任务中心'
-                  : relativePath.startsWith('/opensource')
-                    ? '开源管理'
-                    : relativePath.startsWith('/config')
-                      ? '系统管理'
-                      : relativePath.startsWith('/teams')
-                        ? '团队组织架构与代码仓配置'
-                        : '问题清单';
+                if (relativePath.startsWith('/reports')) return '报告概览';
+                if (relativePath.startsWith('/analysis/ut')) return '测试有效性分析';
+                if (relativePath.startsWith('/analysis')) return '专项分析';
+                if (relativePath.startsWith('/admin/scan')) return '扫描任务管理';
+                if (relativePath.startsWith('/admin/task-types')) return '任务类型管理';
+                if (relativePath.startsWith('/admin/teams')) return '团队与代码仓管理';
+                if (relativePath.startsWith('/admin/users')) return '用户管理';
+                if (relativePath.startsWith('/admin/activity')) return '执行日志';
+                if (relativePath.startsWith('/admin')) return '管理中心';
+                return '报告概览';
               })()}
             </h1>
             <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
@@ -325,18 +336,34 @@ function AppContent() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/oauth2/callback" element={<OAuthCallback />} />
-          <Route path="/" element={<Navigate to={appNavigatePath("/tasks")} replace />} />
-          <Route path="/tasks" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
-          <Route path="/tasks/:tab" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
-          <Route path="/tasks/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
-          <Route path="/opensource" element={<PrivateRoute><OpenSourceManagement /></PrivateRoute>} />
-          <Route path="/issues" element={<PrivateRoute><KeyIssues /></PrivateRoute>} />
-          <Route path="/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-          <Route path="/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-          <Route path="/config" element={<PrivateRoute><Configuration /></PrivateRoute>} />
-          <Route path="/config/:tab" element={<PrivateRoute><Configuration /></PrivateRoute>} />
+          <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+
+          {/* 报告中心 */}
+          <Route path="/reports" element={<PrivateRoute><TaskManagement /></PrivateRoute>} />
+          <Route path="/reports/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
+
+          {/* 专项分析 */}
+          <Route path="/analysis/ut" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
+
+          {/* 管理中心 */}
+          <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
+          <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
+          <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
+          <Route path="/admin/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
+          <Route path="/admin/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
+          <Route path="/admin/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />
+          <Route path="/admin/activity" element={<PrivateRoute><ExecutionLogs /></PrivateRoute>} />
+
+          {/* 公开报告 */}
           <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
           <Route path="/public/reports/:reportId" element={<PublicReportFindings />} />
+
+          {/* 兼容旧路由重定向 */}
+          <Route path="/tasks" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+          <Route path="/tasks/*" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+          <Route path="/issues" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+          <Route path="/config" element={<Navigate to={appNavigatePath("/admin/scan")} replace />} />
+          <Route path="/config/*" element={<Navigate to={appNavigatePath("/admin/scan")} replace />} />
         </Routes>
       </MainLayout>
     </ToastProvider>

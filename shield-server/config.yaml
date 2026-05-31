@@ -29,10 +29,10 @@ notification:
 # ── 认证 ──
 auth:
   jwt_secret: ""                     # JWT 签名密钥（留空随机生成）
-  password_login_enabled: false      # 是否启用密码登录
+  password_login_enabled: true      # 是否启用密码登录
 
   oauth2:
-    enabled: false                   # 是否启用 OAuth2 / OIDC 单点登录
+    enabled: true                   # 是否启用 OAuth2 / OIDC 单点登录
     client_id: "code-shield"         # Client ID
     client_secret: ""                # Client Secret
     auth_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/auth"
