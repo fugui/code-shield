@@ -26,7 +26,7 @@ type Task struct {
 	IsResume   bool             // true 时 worker 调用 ResumeFailedChunks 而非 RunTaskSync
 }
 
-var TaskQueue = make(chan Task, 300)
+var TaskQueue = make(chan Task, 500)
 
 // StartWorkerPool starts the background workers
 func StartWorkerPool(workers int) {
