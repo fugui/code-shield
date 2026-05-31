@@ -53,9 +53,10 @@ function RepoReviewHistory() {
   // If we don't have the repo name from reviews (e.g. no reviews yet), fetch repo info
   useEffect(() => {
     if (!repoName && repoId) {
-      fetch('/api/repos')
+      fetch('/api/repos?pageSize=10000')
         .then(res => res.json())
-        .then((repos: any[]) => {
+        .then(data => {
+          const repos = data.items || data || [];
           const repo = repos.find((r: any) => r.id === Number(repoId));
           if (repo) setRepoName(repo.name || '');
         })

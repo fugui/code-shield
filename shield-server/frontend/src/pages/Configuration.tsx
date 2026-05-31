@@ -38,9 +38,10 @@ function Configuration() {
 
   const fetchRepos = async () => {
     try {
-      const res = await fetch('/api/repos');
+      const res = await fetch('/api/repos?pageSize=10000');
       if (res.ok) {
-        setRepos(await res.json());
+        const data = await res.json();
+        setRepos(data.items || data || []);
       }
     } catch (err) {
       console.error('Failed to fetch repositories:', err);
