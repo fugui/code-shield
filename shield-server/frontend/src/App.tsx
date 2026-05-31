@@ -13,6 +13,7 @@ import UserManagement from './pages/UserManagement';
 import ExecutionLogs from './pages/ExecutionLogs';
 import UTAnalysis from './pages/UTAnalysis';
 import CoredumpAnalysis from './pages/CoredumpAnalysis';
+import FloatAnalysis from './pages/FloatAnalysis';
 import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
 
@@ -309,6 +310,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                 if (relativePath.startsWith('/reports') || relativePath.startsWith('/tasks')) return '报告概览';
                 if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试有效性分析';
                 if (relativePath.startsWith('/analysis/coredump')) return 'Coredump风险攻关';
+                if (relativePath.startsWith('/analysis/float')) return 'Python浮点数专项';
                 if (relativePath.startsWith('/admin/scan')) return '扫描任务管理';
                 if (relativePath.startsWith('/admin/task-types')) return '任务类型管理';
                 if (relativePath.startsWith('/admin/teams') || relativePath.startsWith('/teams')) return '团队与代码仓管理';
@@ -347,6 +349,7 @@ function AppContent() {
           {/* 专项分析 */}
           <Route path="/analysis/ut" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
           <Route path="/analysis/coredump" element={<PrivateRoute><CoredumpAnalysis /></PrivateRoute>} />
+          <Route path="/analysis/float" element={<PrivateRoute><FloatAnalysis /></PrivateRoute>} />
 
           {/* 管理中心 */}
           <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />

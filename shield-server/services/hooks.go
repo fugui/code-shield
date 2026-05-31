@@ -44,6 +44,8 @@ func init() {
 	RegisterTaskHook("ut_effectiveness", handleUTEffectivenessHook)
 	// Register hook for coredump risk analysis
 	RegisterTaskHook("coredump_risk", handleCoredumpRiskHook)
+	// Register hook for python float comparison scan
+	RegisterTaskHook("float_comparison", handleFloatComparisonHook)
 }
 
 func handleUTEffectivenessHook(ctx *taskContext, findings []models.AnalysisFinding) error {
@@ -228,6 +230,98 @@ func handleCoredumpRiskHook(ctx *taskContext, findings []models.AnalysisFinding)
 	// 3. Obsolete clean-up: delete coredump findings that belong to this repo but were not scanned/updated in the current scan
 	if err := models.DB.Where("repo_id = ? AND task_report_id < ?", ctx.repo.ID, ctx.report.ID).Delete(&models.CoredumpFinding{}).Error; err != nil {
 		log.Printf("[TaskHooks] Failed to delete obsolete CoredumpFinding records: %v", err)
+	}
+
+	return nil
+}
+
+func handleFloatComparisonHook(ctx *taskContext, findings []models.AnalysisFinding) error {
+	log.Printf("[TaskHooks] Processing float_comparison hook for Repo ID: %d, findings count: %d", ctx.repo.ID, len(findings))
+
+	for _, f := range findings {
+		var ff models.FloatFinding
+		err := models.DB.Where("repo_id = ? AND file_path = ? AND line_number = ? AND title = ?", ctx.repo.ID, f.FilePath, f.LineNumber, f.Title).First(&ff).Error
+
+		targetStatus := "open"
+		if f.Severity == "合格" {
+			targetStatus = "closed"
+		}
+
+		if err != nil {
+			// 1. Create a new float comparison finding
+			statusLog := []map[string]interface{}{
+				{
+					"status": targetStatus,
+					"time":   time.Now().Format("2006-01-02 15:04:05"),
+					"user":   "system",
+					"reason": "Initial scan discovery",
+				},
+			}
+			logBytes, _ := json.Marshal(statusLog)
+
+			ff = models.FloatFinding{
+				RepoID:       ctx.repo.ID,
+				TaskReportID: ctx.report.ID,
+				FilePath:     f.FilePath,
+				LineNumber:   f.LineNumber,
+				Title:        f.Title,
+				Detail:       f.Detail,
+				Severity:     f.Severity,
+				Category:     f.Category,
+				CodeSnippet:  f.CodeSnippet,
+				Suggestion:   f.Suggestion,
+				Status:       targetStatus,
+				StatusLog:    logBytes,
+			}
+			if err := models.DB.Create(&ff).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to create FloatFinding record: %v", err)
+			}
+		} else {
+			// 2. Existing float finding, check workflow status changes
+			updatedStatus := ff.Status
+			var existingLog []map[string]interface{}
+			if len(ff.StatusLog) > 0 {
+				_ = json.Unmarshal(ff.StatusLog, &existingLog)
+			}
+
+			if ff.Status == "closed" && targetStatus == "open" {
+				updatedStatus = "open"
+				existingLog = append(existingLog, map[string]interface{}{
+					"status": "open",
+					"time":   time.Now().Format("2006-01-02 15:04:05"),
+					"user":   "system",
+					"reason": "Reopened by subsequent scan finding defects",
+				})
+			} else if ff.Status != "closed" && targetStatus == "closed" {
+				updatedStatus = "closed"
+				existingLog = append(existingLog, map[string]interface{}{
+					"status": "closed",
+					"time":   time.Now().Format("2006-01-02 15:04:05"),
+					"user":   "system",
+					"reason": "Automatically closed (resolved to合格 by scan)",
+				})
+			}
+			logBytes, _ := json.Marshal(existingLog)
+
+			// Update details
+			ff.TaskReportID = ctx.report.ID
+			ff.Detail = f.Detail
+			ff.Severity = f.Severity
+			ff.Category = f.Category
+			ff.CodeSnippet = f.CodeSnippet
+			ff.Suggestion = f.Suggestion
+			ff.Status = updatedStatus
+			ff.StatusLog = logBytes
+
+			if err := models.DB.Save(&ff).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to update FloatFinding record: %v", err)
+			}
+		}
+	}
+
+	// 3. Obsolete clean-up: delete float findings that belong to this repo but were not scanned/updated in the current scan
+	if err := models.DB.Where("repo_id = ? AND task_report_id < ?", ctx.repo.ID, ctx.report.ID).Delete(&models.FloatFinding{}).Error; err != nil {
+		log.Printf("[TaskHooks] Failed to delete obsolete FloatFinding records: %v", err)
 	}
 
 	return nil
