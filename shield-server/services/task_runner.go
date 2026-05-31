@@ -89,6 +89,7 @@ type taskContext struct {
 	runParams  models.RunParams // 合并后的运行参数
 	Attempts   int              // 实际尝试次数
 	Summary    TaskSummaryReport
+	findings   []models.AnalysisFinding
 }
 
 var (
@@ -487,12 +488,8 @@ func (ctx *taskContext) executeAnalysis(fileList []string) ([]models.AnalysisFin
 
 		findings, err := ctx.executeAnalysisOnce(fileList)
 		if err == nil {
-			// 仅在最终成功时才持久化 findings 到数据库，避免重试导致重复插入
 			if len(findings) > 0 {
-				if dbErr := models.DB.Create(&findings).Error; dbErr != nil {
-					log.Printf("[TaskRunner] Failed to save analysis findings: %v\n", dbErr)
-					return nil, fmt.Errorf("failed to save analysis findings to database: %w", dbErr)
-				}
+				ctx.findings = append(ctx.findings, findings...)
 			}
 
 			chunkInfo := ""
@@ -640,6 +637,42 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 	}
 
 	// Convert to model objects (不写入数据库，由调用方统一处理)
+	var findings []models.AnalysisFinding
+	for _, f := range output.Findings {
+		finding := models.AnalysisFinding{
+			TaskReportID: ctx.report.ID,
+			TaskTypeID:   ctx.taskType.ID,
+			RepoID:       ctx.repo.ID,
+			Severity:     f.Severity,
+			Category:     f.Category,
+			FilePath:     f.FilePath,
+			LineNumber:   toLineStr(f.LineNumber),
+			CodeSnippet:  f.CodeSnippet,
+			Title:        f.Title,
+			Detail:       f.Detail,
+			Suggestion:   f.Suggestion,
+		}
+		findings = append(findings, finding)
+	}
+
+	return findings, nil
+}
+
+// loadFindingsFromChunkFile reads a chunk's raw JSON file and parses it into AnalysisFinding objects.
+func (ctx *taskContext) loadFindingsFromChunkFile(jsonPath string) ([]models.AnalysisFinding, error) {
+	rawPath := jsonPath + ".raw"
+	rawJSON, err := os.ReadFile(rawPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanedJSON := cleanJSONFromAI(rawJSON)
+
+	var output AnalysisOutput
+	if err := json.Unmarshal(cleanedJSON, &output); err != nil {
+		return nil, err
+	}
+
 	var findings []models.AnalysisFinding
 	for _, f := range output.Findings {
 		finding := models.AnalysisFinding{
@@ -863,7 +896,7 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	var result TaskResult
 
 	// 1. Load all findings for this report from the database to calculate score and metrics
-	var findings []models.AnalysisFinding
+	findings := ctx.findings
 	severityWeight := map[string]int{
 		"阻塞":        5,
 		"blocking":  5,
@@ -890,33 +923,31 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 
 	metrics := map[string]int{}
 	score := 0
-	if err := models.DB.Where("task_report_id = ?", ctx.report.ID).Find(&findings).Error; err == nil {
-		for _, f := range findings {
-			sev := strings.ToLower(f.Severity)
-			weight := severityWeight[sev]
-			score += weight
+	for _, f := range findings {
+		sev := strings.ToLower(f.Severity)
+		weight := severityWeight[sev]
+		score += weight
 
-			key := sev
-			switch sev {
-			case "阻塞", "blocking":
-				key = "blocking"
-			case "严重", "critical":
-				key = "critical"
-			case "主要", "major":
-				key = "major"
-			case "提示", "info":
-				key = "hint"
-			case "建议", "suggestion":
-				key = "suggestion"
-			case "高风险", "high", "high_risk":
-				key = "high_risk"
-			case "中风险", "medium", "medium_risk":
-				key = "medium_risk"
-			case "低风险", "low", "low_risk":
-				key = "low_risk"
-			}
-			metrics[key]++
+		key := sev
+		switch sev {
+		case "阻塞", "blocking":
+			key = "blocking"
+		case "严重", "critical":
+			key = "critical"
+		case "主要", "major":
+			key = "major"
+		case "提示", "info":
+			key = "hint"
+		case "建议", "suggestion":
+			key = "suggestion"
+		case "高风险", "high", "high_risk":
+			key = "high_risk"
+		case "中风险", "medium", "medium_risk":
+			key = "medium_risk"
+		case "低风险", "low", "low_risk":
+			key = "low_risk"
 		}
+		metrics[key]++
 	}
 	result.Score = score
 	result.Metrics = metrics
