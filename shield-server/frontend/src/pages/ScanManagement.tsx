@@ -257,7 +257,12 @@ function ScanManagement() {
     let text = latestLog.status;
     let badgeCls = 'info';
 
-    switch (latestLog.status) {
+    let activeStatus = latestLog.status;
+    if (activeStatus === 'running' && latestLog.task_report && latestLog.task_report.status) {
+      activeStatus = latestLog.task_report.status;
+    }
+
+    switch (activeStatus) {
       case 'success':
         text = '完成';
         badgeCls = 'success';
