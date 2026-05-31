@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // GetTasks returns a paginated list of task reports (replaces GetReviews)
@@ -37,7 +38,6 @@ func GetTasks(c *gin.Context) {
 	}
 
 	query := models.DB.Model(&models.TaskReport{}).
-		Select("task_reports.*").
 		Joins("LEFT JOIN repositories ON task_reports.repo_id = repositories.id")
 
 	if repoID != "" {
@@ -64,7 +64,7 @@ func GetTasks(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	var reports []models.TaskReport
 	offset := (page - 1) * pageSize
