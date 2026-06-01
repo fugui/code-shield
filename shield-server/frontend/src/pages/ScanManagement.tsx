@@ -572,7 +572,7 @@ function ScanManagement() {
                   style={{
                     padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
                     borderRadius: '4px', cursor: activePage === 1 ? 'not-allowed' : 'pointer',
-                    color: activePage === 1 ? '#cbd5e1' : 'var(--text-color)', fontSize: '0.825rem',
+                    color: activePage === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={e => { if (activePage !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
@@ -618,7 +618,7 @@ function ScanManagement() {
                   style={{
                     padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
                     borderRadius: '4px', cursor: activePage === totalPages ? 'not-allowed' : 'pointer',
-                    color: activePage === totalPages ? '#cbd5e1' : 'var(--text-color)', fontSize: '0.825rem',
+                    color: activePage === totalPages ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={e => { if (activePage !== totalPages) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
@@ -708,7 +708,7 @@ function ScanManagement() {
                   alignItems: 'center',
                   gap: '0.5rem',
                   background: !gapTaskTypeId ? 'var(--border-color)' : 'linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%)',
-                  color: !gapTaskTypeId ? '#cbd5e1' : 'white',
+                  color: !gapTaskTypeId ? 'var(--text-secondary)' : 'white',
                   cursor: !gapTaskTypeId ? 'not-allowed' : 'pointer',
                   border: 'none',
                   borderRadius: '6px',
