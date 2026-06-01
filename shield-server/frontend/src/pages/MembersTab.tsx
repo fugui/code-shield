@@ -176,7 +176,7 @@ function MembersTab() {
       </div>
 
       {totalPages > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem', background: 'white', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem', background: 'var(--card-bg)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
           <span style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>
             共 {totalItems} 条记录，当前第 {page} / {totalPages} 页
           </span>
@@ -185,14 +185,26 @@ function MembersTab() {
               className="btn" 
               disabled={page === 1} 
               onClick={() => setPage(page - 1)}
-              style={{ background: page === 1 ? '#f1f5f9' : 'white', color: page === 1 ? '#94a3b8' : 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+              style={{ 
+                background: page === 1 ? 'var(--bg-color)' : 'var(--card-bg)', 
+                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', 
+                border: '1px solid var(--border-color)',
+                opacity: page === 1 ? 0.5 : 1,
+                cursor: page === 1 ? 'not-allowed' : 'pointer'
+              }}>
               上一页
             </button>
             <button 
               className="btn" 
               disabled={page >= totalPages} 
               onClick={() => setPage(page + 1)}
-              style={{ background: page >= totalPages ? '#f1f5f9' : 'white', color: page >= totalPages ? '#94a3b8' : 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+              style={{ 
+                background: page >= totalPages ? 'var(--bg-color)' : 'var(--card-bg)', 
+                color: page >= totalPages ? 'var(--text-secondary)' : 'var(--text-color)', 
+                border: '1px solid var(--border-color)',
+                opacity: page >= totalPages ? 0.5 : 1,
+                cursor: page >= totalPages ? 'not-allowed' : 'pointer'
+              }}>
               下一页
             </button>
           </div>
