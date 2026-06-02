@@ -126,9 +126,9 @@ func LoadConfig(filename string) error {
 		sumConcurrent += AppConfig.AI.Models[i].Concurrent
 	}
 	if sumConcurrent > 0 {
-		// 动态拓展全局任务并发数为所有模型并发之和的 2 倍（加上基础缓冲 5），
-		// 确保任务调度本身（如 git clone 等非 AI 阶段）不成为瓶颈，而 AI 调用依然由 Dispatcher 精确限流
-		AppConfig.Server.WorkerCount = sumConcurrent*2 + 5
+		// 动态拓展全局任务并发数为所有模型并发之和，
+		// 这样既能保证吃满所有多 LLM 服务器的物理算力，又可防止过多大任务同时拉起在底层交替抢槽排队导致磨洋工
+		AppConfig.Server.WorkerCount = sumConcurrent
 	}
 	if AppConfig.Server.ReadTimeout == 0 {
 		AppConfig.Server.ReadTimeout = 15 * time.Second
