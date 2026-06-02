@@ -66,6 +66,7 @@
 ### 4.2 字段值限制
 
 * `severity` 必须且只能是以下五个值之一：`阻塞`, `严重`, `主要`, `提示`, `建议`。
+* `file_path` 必须且只能是**相对代码仓根目录的相对路径**，绝对不能是硬盘绝对路径（如严禁以 `/home/...` 或 `/tmp/...` 开头）。
 * `category` 必须且只能采用以下 **"一级分类-二级具体问题"** 的枚举格式之一：
   * `多线程并发问题-数据竞争`
   * `多线程并发问题-锁同步不当`
@@ -96,7 +97,7 @@
     {
       "severity": "严重",
       "category": "内存管理问题-空指针解引用",
-      "file_path": "src/network/session.cpp",
+      "file_path": "src/network/session.cpp（必须是相对代码仓根目录的相对路径，严禁包含硬盘绝对路径，如 /home/... 等）",
       "line_number": "142-145",
       "code_snippet": "void process(Session* s) {\n    int id = s->get_id();\n    log_info(\"session id: %d\", id);\n}",
       "title": "未对输入指针进行空值校验直接解引用",

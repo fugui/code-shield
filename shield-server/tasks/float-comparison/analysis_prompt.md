@@ -70,6 +70,7 @@
 ### 5.2 字段值限制
 
 * `severity` 必须且只能是以下五个值之一：`阻塞`, `严重`, `主要`, `提示`, `建议`。
+* `file_path` 必须且只能是**相对代码仓根目录的相对路径**，绝对不能是硬盘绝对路径（如严禁以 `/home/...` 或 `/tmp/...` 开头）。
 * `category` 必须且只能采用以下枚举格式之一：
   - `浮点数比较缺陷-直接等值比较`
   - `浮点数比较缺陷-直接不等比较`
@@ -87,7 +88,7 @@
     {
       "severity": "严重",
       "category": "浮点数比较缺陷-直接等值比较",
-      "file_path": "services/billing.py",
+      "file_path": "services/billing.py（必须是相对代码仓根目录的相对路径，严禁包含硬盘绝对路径，如 /home/... 等）",
       "line_number": "42-45",
       "code_snippet": "def calculate_discount(total_amount):\n    tax = total_amount * 0.05\n    if tax == 1.05:\n        return tax * 0.9\n    return tax",
       "title": "直接对计算得出的浮点数进行等值比较 (==)",
