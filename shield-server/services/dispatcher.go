@@ -43,7 +43,7 @@ func InitModelDispatcher() {
 	d := &ModelDispatcher{}
 	d.cond = sync.NewCond(&d.mu)
 
-	for i, mc := range models.AppConfig.Models {
+	for i, mc := range models.AppConfig.AI.Models {
 		concurrent := mc.Concurrent
 		if concurrent <= 0 {
 			concurrent = 1
