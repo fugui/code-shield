@@ -353,8 +353,8 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                           </div>
 
                           {/* Right Panel: Diagnostics Snapshot */}
-                          <div style={{ flex: '1', minWidth: '300px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                            <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.35rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem', fontWeight: 600 }}>
+                          <div style={{ flex: '1', minWidth: '300px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-color)', display: 'flex', alignItems: 'center', gap: '0.35rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', fontWeight: 600 }}>
                               🔬 运行轨迹与诊断快照
                             </h4>
                             {loadingSummaries[report.id] ? (
