@@ -143,11 +143,7 @@ func main() {
 		api.POST("/issues", handlers.CreateIssue)
 		api.PATCH("/issues/:id", handlers.UpdateIssue)
 
-		// Analysis findings management (问题清单)
-		api.GET("/findings", handlers.GetFindings)
-		api.GET("/findings/stats", handlers.GetFindingStats)
-		api.GET("/findings/export", handlers.ExportFindings)
-		api.PATCH("/findings/:id", handlers.UpdateFinding)
+
 
 		// UT Effectiveness Dashboard
 		api.GET("/analysis/ut/repos", handlers.GetUTRepos)

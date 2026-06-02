@@ -46,7 +46,6 @@ func InitDB() {
 		&TaskType{},
 		&TaskReport{},
 		&KeyIssue{},
-		&AnalysisFinding{},
 		&SystemConfig{},
 		&ScheduleConfig{},
 		&TaskExecutionLog{},
