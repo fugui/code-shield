@@ -2,7 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useToast } from '../components/Toast';
 import ReportSidebar from '../components/ReportSidebar';
 
-function ExecutionLogs() {
+interface ExecutionLogsProps {
+  embedded?: boolean;
+}
+
+function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   const [logs, setLogs] = useState<any[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -184,9 +188,20 @@ function ExecutionLogs() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2 style={{ margin: 0 }}>执行日志</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+      {!embedded ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ margin: 0 }}>执行日志</h2>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+              刷新列表
+            </button>
+            <button className="btn" onClick={clearCompleted} style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>
+              清除已完成
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginBottom: '1.5rem' }}>
           <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
             刷新列表
           </button>
@@ -194,7 +209,7 @@ function ExecutionLogs() {
             清除已完成
           </button>
         </div>
-      </div>
+      )}
 
       <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
