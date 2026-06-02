@@ -3,7 +3,7 @@
   "display_name": "cJSON 内存泄漏扫描",
   "description": "检测代码中 cJSON 库相关的内存申请与释放（内存泄漏）问题",
   "engine_mode": "chunked",
-  "engine_config": {},
+  "engine_config": {"file_extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx"]},
   "ai_backend": "",
   "target_scope": "business",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
