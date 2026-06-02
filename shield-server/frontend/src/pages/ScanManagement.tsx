@@ -348,7 +348,7 @@ function ScanManagement() {
     <div>
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
         <button onClick={() => setActiveTab('trigger')} style={tabStyle('trigger')}>手动触发</button>
-        <button onClick={() => setActiveTab('schedules')} style={tabStyle('schedules')}>定时策略</button>
+        <button onClick={() => setActiveTab('schedules')} style={tabStyle('schedules')}>批量触发</button>
       </div>
 
       {activeTab === 'trigger' && (
@@ -654,8 +654,8 @@ function ScanManagement() {
       {activeTab === 'schedules' && (
         <div>
           {/* 漏扫快速补扫 Block */}
-          <div className="card" style={{ marginBottom: '2rem', background: 'linear-gradient(135deg, var(--card-bg) 0%, rgba(37, 99, 235, 0.02) 100%)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)', fontSize: '1.1rem', fontWeight: 700 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)', fontSize: '1.1rem', fontWeight: 600 }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                 <line x1="12" y1="9" x2="12" y2="13"></line>
@@ -663,6 +663,9 @@ function ScanManagement() {
               </svg>
               漏扫快速补扫 (Gap Scan Backfill)
             </h3>
+          </div>
+
+          <div className="card" style={{ marginBottom: '2.5rem', background: 'linear-gradient(135deg, var(--card-bg) 0%, rgba(37, 99, 235, 0.02) 100%)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.5rem' }}>
             <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
               一键对过去指定时间内，<strong>未进行成功扫描</strong>的全部代码仓发起立即扫描任务，用于快速补充分析空白。
             </p>
@@ -724,10 +727,19 @@ function ScanManagement() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h3 style={{ margin: 0 }}>定时任务策略配置</h3>
-            <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }}>
-              + 新增定时策略
+          {/* 定时自动策略 Block */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)', fontSize: '1.1rem', fontWeight: 600 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              定时任务策略配置
+            </h3>
+            <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }} style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}>
+              + 新增策略
             </button>
           </div>
 
