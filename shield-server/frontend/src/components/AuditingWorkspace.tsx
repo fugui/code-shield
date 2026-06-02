@@ -36,7 +36,7 @@ interface AuditingWorkspaceProps {
   repoId: number;
   repoName: string;
   apiPrefix: string; // e.g., "/api/analysis/float", "/api/analysis/coredump", "/api/analysis/ut"
-  workspaceType: 'float' | 'coredump' | 'ut';
+  workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson';
   onWorkflowSaved?: () => void;
 }
 
@@ -276,7 +276,7 @@ export default function AuditingWorkspace({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
         <div>
           <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--primary-color)', fontWeight: 700, letterSpacing: '0.05em' }}>
-            {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : '代码仓缺陷审计工作区'}
+            {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : workspaceType === 'thread' ? '显示创建线程安全审计工作区' : workspaceType === 'cjson' ? 'cJSON内存泄漏安全审计工作区' : '代码仓缺陷审计工作区'}
           </span>
           <h3 style={{ margin: '0.1rem 0 0 0', fontSize: '1.2rem', fontWeight: 700 }}>📁 {repoName}</h3>
         </div>
