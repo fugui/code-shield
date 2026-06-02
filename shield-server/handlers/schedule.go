@@ -101,19 +101,19 @@ func DeleteSchedule(c *gin.Context) {
 
 // ExecutionLogResponse is a flattened DTO for the execution log list API.
 type ExecutionLogResponse struct {
-	ID           uint       `json:"id"`
-	ScheduleID   *uint      `json:"schedule_id"`
-	ScheduleName string     `json:"schedule_name"`
-	RepoID       uint       `json:"repo_id"`
-	RepoName     string     `json:"repo_name"`
-	TaskTypeID   uint       `json:"task_type_id"`
-	TaskTypeName string     `json:"task_type_name"`
-	EngineMode   string     `json:"engine_mode"`
-	TriggerType  string     `json:"trigger_type"`
-	Status       string     `json:"status"`
-	ErrorMessage string     `json:"error_message"`
-	StartTime    time.Time  `json:"start_time"`
-	EndTime      *time.Time `json:"end_time"`
+	ID           uint                  `json:"id"`
+	ScheduleID   *uint                 `json:"schedule_id"`
+	ScheduleName string                `json:"schedule_name"`
+	RepoID       uint                  `json:"repo_id"`
+	RepoName     string                `json:"repo_name"`
+	TaskTypeID   uint                  `json:"task_type_id"`
+	TaskTypeName string                `json:"task_type_name"`
+	EngineMode   string                `json:"engine_mode"`
+	TriggerType  string                `json:"trigger_type"`
+	Status       string                `json:"status"`
+	ErrorMessage string                `json:"error_message"`
+	StartTime    time.Time             `json:"start_time"`
+	EndTime      *time.Time            `json:"end_time"`
 	TaskReport   *ExecutionReportBrief `json:"task_report"`
 }
 
@@ -284,7 +284,7 @@ func DeletePendingExecution(c *gin.Context) {
 // TriggerSchedule manually triggers a schedule config and queues jobs for repos immediately
 func TriggerSchedule(c *gin.Context) {
 	id := c.Param("id")
-	
+
 	var schedule models.ScheduleConfig
 	if err := models.DB.First(&schedule, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "定时策略未找到"})

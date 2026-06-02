@@ -58,7 +58,7 @@ func BackfillHistoricalFindings() error {
 
 		// 3. Load findings for this report
 		var findings []models.AnalysisFinding
-		
+
 		// First: Try querying database AnalysisFinding table
 		if err := models.DB.Where("task_report_id = ?", r.ID).Order("id asc").Find(&findings).Error; err != nil {
 			log.Printf("[Backfill] Error querying findings from database for Report ID %d: %v. Will fall back to file.", r.ID, err)

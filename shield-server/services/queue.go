@@ -250,7 +250,7 @@ func RecoverPendingTasks(action string) {
 		var execLog models.TaskExecutionLog
 		if err := models.DB.Preload("Schedule").Where("task_report_id = ?", report.ID).First(&execLog).Error; err != nil {
 			log.Printf("[Recovery] TaskReport %d has no corresponding TaskExecutionLog, creating a fallback one.\n", report.ID)
-			
+
 			// 容错：如果执行日志不见了，自动创建一个系统恢复类型的执行日志，确保 pipeline 完整
 			execLog = models.TaskExecutionLog{
 				RepoID:       report.RepoID,
@@ -341,7 +341,7 @@ func CleanReportFiles(taskTypeName string, reportID uint) {
 
 		name := info.Name()
 		isTarget := false
-		
+
 		// 校验是否归属该 reportID
 		if strings.Contains(name, fmt.Sprintf("report-%d-", reportID)) ||
 			strings.Contains(name, fmt.Sprintf("summary-%d-", reportID)) ||

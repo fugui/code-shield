@@ -34,6 +34,12 @@ type OAuth2Config struct {
 	FieldMapping FieldMappingConfig `yaml:"field_mapping"` // 用户属性字段映射
 }
 
+type ModelConfig struct {
+	OpenCode   string `yaml:"opencode"`   // OpenCode 引擎对应的具体模型名
+	Claude     string `yaml:"claude"`     // Claude 引擎对应的具体模型名
+	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
+}
+
 type Config struct {
 	Server struct {
 		Port              string        `yaml:"port"`
@@ -58,11 +64,12 @@ type Config struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
 	} `yaml:"notification"`
 	Auth struct {
-		JWTSecret            string       `yaml:"jwt_secret"`              // JWT 签名密钥（替代硬编码，留空则启动时随机生成临时密钥）
+		JWTSecret            string       `yaml:"jwt_secret"`             // JWT 签名密钥（替代硬编码，留空则启动时随机生成临时密钥）
 		PasswordLoginEnabled bool         `yaml:"password_login_enabled"` // 是否启用密码登录，默认 false
-		PortalJWTSecret      string       `yaml:"portal_jwt_secret"`       // Portal SSO 共享密钥（兼容旧版，留空禁用）
+		PortalJWTSecret      string       `yaml:"portal_jwt_secret"`      // Portal SSO 共享密钥（兼容旧版，留空禁用）
 		OAuth2               OAuth2Config `yaml:"oauth2"`
 	} `yaml:"auth"`
+	Models []ModelConfig `yaml:"models"` // 多 LLM 服务器并发配置
 }
 
 var AppConfig Config
@@ -109,6 +116,19 @@ func LoadConfig(filename string) error {
 	}
 	if AppConfig.Server.WorkerCount <= 0 {
 		AppConfig.Server.WorkerCount = 5
+	}
+	// 校验并补充 Models 默认并发数，并动态拓展全局并发数限制
+	sumConcurrent := 0
+	for i := range AppConfig.Models {
+		if AppConfig.Models[i].Concurrent <= 0 {
+			AppConfig.Models[i].Concurrent = 1
+		}
+		sumConcurrent += AppConfig.Models[i].Concurrent
+	}
+	if sumConcurrent > 0 {
+		// 动态拓展全局任务并发数为所有模型并发之和的 2 倍（加上基础缓冲 5），
+		// 确保任务调度本身（如 git clone 等非 AI 阶段）不成为瓶颈，而 AI 调用依然由 Dispatcher 精确限流
+		AppConfig.Server.WorkerCount = sumConcurrent*2 + 5
 	}
 	if AppConfig.Server.ReadTimeout == 0 {
 		AppConfig.Server.ReadTimeout = 15 * time.Second

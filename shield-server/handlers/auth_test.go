@@ -55,8 +55,8 @@ func TestAuthMiddleware_AutomaticRenewal(t *testing.T) {
 	t.Run("TokenNotCloseToExpiration", func(t *testing.T) {
 		exp := time.Now().Add(23 * time.Hour)
 		claims := &Claims{
-			UserID:   1,
-			Email:    "test@user.com",
+			UserID: 1,
+			Email:  "test@user.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(exp),
 			},
@@ -77,8 +77,8 @@ func TestAuthMiddleware_AutomaticRenewal(t *testing.T) {
 	t.Run("TokenCloseToExpiration", func(t *testing.T) {
 		exp := time.Now().Add(10 * time.Hour)
 		claims := &Claims{
-			UserID:   2,
-			Email:    "test2@user.com",
+			UserID: 2,
+			Email:  "test2@user.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(exp),
 			},

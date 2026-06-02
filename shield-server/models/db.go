@@ -59,7 +59,6 @@ func InitDB() {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
 
-
 	// Seed admin user if no users exist
 	var count int64
 	DB.Model(&User{}).Count(&count)
@@ -119,7 +118,7 @@ func seedBuiltinTaskTypes() {
 
 		expectedDir := strings.ReplaceAll(taskType.Name, "_", "-")
 		if dirName != expectedDir {
-			log.Printf("Error: task name %q does not match its directory name %q (expected %q)", 
+			log.Printf("Error: task name %q does not match its directory name %q (expected %q)",
 				taskType.Name, dirName, expectedDir)
 			continue
 		}

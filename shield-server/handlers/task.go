@@ -164,8 +164,6 @@ func GetTaskReportSummaryJSON(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", content)
 }
 
-
-
 func getFindingsForReport(reportID string) ([]models.AnalysisFinding, error) {
 	var report models.TaskReport
 	if err := models.DB.Preload("Repo").First(&report, reportID).Error; err != nil {
@@ -358,9 +356,9 @@ func GetTaskOverview(c *gin.Context) {
 
 	type ResultItem struct {
 		models.Repository
-		LatestTaskID     *uint
-		LatestTaskStatus *string
-		LatestTaskTime   *string
+		LatestTaskID          *uint
+		LatestTaskStatus      *string
+		LatestTaskTime        *string
 		LatestTaskScore       *int
 		TaskTypeID            *uint
 		ReportCount           int
@@ -439,17 +437,17 @@ func GetTaskOverview(c *gin.Context) {
 
 // ClearInvalidReports deletes all report records that are not in the "success" state
 func ClearInvalidReports(c *gin.Context) {
-// Delete task reports where status != "success"
-result := models.DB.Where("status != ?", models.StatusSuccess).Delete(&models.TaskReport{})
-if result.Error != nil {
-c.JSON(http.StatusInternalServerError, gin.H{"error": "清除失败: " + result.Error.Error()})
-return
-}
+	// Delete task reports where status != "success"
+	result := models.DB.Where("status != ?", models.StatusSuccess).Delete(&models.TaskReport{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清除失败: " + result.Error.Error()})
+		return
+	}
 
-c.JSON(http.StatusOK, gin.H{
-"message": "清除成功",
-"deleted": result.RowsAffected,
-})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "清除成功",
+		"deleted": result.RowsAffected,
+	})
 }
 
 // ResumeTask resumes a failed chunked task by retrying only the failed chunks
@@ -568,4 +566,3 @@ func TriggerMissingTasks(c *gin.Context) {
 		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务", len(missingRepos), taskType.DisplayName),
 	})
 }
-

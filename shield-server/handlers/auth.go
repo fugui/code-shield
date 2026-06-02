@@ -12,7 +12,7 @@ import (
 )
 
 var jwtSecret = []byte("super-secret-key-for-code-shield") // DEPRECATED: kept for test backward compat only, overridden at runtime
-var portalJwtSecret = []byte("portal-shared-secret-key")    // DEPRECATED: kept for test backward compat only, overridden at runtime
+var portalJwtSecret = []byte("portal-shared-secret-key")   // DEPRECATED: kept for test backward compat only, overridden at runtime
 
 // getJWTSecret returns the JWT signing key from configuration.
 func getJWTSecret() []byte {
@@ -36,8 +36,8 @@ func getPortalJWTSecret() []byte {
 }
 
 type Claims struct {
-	UserID   uint   `json:"user_id"`
-	Email    string `json:"email"`
+	UserID uint   `json:"user_id"`
+	Email  string `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -51,10 +51,10 @@ type PortalClaims struct {
 }
 
 type UnifiedClaims struct {
-	UserID   uint
-	Email    string
-	Name     string
-	IsAdmin  bool
+	UserID  uint
+	Email   string
+	Name    string
+	IsAdmin bool
 }
 
 // Unified parser that validates tokens from both Code-Shield and Portal (SSO)
@@ -72,8 +72,8 @@ func parseToken(tokenString string) (*UnifiedClaims, error) {
 	})
 	if err == nil && token.Valid {
 		return &UnifiedClaims{
-			UserID:   shieldClaims.UserID,
-			Email:    shieldClaims.Email,
+			UserID: shieldClaims.UserID,
+			Email:  shieldClaims.Email,
 		}, nil
 	}
 
@@ -94,9 +94,9 @@ func parseToken(tokenString string) (*UnifiedClaims, error) {
 				email = portalClaims.Username
 			}
 			return &UnifiedClaims{
-				Email:    email,
-				Name:     portalClaims.Name,
-				IsAdmin:  portalClaims.IsAdmin,
+				Email:   email,
+				Name:    portalClaims.Name,
+				IsAdmin: portalClaims.IsAdmin,
 			}, nil
 		}
 	}
@@ -140,8 +140,8 @@ func Login(c *gin.Context) {
 	secret := getJWTSecret()
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
-		UserID:   user.ID,
-		Email:    user.Email,
+		UserID: user.ID,
+		Email:  user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
@@ -226,8 +226,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			if remaining > 0 && remaining < 12*time.Hour {
 				newExp := time.Now().Add(24 * time.Hour)
 				newClaims := &Claims{
-					UserID:   user.ID,
-					Email:    user.Email,
+					UserID: user.ID,
+					Email:  user.Email,
 					RegisteredClaims: jwt.RegisteredClaims{
 						ExpiresAt: jwt.NewNumericDate(newExp),
 					},

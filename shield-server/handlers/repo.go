@@ -99,8 +99,8 @@ func UpdateRepo(c *gin.Context) {
 	}
 
 	var input struct {
-		Name         *string `json:"name"`
-		URL          *string `json:"url"`
+		Name           *string   `json:"name"`
+		URL            *string   `json:"url"`
 		OwnerID        *string   `json:"owner_id"`
 		Branch         *string   `json:"branch"`
 		TeamID         *uint     `json:"team_id"`

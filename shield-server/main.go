@@ -49,6 +49,9 @@ func main() {
 		log.Fatalf("Failed to load config.yaml: %v", err)
 	}
 
+	// 初始化多 LLM 调度分配器
+	services.InitModelDispatcher()
+
 	if *backfill {
 		log.Println("[Server] Running in backfill mode.")
 		if err := services.BackfillHistoricalFindings(); err != nil {
@@ -143,8 +146,6 @@ func main() {
 		api.POST("/issues", handlers.CreateIssue)
 		api.PATCH("/issues/:id", handlers.UpdateIssue)
 
-
-
 		// UT Effectiveness Dashboard
 		api.GET("/analysis/ut/repos", handlers.GetUTRepos)
 		api.GET("/analysis/ut/findings", handlers.GetUTFindings)
@@ -157,7 +158,6 @@ func main() {
 		registerCampaignRoutes[models.FloatFinding](api, "float", "float_comparison")
 		registerCampaignRoutes[models.ThreadFinding](api, "thread", "thread_create")
 		registerCampaignRoutes[models.CjsonFinding](api, "cjson", "cjson_scan")
-
 
 		api.GET("/schedules", handlers.GetSchedules)
 		api.POST("/schedules", handlers.CreateSchedule)
