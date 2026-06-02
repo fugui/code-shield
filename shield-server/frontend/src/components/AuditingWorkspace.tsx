@@ -294,7 +294,7 @@ export default function AuditingWorkspace({
         {/* Left side list */}
         <div style={{ width: '40%', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(0,0,0,0.01)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: workspaceType === 'ut' ? '1fr 1fr 1fr' : '1fr 1fr', gap: '0.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
               <select 
                 value={wsSeverity}
                 onChange={e => setWsSeverity(e.target.value)}
@@ -319,15 +319,106 @@ export default function AuditingWorkspace({
                 <option value="invalid">{workspaceType === 'ut' ? '无效问题' : '忽略/误报'} ({statusStats['invalid'] || 0})</option>
               </select>
 
-              {workspaceType === 'ut' && (
-                <input 
-                  type="text" 
-                  placeholder="按分类过滤..."
-                  value={wsCategory}
-                  onChange={e => setWsCategory(e.target.value)}
-                  style={{ padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.8rem', outline: 'none', color: 'var(--text-color)' }}
-                />
-              )}
+              <select 
+                value={wsCategory}
+                onChange={e => setWsCategory(e.target.value)}
+                style={{ padding: '0.35rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.8rem', outline: 'none', color: 'var(--text-color)', cursor: 'pointer' }}
+              >
+                <option value="">所有分类</option>
+                
+                {/* UT Effectiveness & Quality */}
+                {workspaceType === 'ut' && (
+                  <>
+                    <optgroup label="✨ 测试有效性审计">
+                      <option value="断言有效性-空测试">断言有效性 - 空测试</option>
+                      <option value="断言有效性-永真断言">断言有效性 - 永真断言</option>
+                      <option value="断言有效性-无效捕获">断言有效性 - 无效捕获</option>
+                      <option value="断言有效性-Mock遗漏">断言有效性 - Mock遗漏</option>
+                      <option value="提前返回-非法退出">提前返回 - 非法退出</option>
+                      <option value="提前返回-静默跳过">提前返回 - 静默跳过</option>
+                      <option value="功能单一性-面条测试">功能单一性 - 面条测试</option>
+                      <option value="功能单一性-路径混合">功能单一性 - 路径混合</option>
+                      <option value="其它">其它</option>
+                    </optgroup>
+                    <optgroup label="🛡️ 测试工程质量">
+                      <option value="健壮性与稳定性">健壮性与稳定性</option>
+                      <option value="资源与生命周期管理">资源与生命周期管理</option>
+                      <option value="代码坏味道与重构问题">代码坏味道与重构问题</option>
+                    </optgroup>
+                  </>
+                )}
+
+                {/* Float Comparison */}
+                {workspaceType === 'float' && (
+                  <optgroup label="📐 浮点数比较缺陷">
+                    <option value="浮点数比较缺陷-直接等值比较">直接等值比较 (==)</option>
+                    <option value="浮点数比较缺陷-直接不等比较">直接不等比较 (!=)</option>
+                    <option value="浮点数比较缺陷-含有等号的边界比较">边界等号比较 (&lt;=, &gt;=)</option>
+                    <option value="浮点数比较缺陷-循环控制条件">循环/终止控制条件</option>
+                    <option value="其它问题-其它浮点数隐患">其它浮点数隐患</option>
+                  </optgroup>
+                )}
+
+                {/* Coredump Risks */}
+                {workspaceType === 'coredump' && (
+                  <>
+                    <optgroup label="🧵 多线程并发问题">
+                      <option value="多线程并发问题-数据竞争">数据竞争</option>
+                      <option value="多线程并发问题-锁同步不当">锁同步不当</option>
+                      <option value="多线程并发问题-死锁风险">死锁风险</option>
+                    </optgroup>
+                    <optgroup label="💾 内存管理缺陷">
+                      <option value="内存管理问题-空指针解引用">空指针解引用</option>
+                      <option value="内存管理问题-越界访问/缓冲区溢出">越界访问 / 缓冲区溢出</option>
+                      <option value="内存管理问题-双重释放">双重释放 (Double Free)</option>
+                      <option value="内存管理问题-释放后使用">释放后使用 (Use-After-Free)</option>
+                      <option value="内存管理问题-内存泄漏(OOM风险)">内存泄漏 (OOM风险)</option>
+                    </optgroup>
+                    <optgroup label="⏳ 生命周期管理">
+                      <option value="生命周期管理问题-悬挂指针与引用">悬挂指针与引用</option>
+                      <option value="生命周期管理问题-回调对象销毁竞争">回调对象销毁竞争</option>
+                    </optgroup>
+                    <optgroup label="⚠️ 时序与异常">
+                      <option value="时序与初始化问题-未初始化变量">未初始化变量</option>
+                      <option value="时序与初始化问题-释放与访问竞态">释放与访问竞态</option>
+                      <option value="运行时异常-除零错误">除零错误</option>
+                      <option value="运行时异常-栈溢出">栈溢出</option>
+                      <option value="运行时异常-未捕获异常/致命退出">未捕获异常 / 致命退出</option>
+                      <option value="运行时异常-信号处理不当">信号处理不当</option>
+                    </optgroup>
+                    <optgroup label="🔌 框架与其它">
+                      <option value="第三方框架限制-Qt跨线程UI操作">Qt跨线程UI操作</option>
+                      <option value="其它问题-其它崩溃隐患">其它崩溃隐患</option>
+                    </optgroup>
+                  </>
+                )}
+
+                {/* Explicit Thread Creation */}
+                {workspaceType === 'thread' && (
+                  <optgroup label="⚙️ 线程创建机制">
+                    <option value="pthread_create">pthread_create</option>
+                    <option value="std::thread">std::thread</option>
+                    <option value="CFThreadCreate">CFThreadCreate</option>
+                    <option value="QThread">QThread</option>
+                    <option value="OpenMP">OpenMP</option>
+                    <option value="boost::asio">boost::asio</option>
+                    <option value="std::async">std::async</option>
+                    <option value="其它">其它机制</option>
+                  </optgroup>
+                )}
+
+                {/* cJSON Memory Leaks */}
+                {workspaceType === 'cjson' && (
+                  <optgroup label="🧩 cJSON 内存管理">
+                    <option value="cJSON_Parse 泄漏">cJSON_Parse 泄漏</option>
+                    <option value="cJSON_Create 泄漏">cJSON_Create 泄漏</option>
+                    <option value="cJSON_Print 泄漏">cJSON_Print 泄漏</option>
+                    <option value="cJSON_Detach 泄漏">cJSON_Detach 泄漏</option>
+                    <option value="cJSON_Duplicate 泄漏">cJSON_Duplicate 泄漏</option>
+                    <option value="其它泄漏">其它泄漏类型</option>
+                  </optgroup>
+                )}
+              </select>
             </div>
             
             <input 
