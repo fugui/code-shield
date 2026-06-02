@@ -30,6 +30,7 @@ function ReportsOverview() {
   const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch('/api/teams')
@@ -43,6 +44,14 @@ function ReportsOverview() {
       .then(res => res.json())
       .then(data => {
         setTaskTypes(data || []);
+      })
+      .catch(console.error);
+    fetch('/api/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setIsAdmin(!!data.is_admin);
+        }
       })
       .catch(console.error);
   }, []);
@@ -150,7 +159,24 @@ function ReportsOverview() {
     }
   };
 
-
+  const handleDeleteReport = async (reportId: number) => {
+    if (!window.confirm("您确定要彻底永久删除该报告及其全部物理文件与指标数据吗？此操作无法恢复！")) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tasks/${reportId}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('报告已成功彻底删除！', 'success');
+        fetchOverview();
+      } else {
+        const data = await res.json();
+        showToast(`删除失败: ${data.error || '未知错误'}`, 'error');
+      }
+    } catch (err) {
+      console.error('Failed to delete report:', err);
+      showToast('网络异常，删除失败', 'error');
+    }
+  };
 
   const getOverviewText = (item: any) => {
     if (item.status !== 'success') return '';
@@ -300,8 +326,8 @@ function ReportsOverview() {
               <th style={{ width: '130px' }}>归属部门</th>
               <th style={{ width: '100px' }}>负责人</th>
               <th style={{ width: '160px' }}>执行时间</th>
-              <th style={{ width: '120px' }}>评分 / 报告</th>
               <th>问题统计与分析摘要</th>
+              <th style={{ width: '160px' }}>评分 / 报告</th>
             </tr>
           </thead>
           <tbody>
@@ -372,13 +398,39 @@ function ReportsOverview() {
                   {item.created_at ? item.created_at.replace('T', ' ').substring(0, 19) : '-'}
                 </td>
 
+                <td style={{ verticalAlign: 'middle' }}>
+                  {item.status === 'success' ? (() => {
+                    const text = getOverviewText(item);
+                    return (
+                      <div style={{ color: 'var(--text-color)', fontSize: '0.825rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={text}>
+                        {text}
+                      </div>
+                    );
+                  })() : item.status === 'failed' ? (
+                    <div style={{ color: 'var(--danger-color)', fontSize: '0.825rem', fontStyle: 'italic' }}>
+                      任务执行失败，AI 审计中断。
+                    </div>
+                  ) : (item.status === 'running' || item.status === 'cloning' || item.status === 'pre_processing' || item.status === 'analyzing' || item.status === 'post_processing') ? (
+                    <div style={{ color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span className="spinner-mini" />
+                      <span>正在分析代码库，AI 深入审计中...</span>
+                    </div>
+                  ) : item.status === 'queued' ? (
+                    <div style={{ color: '#64748b', fontSize: '0.825rem', fontStyle: 'italic' }}>
+                      任务已入队，等待可用运行实例...
+                    </div>
+                  ) : (
+                    <span style={{ color: '#aaa', fontSize: '0.825rem' }}>-</span>
+                  )}
+                </td>
+
                 <td>
                   {item.status === 'success' ? (
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, fontSize: '1rem', color: item.score >= 20 ? '#ef4444' : item.score >= 10 ? '#f59e0b' : '#22c55e' }}>
                         {item.score}
                       </span>
-                      <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                         <button 
                           onClick={() => handleOpenReport(item.id)}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: 'var(--primary-color)' }}
@@ -415,49 +467,58 @@ function ReportsOverview() {
                             </svg>
                           </button>
                         )}
+                        {isAdmin && (
+                          <button 
+                            onClick={() => handleDeleteReport(item.id)}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#ef4444' }}
+                            title="永久彻底删除此报告及物理文件"
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              <line x1="10" y1="11" x2="10" y2="17"></line>
+                              <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ) : item.status === 'failed' && item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks ? (
-                    <button
-                      onClick={() => handleResume(item.id)}
-                      style={{ background: 'transparent', border: '1px solid #f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#f59e0b', fontSize: '0.8rem' }}
-                      title="恢复：重试失败的分片并重新生成报告"
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="1 4 1 10 7 10"></polyline>
-                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                      </svg>
-                      恢复
-                    </button>
                   ) : (
-                    <span style={{ color: '#aaa', fontSize: '0.875rem' }}>-</span>
-                  )}
-                </td>
-                <td style={{ verticalAlign: 'middle' }}>
-                  {item.status === 'success' ? (() => {
-                    const text = getOverviewText(item);
-                    return (
-                      <div style={{ color: 'var(--text-color)', fontSize: '0.825rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={text}>
-                        {text}
-                      </div>
-                    );
-                  })() : item.status === 'failed' ? (
-                    <div style={{ color: 'var(--danger-color)', fontSize: '0.825rem', fontStyle: 'italic' }}>
-                      任务执行失败，AI 审计中断。
+                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                      {item.status === 'failed' && item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks ? (
+                        <button
+                          onClick={() => handleResume(item.id)}
+                          style={{ background: 'transparent', border: '1px solid #f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#f59e0b', fontSize: '0.8rem' }}
+                          title="恢复：重试失败的分片并重新生成报告"
+                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="1 4 1 10 7 10"></polyline>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                          </svg>
+                          恢复
+                        </button>
+                      ) : (
+                        <span style={{ color: '#aaa', fontSize: '0.875rem' }}>-</span>
+                      )}
+                      {isAdmin && (
+                        <button 
+                          onClick={() => handleDeleteReport(item.id)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#ef4444' }}
+                          title="永久彻底删除此报告及物理文件"
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          </svg>
+                        </button>
+                      )}
                     </div>
-                  ) : (item.status === 'running' || item.status === 'cloning' || item.status === 'pre_processing' || item.status === 'analyzing' || item.status === 'post_processing') ? (
-                    <div style={{ color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span className="spinner-mini" />
-                      <span>正在分析代码库，AI 深入审计中...</span>
-                    </div>
-                  ) : item.status === 'queued' ? (
-                    <div style={{ color: '#64748b', fontSize: '0.825rem', fontStyle: 'italic' }}>
-                      任务已入队，等待可用运行实例...
-                    </div>
-                  ) : (
-                    <span style={{ color: '#aaa', fontSize: '0.825rem' }}>-</span>
                   )}
                 </td>
               </tr>

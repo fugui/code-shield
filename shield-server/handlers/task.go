@@ -566,3 +566,59 @@ func TriggerMissingTasks(c *gin.Context) {
 		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务", len(missingRepos), taskType.DisplayName),
 	})
 }
+
+// DeleteTaskReport deletes a single task report and all of its database & disk artifacts
+func DeleteTaskReport(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的报告 ID"})
+		return
+	}
+
+	var report models.TaskReport
+	if err := models.DB.Preload("TaskType").First(&report, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务报告不存在"})
+		return
+	}
+
+	// 1. 清理物理磁盘上的所有报告和临时文件
+	services.CleanReportFiles(report.TaskType.Name, report.ID)
+
+	// 2. 在数据库事务中彻底清除此报告相关的一切 Findings、执行日志和报告记录本身
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		// 删除执行日志
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.TaskExecutionLog{}).Error; err != nil {
+			return err
+		}
+		// 删除通用的 AnalysisFinding
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{}).Error; err != nil {
+			return err
+		}
+		// 删除各专项 Findings (级联清理)
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.CoredumpFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.FloatFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.ThreadFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.CjsonFinding{}).Error; err != nil {
+			return err
+		}
+		// 最后删除 TaskReport 自身记录
+		if err := tx.Delete(&models.TaskReport{}, report.ID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除报告失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "报告及关联文件已成功删除"})
+}
