@@ -4,12 +4,26 @@ import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar
 import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
 import ReportSidebar from '../components/ReportSidebar';
+import ExecutionLogs from './ExecutionLogs';
 
-type ScanTab = 'trigger' | 'schedules';
+type ScanTab = 'trigger' | 'schedules' | 'logs';
 
 function ScanManagement() {
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<ScanTab>('trigger');
+  const { tab } = useParams<{ tab: string }>();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<ScanTab>((tab as ScanTab) || 'trigger');
+
+  useEffect(() => {
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab as ScanTab);
+    }
+  }, [tab]);
+
+  const handleTabChange = (newTab: ScanTab) => {
+    setActiveTab(newTab);
+    navigate(appNavigatePath(`/admin/scan/${newTab}`));
+  };
 
   // --- Manual Trigger State ---
   const [repos, setRepos] = useState<any[]>([]);
@@ -347,8 +361,9 @@ function ScanManagement() {
   return (
     <div>
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
-        <button onClick={() => setActiveTab('trigger')} style={tabStyle('trigger')}>手动触发</button>
-        <button onClick={() => setActiveTab('schedules')} style={tabStyle('schedules')}>批量触发</button>
+        <button onClick={() => handleTabChange('trigger')} style={tabStyle('trigger')}>手动触发</button>
+        <button onClick={() => handleTabChange('schedules')} style={tabStyle('schedules')}>批量触发</button>
+        <button onClick={() => handleTabChange('logs')} style={tabStyle('logs')}>执行日志</button>
       </div>
 
       {activeTab === 'trigger' && (
@@ -822,6 +837,10 @@ function ScanManagement() {
             repos={repos}
           />
         </div>
+      )}
+
+      {activeTab === 'logs' && (
+        <ExecutionLogs embedded={true} />
       )}
 
       {/* Slideout report viewer sidebar */}

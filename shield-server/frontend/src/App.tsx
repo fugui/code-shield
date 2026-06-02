@@ -358,7 +358,7 @@ function AppContent() {
           <Route path="/admin/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
           <Route path="/admin/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
           <Route path="/admin/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />
-          <Route path="/admin/activity" element={<PrivateRoute><ExecutionLogs /></PrivateRoute>} />
+          <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
           {/* 公开报告 */}
           <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
