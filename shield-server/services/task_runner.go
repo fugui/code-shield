@@ -181,7 +181,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		ctx.markFailed(err.Error())
 		return err
 	} else if skipped {
-		return nil
+		return ErrSkipped
 	}
 
 	// 5. Dispatch to Engine
