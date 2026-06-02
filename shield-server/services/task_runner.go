@@ -980,7 +980,15 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	}
 
 	if len(summaryParts) == 0 {
-		result.Summary = "未发现任何问题，代码质量极佳！"
+		if ctx.taskType.Name == "ut_effectiveness" {
+			if len(findings) == 0 {
+				result.Summary = "未检测到任何测试用例，建议补充单元测试！"
+			} else {
+				result.Summary = "所有单元测试用例均评估合格！"
+			}
+		} else {
+			result.Summary = "未发现相关类型的代码缺陷"
+		}
 	} else {
 		result.Summary = strings.Join(summaryParts, "，")
 	}

@@ -178,7 +178,11 @@ function ReportsOverview() {
       }
     }
 
-    return item.ai_summary || '未发现任何问题，代码质量极佳！';
+    if (item.ai_summary) return item.ai_summary;
+    if (item.task_type?.name === 'ut_effectiveness') {
+      return '所有单元测试用例均评估合格！';
+    }
+    return '未发现相关类型的代码缺陷';
   };
 
   return (
