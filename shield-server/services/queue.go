@@ -228,8 +228,6 @@ func RecoverPendingTasks(action string) {
 			var execLog models.TaskExecutionLog
 			models.DB.Where("task_report_id = ?", report.ID).First(&execLog)
 
-			// 删除关联的分析发现 (findings)
-			models.DB.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{})
 			// 删除任务报告
 			models.DB.Delete(&models.TaskReport{}, report.ID)
 			// 删除执行日志
@@ -269,20 +267,11 @@ func RecoverPendingTasks(action string) {
 			}
 		}
 
-		// 3. 清理已执行到一半（非排队、非就绪）任务的脏 findings 数据和物理磁盘报告文件
+		// 3. 清理已执行到一半（非排队、非就绪）任务的物理磁盘报告文件
 		if report.Status != models.StatusQueued && report.Status != models.StatusPending {
-			// 清除数据库中的 findings
-			result := models.DB.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{})
-			if result.Error != nil {
-				log.Printf("[Recovery] ReportID %d: failed to clean partial findings: %v\n", report.ID, result.Error)
-			} else if result.RowsAffected > 0 {
-				log.Printf("[Recovery] ReportID %d: cleaned %d partial findings.\n", report.ID, result.RowsAffected)
-			}
-
 			// 清除物理磁盘上的临时文件、分片目录和报告
 			CleanReportFiles(report.TaskType.Name, report.ID)
 		}
-
 		// 4. 重置 Report 和 Log 的状态，完全清理脏数据和指标信息以确保统计正确
 		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
 			"status":           models.StatusQueued,
