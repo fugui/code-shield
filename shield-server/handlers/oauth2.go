@@ -231,8 +231,8 @@ func OAuth2Callback(c *gin.Context) {
 	jwtSecret := []byte(models.AppConfig.Auth.JWTSecret)
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
-		UserID:   user.ID,
-		Email:    user.Email,
+		UserID: user.ID,
+		Email:  user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},

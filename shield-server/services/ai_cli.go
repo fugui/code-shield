@@ -19,6 +19,7 @@ type AIRequest struct {
 	InputFiles    []string        // 需要分析的文件列表（相对路径），AI 自行读取
 	OutputPath    string          // AI 输出文档的目标路径
 	TimeoutMin    int             // 执行超时（分钟），0 表示默认 30 分钟
+	ModelName     string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
 }
 
 // AIInvoker 定义了 AI CLI 调用的统一接口。
@@ -38,12 +39,50 @@ func RegisterAIInvoker(name string, invoker AIInvoker) {
 	invokerRegistry[name] = invoker
 }
 
-// GetAIInvoker 根据名称返回对应的 AIInvoker，未找到则回退到 claude
-func GetAIInvoker(name string) AIInvoker {
-	if inv, ok := invokerRegistry[name]; ok {
-		return inv
+// DispatchingInvoker 是 AIInvoker 的代理，自动在调用前后向 ModelDispatcher 申请/释放并发槽位
+type DispatchingInvoker struct {
+	delegate AIInvoker
+}
+
+func (w *DispatchingInvoker) Name() string {
+	return w.delegate.Name()
+}
+
+func (w *DispatchingInvoker) Invoke(req AIRequest) error {
+	backend := w.delegate.Name()
+	ctx := req.ParentContext
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return invokerRegistry["claude"]
+
+	// 1. 申请 LLM 服务器资源
+	res, modelName, err := Dispatcher.Acquire(ctx, backend)
+	if err != nil {
+		return fmt.Errorf("failed to acquire LLM server slot: %w", err)
+	}
+
+	if res != nil {
+		defer Dispatcher.Release(res, backend)
+		req.ModelName = modelName
+	}
+
+	// 2. 调用真正的底层 AI 后端
+	return w.delegate.Invoke(req)
+}
+
+// GetAIInvoker 根据名称返回对应的 AIInvoker，未找到则回退到 claude。
+// 当调度器启用时，自动返回 DispatchingInvoker 包装实例。
+func GetAIInvoker(name string) AIInvoker {
+	var inv AIInvoker
+	var ok bool
+	if inv, ok = invokerRegistry[name]; !ok {
+		inv = invokerRegistry["claude"]
+	}
+
+	if Dispatcher != nil && Dispatcher.enabled {
+		return &DispatchingInvoker{delegate: inv}
+	}
+	return inv
 }
 
 // RepairJSON calls AI to fix syntax errors in a JSON file.
@@ -82,4 +121,3 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 
 	return cleanJSONFromAI(fixed), nil
 }
-

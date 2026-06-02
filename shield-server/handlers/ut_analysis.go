@@ -368,18 +368,18 @@ func UpdateUTFinding(c *gin.Context) {
 
 // UTDeptSummary defines the structure of department statistics
 type UTDeptSummary struct {
-	Department  string  `json:"department"`
+	Department   string  `json:"department"`
 	ScannedRepos int     `json:"scanned_repos"`
-	TotalCases  int     `json:"total_cases"`
-	PassCount   int     `json:"pass_count"`
-	PassRate    float64 `json:"pass_rate"`
-	Blocking    int     `json:"blocking"`
-	Critical    int     `json:"critical"`
-	Major       int     `json:"major"`
-	Hint        int     `json:"hint"`
-	Suggestion  int     `json:"suggestion"`
-	IssuesCount int     `json:"issues_count"`
-	FixRate     float64 `json:"fix_rate"`
+	TotalCases   int     `json:"total_cases"`
+	PassCount    int     `json:"pass_count"`
+	PassRate     float64 `json:"pass_rate"`
+	Blocking     int     `json:"blocking"`
+	Critical     int     `json:"critical"`
+	Major        int     `json:"major"`
+	Hint         int     `json:"hint"`
+	Suggestion   int     `json:"suggestion"`
+	IssuesCount  int     `json:"issues_count"`
+	FixRate      float64 `json:"fix_rate"`
 }
 
 // GetUTDepartments aggregates test case statistics grouped by organization department
@@ -614,7 +614,7 @@ func GetUTTrends(c *gin.Context) {
 
 	for _, report := range reports {
 		dateStr := report.CreatedAt.Format("2006-01-02")
-		
+
 		// Parse metrics
 		var metrics map[string]int
 		if len(report.Metrics) > 0 {

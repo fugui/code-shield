@@ -167,7 +167,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	// Prepare output paths for final report early to ensure output.txt is available for all failure logging
 	ctx.prepareOutputPaths()
 
-	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s (Mode: %s)\n", 
+	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s (Mode: %s)\n",
 		ctx.report.ID, repoURL, ctx.taskType.Name, ctx.taskType.EngineMode)
 
 	// 2. Prepare workspace and sync code
@@ -198,9 +198,6 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	return ctx.finalize(result)
 }
 
-
-
-
 // load fetches necessary models from the database
 func (ctx *taskContext) load(reportID, taskTypeID uint) error {
 	if err := models.DB.Preload("Repo").First(&ctx.report, reportID).Error; err != nil {
@@ -228,7 +225,7 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	}
 
 	updateTaskStatus(ctx.report.ID, models.StatusCloning)
-	
+
 	var cmd *exec.Cmd
 	if stat, err := os.Stat(filepath.Join(ctx.codesPath, ".git")); err == nil && stat.IsDir() {
 		log.Printf("[TaskRunner] Running git pull in %s\n", ctx.codesPath)
@@ -253,7 +250,7 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 	if _, err := os.Stat(absScript); os.IsNotExist(err) {
 		return false, nil
 	}
-	
+
 	log.Printf("[TaskRunner] Running precondition: %s\n", absScript)
 
 	// Ensure the script is executable
@@ -337,14 +334,14 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 // AnalysisOutput represents the JSON structure output by AI during the analysis phase
 type AnalysisOutput struct {
 	Findings []struct {
-		Severity    string `json:"severity"`
-		Category    string `json:"category"`
-		FilePath    string `json:"file_path"`
+		Severity    string      `json:"severity"`
+		Category    string      `json:"category"`
+		FilePath    string      `json:"file_path"`
 		LineNumber  interface{} `json:"line_number"`
-		CodeSnippet string `json:"code_snippet"`
-		Title       string `json:"title"`
-		Detail      string `json:"detail"`
-		Suggestion  string `json:"suggestion"`
+		CodeSnippet string      `json:"code_snippet"`
+		Title       string      `json:"title"`
+		Detail      string      `json:"detail"`
+		Suggestion  string      `json:"suggestion"`
 	} `json:"findings"`
 	Summary string `json:"summary"`
 }
@@ -694,7 +691,6 @@ func (ctx *taskContext) loadFindingsFromChunkFile(jsonPath string) ([]models.Ana
 	return findings, nil
 }
 
-
 // executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings, retrying up to 3 times on failure.
 func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
 	// 1. Serialize all findings (complete list) to synthesisInputPath for Outlook attachment and database records.
@@ -707,27 +703,27 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 
 	// 2. Count all findings by severity for 100% accurate prompt injection
 	counts := map[string]int{
-		"阻塞":        0,
-		"blocking":  0,
-		"严重":        0,
-		"critical":  0,
-		"主要":        0,
-		"major":     0,
-		"提示":        0,
-		"info":      0,
-		"建议":        0,
-		"suggestion": 0,
-		"合格":        0,
-		"pass":      0,
-		"高风险":       0,
-		"high":      0,
-		"high_risk": 0,
-		"中风险":       0,
-		"medium":    0,
+		"阻塞":          0,
+		"blocking":    0,
+		"严重":          0,
+		"critical":    0,
+		"主要":          0,
+		"major":       0,
+		"提示":          0,
+		"info":        0,
+		"建议":          0,
+		"suggestion":  0,
+		"合格":          0,
+		"pass":        0,
+		"高风险":         0,
+		"high":        0,
+		"high_risk":   0,
+		"中风险":         0,
+		"medium":      0,
 		"medium_risk": 0,
-		"低风险":       0,
-		"low":       0,
-		"low_risk":  0,
+		"低风险":         0,
+		"low":         0,
+		"low_risk":    0,
 	}
 	for _, f := range allFindings {
 		counts[strings.ToLower(f.Severity)]++
@@ -759,27 +755,27 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 
 	// Weight mapping for sorting severities (higher weight = higher priority)
 	severityWeight := map[string]int{
-		"阻塞":        5,
-		"blocking":  5,
-		"严重":        4,
-		"critical":  4,
-		"主要":        3,
-		"major":     3,
-		"提示":        2,
-		"info":      2,
-		"建议":        1,
-		"suggestion": 1,
-		"合格":        0,
-		"pass":      0,
-		"高风险":       5,
-		"high":      5,
-		"high_risk": 5,
-		"中风险":       3,
-		"medium":    3,
+		"阻塞":          5,
+		"blocking":    5,
+		"严重":          4,
+		"critical":    4,
+		"主要":          3,
+		"major":       3,
+		"提示":          2,
+		"info":        2,
+		"建议":          1,
+		"suggestion":  1,
+		"合格":          0,
+		"pass":        0,
+		"高风险":         5,
+		"high":        5,
+		"high_risk":   5,
+		"中风险":         3,
+		"medium":      3,
 		"medium_risk": 3,
-		"low":       1,
-		"低风险":       1,
-		"low_risk":  1,
+		"low":         1,
+		"低风险":         1,
+		"low_risk":    1,
 	}
 
 	// Sort findings by severity weight descending
@@ -898,27 +894,27 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	// 1. Load all findings for this report from the database to calculate score and metrics
 	findings := ctx.findings
 	severityWeight := map[string]int{
-		"阻塞":        5,
-		"blocking":  5,
-		"严重":        4,
-		"critical":  4,
-		"主要":        3,
-		"major":     3,
-		"提示":        2,
-		"info":      2,
-		"建议":        1,
-		"suggestion": 1,
-		"合格":        0,
-		"pass":      0,
-		"高风险":       5,
-		"high":      5,
-		"high_risk": 5,
-		"中风险":       3,
-		"medium":    3,
+		"阻塞":          5,
+		"blocking":    5,
+		"严重":          4,
+		"critical":    4,
+		"主要":          3,
+		"major":       3,
+		"提示":          2,
+		"info":        2,
+		"建议":          1,
+		"suggestion":  1,
+		"合格":          0,
+		"pass":        0,
+		"高风险":         5,
+		"high":        5,
+		"high_risk":   5,
+		"中风险":         3,
+		"medium":      3,
 		"medium_risk": 3,
-		"low":       1,
-		"低风险":       1,
-		"low_risk":  1,
+		"low":         1,
+		"低风险":         1,
+		"low_risk":    1,
 	}
 
 	metrics := map[string]int{}
@@ -1028,7 +1024,7 @@ func (ctx *taskContext) writeSummaryReport() {
 // finalize saves the result to DB and triggers notification
 func (ctx *taskContext) finalize(result TaskResult) error {
 	metricsJSON, _ := json.Marshal(result.Metrics)
-	
+
 	err := models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
 		"status":      models.StatusSuccess,
 		"report_path": ctx.reportPath,
@@ -1107,8 +1103,10 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	if specificRecipientEmail != "" {
 		toEmails = []string{specificRecipientEmail}
 	} else {
-		if repo.Owner.Email != "" { toEmails = append(toEmails, repo.Owner.Email) }
-		
+		if repo.Owner.Email != "" {
+			toEmails = append(toEmails, repo.Owner.Email)
+		}
+
 		if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
 			ccEmails = append(ccEmails, repo.Team.Leader.Email)
 		}
@@ -1192,16 +1190,16 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	}
 
 	payload := map[string]interface{}{
-		"task_id":            fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
-		"task_type":          taskType.Name,
-		"task_display_name":  taskType.DisplayName,
-		"repo_name":          repo.Name,
-		"branch":             repo.Branch,
-		"recipients":         map[string]interface{}{"to": toEmails, "cc": ccEmails},
-		"subject":            subject,
-		"summary":            result.Summary,
-		"markdown_content":   markdownContent,
-		"report_url":         reportURL,
+		"task_id":           fmt.Sprintf("task-%d-%d", repo.ID, time.Now().Unix()),
+		"task_type":         taskType.Name,
+		"task_display_name": taskType.DisplayName,
+		"repo_name":         repo.Name,
+		"branch":            repo.Branch,
+		"recipients":        map[string]interface{}{"to": toEmails, "cc": ccEmails},
+		"subject":           subject,
+		"summary":           result.Summary,
+		"markdown_content":  markdownContent,
+		"report_url":        reportURL,
 	}
 
 	if markdownFilename != "" {
@@ -1209,11 +1207,13 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	}
 	if synthesisJSONFilename != "" {
 		payload["synthesis_json_filename"] = synthesisJSONFilename
-		payload["synthesis_json_content"]  = synthesisJSONContent
+		payload["synthesis_json_content"] = synthesisJSONContent
 	}
 
 	targetURL := models.AppConfig.Notification.Webhook
-	if targetURL == "" { return }
+	if targetURL == "" {
+		return
+	}
 
 	payloadBytes, _ := json.Marshal(payload)
 	resp, err := http.Post(targetURL, "application/json", bytes.NewBuffer(payloadBytes))

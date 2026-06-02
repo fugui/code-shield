@@ -68,6 +68,10 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		args = append(args, "--agent", agentName)
 	}
 
+	if req.ModelName != "" {
+		args = append(args, "--model", req.ModelName)
+	}
+
 	if models.AppConfig.AI.DebugLogs {
 		args = append(args, "--print-logs", "--log-level", "INFO")
 	}
@@ -204,7 +208,7 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 // 约定: .../tasks/<task-dir>/analysis_prompt.md → shield-<task-dir>-analysis
 // 约定: .../tasks/<task-dir>/synthesis_prompt.md → shield-<task-dir>-synthesis
 func deriveAgentName(promptAbsPath string) string {
-	base := filepath.Base(promptAbsPath)       // "analysis_prompt.md"
+	base := filepath.Base(promptAbsPath)              // "analysis_prompt.md"
 	dir := filepath.Base(filepath.Dir(promptAbsPath)) // "security-scan"
 
 	phase := "analysis"

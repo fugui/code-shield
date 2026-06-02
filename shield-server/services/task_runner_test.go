@@ -431,11 +431,11 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 
 	// Pre-create the summary JSON containing a failed chunk with 4 attempts and 0 retries
 	initialReport := TaskSummaryReport{
-		TaskID:      report.ID,
-		RepoName:    repo.Name,
-		TaskType:    taskType.Name,
+		TaskID:   report.ID,
+		RepoName: repo.Name,
+		TaskType: taskType.Name,
 		Analysis: AnalysisSummary{
-			TotalChunks: 1,
+			TotalChunks:  1,
 			FailedChunks: 1,
 			Chunks: []ChunkDetails{
 				{
@@ -750,15 +750,15 @@ func TestScanAndChunkWithFileExtensions(t *testing.T) {
 
 	// Create mixed files
 	files := map[string]string{
-		"app.py":            "print('hello')",
-		"utils/calc.py":     "def add(a, b): return a + b",
-		"main.go":           "package main",
-		"server.go":         "package main",
-		"core.c":            "int main() {}",
-		"include/api.h":     "#pragma once",
-		"lib.java":          "public class Lib {}",
-		"README.md":         "# Readme",
-		"test_app.py":       "import pytest",
+		"app.py":        "print('hello')",
+		"utils/calc.py": "def add(a, b): return a + b",
+		"main.go":       "package main",
+		"server.go":     "package main",
+		"core.c":        "int main() {}",
+		"include/api.h": "#pragma once",
+		"lib.java":      "public class Lib {}",
+		"README.md":     "# Readme",
+		"test_app.py":   "import pytest",
 	}
 	for name, content := range files {
 		fullPath := filepath.Join(tempDir, name)

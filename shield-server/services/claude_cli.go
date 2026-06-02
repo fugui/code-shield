@@ -32,7 +32,7 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	// 构建 prompt 消息：如果有文件列表，追加到消息中让 Claude 自行读取
 	promptMsg := fmt.Sprintf("%s（最终分析结果输出到 %s），", req.PromptMsg, req.OutputPath)
 	if len(req.InputFiles) > 1 && strings.HasSuffix(req.OutputPath, ".json") {
-		promptMsg += fmt.Sprintf("任务采用分片执行，本次只" )
+		promptMsg += fmt.Sprintf("任务采用分片执行，本次只")
 	}
 	promptMsg += fmt.Sprintf("基于以下文件内容进行分析：\n%s\n", strings.Join(req.InputFiles, "\n"))
 
@@ -41,6 +41,10 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 		formatVal = "stream-json"
 	}
 	args := []string{"-p", promptMsg, "--output-format", formatVal, "--disable-slash-commands"}
+
+	if req.ModelName != "" {
+		args = append(args, "--model", req.ModelName)
+	}
 
 	// 将提示词文件作为系统提示词注入（优先级高于普通消息）
 	if req.PromptFile != "" {
@@ -145,7 +149,6 @@ func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 			metaFile.WriteString(fmt.Sprintf("\n\n[Code-Shield Error] AI execution timed out after %v\n", timeout))
 			return fmt.Errorf("AI execution timed out after %v", timeout)
 		}
-
 
 		// 模拟模式：claude CLI 未安装时返回模拟结果
 		stderrStr := stderrBuf.String()
