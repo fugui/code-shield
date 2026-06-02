@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/models"
 	"code-shield/services"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -165,12 +166,47 @@ func GetTaskReportSummaryJSON(c *gin.Context) {
 
 
 
+func getFindingsForReport(reportID string) ([]models.AnalysisFinding, error) {
+	var report models.TaskReport
+	if err := models.DB.Preload("Repo").First(&report, reportID).Error; err != nil {
+		return nil, err
+	}
+
+	var findings []models.AnalysisFinding
+
+	// First: Try reading from synthesis JSON file on disk
+	if report.ReportPath != "" {
+		safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
+		synthesisPath := filepath.Join(filepath.Dir(report.ReportPath), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
+
+		if _, err := os.Stat(synthesisPath); err == nil {
+			data, err := os.ReadFile(synthesisPath)
+			if err == nil {
+				if err := json.Unmarshal(data, &findings); err == nil {
+					return findings, nil
+				}
+			}
+		}
+	}
+
+	// Second: Fallback to database for legacy tasks or if file reading failed
+	if err := models.DB.Where("task_report_id = ?", reportID).Order("id asc").Find(&findings).Error; err != nil {
+		return nil, err
+	}
+
+	return findings, nil
+}
+
 // GetAnalysisFindings returns structured analysis findings for a task report
 func GetAnalysisFindings(c *gin.Context) {
 	id := c.Param("id")
-	var findings []models.AnalysisFinding
-	if err := models.DB.Where("task_report_id = ?", id).Order("id asc").Find(&findings).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query findings"})
+	findings, err := getFindingsForReport(id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load findings: " + err.Error()})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, findings)
@@ -459,9 +495,13 @@ func GetPublicTaskDetails(c *gin.Context) {
 // GetPublicAnalysisFindings returns structured analysis findings for a task report without auth
 func GetPublicAnalysisFindings(c *gin.Context) {
 	id := c.Param("id")
-	var findings []models.AnalysisFinding
-	if err := models.DB.Where("task_report_id = ?", id).Order("id asc").Find(&findings).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query findings"})
+	findings, err := getFindingsForReport(id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load findings: " + err.Error()})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, findings)
