@@ -164,7 +164,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
         {/* Header with Tab Navigation */}
         <div style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
           <div className="report-sidebar-header" style={{ padding: '1.25rem 1.5rem 0.75rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1e293b' }}>任务报告详情</h3>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-color)' }}>任务报告详情</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               {showActions && (
                 <>
@@ -475,7 +475,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
         .chunk-card.success { border-left: 3px solid #10b981; }
         .chunk-header { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.85rem; cursor: pointer; user-select: none; background: #fff; }
         .chunk-header:hover { background: #f8fafc; }
-        .chunk-title { font-size: 0.8rem; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 0.4rem; }
+        .chunk-title { font-size: 0.8rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 0.4rem; }
         .chunk-meta { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; color: #64748b; }
         .chunk-body { padding: 0.85rem; background: #f8fafc; border-top: 1px solid #f1f5f9; font-size: 0.775rem; }
         .chunk-files-list { list-style: none; padding: 0; margin: 0; }

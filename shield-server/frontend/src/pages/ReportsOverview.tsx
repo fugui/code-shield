@@ -439,7 +439,7 @@ function ReportsOverview() {
                   {item.status === 'success' ? (() => {
                     const text = getOverviewText(item);
                     return (
-                      <div style={{ color: '#1e293b', fontSize: '0.825rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={text}>
+                      <div style={{ color: 'var(--text-color)', fontSize: '0.825rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={text}>
                         {text}
                       </div>
                     );
