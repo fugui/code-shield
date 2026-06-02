@@ -4,8 +4,11 @@ import (
 	"code-shield/models"
 	"encoding/json"
 	"log"
+	"reflect"
 	"sync"
 	"time"
+
+	"gorm.io/datatypes"
 )
 
 // TaskHook is a callback function run when a task finishes successfully
@@ -43,9 +46,13 @@ func init() {
 	// Register hook for test case effectiveness
 	RegisterTaskHook("ut_effectiveness", handleUTEffectivenessHook)
 	// Register hook for coredump risk analysis
-	RegisterTaskHook("coredump_risk", handleCoredumpRiskHook)
+	RegisterTaskHook("coredump_risk", handleCampaignHook[models.CoredumpFinding])
 	// Register hook for python float comparison scan
-	RegisterTaskHook("float_comparison", handleFloatComparisonHook)
+	RegisterTaskHook("float_comparison", handleCampaignHook[models.FloatFinding])
+	// Register hook for thread creation analysis
+	RegisterTaskHook("thread_create", handleCampaignHook[models.ThreadFinding])
+	// Register hook for cjson memory leak scan
+	RegisterTaskHook("cjson_scan", handleCampaignHook[models.CjsonFinding])
 }
 
 func handleUTEffectivenessHook(ctx *taskContext, findings []models.AnalysisFinding) error {
@@ -143,104 +150,55 @@ func handleUTEffectivenessHook(ctx *taskContext, findings []models.AnalysisFindi
 	return nil
 }
 
-func handleCoredumpRiskHook(ctx *taskContext, findings []models.AnalysisFinding) error {
-	log.Printf("[TaskHooks] Processing coredump_risk hook for Repo ID: %d, findings count: %d", ctx.repo.ID, len(findings))
+// CopyFindingFields 动态拷贝 models.AnalysisFinding 到泛型结构体指针中
+func CopyFindingFields(src *models.AnalysisFinding, dst interface{}) {
+	sVal := reflect.ValueOf(src).Elem()
+	dVal := reflect.ValueOf(dst).Elem()
 
-	for _, f := range findings {
-		var cf models.CoredumpFinding
-		err := models.DB.Where("repo_id = ? AND file_path = ? AND line_number = ? AND title = ?", ctx.repo.ID, f.FilePath, f.LineNumber, f.Title).First(&cf).Error
-
-		targetStatus := "open"
-		if f.Severity == "合格" {
-			targetStatus = "closed"
-		}
-
-		if err != nil {
-			// 1. Create a new coredump finding
-			statusLog := []map[string]interface{}{
-				{
-					"status": targetStatus,
-					"time":   time.Now().Format("2006-01-02 15:04:05"),
-					"user":   "system",
-					"reason": "Initial scan discovery",
-				},
-			}
-			logBytes, _ := json.Marshal(statusLog)
-
-			cf = models.CoredumpFinding{
-				RepoID:       ctx.repo.ID,
-				TaskReportID: ctx.report.ID,
-				FilePath:     f.FilePath,
-				LineNumber:   f.LineNumber,
-				Title:        f.Title,
-				Detail:       f.Detail,
-				Severity:     f.Severity,
-				Category:     f.Category,
-				CodeSnippet:  f.CodeSnippet,
-				Suggestion:   f.Suggestion,
-				Status:       targetStatus,
-				StatusLog:    logBytes,
-			}
-			if err := models.DB.Create(&cf).Error; err != nil {
-				log.Printf("[TaskHooks] Failed to create CoredumpFinding record: %v", err)
-			}
-		} else {
-			// 2. Existing coredump finding, check workflow status changes
-			updatedStatus := cf.Status
-			var existingLog []map[string]interface{}
-			if len(cf.StatusLog) > 0 {
-				_ = json.Unmarshal(cf.StatusLog, &existingLog)
-			}
-
-			if cf.Status == "closed" && targetStatus == "open" {
-				updatedStatus = "open"
-				existingLog = append(existingLog, map[string]interface{}{
-					"status": "open",
-					"time":   time.Now().Format("2006-01-02 15:04:05"),
-					"user":   "system",
-					"reason": "Reopened by subsequent scan finding defects",
-				})
-			} else if cf.Status != "closed" && targetStatus == "closed" {
-				updatedStatus = "closed"
-				existingLog = append(existingLog, map[string]interface{}{
-					"status": "closed",
-					"time":   time.Now().Format("2006-01-02 15:04:05"),
-					"user":   "system",
-					"reason": "Automatically closed (resolved to合格 by scan)",
-				})
-			}
-			logBytes, _ := json.Marshal(existingLog)
-
-			// Update details
-			cf.TaskReportID = ctx.report.ID
-			cf.Detail = f.Detail
-			cf.Severity = f.Severity
-			cf.Category = f.Category
-			cf.CodeSnippet = f.CodeSnippet
-			cf.Suggestion = f.Suggestion
-			cf.Status = updatedStatus
-			cf.StatusLog = logBytes
-
-			if err := models.DB.Save(&cf).Error; err != nil {
-				log.Printf("[TaskHooks] Failed to update CoredumpFinding record: %v", err)
-			}
+	for i := 0; i < sVal.NumField(); i++ {
+		sField := sVal.Type().Field(i)
+		fieldName := sField.Name
+		dField := dVal.FieldByName(fieldName)
+		if dField.IsValid() && dField.CanSet() && dField.Type() == sVal.Field(i).Type() {
+			dField.Set(sVal.Field(i))
 		}
 	}
+}
 
-	// 3. Obsolete clean-up: delete coredump findings that belong to this repo but were not scanned/updated in the current scan
-	if err := models.DB.Where("repo_id = ? AND task_report_id < ?", ctx.repo.ID, ctx.report.ID).Delete(&models.CoredumpFinding{}).Error; err != nil {
-		log.Printf("[TaskHooks] Failed to delete obsolete CoredumpFinding records: %v", err)
+// SetFieldValue 动态设置结构体中某个字段的值
+func SetFieldValue(obj interface{}, fieldName string, val interface{}) {
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
 	}
+	f := v.FieldByName(fieldName)
+	if f.IsValid() && f.CanSet() {
+		f.Set(reflect.ValueOf(val))
+	}
+}
 
+// GetFieldValue 动态获取结构体中某个字段的值
+func GetFieldValue(obj interface{}, fieldName string) interface{} {
+	v := reflect.ValueOf(obj)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	f := v.FieldByName(fieldName)
+	if f.IsValid() {
+		return f.Interface()
+	}
 	return nil
 }
 
-func handleFloatComparisonHook(ctx *taskContext, findings []models.AnalysisFinding) error {
-	log.Printf("[TaskHooks] Processing float_comparison hook for Repo ID: %d, findings count: %d", ctx.repo.ID, len(findings))
+// handleCampaignHook 泛型化的专项缺陷处理器
+func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFinding) error {
+	log.Printf("[TaskHooks] Processing campaign hook for Task: %s, Repo ID: %d, findings count: %d", ctx.taskType.Name, ctx.repo.ID, len(findings))
 
 	for _, f := range findings {
-		var ff models.FloatFinding
-		err := models.DB.Where("repo_id = ? AND file_path = ? AND line_number = ? AND title = ?", ctx.repo.ID, f.FilePath, f.LineNumber, f.Title).First(&ff).Error
+		var cf T
+		err := models.DB.Model(new(T)).
+			Where("repo_id = ? AND file_path = ? AND line_number = ? AND title = ?", ctx.repo.ID, f.FilePath, f.LineNumber, f.Title).
+			First(&cf).Error
 
 		targetStatus := "open"
 		if f.Severity == "合格" {
@@ -248,7 +206,7 @@ func handleFloatComparisonHook(ctx *taskContext, findings []models.AnalysisFindi
 		}
 
 		if err != nil {
-			// 1. Create a new float comparison finding
+			// 1. Create a new campaign finding
 			statusLog := []map[string]interface{}{
 				{
 					"status": targetStatus,
@@ -259,32 +217,30 @@ func handleFloatComparisonHook(ctx *taskContext, findings []models.AnalysisFindi
 			}
 			logBytes, _ := json.Marshal(statusLog)
 
-			ff = models.FloatFinding{
-				RepoID:       ctx.repo.ID,
-				TaskReportID: ctx.report.ID,
-				FilePath:     f.FilePath,
-				LineNumber:   f.LineNumber,
-				Title:        f.Title,
-				Detail:       f.Detail,
-				Severity:     f.Severity,
-				Category:     f.Category,
-				CodeSnippet:  f.CodeSnippet,
-				Suggestion:   f.Suggestion,
-				Status:       targetStatus,
-				StatusLog:    logBytes,
-			}
-			if err := models.DB.Create(&ff).Error; err != nil {
-				log.Printf("[TaskHooks] Failed to create FloatFinding record: %v", err)
+			var newFinding T
+			CopyFindingFields(&f, &newFinding)
+			SetFieldValue(&newFinding, "RepoID", ctx.repo.ID)
+			SetFieldValue(&newFinding, "TaskReportID", ctx.report.ID)
+			SetFieldValue(&newFinding, "Status", targetStatus)
+			SetFieldValue(&newFinding, "StatusLog", datatypes.JSON(logBytes))
+
+			if err := models.DB.Create(&newFinding).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to create campaign finding record: %v", err)
 			}
 		} else {
-			// 2. Existing float finding, check workflow status changes
-			updatedStatus := ff.Status
+			// 2. Existing finding, check workflow status changes
+			updatedStatus := GetFieldValue(&cf, "Status").(string)
 			var existingLog []map[string]interface{}
-			if len(ff.StatusLog) > 0 {
-				_ = json.Unmarshal(ff.StatusLog, &existingLog)
+			logBytesVal := GetFieldValue(&cf, "StatusLog")
+			if logBytesVal != nil {
+				if bytes, ok := logBytesVal.([]byte); ok && len(bytes) > 0 {
+					_ = json.Unmarshal(bytes, &existingLog)
+				} else if datatypesJson, ok := logBytesVal.(datatypes.JSON); ok && len(datatypesJson) > 0 {
+					_ = json.Unmarshal(datatypesJson, &existingLog)
+				}
 			}
 
-			if ff.Status == "closed" && targetStatus == "open" {
+			if updatedStatus == "closed" && targetStatus == "open" {
 				updatedStatus = "open"
 				existingLog = append(existingLog, map[string]interface{}{
 					"status": "open",
@@ -292,7 +248,7 @@ func handleFloatComparisonHook(ctx *taskContext, findings []models.AnalysisFindi
 					"user":   "system",
 					"reason": "Reopened by subsequent scan finding defects",
 				})
-			} else if ff.Status != "closed" && targetStatus == "closed" {
+			} else if updatedStatus != "closed" && targetStatus == "closed" {
 				updatedStatus = "closed"
 				existingLog = append(existingLog, map[string]interface{}{
 					"status": "closed",
@@ -301,27 +257,22 @@ func handleFloatComparisonHook(ctx *taskContext, findings []models.AnalysisFindi
 					"reason": "Automatically closed (resolved to合格 by scan)",
 				})
 			}
-			logBytes, _ := json.Marshal(existingLog)
+			newLogBytes, _ := json.Marshal(existingLog)
 
-			// Update details
-			ff.TaskReportID = ctx.report.ID
-			ff.Detail = f.Detail
-			ff.Severity = f.Severity
-			ff.Category = f.Category
-			ff.CodeSnippet = f.CodeSnippet
-			ff.Suggestion = f.Suggestion
-			ff.Status = updatedStatus
-			ff.StatusLog = logBytes
+			CopyFindingFields(&f, &cf)
+			SetFieldValue(&cf, "TaskReportID", ctx.report.ID)
+			SetFieldValue(&cf, "Status", updatedStatus)
+			SetFieldValue(&cf, "StatusLog", datatypes.JSON(newLogBytes))
 
-			if err := models.DB.Save(&ff).Error; err != nil {
-				log.Printf("[TaskHooks] Failed to update FloatFinding record: %v", err)
+			if err := models.DB.Save(&cf).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to update campaign finding record: %v", err)
 			}
 		}
 	}
 
-	// 3. Obsolete clean-up: delete float findings that belong to this repo but were not scanned/updated in the current scan
-	if err := models.DB.Where("repo_id = ? AND task_report_id < ?", ctx.repo.ID, ctx.report.ID).Delete(&models.FloatFinding{}).Error; err != nil {
-		log.Printf("[TaskHooks] Failed to delete obsolete FloatFinding records: %v", err)
+	// 3. Obsolete clean-up
+	if err := models.DB.Model(new(T)).Where("repo_id = ? AND task_report_id < ?", ctx.repo.ID, ctx.report.ID).Delete(new(T)).Error; err != nil {
+		log.Printf("[TaskHooks] Failed to delete obsolete campaign findings: %v", err)
 	}
 
 	return nil

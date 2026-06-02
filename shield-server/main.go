@@ -156,19 +156,11 @@ func main() {
 		api.GET("/analysis/ut/departments", handlers.GetUTDepartments)
 		api.GET("/analysis/ut/trends", handlers.GetUTTrends)
 
-		// Core Dump Campaign Dashboard
-		api.GET("/analysis/coredump/repos", handlers.GetCoredumpRepos)
-		api.GET("/analysis/coredump/findings", handlers.GetCoredumpFindings)
-		api.PATCH("/analysis/coredump/findings/:id", handlers.UpdateCoredumpFinding)
-		api.GET("/analysis/coredump/departments", handlers.GetCoredumpDepartments)
-		api.GET("/analysis/coredump/trends", handlers.GetCoredumpTrends)
-
-		// Python Float Campaign Dashboard
-		api.GET("/analysis/float/repos", handlers.GetFloatRepos)
-		api.GET("/analysis/float/findings", handlers.GetFloatFindings)
-		api.PATCH("/analysis/float/findings/:id", handlers.UpdateFloatFinding)
-		api.GET("/analysis/float/departments", handlers.GetFloatDepartments)
-		api.GET("/analysis/float/trends", handlers.GetFloatTrends)
+		// Campaign generic routes mapping
+		registerCampaignRoutes[models.CoredumpFinding](api, "coredump", "coredump_risk")
+		registerCampaignRoutes[models.FloatFinding](api, "float", "float_comparison")
+		registerCampaignRoutes[models.ThreadFinding](api, "thread", "thread_create")
+		registerCampaignRoutes[models.CjsonFinding](api, "cjson", "cjson_scan")
 
 
 		api.GET("/schedules", handlers.GetSchedules)
@@ -294,4 +286,12 @@ func main() {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 	log.Println("Server exited gracefully")
+}
+
+func registerCampaignRoutes[T any](rg *gin.RouterGroup, campaignPath string, taskTypeName string) {
+	rg.GET("/analysis/"+campaignPath+"/repos", handlers.GetCampaignRepos[T](taskTypeName))
+	rg.GET("/analysis/"+campaignPath+"/findings", handlers.GetCampaignFindings[T]())
+	rg.PATCH("/analysis/"+campaignPath+"/findings/:id", handlers.UpdateCampaignFinding[T]())
+	rg.GET("/analysis/"+campaignPath+"/departments", handlers.GetCampaignDepartments[T]())
+	rg.GET("/analysis/"+campaignPath+"/trends", handlers.GetCampaignTrends[T]())
 }

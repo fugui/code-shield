@@ -53,6 +53,8 @@ func InitDB() {
 		&TestCaseFinding{},
 		&CoredumpFinding{},
 		&FloatFinding{},
+		&ThreadFinding{},
+		&CjsonFinding{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
