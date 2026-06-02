@@ -157,7 +157,8 @@ function ExecutionLogs() {
     return diff < 60 ? `${diff}s` : `${Math.floor(diff / 60)}m ${diff % 60}s`;
   };
 
-  const statusBadge = (status: string) => {
+  const statusBadge = (log: any) => {
+    const status = (log.status === 'running' && log.task_report?.status) ? log.task_report.status : log.status;
     const map: Record<string, { cls: string; label: string }> = {
       success: { cls: 'success', label: '执行成功' },
       failed:  { cls: 'danger',  label: '执行失败' },
@@ -170,6 +171,14 @@ function ExecutionLogs() {
       post_processing: { cls: 'primary', label: '结果分析中...' },
     };
     const s = map[status] || { cls: 'warning', label: status };
+
+    if (log.engine_mode === 'chunked' && status === 'analyzing' && log.task_report) {
+      const { processed_chunks, total_chunks } = log.task_report;
+      if (total_chunks > 0) {
+        return <span className={`badge ${s.cls}`}>{`AI 检视中 (${processed_chunks}/${total_chunks})...`}</span>;
+      }
+    }
+
     return <span className={`badge ${s.cls}`}>{s.label}</span>;
   };
 
@@ -246,7 +255,7 @@ function ExecutionLogs() {
                     <td style={{ padding: '1rem', color: '#64748b' }}>{calcDuration(log.start_time, log.end_time)}</td>
                     <td style={{ padding: '1rem' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        {statusBadge(log.status)}
+                        {statusBadge(log)}
                         {log.status === 'failed' && log.error_message && (
                           <span style={{ fontSize: '0.75rem', color: 'var(--danger-color)', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={log.error_message}>
                             {log.error_message}
@@ -399,7 +408,43 @@ function ExecutionLogs() {
                                   )}
                                 </div>
                               );
-                            })() : (
+                            })() : (log.engine_mode === 'chunked' && (isRunning || isPending)) ? (
+                              <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', color: '#475569', padding: '0.5rem 0' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontWeight: 500, color: '#475569', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    🧩 分片扫描进度
+                                  </span>
+                                  {report.total_chunks > 0 ? (
+                                    <strong style={{ color: 'var(--primary-color)', fontSize: '0.875rem' }}>
+                                      {report.processed_chunks} / {report.total_chunks} 已处理
+                                    </strong>
+                                  ) : (
+                                    <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>准备中...</span>
+                                  )}
+                                </div>
+
+                                <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                                  <div style={{
+                                    width: report.total_chunks > 0 ? `${Math.min(100, (report.processed_chunks / report.total_chunks) * 100)}%` : '0%',
+                                    height: '100%',
+                                    background: 'linear-gradient(90deg, var(--primary-color) 0%, #60a5fa 100%)',
+                                    borderRadius: '999px',
+                                    transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+                                  }} />
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                                  <span>
+                                    {report.total_chunks > 0
+                                      ? "正在执行分片并发扫描..."
+                                      : "正在初始化代码仓或分析范围..."}
+                                  </span>
+                                  <span>
+                                    {report.total_chunks > 0 && `${Math.round((report.processed_chunks / report.total_chunks) * 100)}%`}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
                               <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic', textAlign: 'center', padding: '1rem 0' }}>
                                 无分片诊断数据 (单次任务模式)
                               </div>
