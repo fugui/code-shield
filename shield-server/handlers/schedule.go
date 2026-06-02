@@ -5,6 +5,7 @@ import (
 	"code-shield/models"
 	"code-shield/services"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -128,8 +129,17 @@ type ExecutionReportBrief struct {
 }
 
 func GetExecutionLogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 15
+	}
+
 	var logs []models.TaskExecutionLog
-	query := models.DB.Preload("Schedule").Preload("Repo").Preload("TaskReport").Preload("TaskType")
+	query := models.DB.Model(&models.TaskExecutionLog{}).Preload("Schedule").Preload("Repo").Preload("TaskReport").Preload("TaskType")
 
 	// Optional filters
 	scheduleID := c.Query("schedule_id")
@@ -145,10 +155,37 @@ func GetExecutionLogs(c *gin.Context) {
 		query = query.Where("task_type_id = ?", taskTypeID)
 	}
 
-	query.Order("created_at desc").Limit(100).Find(&logs)
+	var total int64
+	query.Count(&total)
+
+	orderClause := `
+CASE status 
+  WHEN 'cloning' THEN 1
+  WHEN 'pre_processing' THEN 1
+  WHEN 'analyzing' THEN 1
+  WHEN 'post_processing' THEN 1
+  WHEN 'running' THEN 1
+  WHEN 'success' THEN 2
+  WHEN 'failed' THEN 2
+  WHEN 'skipped' THEN 2
+  WHEN 'pending' THEN 3
+  ELSE 4 
+END ASC,
+CASE 
+  WHEN status IN ('cloning', 'pre_processing', 'analyzing', 'post_processing', 'running', 'success', 'failed', 'skipped') THEN id
+END DESC,
+CASE 
+  WHEN status = 'pending' THEN id
+END ASC
+`
+
+	offset := (page - 1) * pageSize
+	query.Order(orderClause).Offset(offset).Limit(pageSize).Find(&logs)
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 
 	// Map to flattened DTOs
-	result := make([]ExecutionLogResponse, 0, len(logs))
+	items := make([]ExecutionLogResponse, 0, len(logs))
 	for _, log := range logs {
 		item := ExecutionLogResponse{
 			ID:           log.ID,
@@ -178,10 +215,16 @@ func GetExecutionLogs(c *gin.Context) {
 				SuccessChunks:   log.TaskReport.SuccessChunks,
 			}
 		}
-		result = append(result, item)
+		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, gin.H{
+		"items":      items,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"totalPages": totalPages,
+	})
 }
 
 // ClearCompletedExecutionLogs deletes all finished logs

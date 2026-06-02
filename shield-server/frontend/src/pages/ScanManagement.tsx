@@ -70,10 +70,10 @@ function ScanManagement() {
 
   const fetchRecentLogs = async () => {
     try {
-      const res = await fetch('/api/executions');
+      const res = await fetch('/api/executions?pageSize=50');
       if (res.ok) {
         const data = await res.json();
-        setRecentLogs(data);
+        setRecentLogs(data.items || []);
       }
     } catch (err) {
       console.error('Failed to fetch recent execution logs:', err);
