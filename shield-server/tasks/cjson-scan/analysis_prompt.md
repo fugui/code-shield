@@ -31,6 +31,7 @@ Important: If you have added an item to an array or an object already, you mustn
 
 **请严格按照以下 JSON 格式输出，不要包含任何 Markdown 代码块标记或其他额外文本。输出必须是合法的 JSON：**
 
+```json
 {
   "findings": [
     {
@@ -46,6 +47,7 @@ Important: If you have added an item to an array or an object already, you mustn
   ],
   "summary": "200-400字的整体代码质量评估摘要，描述主要问题类别及其风险影响"
 }
+```
 
 > ⚠️ **输出约束（必须严格遵守）**：
 > - 输出必须是合法的纯 JSON，不得包含 ```json 或 ``` 等 Markdown 代码块标记
