@@ -735,20 +735,9 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	infoCount := counts["提示"] + counts["info"]
 	suggestionCount := counts["建议"] + counts["suggestion"]
 
-	highCount := counts["高风险"] + counts["high"] + counts["high_risk"]
-	mediumCount := counts["中风险"] + counts["medium"] + counts["medium_risk"]
-	lowCount := counts["低风险"] + counts["low"] + counts["low_risk"]
-
 	// Inject 100% accurate pre-calculated severity summary to the AI prompt
-	suffixPrompt := ""
-	isCodeReview := strings.Contains(strings.ToLower(ctx.taskType.Name), "review")
-	if isCodeReview {
-		suffixPrompt = fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n阻塞：%d，严重：%d，主要：%d，提示：%d，建议：%d\n```",
-			blockingCount, criticalCount, majorCount, infoCount, suggestionCount)
-	} else {
-		suffixPrompt = fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n高风险：%d，中风险：%d，低风险：%d\n```",
-			highCount, mediumCount, lowCount)
-	}
+	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n阻塞：%d，严重：%d，主要：%d，提示：%d，建议：%d\n```",
+		blockingCount, criticalCount, majorCount, infoCount, suggestionCount)
 
 	// 3. Build a simplified list of findings for the AI if count exceeds the threshold to avoid context and output limit issues.
 	var aiFindings []models.AnalysisFinding
