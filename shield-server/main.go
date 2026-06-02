@@ -179,6 +179,7 @@ func main() {
 			admin.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
 			admin.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
 			admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
+			admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
 
 			users := admin.Group("/users")
 			{
