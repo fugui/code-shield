@@ -56,9 +56,10 @@ type Config struct {
 		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
 	} `yaml:"storage"`
 	AI struct {
-		Backend      string `yaml:"backend"`       // CLI 后端：claude 或 opencode，默认 claude
-		DebugLogs    bool   `yaml:"debug_logs"`    // 是否输出 AI 引擎底层的 debug 级别日志
-		OutputFormat string `yaml:"output_format"` // 输出格式：text 或 json，默认 text
+		Backend      string        `yaml:"backend"`       // CLI 后端：claude 或 opencode，默认 claude
+		DebugLogs    bool          `yaml:"debug_logs"`    // 是否输出 AI 引擎底层的 debug 级别日志
+		OutputFormat string        `yaml:"output_format"` // 输出格式：text 或 json，默认 text
+		Models       []ModelConfig `yaml:"models"`        // 多 LLM 服务器并发配置
 	} `yaml:"ai"`
 	Notification struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
@@ -69,7 +70,6 @@ type Config struct {
 		PortalJWTSecret      string       `yaml:"portal_jwt_secret"`      // Portal SSO 共享密钥（兼容旧版，留空禁用）
 		OAuth2               OAuth2Config `yaml:"oauth2"`
 	} `yaml:"auth"`
-	Models []ModelConfig `yaml:"models"` // 多 LLM 服务器并发配置
 }
 
 var AppConfig Config
@@ -119,11 +119,11 @@ func LoadConfig(filename string) error {
 	}
 	// 校验并补充 Models 默认并发数，并动态拓展全局并发数限制
 	sumConcurrent := 0
-	for i := range AppConfig.Models {
-		if AppConfig.Models[i].Concurrent <= 0 {
-			AppConfig.Models[i].Concurrent = 1
+	for i := range AppConfig.AI.Models {
+		if AppConfig.AI.Models[i].Concurrent <= 0 {
+			AppConfig.AI.Models[i].Concurrent = 1
 		}
-		sumConcurrent += AppConfig.Models[i].Concurrent
+		sumConcurrent += AppConfig.AI.Models[i].Concurrent
 	}
 	if sumConcurrent > 0 {
 		// 动态拓展全局任务并发数为所有模型并发之和的 2 倍（加上基础缓冲 5），

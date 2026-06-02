@@ -23,6 +23,16 @@ ai:
   # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false。开启后会在报告同级目录下生成 .debug.log 文件方便定位
   # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json），默认 text
 
+  # ── 多 LLM 服务器并发配置 (可选) ──
+  # 启用多 LLM 服务器配置时，全局任务并发数限制会被本配置的并发总和自动拓展，
+  # 每次 AI 扫描时根据后端类型自动映射对应的模型名称，精准控制每台服务器的并发负载。
+  # models:
+  #   - opencode: "models/glm5.1"
+  #     claude: "glm5.1"
+  #     concurrent: 5
+  #   - opencode: "models/qwen3.5"
+  #     concurrent: 2
+
 # ── 通知服务 ──
 notification:
   webhook: "http://127.0.0.1:8081/api/notify/email"  # 分析完毕后发送报告卡片通知的回调地址
