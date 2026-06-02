@@ -36,6 +36,7 @@ shield-server/*.exe
 shield-server/task-reports/
 
 # Local configuration
+shield-server/config.yaml
 config.yaml
 settings.json
 shield-server/settings.json
