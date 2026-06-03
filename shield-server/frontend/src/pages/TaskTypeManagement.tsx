@@ -328,7 +328,7 @@ function TaskTypeManagement() {
                   <input type="number" style={fieldStyle} value={form.timeout} onChange={e => setForm({...form, timeout: parseInt(e.target.value) || 60})} />
                 </div>
                 <div>
-                  <label style={labelStyle}>通知阈值（评分≥此值才通知）</label>
+                  <label style={labelStyle}>通知阈值（风险评分≥此值才通知）</label>
                   <input type="number" style={fieldStyle} value={form.notify_threshold} onChange={e => setForm({...form, notify_threshold: parseInt(e.target.value) || 0})} />
                 </div>
               </div>

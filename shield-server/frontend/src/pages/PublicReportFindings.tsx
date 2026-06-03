@@ -313,7 +313,7 @@ function PublicReportFindings() {
             {/* Score circle */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: '#f8fafc', padding: '1rem 1.5rem', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', fontWeight: 500, textTransform: 'uppercase' }}>质量评分</span>
+                <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', fontWeight: 500, textTransform: 'uppercase' }}>风险评分</span>
                 <span style={{ fontSize: '1.75rem', fontWeight: 800, color: report.score >= 80 ? '#10b981' : report.score >= 50 ? '#f59e0b' : '#ef4444' }}>{report.score}</span>
               </div>
               <div style={{ width: '4px', height: '36px', background: '#e2e8f0', borderRadius: '2px' }} />

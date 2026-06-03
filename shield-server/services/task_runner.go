@@ -1148,7 +1148,7 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		}
 	}
 
-	subject := fmt.Sprintf("【%s】%s %s报告（评分: %d）",
+	subject := fmt.Sprintf("【%s】%s %s报告（风险评分: %d）",
 		taskType.DisplayName, repo.Name, taskType.DisplayName, result.Score)
 
 	safeRepoName := strings.ReplaceAll(repo.Name, "/", "-")
