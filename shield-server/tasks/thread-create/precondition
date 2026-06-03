@@ -46,6 +46,6 @@ if [ -n "$result" ]; then
     echo "Found in: $result"
     exit 0
 else
-    echo "代码中没有显示的线程创建语句（如 pthread_create、std::thread 等 ）"
+    echo "代码中没有显式的线程创建语句（如 pthread_create、std::thread 等 ）"
     exit 1
 fi
