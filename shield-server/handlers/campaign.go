@@ -431,6 +431,7 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 // CampaignDeptSummary defines department rankings details
 type CampaignDeptSummary struct {
 	Department     string  `json:"department"`
+	ScannedRepos   int     `json:"scanned_repos"`
 	TotalIssues    int     `json:"total_issues"`
 	OpenIssues     int     `json:"open_issues"`
 	ResolvedIssues int     `json:"resolved_issues"`
@@ -492,6 +493,13 @@ func GetCampaignDepartments[T any]() gin.HandlerFunc {
 				Where("repo_id IN ? AND status IN ?", repoIDs, []string{"resolved", "closed", "invalid"}).
 				Count(&resolvedIssues)
 
+			// Get scanned repositories count
+			var scannedCount int64
+			models.DB.Model(new(T)).
+				Where("repo_id IN ?", repoIDs).
+				Distinct("repo_id").
+				Count(&scannedCount)
+
 			fixRate := 0.0
 			if totalIssues > 0 {
 				fixRate = (float64(resolvedIssues) / float64(totalIssues)) * 100.0
@@ -501,6 +509,7 @@ func GetCampaignDepartments[T any]() gin.HandlerFunc {
 
 			summaries = append(summaries, CampaignDeptSummary{
 				Department:     deptName,
+				ScannedRepos:   int(scannedCount),
 				TotalIssues:    int(totalIssues),
 				OpenIssues:     int(openIssues),
 				ResolvedIssues: int(resolvedIssues),
@@ -514,8 +523,12 @@ func GetCampaignDepartments[T any]() gin.HandlerFunc {
 			switch sortBy {
 			case "department":
 				cmp = strings.ToLower(summaries[i].Department) < strings.ToLower(summaries[j].Department)
+			case "scanned_repos":
+				cmp = summaries[i].ScannedRepos < summaries[j].ScannedRepos
 			case "total_issues":
 				cmp = summaries[i].TotalIssues < summaries[j].TotalIssues
+			case "open_issues":
+				cmp = summaries[i].OpenIssues < summaries[j].OpenIssues
 			case "fix_rate":
 				fallthrough
 			default:
