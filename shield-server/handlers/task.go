@@ -437,16 +437,70 @@ func GetTaskOverview(c *gin.Context) {
 
 // ClearInvalidReports deletes all report records that are not in the "success" state
 func ClearInvalidReports(c *gin.Context) {
-	// Delete task reports where status != "success"
-	result := models.DB.Where("status != ?", models.StatusSuccess).Delete(&models.TaskReport{})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "清除失败: " + result.Error.Error()})
+	var reports []models.TaskReport
+	err := models.DB.Preload("TaskType").Where("status IN (?, ?, ?, ?)", models.StatusPending, models.StatusQueued, models.StatusFailed, models.StatusSkipped).Find(&reports).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询无效报告失败: " + err.Error()})
 		return
+	}
+
+	if len(reports) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "暂无需要清除的无效报告记录",
+			"deleted": 0,
+		})
+		return
+	}
+
+	// 收集报告 ID 列表
+	var reportIDs []uint
+	for _, r := range reports {
+		reportIDs = append(reportIDs, r.ID)
+	}
+
+	// 在数据库事务中彻底清除关联日志、Findings 和报告本身
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		// 删除执行日志
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.TaskExecutionLog{}).Error; err != nil {
+			return err
+		}
+		// 删除通用的 AnalysisFinding
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.AnalysisFinding{}).Error; err != nil {
+			return err
+		}
+		// 删除各专项 Findings (级联清理)
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.CoredumpFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.FloatFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.ThreadFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.CjsonFinding{}).Error; err != nil {
+			return err
+		}
+		// 最后删除 TaskReport 自身记录
+		if err := tx.Where("id IN ?", reportIDs).Delete(&models.TaskReport{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清除失败: " + err.Error()})
+		return
+	}
+
+	// 清理物理磁盘上的所有报告和临时文件
+	for _, report := range reports {
+		services.CleanReportFiles(report.TaskType.Name, report.ID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "清除成功",
-		"deleted": result.RowsAffected,
+		"deleted": len(reports),
 	})
 }
 

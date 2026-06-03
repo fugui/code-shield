@@ -156,7 +156,7 @@ function ScanManagement() {
   };
 
   const handleClearInvalidReports = async () => {
-    if (!window.confirm('确认清除所有不是"完成"状态的无效报告记录吗？进行中的任务可能会受影响。')) return;
+    if (!window.confirm('确认清除所有"排队中"和"失败"的无效任务及报告吗？进行中的任务将不受影响。')) return;
     try {
       const res = await fetch('/api/tasks/invalid-reports', { method: 'DELETE' });
       if (res.ok) {
