@@ -327,7 +327,7 @@ function ReportsOverview() {
               <th style={{ width: '100px' }}>负责人</th>
               <th style={{ width: '160px' }}>执行时间</th>
               <th>问题统计与分析摘要</th>
-              <th style={{ width: '160px' }}>评分 / 报告</th>
+              <th style={{ width: '160px' }}>风险 / 报告</th>
             </tr>
           </thead>
           <tbody>

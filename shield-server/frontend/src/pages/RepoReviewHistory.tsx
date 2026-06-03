@@ -165,7 +165,7 @@ function RepoReviewHistory() {
               <th>执行时间</th>
               <th>Base Commit</th>
               <th>Head Commit</th>
-              <th>评分</th>
+              <th>风险</th>
               <th>AI 摘要</th>
               <th>操作</th>
             </tr>

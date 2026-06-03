@@ -318,7 +318,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: '1px solid #47556922', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
                                   <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? '#ef4444' : report.score >= 10 ? '#f59e0b' : '#22c55e' }}>{report.score ?? 0}</span>
-                                  <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>综合评分</span>
+                                  <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>风险评分</span>
                                 </div>
                               </div>
                             )}
