@@ -435,10 +435,10 @@ func GetTaskOverview(c *gin.Context) {
 	})
 }
 
-// ClearInvalidReports deletes all report records that are not in the "success" state
+// ClearInvalidReports deletes all report records that are not in the "success" or "skipped" state
 func ClearInvalidReports(c *gin.Context) {
 	var reports []models.TaskReport
-	err := models.DB.Preload("TaskType").Where("status IN (?, ?, ?, ?)", models.StatusPending, models.StatusQueued, models.StatusFailed, models.StatusSkipped).Find(&reports).Error
+	err := models.DB.Preload("TaskType").Where("status IN (?, ?, ?)", models.StatusPending, models.StatusQueued, models.StatusFailed).Find(&reports).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询无效报告失败: " + err.Error()})
 		return
@@ -583,17 +583,17 @@ func TriggerMissingTasks(c *gin.Context) {
 		return
 	}
 
-	// 2. Query repo IDs that successfully ran a task of this task type in the last N days
+	// 2. Query repo IDs that have scan execution logs of this task type in the last N days
 	var scannedRepoIDs []uint
 	timeLimit := time.Now().AddDate(0, 0, -req.Days)
 	if err := models.DB.Model(&models.TaskExecutionLog{}).
-		Where("task_type_id = ? AND status = ? AND created_at >= ?", req.TaskTypeID, models.StatusSuccess, timeLimit).
+		Where("task_type_id = ? AND created_at >= ?", req.TaskTypeID, timeLimit).
 		Pluck("repo_id", &scannedRepoIDs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询执行日志失败: " + err.Error()})
 		return
 	}
 
-	// 3. Filter repos to only those that have not been successfully scanned
+	// 3. Filter repos to only those that have not been checked in the last N days
 	scannedMap := make(map[uint]bool)
 	for _, rid := range scannedRepoIDs {
 		scannedMap[rid] = true
