@@ -313,7 +313,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                 if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试有效性分析';
                 if (relativePath.startsWith('/analysis/coredump')) return 'Coredump风险攻关';
                 if (relativePath.startsWith('/analysis/float')) return 'Python浮点数专项';
-                if (relativePath.startsWith('/analysis/thread')) return '显示创建线程专项';
+                if (relativePath.startsWith('/analysis/thread')) return '显式创建线程专项';
                 if (relativePath.startsWith('/analysis/cjson')) return 'cJSON 内存泄露专项';
                 if (relativePath.startsWith('/admin/scan')) return '扫描任务管理';
                 if (relativePath.startsWith('/admin/task-types')) return '任务类型管理';
