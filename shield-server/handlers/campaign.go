@@ -441,7 +441,7 @@ type CampaignDeptSummary struct {
 // GetCampaignDepartments aggregates metrics grouped by department
 func GetCampaignDepartments[T any]() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		sortBy := c.DefaultQuery("sort_by", "fix_rate")
+		sortBy := c.DefaultQuery("sort_by", "open_issues")
 		sortOrder := c.DefaultQuery("sort_order", "desc")
 
 		var departments []string

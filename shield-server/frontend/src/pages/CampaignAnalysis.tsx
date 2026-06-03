@@ -475,7 +475,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
             代码仓看板
           </button>
           <button 
-            onClick={() => { setActiveTab('depts'); setSortField('fix_rate'); }}
+            onClick={() => { setActiveTab('depts'); setSortField('open_issues'); setSortOrder('desc'); }}
             style={{ padding: '0.75rem 0.25rem', border: 'none', background: 'transparent', borderBottom: activeTab === 'depts' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'depts' ? 'var(--primary-color)' : '#64748b', fontWeight: activeTab === 'depts' ? 600 : 500, cursor: 'pointer', fontSize: '0.9rem' }}
           >
             部门排行榜
