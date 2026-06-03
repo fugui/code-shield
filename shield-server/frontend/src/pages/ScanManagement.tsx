@@ -12,7 +12,7 @@ function ScanManagement() {
   const { showToast } = useToast();
   const { tab } = useParams<{ tab: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<ScanTab>((tab as ScanTab) || 'trigger');
+  const [activeTab, setActiveTab] = useState<ScanTab>((tab as ScanTab) || 'logs');
 
   useEffect(() => {
     if (tab && tab !== activeTab) {
@@ -361,9 +361,9 @@ function ScanManagement() {
   return (
     <div>
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+        <button onClick={() => handleTabChange('logs')} style={tabStyle('logs')}>执行日志</button>
         <button onClick={() => handleTabChange('trigger')} style={tabStyle('trigger')}>手动触发</button>
         <button onClick={() => handleTabChange('schedules')} style={tabStyle('schedules')}>批量触发</button>
-        <button onClick={() => handleTabChange('logs')} style={tabStyle('logs')}>执行日志</button>
       </div>
 
       {activeTab === 'trigger' && (
