@@ -124,6 +124,23 @@ func EnqueueResumeTask(report models.TaskReport) error {
 
 func worker(id int) {
 	for task := range TaskQueue {
+		// 校验任务是否已被清理/取消（例如被 ClearInvalidReports 删除）
+		if task.LogID > 0 {
+			var count int64
+			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Count(&count)
+			if count == 0 {
+				log.Printf("[Worker %d] TaskExecutionLog %d not found (likely cleared/cancelled). Skipping task.\n", id, task.LogID)
+				continue
+			}
+		} else {
+			var count int64
+			models.DB.Model(&models.TaskReport{}).Where("id = ?", task.ReportID).Count(&count)
+			if count == 0 {
+				log.Printf("[Worker %d] TaskReport %d not found (likely cleared/cancelled). Skipping task.\n", id, task.ReportID)
+				continue
+			}
+		}
+
 		if task.IsResume {
 			log.Printf("[Worker %d] Picked up RESUME task for ReportID %d (Repo %d)\n", id, task.ReportID, task.RepoID)
 		} else {
