@@ -583,13 +583,13 @@ func TriggerMissingTasks(c *gin.Context) {
 		return
 	}
 
-	// 2. Query repo IDs that have scan execution logs of this task type in the last N days
+	// 2. Query repo IDs that have scan reports of this task type in the last N days
 	var scannedRepoIDs []uint
 	timeLimit := time.Now().AddDate(0, 0, -req.Days)
-	if err := models.DB.Model(&models.TaskExecutionLog{}).
+	if err := models.DB.Model(&models.TaskReport{}).
 		Where("task_type_id = ? AND created_at >= ?", req.TaskTypeID, timeLimit).
 		Pluck("repo_id", &scannedRepoIDs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询执行日志失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务报告失败: " + err.Error()})
 		return
 	}
 
