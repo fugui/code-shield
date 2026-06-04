@@ -53,6 +53,7 @@ type Repository struct {
 	RelatedMembers datatypes.JSON `json:"related_members"` // Optional related members (receives CC emails)
 	IsActive       bool           `gorm:"default:true" json:"is_active"`
 	LastCommitHash string         `json:"last_commit_hash"`
+	ReportCount    int64          `gorm:"-" json:"report_count"`
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
