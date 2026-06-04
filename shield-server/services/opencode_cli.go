@@ -52,7 +52,7 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	// ── 2. 构建用户消息（不含系统提示词） ──
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%s（最终分析结果输出到 %s），", req.PromptMsg, req.OutputPath))
-	if len(req.InputFiles) > 1 && strings.HasSuffix(req.OutputPath, ".json") {
+	if len(req.InputFiles) > 1 && strings.HasSuffix(req.OutputPath, ".json.raw") {
 		sb.WriteString("任务采用分片执行，本次只")
 	}
 	sb.WriteString(fmt.Sprintf("基于以下文件内容进行分析：\n%s\n", strings.Join(req.InputFiles, "\n")))

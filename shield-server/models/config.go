@@ -114,10 +114,7 @@ func LoadConfig(filename string) error {
 			AppConfig.Server.ExternalURL = "http://127.0.0.1:8080"
 		}
 	}
-	if AppConfig.Server.WorkerCount <= 0 {
-		AppConfig.Server.WorkerCount = 5
-	}
-	// 校验并补充 Models 默认并发数，并动态拓展全局并发数限制
+	// 校验并补充 Models 默认并发数，并计算所有模型并发之和
 	sumConcurrent := 0
 	for i := range AppConfig.AI.Models {
 		if AppConfig.AI.Models[i].Concurrent <= 0 {
@@ -125,10 +122,25 @@ func LoadConfig(filename string) error {
 		}
 		sumConcurrent += AppConfig.AI.Models[i].Concurrent
 	}
-	if sumConcurrent > 0 {
-		// 动态拓展全局任务并发数为所有模型并发之和，
-		// 这样既能保证吃满所有多 LLM 服务器的物理算力，又可防止过多大任务同时拉起在底层交替抢槽排队导致磨洋工
-		AppConfig.Server.WorkerCount = sumConcurrent
+
+	// 确定全局任务并发数（WorkerCount）
+	// 如果用户在 config.yaml 中配置了 worker_count 且其值 > 0，则直接使用它；
+	// 否则，根据大模型节点的并发限制动态计算折中任务并发，防止多任务交替争夺槽位引起效率损耗。
+	if AppConfig.Server.WorkerCount <= 0 {
+		if sumConcurrent > 0 {
+			// 因为 chunked 任务每个会并发 4 个请求，若直接将 WorkerCount 设为 sumConcurrent 会引发交替抢槽导致的“磨洋工”。
+			// 采用 (sumConcurrent + 1) / 2 作为折中，既能给单个分片任务留有合理的子并发，又不会造成严重的槽位争夺。
+			calculated := (sumConcurrent + 1) / 2
+			if calculated < 1 {
+				calculated = 1
+			}
+			AppConfig.Server.WorkerCount = calculated
+			log.Printf("[Config] Dynamic worker_count set to %d (calculated from sum of LLM concurrencies %d to prevent chunk interleaving)\n", calculated, sumConcurrent)
+		} else {
+			AppConfig.Server.WorkerCount = 5 // 默认兜底值
+		}
+	} else {
+		log.Printf("[Config] Using explicitly configured worker_count: %d\n", AppConfig.Server.WorkerCount)
 	}
 	if AppConfig.Server.ReadTimeout == 0 {
 		AppConfig.Server.ReadTimeout = 15 * time.Second
