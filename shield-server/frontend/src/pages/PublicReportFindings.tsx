@@ -83,22 +83,12 @@ const getGitLabSourceUrl = (
   // https://repo-server/LT-XY/SW/SWI/XY/testbench-sim-ra/files?ref=master&filePath=api%2Fsrc%2Fra_api.c&isFile=true#L34
   let fileUrl = `${webUrl}/files?ref=${encodedBranch}&filePath=${encodedFilePath}&isFile=true`;
 
-  // Line number anchor
+  // Line number anchor (only single line number is supported, e.g., #L64)
   if (lineNumber) {
     const cleanLine = lineNumber.replace(/\s+/g, '');
     const firstLineMatch = cleanLine.match(/^([0-9]+)/);
     if (firstLineMatch) {
-      const startLine = firstLineMatch[1];
-      if (cleanLine.includes('-')) {
-        const endLineMatch = cleanLine.match(/-([0-9]+)/);
-        if (endLineMatch) {
-          fileUrl += `#L${startLine}-${endLineMatch[1]}`;
-        } else {
-          fileUrl += `#L${startLine}`;
-        }
-      } else {
-        fileUrl += `#L${startLine}`;
-      }
+      fileUrl += `#L${firstLineMatch[1]}`;
     }
   }
 
