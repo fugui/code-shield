@@ -22,7 +22,7 @@ function ReportsOverview() {
   const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
 
-  const [pageSize] = useState<number>(15);
+  const [pageSize, setPageSize] = useState<number>(25);
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
 
@@ -533,7 +533,7 @@ function ReportsOverview() {
           <span style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>
             共 {totalItems} 条记录，当前第 {page} / {totalPages} 页
           </span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button 
               className="btn" 
               disabled={page === 1} 
@@ -562,6 +562,23 @@ function ReportsOverview() {
             >
               下一页
             </button>
+            <select
+              value={pageSize}
+              onChange={e => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              style={{
+                padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)',
+                fontSize: '0.825rem', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', marginLeft: '0.5rem',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="15">15 条/页</option>
+              <option value="25">25 条/页</option>
+              <option value="50">50 条/页</option>
+              <option value="100">100 条/页</option>
+            </select>
           </div>
         </div>
       )}
