@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
 import ReportSidebar from '../components/ReportSidebar';
 import ExecutionLogs from './ExecutionLogs';
+import { sshToHttps } from '../utils/urlUtils';
 
 type ScanTab = 'trigger' | 'schedules' | 'logs';
 
@@ -482,7 +483,22 @@ function ScanManagement() {
                           style={{ cursor: 'pointer' }}
                         />
                       </td>
-                      <td style={{ fontWeight: 500 }}>{r.name}</td>
+                      <td style={{ fontWeight: 500 }}>
+                        {r.url ? (
+                          <a
+                            href={sshToHttps(r.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
+                            onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                            onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                          >
+                            {r.name}
+                          </a>
+                        ) : (
+                          r.name
+                        )}
+                      </td>
                       <td>{r.team?.name || teams.find(t => t.id === r.team_id)?.name || '-'}</td>
                       <td>{r.owner?.name || r.owner_id || '-'}</td>
                       <td style={{ color: '#64748b' }}>{r.service_group || '-'}</td>

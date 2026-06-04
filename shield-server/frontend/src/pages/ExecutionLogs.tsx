@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useToast } from '../components/Toast';
 import ReportSidebar from '../components/ReportSidebar';
+import { sshToHttps } from '../utils/urlUtils';
 
 interface ExecutionLogsProps {
   embedded?: boolean;
@@ -250,7 +251,23 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                       {hasReport ? (expanded ? '▼' : '▶') : ''}
                     </td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>#{log.id}</td>
-                    <td style={{ padding: '1rem', fontWeight: 500 }}>{log.repo_name || `Repo ${log.repo_id}`}</td>
+                    <td style={{ padding: '1rem', fontWeight: 500 }}>
+                      {log.repo_url ? (
+                        <a
+                          href={sshToHttps(log.repo_url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
+                          onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                          onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {log.repo_name || `Repo ${log.repo_id}`}
+                        </a>
+                      ) : (
+                        log.repo_name || `Repo ${log.repo_id}`
+                      )}
+                    </td>
                     <td style={{ padding: '1rem' }}>
                       <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
                         {log.task_type_name || '-'}
