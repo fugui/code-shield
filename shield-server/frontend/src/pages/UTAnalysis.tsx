@@ -196,7 +196,7 @@ function UTAnalysis() {
     })
       .then(res => {
         if (res.ok) {
-          showToast('成功触发测试有效性扫描，后台执行中...', 'success');
+          showToast('成功触发测试用例有效性扫描，后台执行中...', 'success');
         } else {
           showToast('启动扫描任务失败，请检查是否已有在排队执行中的相同任务', 'error');
         }
@@ -452,7 +452,7 @@ function UTAnalysis() {
       {/* 1. TOP HEADER & KPI CARDS */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>测试有效性看板</h2>
+          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>测试用例有效性看板</h2>
           <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem', color: '#64748b' }}>
             展示自动化“测试用例有效性评估”的审计指标，衡量测试断言有效性、空测试和用例修复进展。
           </p>

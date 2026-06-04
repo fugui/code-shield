@@ -386,7 +386,7 @@ export default function AuditingWorkspace({
                 {/* UT Effectiveness & Quality */}
                 {workspaceType === 'ut' && (
                   <>
-                    <optgroup label="✨ 测试有效性审计">
+                    <optgroup label="✨ 测试用例有效性审计">
                       <option value="断言有效性-空测试">断言有效性 - 空测试</option>
                       <option value="断言有效性-永真断言">断言有效性 - 永真断言</option>
                       <option value="断言有效性-无效捕获">断言有效性 - 无效捕获</option>

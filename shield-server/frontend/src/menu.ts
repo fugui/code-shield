@@ -21,7 +21,7 @@ export const menuGroups: MenuGroup[] = [
   {
     title: '专项分析',
     items: [
-      { path: '/analysis/ut', label: '测试有效性', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+      { path: '/analysis/ut', label: '测试用例有效性', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
       { path: '/analysis/coredump', label: 'Coredump风险攻关', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
       { path: '/analysis/float', label: 'Python浮点数专项', icon: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z' },
       { path: '/analysis/thread', label: '显式创建线程专项', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
@@ -42,7 +42,7 @@ export const menuGroups: MenuGroup[] = [
 
 export const menuItems: SubMenuItem[] = [
   { path: '/reports', label: '报告概览', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
-  { path: '/analysis/ut', label: '测试有效性', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { path: '/analysis/ut', label: '测试用例有效性', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
   { path: '/analysis/coredump', label: 'Coredump风险攻关', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
   { path: '/analysis/float', label: 'Python浮点数专项', icon: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z' },
   { path: '/analysis/thread', label: '显式创建线程专项', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
