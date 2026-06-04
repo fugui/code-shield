@@ -18,21 +18,6 @@ function Login() {
 
   // Fetch auth config to determine available login methods
   useEffect(() => {
-    fetch('/api/auth/config')
-      .then(res => res.json())
-      .then((data: AuthConfig) => {
-        setAuthConfig(data);
-        // If only password login is available, show the form directly
-        if (!data.oauth2_enabled && data.password_login_enabled) {
-          setShowPasswordForm(true);
-        }
-      })
-      .catch(() => {
-        // Fallback: assume password login only (backward compat)
-        setAuthConfig({ oauth2_enabled: false, password_login_enabled: true });
-        setShowPasswordForm(true);
-      });
-
     // Check for SSO error in URL params
     const params = new URLSearchParams(window.location.search);
     const ssoError = params.get('sso_error');
@@ -41,6 +26,23 @@ function Login() {
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname);
     }
+
+    fetch('/api/auth/config')
+      .then(res => res.json())
+      .then((data: AuthConfig) => {
+        setAuthConfig(data);
+        // If only SSO is enabled and there is no error, redirect automatically
+        if (data.oauth2_enabled && !data.password_login_enabled && !ssoError) {
+          window.location.href = apiUrl('/api/oauth2/authorize');
+        } else if (!data.oauth2_enabled && data.password_login_enabled) {
+          setShowPasswordForm(true);
+        }
+      })
+      .catch(() => {
+        // Fallback: assume password login only (backward compat)
+        setAuthConfig({ oauth2_enabled: false, password_login_enabled: true });
+        setShowPasswordForm(true);
+      });
   }, []);
 
   const handleSSOLogin = () => {
