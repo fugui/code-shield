@@ -215,16 +215,17 @@ function ReportsOverview() {
     <div>
       {/* Search and Filters */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem', background: 'var(--card-bg)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', alignItems: 'center' }}>
-        {/* Search */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '220px', flex: '1 1 auto' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>综合检索 (名称 / 摘要)</label>
-          <input
-            type="text"
-            placeholder="搜索代码仓、AI摘要..."
-            value={filterSearch}
-            onChange={e => handleFilterChange('search', e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)' }}
-          />
+        {/* Team */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '150px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>归属部门</label>
+          <select
+            value={filterTeam}
+            onChange={e => handleFilterChange('team', e.target.value)}
+            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer' }}
+          >
+            <option value="">全部部门</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
         </div>
 
         {/* Task Type */}
@@ -239,21 +240,6 @@ function ReportsOverview() {
             {taskTypes.map(t => <option key={t.id} value={t.id}>{t.display_name}</option>)}
           </select>
         </div>
-
-        {/* Team */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '150px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>归属部门</label>
-          <select
-            value={filterTeam}
-            onChange={e => handleFilterChange('team', e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer' }}
-          >
-            <option value="">全部部门</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        </div>
-
-
 
         {/* Service Group */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '150px' }}>
@@ -275,6 +261,18 @@ function ReportsOverview() {
             placeholder="按责任人过滤..."
             value={filterOwner}
             onChange={e => handleFilterChange('owner', e.target.value)}
+            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)' }}
+          />
+        </div>
+
+        {/* Search */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '220px', flex: '1 1 auto' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>综合检索 (名称 / 摘要)</label>
+          <input
+            type="text"
+            placeholder="搜索代码仓、AI摘要..."
+            value={filterSearch}
+            onChange={e => handleFilterChange('search', e.target.value)}
             style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)' }}
           />
         </div>
