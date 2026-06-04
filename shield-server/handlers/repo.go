@@ -56,6 +56,32 @@ func GetRepos(c *gin.Context) {
 	offset := (page - 1) * pageSize
 	query.Preload("Team").Preload("Owner").Offset(offset).Limit(pageSize).Find(&repos)
 
+	if len(repos) > 0 {
+		var repoIDs []uint
+		for _, r := range repos {
+			repoIDs = append(repoIDs, r.ID)
+		}
+		type ReportCount struct {
+			RepoID uint
+			Count  int64
+		}
+		var counts []ReportCount
+		models.DB.Model(&models.TaskReport{}).
+			Select("repo_id, COUNT(*) as count").
+			Where("repo_id IN ?", repoIDs).
+			Group("repo_id").
+			Scan(&counts)
+
+		countMap := make(map[uint]int64)
+		for _, c := range counts {
+			countMap[c.RepoID] = c.Count
+		}
+
+		for i := range repos {
+			repos[i].ReportCount = countMap[repos[i].ID]
+		}
+	}
+
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 
 	c.JSON(http.StatusOK, gin.H{

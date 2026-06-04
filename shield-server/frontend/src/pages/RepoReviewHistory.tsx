@@ -9,6 +9,7 @@ function RepoReviewHistory() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnSearch = (location.state as any)?.returnSearch || '';
+  const from = (location.state as any)?.from;
   const { showToast } = useToast();
 
   const [reviews, setReviews] = useState<any[]>([]);
@@ -130,7 +131,13 @@ function RepoReviewHistory() {
       {/* Header with back button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <button
-          onClick={() => navigate(appNavigatePath(`/reports${returnSearch ? '?' + returnSearch : ''}`))}
+          onClick={() => {
+            if (from === 'scan-management') {
+              navigate(appNavigatePath('/admin/scan/trigger'));
+            } else {
+              navigate(appNavigatePath(`/reports${returnSearch ? '?' + returnSearch : ''}`));
+            }
+          }}
           style={{
             background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px',
             cursor: 'pointer', padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -142,7 +149,7 @@ function RepoReviewHistory() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
-          返回概览
+          {from === 'scan-management' ? '返回手动触发' : '返回概览'}
         </button>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>

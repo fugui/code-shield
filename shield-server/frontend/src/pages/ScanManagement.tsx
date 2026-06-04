@@ -455,13 +455,14 @@ function ScanManagement() {
                   <th>归属部门</th>
                   <th>负责人</th>
                   <th>服务组</th>
+                  <th style={{ width: '120px' }}>历史报告</th>
                   <th style={{ width: '150px' }}>状态</th>
                   <th style={{ width: '180px', textAlign: 'right' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedRepos.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓数据</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓数据</td></tr>
                 ) : paginatedRepos.map(r => {
                   const statusInfo = getRepoStatus(r.id);
                   const canCancel = statusInfo.isRunning || statusInfo.isPending;
@@ -485,6 +486,35 @@ function ScanManagement() {
                       <td>{r.team?.name || teams.find(t => t.id === r.team_id)?.name || '-'}</td>
                       <td>{r.owner?.name || r.owner_id || '-'}</td>
                       <td style={{ color: '#64748b' }}>{r.service_group || '-'}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ fontWeight: 600, color: r.report_count > 0 ? 'var(--primary-color)' : '#64748b' }}>
+                            {r.report_count || 0} 个
+                          </span>
+                          <button
+                            onClick={() => navigate(appNavigatePath(`/reports/repo/${r.id}`), { state: { from: 'scan-management' } })}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--primary-color)',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              padding: '2px',
+                              borderRadius: '4px',
+                              transition: 'background-color 0.2s',
+                            }}
+                            title="查询历史报告列表"
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="11" cy="11" r="8"></circle>
+                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           {statusInfo.status !== 'none' ? (
