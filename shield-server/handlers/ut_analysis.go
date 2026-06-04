@@ -96,7 +96,7 @@ func GetUTRepos(c *gin.Context) {
 	if taskType.ID > 0 {
 		models.DB.Model(&models.TaskReport{}).
 			Select("repo_id, max(created_at) as created_at").
-			Where("task_type_id = ? AND status = ?", taskType.ID, "success").
+			Where("task_type_id = ? AND status IN ?", taskType.ID, []string{"success", "skipped"}).
 			Group("repo_id").
 			Scan(&scanTimes)
 	}
