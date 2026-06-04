@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { sshToHttps } from '../utils/urlUtils';
 
 interface Finding {
   id: number;
@@ -72,36 +73,13 @@ const getGitLabSourceUrl = (
 ): string => {
   if (!repoUrl) return '';
 
-  let webUrl = repoUrl.trim();
-
-  // 1. Remove .git suffix if present
-  if (webUrl.endsWith('.git')) {
-    webUrl = webUrl.slice(0, -4);
-  }
-
-  // 2. Convert SSH format to HTTPS
-  if (webUrl.startsWith('git@')) {
-    // Format: git@domain:path -> https://domain/path
-    const match = webUrl.match(/^git@([^:]+):(.*)$/);
-    if (match) {
-      const domain = match[1];
-      const path = match[2];
-      webUrl = `https://${domain}/${path}`;
-    }
-  } else if (webUrl.startsWith('ssh://git@')) {
-    // Format: ssh://git@domain:port/path or ssh://git@domain/path
-    let rest = webUrl.slice(10);
-    // Remove port if present, e.g. domain:22/path -> domain/path
-    rest = rest.replace(/:[0-9]+\//, '/');
-    webUrl = `https://${rest}`;
-  }
-
+  const webUrl = sshToHttps(repoUrl);
   const targetBranch = branch ? branch.trim() : 'main';
 
-  // 3. Construct GitLab source code page URL
+  // Construct GitLab source code page URL
   let fileUrl = `${webUrl}/-/blob/${targetBranch}/${filePath}`;
 
-  // 4. Line number anchor
+  // Line number anchor
   if (lineNumber) {
     const cleanLine = lineNumber.replace(/\s+/g, '');
     const firstLineMatch = cleanLine.match(/^([0-9]+)/);
