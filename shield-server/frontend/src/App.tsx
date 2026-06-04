@@ -310,7 +310,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                   : location.pathname;
                 if (relativePath.startsWith('/reports/repo') || relativePath.startsWith('/tasks/repo')) return '历史报告';
                 if (relativePath.startsWith('/reports') || relativePath.startsWith('/tasks')) return '报告概览';
-                if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试有效性分析';
+                if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试用例有效性分析';
                 if (relativePath.startsWith('/analysis/coredump')) return 'Coredump风险攻关';
                 if (relativePath.startsWith('/analysis/float')) return 'Python浮点数专项';
                 if (relativePath.startsWith('/analysis/thread')) return '显式创建线程专项';
