@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { apiUrl } from '../config';
 import { useToast } from '../components/Toast';
 import AuditingWorkspace from '../components/AuditingWorkspace';
+import { sshToHttps } from '../utils/urlUtils';
 
 // Inline Icons as SVGs for portable premium look
 const PlayIcon = () => (
@@ -586,7 +587,22 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                   ) : (
                     paginatedRepos.map(r => (
                       <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td style={{ ...styles.tableCell, fontWeight: 600 }}>{r.repo_name}</td>
+                        <td style={{ ...styles.tableCell, fontWeight: 600 }}>
+                          {r.repo_url ? (
+                            <a
+                              href={sshToHttps(r.repo_url)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
+                              onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                              onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                            >
+                              {r.repo_name}
+                            </a>
+                          ) : (
+                            r.repo_name
+                          )}
+                        </td>
                         <td style={styles.tableCell}>{r.department || '-'}</td>
                         <td style={styles.tableCell}>{r.owner_name}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 500 }}>{r.total_issues}</td>

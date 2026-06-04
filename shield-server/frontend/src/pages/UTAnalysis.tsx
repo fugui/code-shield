@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { apiUrl } from '../config';
 import AuditingWorkspace from '../components/AuditingWorkspace';
+import { sshToHttps } from '../utils/urlUtils';
 
 // Icons implemented as inline SVGs for maximum control and lightweight portability
 const PlayIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>;
@@ -627,7 +628,22 @@ function UTAnalysis() {
                   ) : (
                     paginatedRepos.map(r => (
                       <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td style={{ ...styles.tableCell, fontWeight: 600 }}>{r.repo_name}</td>
+                        <td style={{ ...styles.tableCell, fontWeight: 600 }}>
+                          {r.repo_url ? (
+                            <a
+                              href={sshToHttps(r.repo_url)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
+                              onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                              onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                            >
+                              {r.repo_name}
+                            </a>
+                          ) : (
+                            r.repo_name
+                          )}
+                        </td>
                         <td style={styles.tableCell}>{r.department || '-'}</td>
                         <td style={styles.tableCell}>{r.owner_name}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 500 }}>{r.total_cases > 0 ? r.total_cases : <span style={{ color: '#94a3b8' }}>未扫描</span>}</td>

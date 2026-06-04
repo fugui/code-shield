@@ -106,6 +106,7 @@ type ExecutionLogResponse struct {
 	ScheduleName string                `json:"schedule_name"`
 	RepoID       uint                  `json:"repo_id"`
 	RepoName     string                `json:"repo_name"`
+	RepoURL      string                `json:"repo_url"`
 	TaskTypeID   uint                  `json:"task_type_id"`
 	TaskTypeName string                `json:"task_type_name"`
 	EngineMode   string                `json:"engine_mode"`
@@ -192,6 +193,7 @@ END ASC
 			ScheduleID:   log.ScheduleID,
 			RepoID:       log.RepoID,
 			RepoName:     log.Repo.Name,
+			RepoURL:      log.Repo.URL,
 			TaskTypeID:   log.TaskTypeID,
 			TaskTypeName: log.TaskType.DisplayName,
 			EngineMode:   log.TaskType.EngineMode,
