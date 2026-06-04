@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { apiUrl } from '../config';
 import { useToast } from './Toast';
 import MemberSearchSelect from './MemberSearchSelect';
+import { sshToHttps } from '../utils/urlUtils';
+
+export interface WorkspaceRepoDetails {
+  id: number;
+  name: string;
+  url: string;
+  branch: string;
+}
 
 export interface Finding {
   ID?: number;
@@ -28,7 +36,35 @@ export interface Finding {
     name: string;
   };
   status_log?: string;
+  repo?: WorkspaceRepoDetails;
 }
+
+const getRepoSourceUrl = (
+  repoUrl: string | undefined,
+  branch: string | undefined,
+  filePath: string,
+  lineNumber?: string | number
+): string => {
+  if (!repoUrl) return '';
+
+  const webUrl = sshToHttps(repoUrl);
+  const targetBranch = branch ? branch.trim() : 'main';
+
+  const encodedFilePath = encodeURIComponent(filePath);
+  const encodedBranch = encodeURIComponent(targetBranch);
+
+  let fileUrl = `${webUrl}/files?ref=${encodedBranch}&filePath=${encodedFilePath}&isFile=true`;
+
+  if (lineNumber) {
+    const cleanLine = lineNumber.toString().replace(/\s+/g, '');
+    const firstLineMatch = cleanLine.match(/^([0-9]+)/);
+    if (firstLineMatch) {
+      fileUrl += `#L${firstLineMatch[1]}`;
+    }
+  }
+
+  return fileUrl;
+};
 
 interface AuditingWorkspaceProps {
   isOpen: boolean;
@@ -270,6 +306,27 @@ export default function AuditingWorkspace({
     }}>
       <style>{`
         @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .workspace-location-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.8rem;
+          color: #475569;
+          font-family: monospace;
+          background: var(--bg-color);
+          padding: 0.5rem 0.75rem;
+          border-radius: 4px;
+          border: 1px solid var(--border-color);
+          text-decoration: none;
+          transition: all 0.2s ease-in-out;
+          cursor: pointer;
+        }
+        .workspace-location-link:hover {
+          background: rgba(37, 99, 235, 0.05);
+          border-color: rgba(37, 99, 235, 0.25);
+          color: #2563eb;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.06);
+        }
       `}</style>
       
       {/* Workspace Header */}
@@ -521,9 +578,31 @@ export default function AuditingWorkspace({
                   ❌ {editingFinding.title || editingFinding.test_case_name || '未命名缺陷'}
                 </h3>
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
-                    📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
-                  </div>
+                  {editingFinding.repo?.url ? (
+                    <a
+                      href={getRepoSourceUrl(
+                        editingFinding.repo.url,
+                        editingFinding.repo.branch,
+                        editingFinding.file_path,
+                        editingFinding.line_number
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="workspace-location-link"
+                      title="点击跳转到代码仓查看源码"
+                    >
+                      📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: '4px', opacity: 0.8 }}>
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                      </svg>
+                    </a>
+                  ) : (
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-block' }}>
+                      📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
+                    </div>
+                  )}
                   {editingFinding.category && (
                     <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
                       🔖 <strong>归属类别:</strong> {editingFinding.category}
