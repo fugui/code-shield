@@ -279,7 +279,7 @@ func GetCampaignFindings[T any]() gin.HandlerFunc {
 			pageSize = 10000
 		}
 
-		query := models.DB.Model(new(T)).Preload("Assignee")
+		query := models.DB.Model(new(T)).Preload("Assignee").Preload("Repo")
 
 		if repoIDStr != "" {
 			repoID, _ := strconv.Atoi(repoIDStr)
