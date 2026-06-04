@@ -14,7 +14,7 @@ function UserManagement() {
 
   // Pagination states
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(25);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
@@ -349,7 +349,7 @@ function UserManagement() {
               }}
             >
               <option value="15">15 条/页</option>
-              <option value="30">30 条/页</option>
+              <option value="25">25 条/页</option>
               <option value="50">50 条/页</option>
               <option value="100">100 条/页</option>
             </select>
