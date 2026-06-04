@@ -4,6 +4,7 @@ import (
 	"code-shield/models"
 	"net/http"
 	"net/mail"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -37,12 +38,48 @@ func AdminMiddleware() gin.HandlerFunc {
 }
 
 func GetUsers(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 15
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	query := models.DB.Model(&models.User{})
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count users"})
+		return
+	}
+
 	var users []models.User
-	if err := models.DB.Order("created_at desc").Find(&users).Error; err != nil {
+	offset := (page - 1) * pageSize
+	if err := query.Order("created_at desc").Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
 		return
 	}
-	c.JSON(http.StatusOK, users)
+
+	// 隐去密码
+	for i := range users {
+		users[i].Password = ""
+	}
+
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":      users,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"totalPages": totalPages,
+	})
 }
 
 func CreateUser(c *gin.Context) {

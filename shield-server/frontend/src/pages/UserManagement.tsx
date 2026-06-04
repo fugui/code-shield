@@ -12,22 +12,53 @@ function UserManagement() {
   const [editUserForm, setEditUserForm] = useState({ name: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false, password: '' });
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
 
-  const fetchUsers = async () => {
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+
+  // SSO and login type visibility config
+  const [passwordLoginEnabled, setPasswordLoginEnabled] = useState(true);
+
+  const fetchUsers = async (currentPage = page, currentPageSize = pageSize) => {
     try {
-      const res = await fetch('/api/users', {
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        pageSize: currentPageSize.toString(),
+      });
+      const res = await fetch(`/api/users?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` }
       });
       if (res.ok) {
-        setUsers(await res.json());
+        const data = await res.json();
+        setUsers(data.items || []);
+        setTotalItems(data.total || 0);
+        setTotalPages(data.totalPages || 0);
       } else if (res.status === 403) {
         setUsers([]);
+        setTotalItems(0);
+        setTotalPages(0);
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
     }
   };
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => {
+    fetchUsers(page, pageSize);
+  }, [page, pageSize]);
+
+  useEffect(() => {
+    fetch('/api/auth/config')
+      .then(res => res.json())
+      .then((data: any) => {
+        if (data && typeof data.password_login_enabled === 'boolean') {
+          setPasswordLoginEnabled(data.password_login_enabled);
+        }
+      })
+      .catch(err => console.error('Failed to fetch auth config:', err));
+  }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +75,8 @@ function UserManagement() {
       if (res.ok) {
         setNewUserForm({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false });
         setIsUserModalOpen(false);
-        fetchUsers();
+        fetchUsers(1, pageSize);
+        setPage(1);
       } else {
         const error = await res.json();
         showToast('新建用户失败: ' + error.error, 'error');
@@ -90,7 +122,7 @@ function UserManagement() {
       if (res.ok) {
         setIsEditUserModalOpen(false);
         setEditingUser(null);
-        fetchUsers();
+        fetchUsers(page, pageSize);
         showToast('用户信息已更新', 'success');
       } else {
         const d = await res.json();
@@ -110,7 +142,7 @@ function UserManagement() {
         },
         body: JSON.stringify({ is_active: isActive })
       });
-      if (res.ok) fetchUsers();
+      if (res.ok) fetchUsers(page, pageSize);
       else {
         const d = await res.json();
         showToast('更新失败: ' + d.error, 'error');
@@ -125,7 +157,14 @@ function UserManagement() {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` }
       });
-      if (res.ok) fetchUsers();
+      if (res.ok) {
+        const nextUsersLength = users.length - 1;
+        if (nextUsersLength === 0 && page > 1) {
+          setPage(prev => prev - 1);
+        } else {
+          fetchUsers(page, pageSize);
+        }
+      }
       else {
         const d = await res.json();
         showToast('删除失败: ' + d.error, 'error');
@@ -137,7 +176,9 @@ function UserManagement() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div />
-        <button className="btn" onClick={() => setIsUserModalOpen(true)}>+ 分配新系统账号</button>
+        {passwordLoginEnabled && (
+          <button className="btn" onClick={() => setIsUserModalOpen(true)}>+ 分配新系统账号</button>
+        )}
       </div>
 
       <div className="card" style={{ padding: 0 }}>
@@ -226,6 +267,95 @@ function UserManagement() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem 1rem', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.875rem' }}>
+          <div style={{ color: '#64748b' }}>
+            共 {totalItems} 个系统用户
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              disabled={page === 1}
+              onClick={() => setPage(prev => Math.max(prev - 1, 1))}
+              style={{
+                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
+                borderRadius: '4px', cursor: page === 1 ? 'not-allowed' : 'pointer',
+                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => { if (page !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              上一页
+            </button>
+            
+            {/* Page numbers */}
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum = page;
+              if (page <= 3) pageNum = i + 1;
+              else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
+              else pageNum = page - 2 + i;
+
+              if (pageNum < 1 || pageNum > totalPages) return null;
+
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  style={{
+                    minWidth: '28px', height: '28px', padding: '0 0.3rem',
+                    border: '1px solid',
+                    borderColor: page === pageNum ? 'var(--primary-color)' : 'var(--border-color)',
+                    background: page === pageNum ? 'var(--primary-color)' : 'transparent',
+                    color: page === pageNum ? 'white' : 'var(--text-color)',
+                    borderRadius: '4px', cursor: page === pageNum ? 'not-allowed' : 'pointer',
+                    fontSize: '0.825rem', fontWeight: page === pageNum ? 600 : 400,
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => { if (page !== pageNum) e.currentTarget.style.background = 'rgba(37,99,235,0.04)'; }}
+                  onMouseLeave={e => { if (page !== pageNum) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+
+            <button
+              disabled={page === totalPages}
+              onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
+              style={{
+                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
+                borderRadius: '4px', cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                color: page === totalPages ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => { if (page !== totalPages) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              下一页
+            </button>
+
+            <select
+              value={pageSize}
+              onChange={e => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              style={{
+                padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)',
+                fontSize: '0.825rem', outline: 'none', background: 'transparent', color: 'var(--text-color)', marginLeft: '0.5rem',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="15">15 条/页</option>
+              <option value="30">30 条/页</option>
+              <option value="50">50 条/页</option>
+              <option value="100">100 条/页</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {isUserModalOpen && createPortal(
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
