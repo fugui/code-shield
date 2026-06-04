@@ -76,8 +76,12 @@ const getGitLabSourceUrl = (
   const webUrl = sshToHttps(repoUrl);
   const targetBranch = branch ? branch.trim() : 'main';
 
-  // Construct GitLab source code page URL
-  let fileUrl = `${webUrl}/-/blob/${targetBranch}/${filePath}`;
+  const encodedFilePath = encodeURIComponent(filePath);
+  const encodedBranch = encodeURIComponent(targetBranch);
+
+  // Construct source code page URL matching the user's specific repository platform format:
+  // https://repo-server/LT-XY/SW/SWI/XY/testbench-sim-ra/files?ref=master&filePath=api%2Fsrc%2Fra_api.c&isFile=true#L34
+  let fileUrl = `${webUrl}/files?ref=${encodedBranch}&filePath=${encodedFilePath}&isFile=true`;
 
   // Line number anchor
   if (lineNumber) {
