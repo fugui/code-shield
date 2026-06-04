@@ -64,6 +64,65 @@ const severityColors: Record<string, { color: string; bg: string }> = {
   'pass': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
 };
 
+const getGitLabSourceUrl = (
+  repoUrl: string | undefined,
+  branch: string | undefined,
+  filePath: string,
+  lineNumber?: string
+): string => {
+  if (!repoUrl) return '';
+
+  let webUrl = repoUrl.trim();
+
+  // 1. Remove .git suffix if present
+  if (webUrl.endsWith('.git')) {
+    webUrl = webUrl.slice(0, -4);
+  }
+
+  // 2. Convert SSH format to HTTPS
+  if (webUrl.startsWith('git@')) {
+    // Format: git@domain:path -> https://domain/path
+    const match = webUrl.match(/^git@([^:]+):(.*)$/);
+    if (match) {
+      const domain = match[1];
+      const path = match[2];
+      webUrl = `https://${domain}/${path}`;
+    }
+  } else if (webUrl.startsWith('ssh://git@')) {
+    // Format: ssh://git@domain:port/path or ssh://git@domain/path
+    let rest = webUrl.slice(10);
+    // Remove port if present, e.g. domain:22/path -> domain/path
+    rest = rest.replace(/:[0-9]+\//, '/');
+    webUrl = `https://${rest}`;
+  }
+
+  const targetBranch = branch ? branch.trim() : 'main';
+
+  // 3. Construct GitLab source code page URL
+  let fileUrl = `${webUrl}/-/blob/${targetBranch}/${filePath}`;
+
+  // 4. Line number anchor
+  if (lineNumber) {
+    const cleanLine = lineNumber.replace(/\s+/g, '');
+    const firstLineMatch = cleanLine.match(/^([0-9]+)/);
+    if (firstLineMatch) {
+      const startLine = firstLineMatch[1];
+      if (cleanLine.includes('-')) {
+        const endLineMatch = cleanLine.match(/-([0-9]+)/);
+        if (endLineMatch) {
+          fileUrl += `#L${startLine}-${endLineMatch[1]}`;
+        } else {
+          fileUrl += `#L${startLine}`;
+        }
+      } else {
+        fileUrl += `#L${startLine}`;
+      }
+    }
+  }
+
+  return fileUrl;
+};
+
 function PublicReportFindings() {
   const { reportId } = useParams<{ reportId: string }>();
   const [report, setReport] = useState<ReportDetails | null>(null);
@@ -197,6 +256,28 @@ function PublicReportFindings() {
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
+        .location-link {
+          display: inline-flex;
+          align-items: center;
+          width: 100%;
+          box-sizing: border-box;
+          font-size: 0.8rem;
+          color: #475569;
+          font-family: monospace;
+          background: #f8fafc;
+          padding: 0.45rem 0.75rem;
+          border-radius: 6px;
+          border: 1px solid #e2e8f0;
+          text-decoration: none;
+          transition: all 0.2s ease-in-out;
+          cursor: pointer;
+        }
+        .location-link:hover {
+          background: rgba(37, 99, 235, 0.05);
+          border-color: rgba(37, 99, 235, 0.25);
+          color: #2563eb;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.06);
+        }
 
         /* High-quality print output configuration */
         @media print {
@@ -253,6 +334,16 @@ function PublicReportFindings() {
             print-color-adjust: exact !important;
           }
           .filter-checkbox {
+            display: none !important;
+          }
+          .location-link {
+            border: 1px solid #cbd5e1 !important;
+            background: #f8fafc !important;
+            color: #475569 !important;
+            text-decoration: none !important;
+            box-shadow: none !important;
+          }
+          .location-link span:last-child {
             display: none !important;
           }
           @page {
@@ -462,9 +553,29 @@ function PublicReportFindings() {
 
                 {/* Filepath and Line */}
                 {f.file_path && (
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', fontFamily: 'monospace', background: '#f8fafc', padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #f1f5f9', display: 'inline-block', width: '100%', boxSizing: 'border-box' }}>
-                    📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}
-                  </div>
+                  report.repo?.url ? (
+                    <a
+                      href={getGitLabSourceUrl(report.repo.url, report.repo.branch, f.file_path, f.line_number)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="location-link"
+                      title="点击跳转到 GitLab 查看源码"
+                    >
+                      <span>📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}</span>
+                      <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', opacity: 0.8 }}>
+                        在 GitLab 中打开
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                          <polyline points="15 3 21 3 21 9"></polyline>
+                          <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                      </span>
+                    </a>
+                  ) : (
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', fontFamily: 'monospace', background: '#f8fafc', padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #f1f5f9', display: 'inline-block', width: '100%', boxSizing: 'border-box' }}>
+                      📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}
+                    </div>
+                  )
                 )}
 
                 {/* Detail */}
