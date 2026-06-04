@@ -65,7 +65,7 @@ const severityColors: Record<string, { color: string; bg: string }> = {
   'pass': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
 };
 
-const getGitLabSourceUrl = (
+const getRepoSourceUrl = (
   repoUrl: string | undefined,
   branch: string | undefined,
   filePath: string,
@@ -527,15 +527,15 @@ function PublicReportFindings() {
                 {f.file_path && (
                   report.repo?.url ? (
                     <a
-                      href={getGitLabSourceUrl(report.repo.url, report.repo.branch, f.file_path, f.line_number)}
+                      href={getRepoSourceUrl(report.repo.url, report.repo.branch, f.file_path, f.line_number)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="location-link"
-                      title="点击跳转到 GitLab 查看源码"
+                      title="点击跳转到代码仓查看源码"
                     >
                       <span>📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}</span>
                       <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', opacity: 0.8 }}>
-                        在 GitLab 中打开
+                        在代码仓中打开
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                           <polyline points="15 3 21 3 21 9"></polyline>
