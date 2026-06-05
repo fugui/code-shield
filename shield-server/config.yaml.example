@@ -60,3 +60,5 @@ auth:
       employee_id: "employee_id"     # 映射为工号的字段
       unique_id: "unique_id"         # 映射为身份证等唯一ID的字段
       employee_type: "employee_type" # 映射为员工类型的字段
+    dept_api_url: ""                 # SSO 登录后如果部门信息缺失，由前端浏览器请求以同步用户部门名称的外部 API 地址
+
