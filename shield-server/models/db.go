@@ -60,9 +60,6 @@ func InitDB() {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
 
-	// Clean up invalid or empty assignee_id in findings tables to avoid Scan uint error
-	cleanFindingsAssigneeIDs()
-
 	// Seed admin user if no users exist
 	var count int64
 	DB.Model(&User{}).Count(&count)
@@ -183,25 +180,5 @@ func seedBuiltinTaskTypes() {
 	}
 }
 
-func cleanFindingsAssigneeIDs() {
-	tables := []string{
-		"test_case_findings",
-		"coredump_findings",
-		"float_findings",
-		"thread_findings",
-		"cjson_findings",
-		"analysis_findings",
-		"key_issues",
-	}
-	for _, table := range tables {
-		if DB.Migrator().HasTable(table) {
-			err := DB.Exec("UPDATE " + table + " SET assignee_id = NULL WHERE assignee_id IS NOT NULL AND (assignee_id = '' OR assignee_id NOT IN (SELECT id FROM users))").Error
-			if err != nil {
-				log.Printf("Warning: failed to clean assignee_id for table %s: %v", table, err)
-			} else {
-				log.Printf("[DataCleanup] Cleaned invalid assignee_id in table %s", table)
-			}
-		}
-	}
-}
+
 
