@@ -24,11 +24,15 @@ func GetDepartments(c *gin.Context) {
 		return
 	}
 
-	// Calculate user count for each department
+	// Calculate user count and repo count for each department
 	for i := range depts {
-		var count int64
-		models.DB.Model(&models.User{}).Where("department_id = ?", depts[i].ID).Count(&count)
-		depts[i].UserCount = count
+		var userCount int64
+		models.DB.Model(&models.User{}).Where("department_id = ?", depts[i].ID).Count(&userCount)
+		depts[i].UserCount = userCount
+
+		var repoCount int64
+		models.DB.Model(&models.Repository{}).Where("department_id = ?", depts[i].ID).Count(&repoCount)
+		depts[i].RepoCount = repoCount
 	}
 
 	c.JSON(http.StatusOK, depts)

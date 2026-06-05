@@ -33,6 +33,7 @@ type Department struct {
 	LeaderID  *uint     `json:"leader_id"`                                    // 关联 User.ID (允许为 NULL)
 	Leader    *User     `gorm:"foreignKey:LeaderID" json:"leader,omitempty"`
 	UserCount int64     `gorm:"-" json:"user_count"`                          // 虚拟字段：部门下人数
+	RepoCount int64     `gorm:"-" json:"repo_count"`                          // 虚拟字段：部门下代码仓数
 	CreatedAt time.Time `json:"created_at"`
 }
 
