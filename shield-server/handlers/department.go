@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -16,69 +17,72 @@ import (
 	"golang.org/x/text/transform"
 )
 
-func GetTeams(c *gin.Context) {
-	var teams []models.Team
-	models.DB.Preload("Leader").Find(&teams)
-	c.JSON(http.StatusOK, teams)
+func GetDepartments(c *gin.Context) {
+	var depts []models.Department
+	models.DB.Preload("Leader").Find(&depts)
+	c.JSON(http.StatusOK, depts)
 }
 
-func CreateTeam(c *gin.Context) {
-	var team models.Team
-	if err := c.ShouldBindJSON(&team); err != nil {
+func CreateDepartment(c *gin.Context) {
+	var dept models.Department
+	if err := c.ShouldBindJSON(&dept); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := models.DB.Create(&team).Error; err != nil {
+	if err := models.DB.Create(&dept).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, team)
+	c.JSON(http.StatusCreated, dept)
 }
 
-func UpdateTeam(c *gin.Context) {
+func UpdateDepartment(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
 		Name     string `json:"name"`
-		LeaderID string `json:"leader_id"`
+		LeaderID *uint  `json:"leader_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var team models.Team
-	if err := models.DB.First(&team, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Team not found"})
+	var dept models.Department
+	if err := models.DB.First(&dept, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Department not found"})
 		return
 	}
 
 	if req.Name != "" {
-		team.Name = req.Name
+		dept.Name = req.Name
 	}
-	if req.LeaderID != "" {
-		team.LeaderID = req.LeaderID
+	if req.LeaderID != nil {
+		if *req.LeaderID == 0 {
+			dept.LeaderID = nil
+		} else {
+			dept.LeaderID = req.LeaderID
+		}
 	}
 
-	if err := models.DB.Save(&team).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update team"})
+	if err := models.DB.Save(&dept).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update department"})
 		return
 	}
-	c.JSON(http.StatusOK, team)
+	c.JSON(http.StatusOK, dept)
 }
 
-func DeleteTeam(c *gin.Context) {
+func DeleteDepartment(c *gin.Context) {
 	id := c.Param("id")
 
-	// Look up the team first so we can use its name for the member check
-	var team models.Team
-	if err := models.DB.First(&team, id).Error; err != nil {
+	var dept models.Department
+	if err := models.DB.First(&dept, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "部门不存在"})
 		return
 	}
 
 	// Check for associated repositories
 	var repoCount int64
-	models.DB.Model(&models.Repository{}).Where("team_id = ?", team.ID).Count(&repoCount)
+	models.DB.Model(&models.Repository{}).Where("department_id = ?", dept.ID).Count(&repoCount)
 	if repoCount > 0 {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": fmt.Sprintf("该部门下仍有 %d 个代码仓，请先移除或转移后再删除部门。", repoCount),
@@ -86,55 +90,56 @@ func DeleteTeam(c *gin.Context) {
 		return
 	}
 
-	// Check for associated members (Member.Department stores the team name as a string)
-	var memberCount int64
-	models.DB.Model(&models.Member{}).Where("department = ?", team.Name).Count(&memberCount)
-	if memberCount > 0 {
+	// Check for associated users (User.DepartmentID)
+	var userCount int64
+	models.DB.Model(&models.User{}).Where("department_id = ?", dept.ID).Count(&userCount)
+	if userCount > 0 {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": fmt.Sprintf("该部门下仍有 %d 名人员，请先移除或转移后再删除部门。", memberCount),
+			"error": fmt.Sprintf("该部门下仍有 %d 名人员，请先移除或转移后再删除部门。", userCount),
 		})
 		return
 	}
 
-	if err := models.DB.Delete(&team).Error; err != nil {
+	if err := models.DB.Delete(&dept).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除部门失败"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "部门已删除"})
 }
 
-// ExportTeams exports all departments as CSV
-func ExportTeams(c *gin.Context) {
-	var teams []models.Team
-	models.DB.Preload("Leader").Find(&teams)
+// ExportDepartments exports all departments as CSV
+func ExportDepartments(c *gin.Context) {
+	var depts []models.Department
+	models.DB.Preload("Leader").Find(&depts)
 
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=departments.csv")
 
-	// Write UTF-8 BOM for Excel compatibility
 	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 
 	writer := csv.NewWriter(c.Writer)
 	defer writer.Flush()
 
 	writer.Write([]string{"ID", "部门名称", "负责人ID", "负责人姓名", "创建时间"})
-	for _, t := range teams {
+	for _, d := range depts {
+		leaderIDStr := ""
 		leaderName := ""
-		if t.Leader.Name != "" {
-			leaderName = t.Leader.Name
+		if d.Leader != nil {
+			leaderIDStr = strconv.Itoa(int(d.Leader.ID))
+			leaderName = d.Leader.Name
 		}
 		writer.Write([]string{
-			fmt.Sprintf("%d", t.ID),
-			t.Name,
-			t.LeaderID,
+			fmt.Sprintf("%d", d.ID),
+			d.Name,
+			leaderIDStr,
 			leaderName,
-			t.CreatedAt.Format("2006-01-02 15:04:05"),
+			d.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 }
 
-// ImportTeams imports departments from CSV
-func ImportTeams(c *gin.Context) {
+// ImportDepartments imports departments from CSV
+func ImportDepartments(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
@@ -204,32 +209,40 @@ func ImportTeams(c *gin.Context) {
 		}
 
 		name := getField("部门名称")
-		leaderID := getField("负责人ID")
-		if leaderID == "" {
-			leaderID = getField("负责人工号")
+		leaderIDStr := getField("负责人ID")
+		if leaderIDStr == "" {
+			leaderIDStr = getField("负责人工号")
 		}
 
 		if name == "" {
 			continue
 		}
 
-		var team models.Team
-		if err := models.DB.Where("name = ?", name).First(&team).Error; err != nil {
-			team = models.Team{
+		var leaderID *uint
+		if leaderIDStr != "" {
+			var leader models.User
+			// Try matching leader by EmployeeID or Email or ID
+			if err := models.DB.Where("employee_id = ? OR email = ? OR id = ?", leaderIDStr, leaderIDStr, leaderIDStr).First(&leader).Error; err == nil {
+				leaderID = &leader.ID
+			}
+		}
+
+		var dept models.Department
+		if err := models.DB.Where("name = ?", name).First(&dept).Error; err != nil {
+			dept = models.Department{
 				Name:     name,
 				LeaderID: leaderID,
 			}
-			if err := models.DB.Create(&team).Error; err != nil {
-				log.Printf("Line %d: Failed to create team: %v", lineNum+2, err)
+			if err := models.DB.Create(&dept).Error; err != nil {
+				log.Printf("Line %d: Failed to create department: %v", lineNum+2, err)
 			} else {
 				successCount++
 			}
 		} else {
-			if leaderID != "" {
-				team.LeaderID = leaderID
+			if leaderID != nil {
+				dept.LeaderID = leaderID
 			}
-
-			if err := models.DB.Save(&team).Error; err == nil {
+			if err := models.DB.Save(&dept).Error; err == nil {
 				successCount++
 			}
 		}

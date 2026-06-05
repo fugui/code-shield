@@ -49,14 +49,14 @@ func GetTasks(c *gin.Context) {
 		query = query.Where("task_reports.task_type_id = ?", taskTypeID)
 	}
 	if teamID != "" {
-		query = query.Where("repositories.team_id = ?", teamID)
+		query = query.Where("repositories.department_id = ?", teamID)
 	}
 	if serviceGroup != "" {
 		query = query.Where("repositories.service_group LIKE ?", "%"+serviceGroup+"%")
 	}
 	if owner != "" {
-		query = query.Joins("LEFT JOIN members ON repositories.owner_id = members.id").
-			Where("members.name LIKE ? OR repositories.owner_id LIKE ?", "%"+owner+"%", "%"+owner+"%")
+		query = query.Joins("LEFT JOIN users ON repositories.owner_id = users.id").
+			Where("users.name LIKE ? OR users.employee_id LIKE ? OR users.email LIKE ?", "%"+owner+"%", "%"+owner+"%", "%"+owner+"%")
 	}
 	if status != "" {
 		query = query.Where("task_reports.status = ?", status)
@@ -70,7 +70,7 @@ func GetTasks(c *gin.Context) {
 
 	var reports []models.TaskReport
 	offset := (page - 1) * pageSize
-	query.Preload("Repo").Preload("Repo.Team").Preload("Repo.Owner").Preload("TaskType").
+	query.Preload("Repo").Preload("Repo.Department").Preload("Repo.Owner").Preload("TaskType").
 		Order("task_reports.created_at desc").Offset(offset).Limit(pageSize).Find(&reports)
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
@@ -270,14 +270,6 @@ func TriggerManualNotification(c *gin.Context) {
 		if err := models.DB.First(&user, userID).Error; err == nil && !user.IsAdmin {
 			if _, err := mail.ParseAddress(user.Email); err == nil {
 				specificEmail = user.Email
-			} else {
-				var member models.Member
-				models.DB.Where("id = ? OR name = ?", user.Email, user.Email).First(&member)
-				if member.Email != "" {
-					specificEmail = member.Email
-				} else {
-					specificEmail = user.Email
-				}
 			}
 		}
 	}
@@ -312,14 +304,14 @@ func GetTaskOverview(c *gin.Context) {
 	query := models.DB.Model(&models.Repository{})
 
 	if teamID != "" {
-		query = query.Where("repositories.team_id = ?", teamID)
+		query = query.Where("repositories.department_id = ?", teamID)
 	}
 	if serviceGroup != "" {
 		query = query.Where("repositories.service_group LIKE ?", "%"+serviceGroup+"%")
 	}
 	if owner != "" {
-		query = query.Joins("LEFT JOIN members ON repositories.owner_id = members.id").
-			Where("members.name LIKE ? OR repositories.owner_id LIKE ?", "%"+owner+"%", "%"+owner+"%")
+		query = query.Joins("LEFT JOIN users ON repositories.owner_id = users.id").
+			Where("users.name LIKE ? OR users.employee_id LIKE ? OR users.email LIKE ?", "%"+owner+"%", "%"+owner+"%", "%"+owner+"%")
 	}
 
 	var total int64
@@ -369,7 +361,7 @@ func GetTaskOverview(c *gin.Context) {
 
 	var results []ResultItem
 	offset := (page - 1) * pageSize
-	query.Preload("Team").Preload("Owner").Offset(offset).Limit(pageSize).Find(&results)
+	query.Preload("Department").Preload("Owner").Offset(offset).Limit(pageSize).Find(&results)
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 

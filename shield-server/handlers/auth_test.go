@@ -23,7 +23,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test database: %v", err)
 	}
-	if err := models.DB.AutoMigrate(&models.User{}); err != nil {
+	if err := models.DB.AutoMigrate(&models.Department{}, &models.User{}); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
 	}
 	// Seed test users that match token claims below

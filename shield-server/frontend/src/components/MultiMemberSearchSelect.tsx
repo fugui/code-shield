@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-interface Member {
-  id: string;
+interface User {
+  id: number;
+  employee_id: string;
   name: string;
-  department?: string;
+  department?: {
+    id: number;
+    name: string;
+  } | string;
 }
 
 interface MultiMemberSearchSelectProps {
-  value: string[]; // array of member IDs
+  value: string[]; // array of member IDs as strings
   onChange: (memberIds: string[]) => void;
   style?: React.CSSProperties;
   maxSelections?: number;
@@ -15,8 +19,8 @@ interface MultiMemberSearchSelectProps {
 
 export default function MultiMemberSearchSelect({ value = [], onChange, style, maxSelections = 20 }: MultiMemberSearchSelectProps) {
   const [query, setQuery] = useState('');
-  const [selectedMembers, setSelectedMembers] = useState<Member[]>([]);
-  const [results, setResults] = useState<Member[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<User[]>([]);
+  const [results, setResults] = useState<User[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -26,47 +30,40 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
   useEffect(() => {
     if (value && value.length > 0) {
       // Find members missing in our current state to avoid excessive fetching
-      const missingIds = value.filter(id => !selectedMembers.some(m => m.id === id));
+      const missingIds = value.filter(id => !selectedMembers.some(m => m.id.toString() === id || m.employee_id === id));
       if (missingIds.length > 0) {
-        // Fetch missing details
-        // Note: For a robust system we'd support fetching multiple IDs, but here we can just fallback to the ID itself
-        // or trigger independent fetches if we really want names. For simplicity we'll just populate placeholder names.
-        const newMembers = missingIds.map(id => ({ id, name: `User (${id})` }));
-        // Ideally, we'd fetch /api/members?search=... for each if needed, but assuming they are loaded in parents.
-        // Let's do a best-effort simple map for now unless results have them.
         setSelectedMembers(prev => {
           const combined = [...prev];
           missingIds.forEach(id => {
-            const foundInResults = results.find(r => r.id === id);
-            if (foundInResults && !combined.some(c => c.id === id)) {
+            const foundInResults = results.find(r => r.id.toString() === id || r.employee_id === id);
+            if (foundInResults && !combined.some(c => c.id.toString() === id || c.employee_id === id)) {
               combined.push(foundInResults);
-            } else if (!combined.some(c => c.id === id)) {
+            } else if (!combined.some(c => c.id.toString() === id || c.employee_id === id)) {
               // Temporary placeholder
-              combined.push({ id, name: `User (${id})` });
+              combined.push({ id: Number(id) || 0, employee_id: id, name: `User (${id})` });
             }
           });
           return combined;
         });
       }
     } else {
-        setSelectedMembers([]);
+      setSelectedMembers([]);
     }
   }, [value, results]);
 
   // Optionally fetch fully resolved members on mount if value is not empty (async cleanup)
   useEffect(() => {
     if (value && value.length > 0) {
-      // Just a background refresh of the first 20 members which usually covers the top ones mapped
-      fetch('/api/members?pageSize=1000')
+      fetch('/api/users?pageSize=1000')
         .then(res => res.json())
         .then(data => {
-            const list: Member[] = data.items || [];
-            setSelectedMembers(prev => {
-                return value.map(id => {
-                    const match = list.find(m => m.id === id);
-                    return match || prev.find(p => p.id === id) || { id, name: id };
-                });
+          const list: User[] = data.items || [];
+          setSelectedMembers(prev => {
+            return value.map(id => {
+              const match = list.find(m => m.id.toString() === id || m.employee_id === id);
+              return match || prev.find(p => p.id.toString() === id || p.employee_id === id) || { id: Number(id) || 0, employee_id: id, name: id };
             });
+          });
         }).catch(() => {});
     }
   }, []);
@@ -83,7 +80,7 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
 
   const doSearch = (q: string) => {
     setLoading(true);
-    const url = q.trim() ? `/api/members?search=${encodeURIComponent(q)}&pageSize=20` : '/api/members?pageSize=20';
+    const url = q.trim() ? `/api/users?search=${encodeURIComponent(q)}&pageSize=20` : '/api/users?pageSize=20';
     fetch(url)
       .then(res => res.json())
       .then(data => setResults(data.items || []))
@@ -105,21 +102,22 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
     doSearch(query);
   };
 
-  const handleSelect = (member: Member) => {
-    if (value.includes(member.id)) return; // Already selected
+  const handleSelect = (user: User) => {
+    const userKey = user.id ? user.id.toString() : user.employee_id;
+    if (value.includes(userKey)) return; // Already selected
     if (value.length >= maxSelections) {
       alert(`最多只能选择 ${maxSelections} 名相关人员`);
       return;
     }
-    const newValues = [...value, member.id];
+    const newValues = [...value, userKey];
     onChange(newValues);
     setQuery('');
-    // Optionally close or keep open? Keeping open is better for multi-select.
   };
 
-  const handleRemove = (idToRemove: string, e: React.MouseEvent) => {
+  const handleRemove = (userToRemove: User, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newValues = value.filter(id => id !== idToRemove);
+    const userKey = userToRemove.id ? userToRemove.id.toString() : userToRemove.employee_id;
+    const newValues = value.filter(id => id !== userKey && id !== userToRemove.employee_id && id !== userToRemove.id.toString());
     onChange(newValues);
   };
 
@@ -134,23 +132,26 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
         }}
         onClick={() => setShowDropdown(true)}
       >
-        {selectedMembers.filter(m => value.includes(m.id)).map(m => (
-          <span 
-            key={m.id} 
-            style={{ 
-              display: 'inline-flex', alignItems: 'center', background: 'var(--primary-color)', 
-              color: 'white', borderRadius: '4px', padding: '2px 6px', fontSize: '0.75rem' 
-            }}
-          >
-            {m.name}
+        {selectedMembers.filter(m => value.includes(m.id.toString()) || value.includes(m.employee_id)).map(m => {
+          const mKey = m.id ? m.id.toString() : m.employee_id;
+          return (
             <span 
-              onClick={(e) => handleRemove(m.id, e)}
-              style={{ marginLeft: '4px', cursor: 'pointer', opacity: 0.8 }}
+              key={mKey} 
+              style={{ 
+                display: 'inline-flex', alignItems: 'center', background: 'var(--primary-color)', 
+                color: 'white', borderRadius: '4px', padding: '2px 6px', fontSize: '0.75rem' 
+              }}
             >
-              ×
+              {m.name}
+              <span 
+                onClick={(e) => handleRemove(m, e)}
+                style={{ marginLeft: '4px', cursor: 'pointer', opacity: 0.8 }}
+              >
+                ×
+              </span>
             </span>
-          </span>
-        ))}
+          );
+        })}
         <input
           type="text"
           value={query}
@@ -183,7 +184,8 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
             </div>
           ) : (
             results.map(m => {
-              const isSelected = value.includes(m.id);
+              const isSelected = value.includes(m.id.toString()) || value.includes(m.employee_id);
+              const deptName = typeof m.department === 'object' && m.department !== null ? m.department.name : m.department;
               return (
                 <div
                   key={m.id}
@@ -201,10 +203,10 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
                 >
                   <span>
                     <span style={{ fontWeight: 500 }}>{m.name}</span>
-                    <span style={{ marginLeft: '0.4rem', fontSize: '0.8rem' }}>({m.id})</span>
+                    <span style={{ marginLeft: '0.4rem', fontSize: '0.8rem' }}>({m.employee_id || m.id})</span>
                   </span>
-                  {m.department && (
-                    <span style={{ fontSize: '0.75rem' }}>{m.department}</span>
+                  {deptName && (
+                    <span style={{ fontSize: '0.75rem' }}>{deptName}</span>
                   )}
                 </div>
               );

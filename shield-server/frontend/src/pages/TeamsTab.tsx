@@ -7,17 +7,17 @@ function TeamsTab() {
   const [members, setMembers] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState({ name: '', leader_id: '' });
+  const [formData, setFormData] = useState({ name: '', leader_id: '' as string | number });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
 
   useEffect(() => {
     fetchTeams();
-    fetch('/api/members?pageSize=1000').then(res => res.json()).then(data => setMembers(Array.isArray(data) ? data : (data.items || []))).catch(console.error);
+    fetch('/api/users?pageSize=1000').then(res => res.json()).then(data => setMembers(Array.isArray(data) ? data : (data.items || []))).catch(console.error);
   }, []);
 
   const fetchTeams = () => {
-    fetch('/api/teams')
+    fetch('/api/departments')
       .then(res => res.json())
       .then(data => setTeams(data || []))
       .catch(console.error);
@@ -25,13 +25,16 @@ function TeamsTab() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const url = editingId ? `/api/teams/${editingId}` : '/api/teams';
+    const url = editingId ? `/api/departments/${editingId}` : '/api/departments';
     const method = editingId ? 'PATCH' : 'POST';
 
     fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
+      body: JSON.stringify({
+        name: formData.name,
+        leader_id: formData.leader_id ? Number(formData.leader_id) : null
+      })
     })
     .then(res => {
       if (res.ok) {
@@ -46,7 +49,7 @@ function TeamsTab() {
 
   const handleDelete = (id: number, name: string) => {
     if (window.confirm(`确认删除部门 "${name}" 吗？`)) {
-      fetch(`/api/teams/${id}`, { method: 'DELETE' })
+      fetch(`/api/departments/${id}`, { method: 'DELETE' })
         .then(res => {
           if (res.ok) {
             showToast('部门已删除', 'success');
@@ -78,7 +81,7 @@ function TeamsTab() {
     const formData = new FormData();
     formData.append('file', file);
 
-    fetch('/api/teams/import', {
+    fetch('/api/departments/import', {
       method: 'POST',
       body: formData,
     })
@@ -123,7 +126,7 @@ function TeamsTab() {
             className="btn" 
             style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }}
             onClick={() => {
-              fetch('/api/teams/export')
+              fetch('/api/departments/export')
                 .then(res => res.blob())
                 .then(blob => {
                   const url = URL.createObjectURL(blob);
@@ -158,7 +161,7 @@ function TeamsTab() {
               <tr key={t.id}>
                 <td style={{ fontWeight: 500 }}>{t.id}</td>
                 <td>{t.name}</td>
-                <td>{t.leader ? `${t.leader.name} (${t.leader.id})` : t.leader_id || <span style={{ color: '#aaa' }}>未配置</span>}</td>
+                <td>{t.leader ? `${t.leader.name} (${t.leader.employee_id || t.leader.id})` : t.leader_id || <span style={{ color: '#aaa' }}>未配置</span>}</td>
                 <td style={{ display: 'flex', gap: '0.5rem' }}>
                   <button className="btn" onClick={() => openEdit(t)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem' }}>编辑</button>
                   <button className="btn" onClick={() => handleDelete(t.id, t.name)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem', background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>删除</button>
@@ -182,7 +185,7 @@ function TeamsTab() {
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>部门负责人</label>
                 <MemberSearchSelect 
                   value={formData.leader_id} 
-                  onChange={(id: string) => setFormData({...formData, leader_id: id})} 
+                  onChange={(id) => setFormData({...formData, leader_id: id})} 
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>

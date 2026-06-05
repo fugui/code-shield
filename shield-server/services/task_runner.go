@@ -1084,7 +1084,7 @@ func (ctx *taskContext) markFailed(errMsg string) {
 
 // NotifyTaskResult sends a notification for a completed task
 func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result TaskResult, specificRecipientEmail string, reportID uint, reportPath string) {
-	models.DB.Preload("Owner").Preload("Team.Leader").First(&repo, repo.ID)
+	models.DB.Preload("Owner").Preload("Department.Leader").First(&repo, repo.ID)
 
 	toEmails := []string{}
 	ccEmails := []string{}
@@ -1096,8 +1096,8 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 			toEmails = append(toEmails, repo.Owner.Email)
 		}
 
-		if repo.Team.Leader.Email != "" && repo.Team.Leader.Email != repo.Owner.Email {
-			ccEmails = append(ccEmails, repo.Team.Leader.Email)
+		if repo.Department.Leader != nil && repo.Department.Leader.Email != "" && repo.Department.Leader.Email != repo.Owner.Email {
+			ccEmails = append(ccEmails, repo.Department.Leader.Email)
 		}
 
 		// Unmarshal related members and append their emails
@@ -1107,20 +1107,20 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		}
 
 		if len(relatedIDs) > 0 {
-			var members []models.Member
-			models.DB.Where("id IN ?", relatedIDs).Find(&members)
-			for _, m := range members {
-				if m.Email != "" && m.Email != repo.Owner.Email {
+			var users []models.User
+			models.DB.Where("id IN ? OR employee_id IN ?", relatedIDs, relatedIDs).Find(&users)
+			for _, u := range users {
+				if u.Email != "" && u.Email != repo.Owner.Email {
 					// Prevent duplicate CC entries
 					duplicate := false
 					for _, cc := range ccEmails {
-						if cc == m.Email {
+						if cc == u.Email {
 							duplicate = true
 							break
 						}
 					}
 					if !duplicate {
-						ccEmails = append(ccEmails, m.Email)
+						ccEmails = append(ccEmails, u.Email)
 					}
 				}
 			}

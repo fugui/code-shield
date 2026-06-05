@@ -6,11 +6,12 @@ import { AUTH_TOKEN_KEY } from '../config';
 function UserManagement() {
   const { showToast } = useToast();
   const [users, setUsers] = useState<any[]>([]);
-  const [newUserForm, setNewUserForm] = useState({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false });
+  const [newUserForm, setNewUserForm] = useState({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false, department_id: '' as string | number });
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
-  const [editUserForm, setEditUserForm] = useState({ name: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false, password: '' });
+  const [editUserForm, setEditUserForm] = useState({ name: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false, password: '', department_id: '' as string | number });
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
+  const [departments, setDepartments] = useState<any[]>([]);
 
   // Pagination states
   const [page, setPage] = useState(1);
@@ -58,11 +59,20 @@ function UserManagement() {
         }
       })
       .catch(err => console.error('Failed to fetch auth config:', err));
+
+    fetch('/api/departments')
+      .then(res => res.json())
+      .then(data => setDepartments(data || []))
+      .catch(err => console.error('Failed to fetch departments:', err));
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserForm.email || !newUserForm.password) return;
+    if (!newUserForm.department_id) {
+      showToast('用户必须选择归属部门', 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -70,10 +80,13 @@ function UserManagement() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}`
         },
-        body: JSON.stringify(newUserForm)
+        body: JSON.stringify({
+          ...newUserForm,
+          department_id: Number(newUserForm.department_id)
+        })
       });
       if (res.ok) {
-        setNewUserForm({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false });
+        setNewUserForm({ email: '', name: '', password: '', employee_id: '', unique_id: '', employee_type: '', is_admin: false, department_id: '' });
         setIsUserModalOpen(false);
         fetchUsers(1, pageSize);
         setPage(1);
@@ -94,7 +107,8 @@ function UserManagement() {
       unique_id: user.unique_id || '',
       employee_type: user.employee_type || '',
       is_admin: user.is_admin,
-      password: ''
+      password: '',
+      department_id: user.department_id || ''
     });
     setIsEditUserModalOpen(true);
   };
@@ -102,13 +116,18 @@ function UserManagement() {
   const handleSaveEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
+    if (!editUserForm.department_id) {
+      showToast('用户必须选择归属部门', 'error');
+      return;
+    }
     try {
       const payload: any = {
         name: editUserForm.name,
         employee_id: editUserForm.employee_id,
         unique_id: editUserForm.unique_id,
         employee_type: editUserForm.employee_type,
-        is_admin: editUserForm.is_admin
+        is_admin: editUserForm.is_admin,
+        department_id: Number(editUserForm.department_id)
       };
       if (editUserForm.password) payload.password = editUserForm.password;
       const res = await fetch(`/api/users/${editingUser.id}`, {
@@ -189,10 +208,12 @@ function UserManagement() {
               <th style={{ padding: '1rem' }}>登录邮箱</th>
               <th style={{ padding: '1rem' }}>姓名</th>
               <th style={{ padding: '1rem' }}>工号</th>
+              <th style={{ padding: '1rem' }}>归属部门</th>
               <th style={{ padding: '1rem' }}>员工类型</th>
               <th style={{ padding: '1rem' }}>录入方式</th>
               <th style={{ padding: '1rem' }}>角色标识</th>
               <th style={{ padding: '1rem' }}>账号状态</th>
+              <th style={{ padding: '1rem' }}>最近登录IP</th>
               <th style={{ padding: '1rem' }}>最近登录时间</th>
               <th style={{ padding: '1rem', textAlign: 'right' }}>操作</th>
             </tr>
@@ -200,7 +221,7 @@ function UserManagement() {
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={10} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
+                <td colSpan={12} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>无法获取人员列表或暂无数据（可能非管理员权限）。</td>
               </tr>
             ) : (
               users.map(u => (
@@ -209,10 +230,13 @@ function UserManagement() {
                   <td style={{ padding: '1rem', fontWeight: 500 }}>{u.email || u.username}</td>
                   <td style={{ padding: '1rem' }}>{u.name || '-'}</td>
                   <td style={{ padding: '1rem' }}>{u.employee_id || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
+                  <td style={{ padding: '1rem' }}>{u.department?.name || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
                   <td style={{ padding: '1rem' }}>{u.employee_type || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}</td>
                   <td style={{ padding: '1rem' }}>
                     {u.reg_method === 'sso' ? 
                       <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', fontSize: '0.75rem', fontWeight: 600 }}>SSO 单点</span> : 
+                      u.reg_method === 'imported' ?
+                      <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(107,114,128,0.1)', color: '#6b7280', fontSize: '0.75rem', fontWeight: 600 }}>被动导入</span> :
                       <span style={{ display: 'inline-flex', padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: '0.75rem', fontWeight: 600 }}>本地录入</span>}
                   </td>
                   <td style={{ padding: '1rem' }}>
@@ -224,6 +248,9 @@ function UserManagement() {
                     {u.is_active ? 
                       <span style={{ color: 'var(--success-color)', fontSize: '0.875rem', fontWeight: 500 }}>正常使用</span> : 
                       <span style={{ color: 'var(--danger-color)', fontSize: '0.875rem', fontWeight: 500 }}>已被禁用</span>}
+                  </td>
+                  <td style={{ padding: '1rem', fontSize: '0.875rem', color: '#64748b' }}>
+                    {u.last_ip || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>-</span>}
                   </td>
                   <td style={{ padding: '1rem', fontSize: '0.875rem', color: '#64748b' }}>
                     {u.last_login ? new Date(u.last_login).toLocaleString() : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>从未登录</span>}
@@ -387,6 +414,15 @@ function UserManagement() {
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工类型</label>
                   <input value={newUserForm.employee_type} onChange={e => setNewUserForm({...newUserForm, employee_type: e.target.value})} placeholder="如: 正式员工" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
                 </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>所属部门</label>
+                  <select required value={newUserForm.department_id} onChange={e => setNewUserForm({...newUserForm, department_id: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)' }}>
+                    <option value="">请选择部门</option>
+                    {departments.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <input type="checkbox" id="isAdmin" checked={newUserForm.is_admin} onChange={e => setNewUserForm({...newUserForm, is_admin: e.target.checked})} />
@@ -424,6 +460,15 @@ function UserManagement() {
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>员工类型</label>
                   <input value={editUserForm.employee_type} onChange={e => setEditUserForm({...editUserForm, employee_type: e.target.value})} placeholder="如: 正式员工" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-color)', fontWeight: 500 }}>所属部门</label>
+                  <select required value={editUserForm.department_id} onChange={e => setEditUserForm({...editUserForm, department_id: e.target.value})} style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)' }}>
+                    <option value="">请选择部门</option>
+                    {departments.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>

@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 )
@@ -21,7 +22,10 @@ import (
 func GetRepos(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
-	teamID := c.Query("team_id")
+	deptID := c.Query("department_id")
+	if deptID == "" {
+		deptID = c.Query("team_id") // fallback
+	}
 	serviceGroup := c.Query("service_group")
 	owner := c.Query("owner")
 
@@ -37,16 +41,15 @@ func GetRepos(c *gin.Context) {
 
 	query := models.DB.Model(&models.Repository{})
 
-	if teamID != "" {
-		query = query.Where("team_id = ?", teamID)
+	if deptID != "" {
+		query = query.Where("department_id = ?", deptID)
 	}
 	if serviceGroup != "" {
 		query = query.Where("service_group LIKE ?", "%"+serviceGroup+"%")
 	}
 	if owner != "" {
-		// Search by owner name or owner ID
-		query = query.Joins("LEFT JOIN members ON repositories.owner_id = members.id").
-			Where("members.name LIKE ? OR repositories.owner_id LIKE ?", "%"+owner+"%", "%"+owner+"%")
+		query = query.Joins("LEFT JOIN users ON repositories.owner_id = users.id").
+			Where("users.name LIKE ? OR users.employee_id LIKE ? OR users.email LIKE ?", "%"+owner+"%", "%"+owner+"%", "%"+owner+"%")
 	}
 
 	var total int64
@@ -54,7 +57,7 @@ func GetRepos(c *gin.Context) {
 
 	var repos []models.Repository
 	offset := (page - 1) * pageSize
-	query.Preload("Team").Preload("Owner").Offset(offset).Limit(pageSize).Find(&repos)
+	query.Preload("Department").Preload("Owner").Offset(offset).Limit(pageSize).Find(&repos)
 
 	if len(repos) > 0 {
 		var repoIDs []uint
@@ -127,9 +130,10 @@ func UpdateRepo(c *gin.Context) {
 	var input struct {
 		Name           *string   `json:"name"`
 		URL            *string   `json:"url"`
-		OwnerID        *string   `json:"owner_id"`
+		OwnerID        *uint     `json:"owner_id"`
 		Branch         *string   `json:"branch"`
-		TeamID         *uint     `json:"team_id"`
+		DepartmentID   *uint     `json:"department_id"`
+		TeamID         *uint     `json:"team_id"` // fallback
 		ServiceGroup   *string   `json:"service_group"`
 		RelatedMembers *[]string `json:"related_members"`
 	}
@@ -151,8 +155,10 @@ func UpdateRepo(c *gin.Context) {
 	if input.Branch != nil {
 		updates["branch"] = *input.Branch
 	}
-	if input.TeamID != nil {
-		updates["team_id"] = *input.TeamID
+	if input.DepartmentID != nil {
+		updates["department_id"] = *input.DepartmentID
+	} else if input.TeamID != nil {
+		updates["department_id"] = *input.TeamID
 	}
 	if input.ServiceGroup != nil {
 		updates["service_group"] = *input.ServiceGroup
@@ -162,7 +168,7 @@ func UpdateRepo(c *gin.Context) {
 			updates["related_members"] = nil // clear
 		} else {
 			b, _ := json.Marshal(*input.RelatedMembers)
-			updates["related_members"] = b // GORM safely accepts byte slices for JSON type natively
+			updates["related_members"] = b
 		}
 	}
 
@@ -177,14 +183,14 @@ func UpdateRepo(c *gin.Context) {
 	}
 
 	// Reload with associations
-	models.DB.Preload("Team").Preload("Owner").First(&repo, id)
+	models.DB.Preload("Department").Preload("Owner").First(&repo, id)
 	c.JSON(http.StatusOK, repo)
 }
 
 // ExportRepos exports all repositories as CSV
 func ExportRepos(c *gin.Context) {
 	var repos []models.Repository
-	models.DB.Preload("Team").Preload("Owner").Find(&repos)
+	models.DB.Preload("Department").Preload("Owner").Find(&repos)
 
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=repositories.csv")
@@ -196,20 +202,25 @@ func ExportRepos(c *gin.Context) {
 
 	writer.Write([]string{"ID", "代码仓名称", "Repo URL", "归属部门", "负责人ID", "负责人姓名", "分支", "服务组", "创建时间"})
 	for _, r := range repos {
-		teamName := ""
-		if r.Team.Name != "" {
-			teamName = r.Team.Name
+		deptName := ""
+		if r.Department.Name != "" {
+			deptName = r.Department.Name
 		}
+		ownerIDStr := ""
 		ownerName := ""
-		if r.Owner.Name != "" {
+		if r.Owner.ID != 0 {
 			ownerName = r.Owner.Name
+			ownerIDStr = r.Owner.EmployeeID
+			if ownerIDStr == "" {
+				ownerIDStr = r.Owner.Email
+			}
 		}
 		writer.Write([]string{
 			fmt.Sprintf("%d", r.ID),
 			r.Name,
 			r.URL,
-			teamName,
-			r.OwnerID,
+			deptName,
+			ownerIDStr,
 			ownerName,
 			r.Branch,
 			r.ServiceGroup,
@@ -232,7 +243,6 @@ func ImportRepos(c *gin.Context) {
 	}
 	defer src.Close()
 
-	// Read all bytes to check encoding
 	b, err := io.ReadAll(src)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file"})
@@ -243,35 +253,24 @@ func ImportRepos(c *gin.Context) {
 	if utf8.Valid(b) {
 		reader = csv.NewReader(bytes.NewReader(b))
 	} else {
-		// Assume GBK/GB18030 if not valid UTF-8
 		decodedReader := transform.NewReader(bytes.NewReader(b), simplifiedchinese.GB18030.NewDecoder())
 		reader = csv.NewReader(decodedReader)
 	}
-
-	// Some CSVs may not have the same number of fields per record, but we expect it.
 	reader.FieldsPerRecord = -1
 
-	// Read header
 	header, err := reader.Read()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read CSV header"})
 		return
 	}
 
-	// Map headers to indices
 	headerMap := make(map[string]int)
-	log.Printf("Original CSV headers: %v", header)
 	for i, col := range header {
-		// Clean BOM, spaces, quotes, and invisible characters
-		cleanCol := strings.TrimRight(strings.TrimLeft(col, "\xef\xbb\xbf\"' \t\r\n"), "\"' \t\r\n")
-		// Also remove any internal spaces for safety if they somehow matched exactly before but had extra space inserted by Excel
+		cleanCol := strings.ReplaceAll(strings.TrimRight(strings.TrimLeft(col, "\xef\xbb\xbf\"' \t\r\n"), "\"' \t\r\n"), " ", "")
 		cleanCol = strings.ReplaceAll(cleanCol, " ", "")
 		headerMap[cleanCol] = i
 	}
-	log.Printf("Cleaned CSV header map: %v", headerMap)
 
-	// Expecting columns: "服务组" (ServiceGroup), "田主" (OwnerName), "代码仓" (Name), "RepoURL", "分支" (Branch), "部门名称" (Department)
-	// Note: We removed spaces above, so "Repo URL" becomes "RepoURL"
 	requiredHeaders := []string{"服务组", "田主", "代码仓", "RepoURL", "分支", "部门名称"}
 	for _, req := range requiredHeaders {
 		if _, ok := headerMap[req]; !ok {
@@ -286,13 +285,14 @@ func ImportRepos(c *gin.Context) {
 		return
 	}
 
+	placeholderPassword, _ := bcrypt.GenerateFromPassword([]byte("imported-account-no-local-password"), bcrypt.DefaultCost)
+
 	successCount := 0
 	for lineNum, record := range records {
 		if len(record) == 0 {
 			continue
 		}
 
-		// Safely get string from record based on header map, handle potentially truncated rows
 		getField := func(key string) string {
 			idx, ok := headerMap[key]
 			if ok && idx < len(record) {
@@ -304,54 +304,60 @@ func ImportRepos(c *gin.Context) {
 		serviceGroup := getField("服务组")
 		ownerName := getField("田主")
 		repoName := getField("代码仓")
-		repoURL := getField("RepoURL") // Fixed: Removed space to match headerMap
+		repoURL := getField("RepoURL")
 		branch := getField("分支")
 		departmentName := getField("部门名称")
 
 		if repoName == "" || repoURL == "" || departmentName == "" {
-			continue // Mandatory fields
+			continue
 		}
 		if branch == "" {
-			branch = "main" // Default branch
+			branch = "main"
 		}
 
-		// Resolve owner: try ID match → name match → auto-create
-		var member models.Member
+		// Resolve owner: try EmployeeID → Email → Name
+		var user models.User
 		ownerResolved := false
-		// 1. Try exact ID match
 		if ownerName != "" {
-			if err := models.DB.Where("id = ?", ownerName).First(&member).Error; err == nil {
+			if err := models.DB.Where("employee_id = ? OR email = ? OR name = ?", ownerName, ownerName, ownerName).First(&user).Error; err == nil {
 				ownerResolved = true
-			}
-		}
-		// 2. Try name match
-		if !ownerResolved && ownerName != "" {
-			if err := models.DB.Where("name = ?", ownerName).First(&member).Error; err == nil {
-				ownerResolved = true
-			}
-		}
-		// 3. Create new member if not found
-		if !ownerResolved && ownerName != "" {
-			member = models.Member{
-				ID:   ownerName,
-				Name: ownerName,
-			}
-			if err := models.DB.Create(&member).Error; err != nil {
-				log.Printf("Line %d: Failed to auto-create member %s: %v", lineNum+2, ownerName, err)
-				// Use the value as-is, repo will still be created with raw ownerName as ID
-				member.ID = ownerName
 			}
 		}
 
-		// Find or create Team (Department)
-		var team models.Team
-		if err := models.DB.Where("name = ?", departmentName).First(&team).Error; err != nil {
-			team = models.Team{
-				Name:     departmentName,
-				LeaderID: member.ID,
+		if !ownerResolved && ownerName != "" {
+			email := ownerName
+			if !strings.Contains(email, "@") {
+				email = ownerName + "@imported.code-shield"
 			}
-			if err := models.DB.Create(&team).Error; err != nil {
-				log.Printf("Line %d: Failed to create team %s: %v", lineNum+2, departmentName, err)
+			user = models.User{
+				EmployeeID: ownerName,
+				Name:       ownerName,
+				Email:      email,
+				Password:   string(placeholderPassword),
+				RegMethod:  "imported",
+				IsActive:   false,
+			}
+			if err := models.DB.Create(&user).Error; err == nil {
+				ownerResolved = true
+			} else {
+				log.Printf("Line %d: Failed to auto-create user %s: %v", lineNum+2, ownerName, err)
+				continue
+			}
+		}
+
+		// Find or create Department
+		var dept models.Department
+		if err := models.DB.Where("name = ?", departmentName).First(&dept).Error; err != nil {
+			var leaderID *uint
+			if ownerResolved {
+				leaderID = &user.ID
+			}
+			dept = models.Department{
+				Name:     departmentName,
+				LeaderID: leaderID,
+			}
+			if err := models.DB.Create(&dept).Error; err != nil {
+				log.Printf("Line %d: Failed to create department %s: %v", lineNum+2, departmentName, err)
 				continue
 			}
 		}
@@ -360,10 +366,10 @@ func ImportRepos(c *gin.Context) {
 		var repo models.Repository
 		if err := models.DB.Where("name = ?", repoName).First(&repo).Error; err != nil {
 			repo = models.Repository{
-				TeamID:       team.ID,
+				DepartmentID: dept.ID,
 				Name:         repoName,
 				URL:          repoURL,
-				OwnerID:      member.ID,
+				OwnerID:      user.ID,
 				Branch:       branch,
 				ServiceGroup: serviceGroup,
 				IsActive:     true,
@@ -373,10 +379,9 @@ func ImportRepos(c *gin.Context) {
 				continue
 			}
 		} else {
-			// Update existing
-			repo.TeamID = team.ID
+			repo.DepartmentID = dept.ID
 			repo.URL = repoURL
-			repo.OwnerID = member.ID
+			repo.OwnerID = user.ID
 			repo.Branch = branch
 			repo.ServiceGroup = serviceGroup
 			if err := models.DB.Save(&repo).Error; err != nil {
@@ -385,7 +390,6 @@ func ImportRepos(c *gin.Context) {
 			}
 		}
 		successCount++
-
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Successfully imported %d repositories", successCount)})

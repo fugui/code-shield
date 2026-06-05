@@ -69,7 +69,7 @@ func GetCampaignRepos[T any](taskTypeName string) gin.HandlerFunc {
 
 		// 1. Fetch repositories
 		var repos []models.Repository
-		query := models.DB.Preload("Owner").Preload("Team")
+		query := models.DB.Preload("Owner").Preload("Department")
 		if err := query.Find(&repos).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch repositories"})
 			return
@@ -172,8 +172,8 @@ func GetCampaignRepos[T any](taskTypeName string) gin.HandlerFunc {
 		for _, repo := range repos {
 			// Filter by department
 			repoDept := ""
-			if repo.Owner.Department != "" {
-				repoDept = repo.Owner.Department
+			if repo.Department.Name != "" {
+				repoDept = repo.Department.Name
 			}
 			if department != "" && repoDept != department {
 				continue
@@ -444,33 +444,16 @@ func GetCampaignDepartments[T any]() gin.HandlerFunc {
 		sortBy := c.DefaultQuery("sort_by", "open_issues")
 		sortOrder := c.DefaultQuery("sort_order", "desc")
 
-		var departments []string
-		models.DB.Model(&models.Member{}).Distinct().Pluck("department", &departments)
-
-		var cleanDepts []string
-		hasEmpty := false
-		for _, dept := range departments {
-			if dept != "" {
-				cleanDepts = append(cleanDepts, dept)
-			} else {
-				hasEmpty = true
-			}
-		}
-		if hasEmpty || len(cleanDepts) == 0 {
-			cleanDepts = append(cleanDepts, "未知部门")
+		var depts []models.Department
+		if err := models.DB.Find(&depts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch departments"})
+			return
 		}
 
 		var summaries []CampaignDeptSummary
-		for _, deptName := range cleanDepts {
+		for _, dept := range depts {
 			var repos []models.Repository
-			var err error
-			if deptName == "未知部门" {
-				err = models.DB.Joins("Owner").Where("Owner.department = ? OR Owner.department IS NULL", "").Find(&repos).Error
-			} else {
-				err = models.DB.Joins("Owner").Where("Owner.department = ?", deptName).Find(&repos).Error
-			}
-
-			if err != nil || len(repos) == 0 {
+			if err := models.DB.Where("department_id = ?", dept.ID).Find(&repos).Error; err != nil || len(repos) == 0 {
 				continue
 			}
 
@@ -508,7 +491,7 @@ func GetCampaignDepartments[T any]() gin.HandlerFunc {
 			}
 
 			summaries = append(summaries, CampaignDeptSummary{
-				Department:     deptName,
+				Department:     dept.Name,
 				ScannedRepos:   int(scannedCount),
 				TotalIssues:    int(totalIssues),
 				OpenIssues:     int(openIssues),
@@ -576,11 +559,14 @@ func GetCampaignTrends[T any]() gin.HandlerFunc {
 				queryTotal = queryTotal.Where("repo_id = ?", repoID)
 				queryOpen = queryOpen.Where("repo_id = ?", repoID)
 			} else if department != "" {
-				var repos []models.Repository
-				models.DB.Joins("Owner").Where("Owner.department = ?", department).Find(&repos)
+				var dept models.Department
 				var repoIDs []uint
-				for _, r := range repos {
-					repoIDs = append(repoIDs, r.ID)
+				if err := models.DB.Where("name = ?", department).First(&dept).Error; err == nil {
+					var repos []models.Repository
+					models.DB.Where("department_id = ?", dept.ID).Find(&repos)
+					for _, r := range repos {
+						repoIDs = append(repoIDs, r.ID)
+					}
 				}
 				if len(repoIDs) > 0 {
 					queryTotal = queryTotal.Where("repo_id IN ?", repoIDs)

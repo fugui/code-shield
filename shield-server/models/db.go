@@ -37,11 +37,13 @@ func InitDB() {
 
 	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
 
+	// Run custom data migration if upgrading from old version
+	RunDataMigration(DB)
+
 	// Auto Migrate
 	err = DB.AutoMigrate(
 		&User{},
-		&Member{},
-		&Team{},
+		&Department{},
 		&Repository{},
 		&TaskType{},
 		&TaskReport{},
@@ -54,6 +56,7 @@ func InitDB() {
 		&FloatFinding{},
 		&ThreadFinding{},
 		&CjsonFinding{},
+		&AnalysisFinding{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
@@ -65,12 +68,13 @@ func InitDB() {
 	if count == 0 {
 		hashed, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 		admin := User{
-			Email:     "admin@code-shield.com",
-			Name:      "管理员",
-			Password:  string(hashed),
-			IsAdmin:   true,
-			IsActive:  true,
-			RegMethod: "local",
+			EmployeeID: "admin",
+			Email:      "admin@code-shield.com",
+			Name:       "管理员",
+			Password:   string(hashed),
+			IsAdmin:    true,
+			IsActive:   true,
+			RegMethod:  "local",
 		}
 		if err := DB.Create(&admin).Error; err != nil {
 			log.Printf("failed to seed admin user: %v", err)
