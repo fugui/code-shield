@@ -72,12 +72,33 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 
 	chunkDetailsList := make([]ChunkDetails, totalChunks)
 
+	loop:
 	for name, files := range chunks {
+		if ctx.ctx.Err() != nil {
+			break loop
+		}
+
 		chunkIndex++
 		currentIndex := chunkIndex
 
 		wg.Add(1)
-		semaphore <- struct{}{} // Acquire semaphore
+		
+		// Acquire semaphore, but abort if context gets cancelled
+		select {
+		case <-ctx.ctx.Done():
+			wg.Done()
+			break loop
+		case semaphore <- struct{}{}:
+		}
+
+		if ctx.ctx.Err() != nil {
+			select {
+			case <-semaphore: // Release slot if acquired
+			default:
+			}
+			wg.Done()
+			break loop
+		}
 
 		go func(chunkName string, chunkFiles []string, idx int) {
 			defer wg.Done()
@@ -96,6 +117,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 				repo:       ctx.repo,
 				codesPath:  ctx.codesPath,
 				runParams:  ctx.runParams,
+				ctx:        ctx.ctx,
 				reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.md", ctx.report.ID, safeName)),
 				jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.report.ID, safeName)),
 			}
@@ -140,6 +162,10 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	}
 
 	wg.Wait()
+
+	if ctx.ctx.Err() != nil {
+		return ctx.ctx.Err()
+	}
 
 	overallEndTime := time.Now()
 	successfulChunks := 0
@@ -547,9 +573,30 @@ func ResumeFailedChunks(reportID uint) error {
 		chunkStatusMap[ctx.Summary.Analysis.Chunks[i].ChunkName] = &ctx.Summary.Analysis.Chunks[i]
 	}
 
+	loop:
 	for idx, failedChunk := range failedChunks {
+		if ctx.ctx.Err() != nil {
+			break loop
+		}
+
 		wg.Add(1)
-		semaphore <- struct{}{}
+		
+		// Acquire semaphore, but abort if context gets cancelled
+		select {
+		case <-ctx.ctx.Done():
+			wg.Done()
+			break loop
+		case semaphore <- struct{}{}:
+		}
+
+		if ctx.ctx.Err() != nil {
+			select {
+			case <-semaphore: // Release slot if acquired
+			default:
+			}
+			wg.Done()
+			break loop
+		}
 
 		go func(chunk ChunkDetails, chunkIdx int) {
 			defer wg.Done()
@@ -618,6 +665,10 @@ func ResumeFailedChunks(reportID uint) error {
 	}
 
 	wg.Wait()
+
+	if ctx.ctx.Err() != nil {
+		return ctx.ctx.Err()
+	}
 
 	// 10. 更新 summary JSON
 	successCount := 0
