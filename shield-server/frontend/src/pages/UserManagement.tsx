@@ -22,6 +22,37 @@ function UserManagement() {
   // SSO and login type visibility config
   const [passwordLoginEnabled, setPasswordLoginEnabled] = useState(true);
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const form = new FormData();
+    form.append('file', file);
+
+    fetch('/api/users/import', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` },
+      body: form
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) showToast(`导入失败: ${data.error}`, 'error');
+      else {
+        showToast(data.message || '导入成功', 'success');
+        fetchUsers(page, pageSize);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      showToast('网络或发生未知错误', 'error');
+    })
+    .finally(() => {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    });
+  };
+
   const fetchUsers = async (currentPage = page, currentPageSize = pageSize) => {
     try {
       const params = new URLSearchParams({
@@ -194,10 +225,29 @@ function UserManagement() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <input type="file" accept=".csv" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
         <div />
-        {passwordLoginEnabled && (
-          <button className="btn" onClick={() => setIsUserModalOpen(true)}>+ 分配新系统账号</button>
-        )}
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {passwordLoginEnabled && (
+            <button className="btn" onClick={() => setIsUserModalOpen(true)}>+ 分配新系统账号</button>
+          )}
+          <button className="btn" style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }} onClick={() => fileInputRef.current?.click()}>批量导入</button>
+          <button className="btn" style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', color: 'white' }} onClick={() => {
+            fetch('/api/users/export', {
+              headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` }
+            })
+              .then(res => res.blob())
+              .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'users.csv';
+                a.click();
+                URL.revokeObjectURL(url);
+              })
+              .catch(() => showToast('导出失败', 'error'));
+          }}>批量导出</button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
