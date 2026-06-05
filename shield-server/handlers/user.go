@@ -173,6 +173,7 @@ func UpdateUser(c *gin.Context) {
 	id := c.Param("id")
 
 	var req struct {
+		Email        string `json:"email"`
 		Name         string `json:"name"`
 		IsAdmin      *bool  `json:"is_admin"`
 		Password     string `json:"password"`
@@ -198,6 +199,13 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
+	if req.Email != "" {
+		if _, err := mail.ParseAddress(req.Email); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Login email must be a valid email address"})
+			return
+		}
+		user.Email = req.Email
+	}
 	if req.Name != "" {
 		user.Name = req.Name
 	}
@@ -228,7 +236,11 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	if err := models.DB.Save(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") || strings.Contains(err.Error(), "users.email") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user: " + err.Error()})
 		return
 	}
 
