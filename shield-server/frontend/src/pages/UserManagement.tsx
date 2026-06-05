@@ -53,12 +53,21 @@ function UserManagement() {
     });
   };
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterDept, setFilterDept] = useState<string | number>('');
+
   const fetchUsers = async (currentPage = page, currentPageSize = pageSize) => {
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         pageSize: currentPageSize.toString(),
       });
+      if (searchQuery) {
+        params.append('search', searchQuery);
+      }
+      if (filterDept) {
+        params.append('department_id', filterDept.toString());
+      }
       const res = await fetch(`/api/users?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem(AUTH_TOKEN_KEY)}` }
       });
@@ -79,7 +88,7 @@ function UserManagement() {
 
   useEffect(() => {
     fetchUsers(page, pageSize);
-  }, [page, pageSize]);
+  }, [page, pageSize, searchQuery, filterDept]);
 
   useEffect(() => {
     fetch('/api/auth/config')
@@ -226,7 +235,31 @@ function UserManagement() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <input type="file" accept=".csv" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
-        <div />
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <input 
+            type="text" 
+            placeholder="搜索姓名、工号、邮箱..." 
+            value={searchQuery} 
+            onChange={e => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }} 
+            style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', width: '220px', background: 'var(--bg-color)', color: 'var(--text-color)' }} 
+          />
+          <select
+            value={filterDept}
+            onChange={e => {
+              setFilterDept(e.target.value);
+              setPage(1);
+            }}
+            style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer' }}
+          >
+            <option value="">全部部门</option>
+            {departments.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           {passwordLoginEnabled && (
             <button className="btn" onClick={() => setIsUserModalOpen(true)}>+ 分配新系统账号</button>
