@@ -806,41 +806,6 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
           {/* TAB 2: DEPARTMENTS RANKING */}
           {activeTab === 'depts' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              {/* Podium */}
-              {depts.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', gap: '2rem', padding: '1.5rem 0', background: 'rgba(255,255,255,0.01)', borderRadius: '12px' }}>
-                  {/* Silver */}
-                  {depts[1] && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600, marginBottom: '0.25rem' }}>🥈 亚军</div>
-                      <div style={{ fontSize: '1rem', fontWeight: 700 }}>{depts[1].department}</div>
-                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f59e0b', margin: '0.25rem 0' }}>{depts[1].fix_rate.toFixed(1)}%</div>
-                      <div style={{ width: '80px', height: '80px', background: 'linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%)', borderTopLeftRadius: '6px', borderTopRightRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '1.5rem', fontWeight: 800 }}>2</div>
-                    </div>
-                  )}
-
-                  {/* Gold */}
-                  {depts[0] && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <div style={{ fontSize: '0.85rem', color: '#eab308', fontWeight: 600, marginBottom: '0.25rem' }}>👑 冠军</div>
-                      <div style={{ fontSize: '1.15rem', fontWeight: 700 }}>{depts[0].department}</div>
-                      <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', margin: '0.25rem 0' }}>{depts[0].fix_rate.toFixed(1)}%</div>
-                      <div style={{ width: '100px', height: '110px', background: 'linear-gradient(180deg, #fef08a 0%, #eab308 100%)', borderTopLeftRadius: '6px', borderTopRightRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#78350f', fontSize: '2rem', fontWeight: 800, boxShadow: '0 8px 16px rgba(234, 179, 8, 0.15)' }}>1</div>
-                    </div>
-                  )}
-
-                  {/* Bronze */}
-                  {depts[2] && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#92400e', fontWeight: 600, marginBottom: '0.25rem' }}>🥉 季军</div>
-                      <div style={{ fontSize: '1rem', fontWeight: 700 }}>{depts[2].department}</div>
-                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ea580c', margin: '0.25rem 0' }}>{depts[2].fix_rate.toFixed(1)}%</div>
-                      <div style={{ width: '80px', height: '60px', background: 'linear-gradient(180deg, #ffedd5 0%, #fed7aa 100%)', borderTopLeftRadius: '6px', borderTopRightRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9a3412', fontSize: '1.5rem', fontWeight: 800 }}>3</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Department Ranking Table */}
               <div className="card" style={{ padding: 0, overflowX: 'auto', border: '1px solid var(--border-color)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
