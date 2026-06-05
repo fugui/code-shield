@@ -904,7 +904,7 @@ function UTAnalysis() {
                               {d.department}
                             </span>
                           </td>
-                          <td style={styles.tableCell}>{d.scanned_repos}</td>
+                          <td style={styles.tableCell}>{d.scanned_repos}/{d.total_repos || 0}</td>
                           <td style={styles.tableCell}>{d.total_cases}</td>
                           <td style={{ ...styles.tableCell, color: d.issues_count > 0 ? '#f97316' : 'inherit' }}>{d.issues_count}</td>
                           <td style={styles.tableCell}>

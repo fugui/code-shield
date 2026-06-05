@@ -375,6 +375,7 @@ func UpdateUTFinding(c *gin.Context) {
 type UTDeptSummary struct {
 	Department   string  `json:"department"`
 	ScannedRepos int     `json:"scanned_repos"`
+	TotalRepos   int     `json:"total_repos"`
 	TotalCases   int     `json:"total_cases"`
 	PassCount    int     `json:"pass_count"`
 	PassRate     float64 `json:"pass_rate"`
@@ -476,6 +477,7 @@ func GetUTDepartments(c *gin.Context) {
 		varSummaries = append(varSummaries, UTDeptSummary{
 			Department:   dept.Name,
 			ScannedRepos: int(scannedCount),
+			TotalRepos:   len(repoIDs),
 			TotalCases:   total,
 			PassCount:    passCount,
 			PassRate:     passRate,
