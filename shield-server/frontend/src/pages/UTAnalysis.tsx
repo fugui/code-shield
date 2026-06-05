@@ -66,6 +66,32 @@ function UTAnalysis() {
   const [selectedRepoName, setSelectedRepoName] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [utTaskTypeId, setUtTaskTypeId] = useState<number | null>(null);
+
+  // Nested Department Repos
+  const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
+  const [deptRepos, setDeptRepos] = useState<Record<string, any[]>>({});
+  const [deptReposLoading, setDeptReposLoading] = useState<Record<string, boolean>>({});
+
+  const toggleDeptExpand = (deptName: string) => {
+    const isExpanding = !expandedDepts[deptName];
+    setExpandedDepts(prev => ({ ...prev, [deptName]: isExpanding }));
+    
+    if (isExpanding && !deptRepos[deptName]) {
+      setDeptReposLoading(prev => ({ ...prev, [deptName]: true }));
+      fetch(apiUrl(`/api/analysis/ut/repos?department=${encodeURIComponent(deptName)}`))
+        .then(res => res.json())
+        .then(data => {
+          setDeptRepos(prev => ({ ...prev, [deptName]: Array.isArray(data) ? data : [] }));
+        })
+        .catch(err => {
+          console.error(err);
+          showToast(`获取部门 ${deptName} 的代码仓失败`, 'error');
+        })
+        .finally(() => {
+          setDeptReposLoading(prev => ({ ...prev, [deptName]: false }));
+        });
+    }
+  };
   
   // Fetch lists
   useEffect(() => {
@@ -862,23 +888,159 @@ function UTAnalysis() {
                   </thead>
                   <tbody>
                     {depts.map((d, index) => (
-                      <tr key={d.department} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ ...styles.tableCell, fontWeight: 600 }}>
-                          <span style={{ display: 'inline-block', width: '20px', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>{index + 1}</span>
-                          {d.department}
-                        </td>
-                        <td style={styles.tableCell}>{d.scanned_repos}</td>
-                        <td style={styles.tableCell}>{d.total_cases}</td>
-                        <td style={{ ...styles.tableCell, color: d.issues_count > 0 ? '#f97316' : 'inherit' }}>{d.issues_count}</td>
-                        <td style={styles.tableCell}>
-                          <span style={{ fontWeight: 700, color: d.pass_rate >= 85 ? '#10b981' : d.pass_rate >= 60 ? '#f59e0b' : '#ef4444' }}>
-                            {d.pass_rate.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={{ fontWeight: 600, color: '#3b82f6' }}>{d.fix_rate.toFixed(1)}%</span>
-                        </td>
-                      </tr>
+                      <React.Fragment key={d.department}>
+                        <tr 
+                          onClick={() => toggleDeptExpand(d.department)}
+                          style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background 0.2s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <td style={{ ...styles.tableCell, fontWeight: 600 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ display: 'inline-block', width: '20px', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>{index + 1}</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', transition: 'transform 0.2s', transform: expandedDepts[d.department] ? 'rotate(90deg)' : 'rotate(0deg)', color: '#64748b' }}>
+                                <ChevronRightIcon />
+                              </span>
+                              {d.department}
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>{d.scanned_repos}</td>
+                          <td style={styles.tableCell}>{d.total_cases}</td>
+                          <td style={{ ...styles.tableCell, color: d.issues_count > 0 ? '#f97316' : 'inherit' }}>{d.issues_count}</td>
+                          <td style={styles.tableCell}>
+                            <span style={{ fontWeight: 700, color: d.pass_rate >= 85 ? '#10b981' : d.pass_rate >= 60 ? '#f59e0b' : '#ef4444' }}>
+                              {d.pass_rate.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td style={styles.tableCell}>
+                            <span style={{ fontWeight: 600, color: '#3b82f6' }}>{d.fix_rate.toFixed(1)}%</span>
+                          </td>
+                        </tr>
+                        {expandedDepts[d.department] && (
+                          <tr>
+                            <td colSpan={6} style={{ padding: '0.75rem 1.5rem', background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
+                              {deptReposLoading[d.department] ? (
+                                <div style={{ display: 'flex', justifyContent: 'center', padding: '1.5rem' }}>
+                                  <div style={{ animation: 'spin 1s linear infinite', border: '2px solid rgba(59, 130, 246, 0.1)', borderTop: '2px solid #3b82f6', borderRadius: '50%', width: '20px', height: '20px', marginRight: '0.5rem' }} />
+                                  <span style={{ fontSize: '0.85rem', color: '#64748b' }}>正在加载该部门的代码仓...</span>
+                                </div>
+                              ) : !deptRepos[d.department] || deptRepos[d.department].length === 0 ? (
+                                <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                  暂无代码仓数据
+                                </div>
+                              ) : (
+                                <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                    <thead>
+                                      <tr style={{ background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>代码仓</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>负责人</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>测试用例总数</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>阻塞</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>严重</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>有效合格率</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>最近扫描</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>操作</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {deptRepos[d.department].map((r: any) => (
+                                        <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', fontWeight: 600 }}>
+                                            {r.repo_url ? (
+                                              <a
+                                                href={sshToHttps(r.repo_url)}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
+                                                onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                                                onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                                              >
+                                                {r.repo_name}
+                                              </a>
+                                            ) : (
+                                              r.repo_name
+                                            )}
+                                          </td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.owner_name}</td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.total_cases > 0 ? r.total_cases : <span style={{ color: '#94a3b8' }}>未扫描</span>}</td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
+                                            {r.total_cases > 0 ? (
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '95px' }}>
+                                                <span style={{ fontSize: '0.8rem', fontWeight: 600, width: '35px' }}>{r.pass_rate.toFixed(0)}%</span>
+                                                <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: '#e2e8f0', overflow: 'hidden' }}>
+                                                  <div style={{ height: '100%', borderRadius: '2px', width: `${r.pass_rate}%`, background: r.pass_rate >= 85 ? '#10b981' : r.pass_rate >= 60 ? '#f59e0b' : '#ef4444' }} />
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <span style={{ color: '#94a3b8' }}>-</span>
+                                            )}
+                                          </td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
+                                            {r.last_scan_time && r.last_scan_time !== '0001-01-01T00:00:00Z' ? (
+                                              <span title={new Date(r.last_scan_time).toLocaleString()}>
+                                                {r.last_scan_time.substring(0, 10)}
+                                              </span>
+                                            ) : (
+                                              <span style={{ color: '#94a3b8' }}>-</span>
+                                            )}
+                                          </td>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
+                                            {(() => {
+                                              const hasNotScanned = !r.last_scan_time || r.last_scan_time === '0001-01-01T00:00:00Z';
+                                              return (
+                                                <button 
+                                                  disabled={hasNotScanned}
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openWorkspace(r.repo_id, r.repo_name);
+                                                  }}
+                                                  title={hasNotScanned ? "代码仓未进行首次分析，无法审计" : "用例审计"}
+                                                  style={{
+                                                    background: 'transparent',
+                                                    border: 'none',
+                                                    color: hasNotScanned ? '#cbd5e1' : 'var(--primary-color)',
+                                                    cursor: hasNotScanned ? 'not-allowed' : 'pointer',
+                                                    padding: '0.25rem',
+                                                    borderRadius: '50%',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    transition: 'background-color 0.2s'
+                                                  }}
+                                                  onMouseEnter={e => {
+                                                    if (!hasNotScanned) {
+                                                      e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)';
+                                                    }
+                                                  }}
+                                                  onMouseLeave={e => {
+                                                    if (!hasNotScanned) {
+                                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                                    }
+                                                  }}
+                                                >
+                                                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                                    <circle cx="10" cy="13" r="2"></circle>
+                                                    <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
+                                                  </svg>
+                                                </button>
+                                              );
+                                            })()}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
