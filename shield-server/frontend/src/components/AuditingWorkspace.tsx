@@ -24,15 +24,15 @@ export interface Finding {
   detail: string;
   code_snippet?: string;
   suggestion?: string;
-  assignee_id?: string;
+  assignee_id?: number;
   assignee?: {
-    id?: string;
-    ID?: string;
+    id?: number;
+    ID?: number;
     name: string;
   };
   Assignee?: { // Sometimes capitalized in nested UT model
-    id?: string;
-    ID?: string;
+    id?: number;
+    ID?: number;
     name: string;
   };
   status_log?: string;
@@ -103,7 +103,7 @@ export default function AuditingWorkspace({
   // Active Selected Finding & Workflow States
   const [editingFinding, setEditingFinding] = useState<Finding | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState('open');
-  const [workflowAssignee, setWorkflowAssignee] = useState('');
+  const [workflowAssignee, setWorkflowAssignee] = useState<number | ''>('');
   const [workflowComment, setWorkflowComment] = useState('');
 
   // Fetch findings

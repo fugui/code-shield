@@ -41,7 +41,7 @@ func GetUTRepos(c *gin.Context) {
 
 	// 1. Fetch repositories
 	var repos []models.Repository
-	query := models.DB.Preload("Owner").Preload("Team")
+	query := models.DB.Preload("Owner").Preload("Department")
 	if err := query.Find(&repos).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch repositories"})
 		return
@@ -131,8 +131,8 @@ func GetUTRepos(c *gin.Context) {
 	for _, repo := range repos {
 		// Filter by department
 		repoDept := ""
-		if repo.Owner.Department != "" {
-			repoDept = repo.Owner.Department
+		if repo.Department.Name != "" {
+			repoDept = repo.Department.Name
 		}
 		if department != "" && repoDept != department {
 			continue
@@ -387,41 +387,19 @@ func GetUTDepartments(c *gin.Context) {
 	sortBy := c.DefaultQuery("sort_by", "pass_rate")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 
-	// 1. Fetch all distinct departments from members table
-	var departments []string
-	models.DB.Model(&models.Member{}).Distinct().Pluck("department", &departments)
-
-	// Filter out empty department name
-	var cleanDepts []string
-	hasEmpty := false
-	for _, dept := range departments {
-		if dept != "" {
-			cleanDepts = append(cleanDepts, dept)
-		} else {
-			hasEmpty = true
-		}
-	}
-	if hasEmpty || len(cleanDepts) == 0 {
-		cleanDepts = append(cleanDepts, "未知部门")
+	// 1. Fetch all departments
+	var depts []models.Department
+	if err := models.DB.Find(&depts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch departments"})
+		return
 	}
 
 	varSummaries := []UTDeptSummary{}
 
-	for _, dept := range cleanDepts {
-		var memberIDs []string
-		if dept == "未知部门" {
-			models.DB.Model(&models.Member{}).Where("department = '' OR department IS NULL").Pluck("id", &memberIDs)
-		} else {
-			models.DB.Model(&models.Member{}).Where("department = ?", dept).Pluck("id", &memberIDs)
-		}
-
-		if len(memberIDs) == 0 {
-			continue
-		}
-
-		// Find repos owned by members of this department
+	for _, dept := range depts {
+		// Find repos owned by this department
 		var repoIDs []uint
-		models.DB.Model(&models.Repository{}).Where("owner_id IN ?", memberIDs).Pluck("id", &repoIDs)
+		models.DB.Model(&models.Repository{}).Where("department_id = ?", dept.ID).Pluck("id", &repoIDs)
 		if len(repoIDs) == 0 {
 			continue
 		}
@@ -491,7 +469,7 @@ func GetUTDepartments(c *gin.Context) {
 		}
 
 		varSummaries = append(varSummaries, UTDeptSummary{
-			Department:   dept,
+			Department:   dept.Name,
 			ScannedRepos: int(scannedCount),
 			TotalCases:   total,
 			PassCount:    passCount,
@@ -572,15 +550,9 @@ func GetUTTrends(c *gin.Context) {
 		rid, _ := strconv.Atoi(repoIDStr)
 		targetRepoIDs = append(targetRepoIDs, uint(rid))
 	} else if department != "" {
-		// Filter owners in this department
-		var memberIDs []string
-		if department == "未知部门" {
-			models.DB.Model(&models.Member{}).Where("department = '' OR department IS NULL").Pluck("id", &memberIDs)
-		} else {
-			models.DB.Model(&models.Member{}).Where("department = ?", department).Pluck("id", &memberIDs)
-		}
-		if len(memberIDs) > 0 {
-			models.DB.Model(&models.Repository{}).Where("owner_id IN ?", memberIDs).Pluck("id", &targetRepoIDs)
+		var dept models.Department
+		if err := models.DB.Where("name = ?", department).First(&dept).Error; err == nil {
+			models.DB.Model(&models.Repository{}).Where("department_id = ?", dept.ID).Pluck("id", &targetRepoIDs)
 		}
 		if len(targetRepoIDs) == 0 {
 			c.JSON(http.StatusOK, []UTTrendPoint{})

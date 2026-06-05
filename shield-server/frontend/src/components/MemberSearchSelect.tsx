@@ -1,25 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-interface Member {
-  id: string;
+interface User {
+  id: number;
+  employee_id: string;
   name: string;
-  department?: string;
+  department?: {
+    id: number;
+    name: string;
+  } | string;
 }
 
 interface MemberSearchSelectProps {
-  value: string;
-  onChange: (memberId: string) => void;
+  value: number | string | '';
+  onChange: (userId: number | '') => void;
   style?: React.CSSProperties;
 }
 
 /**
- * Searchable member selector: type to search, click to select.
- * Uses /api/members?search=xxx for server-side filtering.
+ * Searchable user selector: type to search, click to select.
+ * Uses /api/users?search=xxx for server-side filtering.
  */
 function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps) {
   const [query, setQuery] = useState('');
   const [displayText, setDisplayText] = useState('');
-  const [results, setResults] = useState<Member[]>([]);
+  const [results, setResults] = useState<User[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,15 +32,20 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
   // When value changes externally, resolve the display name
   useEffect(() => {
     if (value && !displayText) {
-      fetch(`/api/members?search=${encodeURIComponent(value)}&pageSize=5`)
+      fetch(`/api/users?search=${encodeURIComponent(value.toString())}&pageSize=5`)
         .then(res => res.json())
         .then(data => {
-          const list: Member[] = data.items || [];
-          const match = list.find((m: Member) => m.id === value);
-          if (match) setDisplayText(`${match.name} (${match.id})`);
-          else setDisplayText(value);
+          const list: User[] = data.items || [];
+          const match = list.find((m: User) => m.id === Number(value) || m.employee_id === value.toString());
+          if (match) {
+            setDisplayText(`${match.name} (${match.employee_id || match.id})`);
+          } else {
+            setDisplayText(value.toString());
+          }
         })
-        .catch(() => setDisplayText(value));
+        .catch(() => setDisplayText(value.toString()));
+    } else if (!value) {
+      setDisplayText('');
     }
   }, [value]);
 
@@ -53,9 +62,8 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
 
   const doSearch = (q: string) => {
     if (!q.trim()) {
-      // Show recent/default list
       setLoading(true);
-      fetch('/api/members?pageSize=20')
+      fetch('/api/users?pageSize=20')
         .then(res => res.json())
         .then(data => setResults(data.items || []))
         .catch(() => setResults([]))
@@ -63,7 +71,7 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
       return;
     }
     setLoading(true);
-    fetch(`/api/members?search=${encodeURIComponent(q)}&pageSize=20`)
+    fetch(`/api/users?search=${encodeURIComponent(q)}&pageSize=20`)
       .then(res => res.json())
       .then(data => setResults(data.items || []))
       .catch(() => setResults([]))
@@ -84,9 +92,9 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
     doSearch(query);
   };
 
-  const handleSelect = (member: Member) => {
-    onChange(member.id);
-    setDisplayText(`${member.name} (${member.id})`);
+  const handleSelect = (user: User) => {
+    onChange(user.id);
+    setDisplayText(`${user.name} (${user.employee_id || user.id})`);
     setQuery('');
     setShowDropdown(false);
   };
@@ -117,7 +125,6 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
             if (e.key === 'Escape') setShowDropdown(false);
           }}
         />
-        {/* Search icon or clear button */}
         {displayText ? (
           <button
             type="button"
@@ -153,29 +160,32 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
               {query ? '未找到匹配的人员' : '输入关键字开始搜索'}
             </div>
           ) : (
-            results.map(m => (
-              <div
-                key={m.id}
-                onClick={() => handleSelect(m)}
-                style={{
-                  padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.875rem',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  transition: 'background 0.15s',
-                  background: m.id === value ? 'rgba(37,99,235,0.08)' : 'transparent',
-                  color: 'var(--text-color)'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-color)'}
-                onMouseLeave={e => e.currentTarget.style.background = m.id === value ? 'rgba(37,99,235,0.08)' : 'transparent'}
-              >
-                <span>
-                  <span style={{ fontWeight: 500 }}>{m.name}</span>
-                  <span style={{ color: '#94a3b8', marginLeft: '0.4rem', fontSize: '0.8rem' }}>({m.id})</span>
-                </span>
-                {m.department && (
-                  <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{m.department}</span>
-                )}
-              </div>
-            ))
+            results.map(m => {
+              const deptName = typeof m.department === 'object' && m.department !== null ? m.department.name : m.department;
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => handleSelect(m)}
+                  style={{
+                    padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.875rem',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    transition: 'background 0.15s',
+                    background: m.id === Number(value) ? 'rgba(37,99,235,0.08)' : 'transparent',
+                    color: 'var(--text-color)'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-color)'}
+                  onMouseLeave={e => e.currentTarget.style.background = m.id === Number(value) ? 'rgba(37,99,235,0.08)' : 'transparent'}
+                >
+                  <span>
+                    <span style={{ fontWeight: 500 }}>{m.name}</span>
+                    <span style={{ color: '#94a3b8', marginLeft: '0.4rem', fontSize: '0.8rem' }}>({m.employee_id || m.id})</span>
+                  </span>
+                  {deptName && (
+                    <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{deptName}</span>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}

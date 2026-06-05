@@ -162,23 +162,50 @@ func OAuth2Callback(c *gin.Context) {
 	}
 
 	var user models.User
-	err = models.DB.Where("email = ?", email).First(&user).Error
-	if err != nil {
+	userFound := false
+
+	// 1. Try matching by UniqueID if uniqueID is not empty
+	if uniqueID != "" {
+		if err := models.DB.Where("unique_id = ?", uniqueID).First(&user).Error; err == nil {
+			userFound = true
+		}
+	}
+
+	// 2. Try matching by Email if not found
+	if !userFound && email != "" {
+		if err := models.DB.Where("email = ?", email).First(&user).Error; err == nil {
+			userFound = true
+		}
+	}
+
+	// 3. Try matching by EmployeeID (工号) if not found
+	if !userFound && employeeID != "" {
+		if err := models.DB.Where("employee_id = ?", employeeID).First(&user).Error; err == nil {
+			userFound = true
+		}
+	}
+
+	if !userFound {
 		// Create new user via SSO auto-provisioning
 		displayName := name
 		if displayName == "" {
 			displayName = email
 		}
 
+		var uniqueIDPtr *string
+		if uniqueID != "" {
+			uniqueIDPtr = &uniqueID
+		}
+
 		user = models.User{
 			Email:        email,
 			Name:         displayName,
 			EmployeeID:   employeeID,
-			UniqueID:     uniqueID,
+			UniqueID:     uniqueIDPtr,
 			EmployeeType: employeeType,
 			RegMethod:    "sso",
 			IsAdmin:      isAdmin,
-			IsActive:     true,
+			IsActive:     true, // SSO auto-provisioned users are active
 			Password:     "$2a$10$SSO_USER_NO_PASSWORD_LOGIN", // Marker: SSO user, password login disabled
 		}
 		if err := models.DB.Create(&user).Error; err != nil {
@@ -188,7 +215,7 @@ func OAuth2Callback(c *gin.Context) {
 		}
 		log.Printf("[OAuth2] Auto-provisioned new user: %s (%s, isAdmin: %v)", email, displayName, isAdmin)
 	} else {
-		// Update attributes from IdP if they changed
+		// Update attributes from IdP if they changed or bind unique_id/activate imported user
 		updates := map[string]interface{}{}
 		if name != "" && name != user.Name {
 			updates["name"] = name
@@ -198,13 +225,20 @@ func OAuth2Callback(c *gin.Context) {
 			updates["employee_id"] = employeeID
 			user.EmployeeID = employeeID
 		}
-		if uniqueID != "" && uniqueID != user.UniqueID {
+		if uniqueID != "" && (user.UniqueID == nil || *user.UniqueID != uniqueID) {
 			updates["unique_id"] = uniqueID
-			user.UniqueID = uniqueID
+			user.UniqueID = &uniqueID
 		}
 		if employeeType != "" && employeeType != user.EmployeeType {
 			updates["employee_type"] = employeeType
 			user.EmployeeType = employeeType
+		}
+		if user.RegMethod == "imported" {
+			updates["reg_method"] = "sso"
+			user.RegMethod = "sso"
+			updates["is_active"] = true
+			user.IsActive = true
+			log.Printf("[OAuth2] Activated imported user %s via SSO login", email)
 		}
 		// If user is not admin yet, but is in the config's AdminList, promote them automatically
 		if !user.IsAdmin && isAdmin {
@@ -223,9 +257,15 @@ func OAuth2Callback(c *gin.Context) {
 		return
 	}
 
-	// Update last_login
+	// Update last_login and last_ip
 	now := time.Now()
-	models.DB.Model(&user).Update("last_login", now)
+	clientIP := c.ClientIP()
+	models.DB.Model(&user).Updates(map[string]interface{}{
+		"last_login": now,
+		"last_ip":    clientIP,
+	})
+	user.LastLogin = &now
+	user.LastIP = clientIP
 
 	// Issue Code Shield JWT
 	jwtSecret := []byte(models.AppConfig.Auth.JWTSecret)

@@ -64,7 +64,7 @@ function ScanManagement() {
 
   const fetchTeams = async () => {
     try {
-      const res = await fetch('/api/teams');
+      const res = await fetch('/api/departments');
       if (res.ok) setTeams(await res.json());
     } catch (err) { console.error(err); }
   };
@@ -112,7 +112,7 @@ function ScanManagement() {
 
   // Filter repos
   const filteredRepos = repos.filter(r => {
-    if (filterTeam && String(r.team_id) !== filterTeam) return false;
+    if (filterTeam && String(r.department_id) !== filterTeam) return false;
     if (filterSearch && !r.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
     return true;
   });
@@ -499,7 +499,7 @@ function ScanManagement() {
                           r.name
                         )}
                       </td>
-                      <td>{r.team?.name || teams.find(t => t.id === r.team_id)?.name || '-'}</td>
+                      <td>{r.department?.name || teams.find(t => t.id === r.department_id)?.name || '-'}</td>
                       <td>{r.owner?.name || r.owner_id || '-'}</td>
                       <td style={{ color: '#64748b' }}>{r.service_group || '-'}</td>
                       <td>

@@ -33,7 +33,7 @@ const CRON_PRESETS = [
 const TARGET_MODES = [
   { key: 'all', label: '所有仓库' },
   { key: 'service_group', label: '按服务组' },
-  { key: 'team', label: '按团队' },
+  { key: 'team', label: '按部门' },
   { key: 'specific', label: '指定仓库' },
 ];
 
@@ -70,7 +70,7 @@ function getTargetSummary(mode: string): string {
   switch (mode) {
     case 'all': return '将对系统中所有已激活的代码仓执行任务';
     case 'service_group': return '仅对所选服务组内的代码仓执行任务';
-    case 'team': return '仅对所选团队名下的代码仓执行任务';
+    case 'team': return '仅对所选部门名下的代码仓执行任务';
     case 'specific': return '仅对手动选定的代码仓执行任务';
     default: return '';
   }
@@ -293,7 +293,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
               {form.target_mode === 'team' && (
                 <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
                   {teams.length === 0 ? (
-                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>暂无团队数据</span>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>暂无部门数据</span>
                   ) : teams.map(team => (
                     <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', cursor: 'pointer', padding: '0.3rem 0.6rem', borderRadius: '6px', background: (form.target_values || []).includes(team.id) ? 'rgba(37,99,235,0.08)' : 'transparent', border: `1px solid ${(form.target_values || []).includes(team.id) ? 'var(--primary-color)' : 'var(--border-color)'}`, transition: 'all 0.15s' }}>
                       <input

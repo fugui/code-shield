@@ -9,45 +9,40 @@ import (
 	"gorm.io/datatypes"
 )
 
-type Member struct {
-	ID         string    `gorm:"primaryKey;column:id" json:"id"` // 员工的字符串ID
-	Name       string    `gorm:"not null" json:"name"`           // 姓名
-	Email      string    `gorm:"default:''" json:"email"`        // 邮箱地址
-	Department string    `gorm:"default:''" json:"department"`   // 部门名称
-	CreatedAt  time.Time `json:"created_at"`
-}
-
 type User struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	Email        string     `gorm:"uniqueIndex;not null" json:"email"`
-	Name         string     `gorm:"not null;default:''" json:"name"`
-	Password     string     `gorm:"not null" json:"-"` // Omit password in JSON
-	EmployeeID   string     `gorm:"default:''" json:"employee_id"`
-	UniqueID     string     `gorm:"default:''" json:"unique_id"`
-	EmployeeType string     `gorm:"default:''" json:"employee_type"`
-	RegMethod    string     `gorm:"default:'local'" json:"reg_method"` // "local" or "sso"
-	IsActive     bool       `gorm:"default:true" json:"is_active"`
-	IsAdmin      bool       `gorm:"default:false" json:"is_admin"`
-	LastLogin    *time.Time `json:"last_login"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           uint        `gorm:"primaryKey" json:"id"`                      // 系统内部自增唯一ID (稳定，永不变更)
+	UniqueID     *string     `gorm:"uniqueIndex" json:"unique_id,omitempty"`    // SSO 平台唯一不变ID
+	EmployeeID   string      `gorm:"index;default:''" json:"employee_id"`       // 员工工号
+	EmployeeType string      `gorm:"default:''" json:"employee_type"`           // 员工类型
+	Email        string      `gorm:"uniqueIndex;not null" json:"email"`         // 邮箱地址
+	Name         string      `gorm:"not null;default:''" json:"name"`           // 姓名
+	Password     string      `gorm:"not null" json:"-"`                         // 密码哈希
+	RegMethod    string      `gorm:"default:'local'" json:"reg_method"`         // "local", "sso", "imported"
+	IsActive     bool        `gorm:"default:true" json:"is_active"`             // 是否允许登录
+	IsAdmin      bool        `gorm:"default:false" json:"is_admin"`             // 是否管理员
+	LastLogin    *time.Time  `json:"last_login"`
+	LastIP       string      `gorm:"default:''" json:"last_ip"`                 // 最后登录IP
+	DepartmentID *uint       `json:"department_id"`                             // 关联部门ID
+	Department   *Department `gorm:"foreignKey:DepartmentID" json:"department,omitempty"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
-type Team struct {
+type Department struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Name      string    `gorm:"uniqueIndex;not null" json:"name"`
-	LeaderID  string    `json:"leader_id"`
-	Leader    Member    `gorm:"foreignKey:LeaderID" json:"leader"`
+	LeaderID  *uint     `json:"leader_id"`                                    // 关联 User.ID (允许为 NULL)
+	Leader    *User     `gorm:"foreignKey:LeaderID" json:"leader,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type Repository struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
-	TeamID         uint           `json:"team_id"`
-	Team           Team           `gorm:"foreignKey:TeamID" json:"team"`
+	DepartmentID   uint           `json:"department_id"`
+	Department     Department     `gorm:"foreignKey:DepartmentID" json:"department"`
 	Name           string         `gorm:"uniqueIndex;not null" json:"name"`
 	URL            string         `gorm:"not null" json:"url"`
-	OwnerID        string         `json:"owner_id"`
-	Owner          Member         `gorm:"foreignKey:OwnerID" json:"owner"`
+	OwnerID        uint           `json:"owner_id"`
+	Owner          User           `gorm:"foreignKey:OwnerID" json:"owner"`
 	Branch         string         `gorm:"default:main" json:"branch"`
 	ServiceGroup   string         `gorm:"size:30" json:"service_group"`
 	RelatedMembers datatypes.JSON `json:"related_members"` // Optional related members (receives CC emails)
@@ -152,8 +147,8 @@ type AnalysisFinding struct {
 	Title        string     `gorm:"not null" json:"title"`         // 问题标题
 	Detail       string     `gorm:"type:text" json:"detail"`       // 详细描述
 	Suggestion   string     `gorm:"type:text" json:"suggestion"`   // 修复建议
-	Status       string     `gorm:"default:open" json:"status"`    // 处理状态: open, processing, closed
-	AssigneeID   string     `json:"assignee_id"`                   // 处理人 ID
+	AssigneeID   *uint      `json:"assignee_id"`                   // 处理人 ID
+	Assignee     *User      `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	Feedback     string     `gorm:"type:text" json:"feedback"`     // 用户反馈内容
 	FeedbackAt   *time.Time `json:"feedback_at"`                   // 反馈时间
 	CreatedAt    time.Time  `json:"created_at"`
@@ -174,8 +169,8 @@ type TestCaseFinding struct {
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (问题解决), closed (问题关闭), invalid (无效问题)
-	AssigneeID   string         `json:"assignee_id"`
-	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	AssigneeID   *uint          `json:"assignee_id"`
+	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 用于记录时间节点：[{"status":"open","time":"2026-06-01...","user":"xxx"}]
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
@@ -205,8 +200,8 @@ type KeyIssue struct {
 	FilePath     string     `json:"file_path"`
 	LineNumber   string     `json:"line_number"`
 	Status       string     `gorm:"default:open" json:"status"` // open, in_progress, resolved
-	AssigneeID   string     `json:"assignee_id"`
-	Assignee     Member     `gorm:"foreignKey:AssigneeID" json:"assignee"`
+	AssigneeID   *uint      `json:"assignee_id"`
+	Assignee     *User      `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
@@ -263,8 +258,8 @@ type CoredumpFinding struct {
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
-	AssigneeID   string         `json:"assignee_id"`
-	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	AssigneeID   *uint          `json:"assignee_id"`
+	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
@@ -285,8 +280,8 @@ type FloatFinding struct {
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
-	AssigneeID   string         `json:"assignee_id"`
-	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	AssigneeID   *uint          `json:"assignee_id"`
+	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
@@ -307,8 +302,8 @@ type ThreadFinding struct {
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
-	AssigneeID   string         `json:"assignee_id"`
-	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	AssigneeID   *uint          `json:"assignee_id"`
+	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
@@ -329,8 +324,8 @@ type CjsonFinding struct {
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
-	AssigneeID   string         `json:"assignee_id"`
-	Assignee     *Member        `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	AssigneeID   *uint          `json:"assignee_id"`
+	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`

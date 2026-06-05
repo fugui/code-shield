@@ -51,10 +51,11 @@ type PortalClaims struct {
 }
 
 type UnifiedClaims struct {
-	UserID  uint
-	Email   string
-	Name    string
-	IsAdmin bool
+	UserID   uint
+	UniqueID string
+	Email    string
+	Name     string
+	IsAdmin  bool
 }
 
 // Unified parser that validates tokens from both Code-Shield and Portal (SSO)
@@ -94,9 +95,10 @@ func parseToken(tokenString string) (*UnifiedClaims, error) {
 				email = portalClaims.Username
 			}
 			return &UnifiedClaims{
-				Email:   email,
-				Name:    portalClaims.Name,
-				IsAdmin: portalClaims.IsAdmin,
+				UniqueID: portalClaims.Username, // Use Username as UniqueID
+				Email:    email,
+				Name:     portalClaims.Name,
+				IsAdmin:  portalClaims.IsAdmin,
 			}, nil
 		}
 	}
@@ -153,10 +155,15 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Update last_login
+	// Update last_login and last_ip
 	now := time.Now()
-	models.DB.Model(&user).Update("last_login", now)
+	clientIP := c.ClientIP()
+	models.DB.Model(&user).Updates(map[string]interface{}{
+		"last_login": now,
+		"last_ip":    clientIP,
+	})
 	user.LastLogin = &now // reflect in response
+	user.LastIP = clientIP
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": tokenString,
@@ -189,17 +196,38 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 2. Automated user provisioning
 		var user models.User
-		err = models.DB.Where("email = ?", unifiedClaims.Email).First(&user).Error
-		if err != nil {
+		userFound := false
+
+		// 2.1 Match by UniqueID if available
+		if unifiedClaims.UniqueID != "" {
+			if err = models.DB.Where("unique_id = ?", unifiedClaims.UniqueID).First(&user).Error; err == nil {
+				userFound = true
+			}
+		}
+
+		// 2.2 Match by Email
+		if !userFound && unifiedClaims.Email != "" {
+			if err = models.DB.Where("email = ?", unifiedClaims.Email).First(&user).Error; err == nil {
+				userFound = true
+			}
+		}
+
+		if !userFound {
 			// Auto-register user in Code Shield DB if authenticated by SSO Portal
 			name := unifiedClaims.Name
 			if name == "" {
 				name = unifiedClaims.Email
 			}
 
+			var uniqueIDPtr *string
+			if unifiedClaims.UniqueID != "" {
+				uniqueIDPtr = &unifiedClaims.UniqueID
+			}
+
 			user = models.User{
 				Email:     unifiedClaims.Email,
 				Name:      name,
+				UniqueID:  uniqueIDPtr,
 				IsAdmin:   unifiedClaims.IsAdmin,
 				IsActive:  true,
 				RegMethod: "sso",
@@ -209,6 +237,22 @@ func AuthMiddleware() gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "SSO user auto-provisioning failed"})
 				c.Abort()
 				return
+			}
+		} else {
+			// Update/activate if imported user matches
+			updates := map[string]interface{}{}
+			if unifiedClaims.UniqueID != "" && (user.UniqueID == nil || *user.UniqueID != unifiedClaims.UniqueID) {
+				updates["unique_id"] = unifiedClaims.UniqueID
+				user.UniqueID = &unifiedClaims.UniqueID
+			}
+			if user.RegMethod == "imported" {
+				updates["reg_method"] = "sso"
+				user.RegMethod = "sso"
+				updates["is_active"] = true
+				user.IsActive = true
+			}
+			if len(updates) > 0 {
+				models.DB.Model(&user).Updates(updates)
 			}
 		}
 

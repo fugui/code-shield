@@ -47,7 +47,7 @@ func UpdateIssue(c *gin.Context) {
 
 	var req struct {
 		Status     *string `json:"status"`
-		AssigneeID *string `json:"assignee_id"`
+		AssigneeID *uint   `json:"assignee_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -58,7 +58,7 @@ func UpdateIssue(c *gin.Context) {
 		issue.Status = *req.Status
 	}
 	if req.AssigneeID != nil {
-		issue.AssigneeID = *req.AssigneeID
+		issue.AssigneeID = req.AssigneeID
 	}
 
 	models.DB.Save(&issue)

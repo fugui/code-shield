@@ -100,19 +100,16 @@ func main() {
 		api.GET("/me", handlers.GetMe)
 		api.PATCH("/password", handlers.UpdatePassword)
 
-		api.GET("/teams", handlers.GetTeams)
-		api.POST("/teams", handlers.CreateTeam)
-		api.POST("/teams/import", handlers.ImportTeams)
-		api.GET("/teams/export", handlers.ExportTeams)
-		api.PATCH("/teams/:id", handlers.UpdateTeam)
-		api.DELETE("/teams/:id", handlers.DeleteTeam)
+		api.GET("/departments", handlers.GetDepartments)
+		api.POST("/departments", handlers.CreateDepartment)
+		api.POST("/departments/import", handlers.ImportDepartments)
+		api.GET("/departments/export", handlers.ExportDepartments)
+		api.PATCH("/departments/:id", handlers.UpdateDepartment)
+		api.DELETE("/departments/:id", handlers.DeleteDepartment)
 
-		api.GET("/members", handlers.GetMembers)
-		api.POST("/members", handlers.CreateMember)
-		api.POST("/members/import", handlers.ImportMembers)
-		api.GET("/members/export", handlers.ExportMembers)
-		api.PATCH("/members/:id", handlers.UpdateMember)
-		api.DELETE("/members/:id", handlers.DeleteMember)
+		api.GET("/users", handlers.GetUsers)
+		api.POST("/users/import", handlers.ImportUsers)
+		api.GET("/users/export", handlers.ExportUsers)
 
 		api.GET("/repos", handlers.GetRepos)
 		api.POST("/repos", handlers.CreateRepo)
@@ -183,7 +180,6 @@ func main() {
 
 			users := admin.Group("/users")
 			{
-				users.GET("", handlers.GetUsers)
 				users.POST("", handlers.CreateUser)
 				users.PUT("/:id", handlers.UpdateUser)
 				users.PATCH("/:id/status", handlers.UpdateUserStatus)

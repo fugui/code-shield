@@ -12,7 +12,7 @@ function Repositories() {
   const [repos, setRepos] = useState<any[]>([]);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit' | null>(null);
   const [editingRepoId, setEditingRepoId] = useState<number | null>(null);
-  const [formData, setFormData] = useState({ name: '', url: '', owner_id: '', branch: 'main', team_id: 0, service_group: '', related_members: [] as string[] });
+  const [formData, setFormData] = useState({ name: '', url: '', owner_id: '' as string | number, branch: 'main', department_id: 0, service_group: '', related_members: [] as string[] });
   const [teams, setTeams] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [filterTeam, setFilterTeam] = useState<string>('');
@@ -31,17 +31,17 @@ function Repositories() {
   }, [page, filterTeam, filterServiceGroup, filterOwner]);
 
   useEffect(() => {
-    fetch('/api/teams')
+    fetch('/api/departments')
       .then(res => res.json())
       .then(data => {
         const list = Array.isArray(data) ? data : (data.items || []);
         setTeams(list);
         if (list.length > 0) {
-          setFormData(prev => ({ ...prev, team_id: prev.team_id === 0 ? list[0].id : prev.team_id }));
+          setFormData(prev => ({ ...prev, department_id: prev.department_id === 0 ? list[0].id : prev.department_id }));
         }
       })
       .catch(console.error);
-    fetch('/api/members?pageSize=1000')
+    fetch('/api/users?pageSize=1000')
       .then(res => res.json())
       .then(data => {
         const list = Array.isArray(data) ? data : (data.items || []);
@@ -58,7 +58,7 @@ function Repositories() {
       page: page.toString(),
       pageSize: pageSize.toString(),
     });
-    if (filterTeam) params.append('team_id', filterTeam);
+    if (filterTeam) params.append('department_id', filterTeam);
     if (filterServiceGroup) params.append('service_group', filterServiceGroup);
     if (filterOwner) params.append('owner', filterOwner);
 
@@ -91,7 +91,7 @@ function Repositories() {
   };
 
   const openAddDrawer = () => {
-    setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', team_id: teams.length > 0 ? teams[0].id : 0, service_group: '', related_members: [] });
+    setFormData({ name: '', url: '', owner_id: members.length > 0 ? members[0].id : '', branch: 'main', department_id: teams.length > 0 ? teams[0].id : 0, service_group: '', related_members: [] });
     setEditingRepoId(null);
     setDrawerMode('add');
   };
@@ -102,7 +102,7 @@ function Repositories() {
       url: repo.url || '',
       owner_id: repo.owner_id || '',
       branch: repo.branch || 'main',
-      team_id: repo.team_id || (teams.length > 0 ? teams[0].id : 0),
+      department_id: repo.department_id || (teams.length > 0 ? teams[0].id : 0),
       service_group: repo.service_group || '',
       related_members: Array.isArray(repo.related_members) ? repo.related_members : []
     });
@@ -131,9 +131,9 @@ function Repositories() {
       body: JSON.stringify({
         name: formData.name,
         url: formData.url,
-        owner_id: formData.owner_id,
+        owner_id: Number(formData.owner_id) || undefined,
         branch: formData.branch,
-        team_id: Number(formData.team_id),
+        department_id: Number(formData.department_id),
         service_group: formData.service_group,
         related_members: formData.related_members
       })
@@ -160,9 +160,9 @@ function Repositories() {
       body: JSON.stringify({
         name: formData.name,
         url: formData.url,
-        owner_id: formData.owner_id,
+        owner_id: Number(formData.owner_id) || undefined,
         branch: formData.branch,
-        team_id: Number(formData.team_id),
+        department_id: Number(formData.department_id),
         service_group: formData.service_group,
         related_members: formData.related_members
       })
@@ -320,10 +320,10 @@ function Repositories() {
                     <span style={{ color: 'var(--primary-color)' }}>{repo.name}</span>
                   )}
                 </td>
-                <td>{repo.team?.name || '未知'}</td>
+                <td>{repo.department?.name || '未知'}</td>
                 <td>
                   {repo.owner ? (
-                    <span title={repo.owner.id}>{repo.owner.name}<span style={{ color: '#94a3b8', fontSize: '0.8rem', marginLeft: '0.3rem' }}>({repo.owner.id})</span></span>
+                    <span title={repo.owner.id}>{repo.owner.name}<span style={{ color: '#94a3b8', fontSize: '0.8rem', marginLeft: '0.3rem' }}>({repo.owner.employee_id || repo.owner.id})</span></span>
                   ) : (
                     <span style={{ color: '#94a3b8' }}>{repo.owner_id || '-'}</span>
                   )}
@@ -439,7 +439,7 @@ function Repositories() {
               </div>
               <div>
                 <label style={labelStyle}>归属部门</label>
-                <select required value={formData.team_id} onChange={e => setFormData({...formData, team_id: Number(e.target.value)})} style={inputStyle}>
+                <select required value={formData.department_id} onChange={e => setFormData({...formData, department_id: Number(e.target.value)})} style={inputStyle}>
                   {teams.length === 0 && <option value="" disabled>无可用部门</option>}
                   {teams.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
