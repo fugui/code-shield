@@ -68,6 +68,13 @@ func GetUsers(c *gin.Context) {
 			Where("users.name LIKE ? OR users.email LIKE ? OR users.employee_id LIKE ? OR departments.name LIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 
+	deptIDStr := c.Query("department_id")
+	if deptIDStr != "" {
+		if deptID, err := strconv.Atoi(deptIDStr); err == nil && deptID > 0 {
+			query = query.Where("users.department_id = ?", deptID)
+		}
+	}
+
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count users"})
@@ -76,7 +83,7 @@ func GetUsers(c *gin.Context) {
 
 	var users []models.User
 	offset := (page - 1) * pageSize
-	if err := query.Preload("Department").Order("users.created_at desc").Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
+	if err := query.Preload("Department").Order("users.last_login desc, users.created_at desc").Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
 		return
 	}
