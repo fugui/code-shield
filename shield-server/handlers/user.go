@@ -75,6 +75,13 @@ func GetUsers(c *gin.Context) {
 		}
 	}
 
+	idStr := c.Query("id")
+	if idStr != "" {
+		if id, err := strconv.Atoi(idStr); err == nil && id > 0 {
+			query = query.Where("users.id = ?", id)
+		}
+	}
+
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count users"})

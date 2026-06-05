@@ -32,7 +32,9 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
   // When value changes externally, resolve the display name
   useEffect(() => {
     if (value && !displayText) {
-      fetch(`/api/users?search=${encodeURIComponent(value.toString())}&pageSize=5`)
+      const isIdOnly = /^\d+$/.test(value.toString());
+      const queryParam = isIdOnly ? `id=${value}` : `search=${encodeURIComponent(value.toString())}`;
+      fetch(`/api/users?${queryParam}&pageSize=5`)
         .then(res => res.json())
         .then(data => {
           const list: User[] = data.items || [];
