@@ -111,7 +111,42 @@ func RunDataMigration(db *gorm.DB) {
 	// Placeholder password for imported users
 	invalidPassword, _ := bcrypt.GenerateFromPassword([]byte("imported-account-no-local-password"), bcrypt.DefaultCost)
 
-	for _, m := range oldMembers {
+	// Keep track of emails processed in this migration run to prevent duplicate insert conflicts
+	processedEmails := make(map[string]bool)
+
+	for i, m := range oldMembers {
+		m.Email = strings.TrimSpace(m.Email)
+		m.ID = strings.TrimSpace(m.ID)
+		m.Name = strings.TrimSpace(m.Name)
+
+		if m.Email == "" {
+			if m.ID != "" {
+				safeID := strings.ReplaceAll(m.ID, " ", "_")
+				m.Email = "placeholder_" + safeID + "@code-shield.local"
+			} else if m.Name != "" {
+				safeName := strings.ReplaceAll(m.Name, " ", "_")
+				m.Email = "placeholder_" + safeName + "@code-shield.local"
+			} else {
+				m.Email = "placeholder_unknown_" + strconv.Itoa(i) + "@code-shield.local"
+			}
+		}
+
+		// Resolve duplicates in local iteration
+		baseEmail := m.Email
+		suffix := 1
+		_, existsInDb := userEmailMap[m.Email]
+		for existsInDb || processedEmails[m.Email] {
+			if strings.Contains(baseEmail, "@") {
+				parts := strings.Split(baseEmail, "@")
+				m.Email = parts[0] + "_" + strconv.Itoa(suffix) + "@" + parts[1]
+			} else {
+				m.Email = baseEmail + "_" + strconv.Itoa(suffix)
+			}
+			suffix++
+			_, existsInDb = userEmailMap[m.Email]
+		}
+		processedEmails[m.Email] = true
+
 		// Determine department ID from name
 		var deptID *uint
 		if m.Department != "" {
@@ -149,6 +184,7 @@ func RunDataMigration(db *gorm.DB) {
 				log.Printf("DB Migration Warning: failed to create imported user for member %s: %v", m.Email, err)
 			} else {
 				memberIDMap[m.ID] = newUser.ID
+				log.Printf("DB Migration: Created imported user %s (ID: %d)", newUser.Email, newUser.ID)
 			}
 		}
 	}
