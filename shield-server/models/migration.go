@@ -2,6 +2,8 @@ package models
 
 import (
 	"log"
+	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -9,16 +11,18 @@ import (
 
 // RunDataMigration checks if old tables exist and migrates/merges data into the new schema.
 func RunDataMigration(db *gorm.DB) {
-	// Check if the old "members" table exists. If it does, we need to perform the migration.
-	if !db.Migrator().HasTable("members") {
+	// Check if either the old "members" table or its backup exists.
+	if !db.Migrator().HasTable("members") && !db.Migrator().HasTable("_old_members_backup") {
 		return
 	}
 
-	log.Println("DB Migration: Detected old 'members' table. Starting data migration...")
+	log.Println("DB Migration: Detected old schema tables. Checking data migration...")
 
 	// 1. Rename old tables to backups
-	if err := db.Migrator().RenameTable("members", "_old_members_backup"); err != nil {
-		log.Fatalf("DB Migration Failed: failed to rename 'members' table: %v", err)
+	if db.Migrator().HasTable("members") {
+		if err := db.Migrator().RenameTable("members", "_old_members_backup"); err != nil {
+			log.Fatalf("DB Migration Failed: failed to rename 'members' table: %v", err)
+		}
 	}
 	if db.Migrator().HasTable("teams") {
 		if err := db.Migrator().RenameTable("teams", "_old_teams_backup"); err != nil {
@@ -71,7 +75,7 @@ func RunDataMigration(db *gorm.DB) {
 			Name: ot.Name,
 		}
 		if err := db.Create(&dept).Error; err != nil {
-			log.Printf("DB Migration Warning: failed to migrate team %s: %v", ot.Name, err)
+			// Ignore key conflict in subsequent runs
 		}
 	}
 
@@ -84,8 +88,7 @@ func RunDataMigration(db *gorm.DB) {
 		Department string
 	}
 	var oldMembers []OldMember
-	if err := db.Raw("SELECT id, name, email, department FROM _old_old_members_backup").Scan(&oldMembers).Error; err != nil {
-		// SQLite might rename it slightly or directly. Let's check the backup name
+	if db.Migrator().HasTable("_old_members_backup") {
 		if err := db.Raw("SELECT id, name, email, department FROM _old_members_backup").Scan(&oldMembers).Error; err != nil {
 			log.Printf("DB Migration Warning: failed to read old members: %v", err)
 		}
@@ -130,7 +133,6 @@ func RunDataMigration(db *gorm.DB) {
 				log.Printf("DB Migration Warning: failed to merge member %s to user: %v", m.Email, err)
 			}
 			memberIDMap[m.ID] = u.ID
-			log.Printf("DB Migration: Merged user %s (ID: %d, EmployeeID: %s)", u.Email, u.ID, u.EmployeeID)
 		} else {
 			// Situation B: Only exists in Member
 			// Create a new inactive user
@@ -147,7 +149,6 @@ func RunDataMigration(db *gorm.DB) {
 				log.Printf("DB Migration Warning: failed to create imported user for member %s: %v", m.Email, err)
 			} else {
 				memberIDMap[m.ID] = newUser.ID
-				log.Printf("DB Migration: Created imported user %s (ID: %d)", newUser.Email, newUser.ID)
 			}
 		}
 	}
@@ -155,8 +156,9 @@ func RunDataMigration(db *gorm.DB) {
 	// 5. Back-fill Department Leaders
 	log.Println("DB Migration: Back-filling Department Leader IDs...")
 	for _, ot := range oldTeams {
-		if ot.LeaderID != "" {
-			if newLeaderID, ok := memberIDMap[ot.LeaderID]; ok {
+		trimmedLeaderID := strings.TrimSpace(ot.LeaderID)
+		if trimmedLeaderID != "" {
+			if newLeaderID, ok := memberIDMap[trimmedLeaderID]; ok {
 				if err := db.Model(&Department{}).Where("id = ?", ot.ID).Update("leader_id", newLeaderID).Error; err != nil {
 					log.Printf("DB Migration Warning: failed to update department %d leader: %v", ot.ID, err)
 				}
@@ -167,23 +169,44 @@ func RunDataMigration(db *gorm.DB) {
 	// 6. Cascade update Repository Owner IDs and Department IDs
 	log.Println("DB Migration: Cascading updates to Repository relations...")
 	type OldRepo struct {
-		ID      uint
-		TeamID  uint
-		OwnerID string
+		ID           uint
+		TeamID       uint
+		DepartmentID uint
+		OwnerID      string
 	}
 	var oldRepos []OldRepo
-	if err := db.Raw("SELECT id, team_id, owner_id FROM repositories").Scan(&oldRepos).Error; err == nil {
+	if err := db.Raw("SELECT id, team_id, department_id, owner_id FROM repositories").Scan(&oldRepos).Error; err == nil {
 		for _, or := range oldRepos {
-			newOwnerID, ok := memberIDMap[or.OwnerID]
+			trimmedOwnerID := strings.TrimSpace(or.OwnerID)
+			_, numErr := strconv.Atoi(trimmedOwnerID)
+			isAlreadyNumeric := numErr == nil && trimmedOwnerID != ""
 
-			// Copy team_id to department_id, and update owner_id if mapped
-			if ok {
-				if err := db.Exec("UPDATE repositories SET department_id = ?, owner_id = ? WHERE id = ?", or.TeamID, newOwnerID, or.ID).Error; err != nil {
-					log.Printf("DB Migration Warning: failed to update repository %d: %v", or.ID, err)
+			var targetDeptID uint
+			if or.TeamID > 0 {
+				targetDeptID = or.TeamID
+			} else {
+				targetDeptID = or.DepartmentID
+			}
+
+			if isAlreadyNumeric {
+				// Already migrated to numeric user ID, just ensure department_id is set
+				if err := db.Exec("UPDATE repositories SET department_id = ? WHERE id = ?", targetDeptID, or.ID).Error; err != nil {
+					log.Printf("DB Migration Warning: failed to update repository %d department: %v", or.ID, err)
 				}
 			} else {
-				if err := db.Exec("UPDATE repositories SET department_id = ? WHERE id = ?", or.TeamID, or.ID).Error; err != nil {
-					log.Printf("DB Migration Warning: failed to update repository %d: %v", or.ID, err)
+				// Still an old string ID (like "白宇" or "fugui 08163")
+				newOwnerID, ok := memberIDMap[trimmedOwnerID]
+				if ok {
+					if err := db.Exec("UPDATE repositories SET department_id = ?, owner_id = ? WHERE id = ?", targetDeptID, newOwnerID, or.ID).Error; err != nil {
+						log.Printf("DB Migration Warning: failed to update repository %d: %v", or.ID, err)
+					}
+					log.Printf("DB Migration: Updated repository %d owner from %q to %d", or.ID, trimmedOwnerID, newOwnerID)
+				} else {
+					// Fallback to 0 if owner not found in members table
+					if err := db.Exec("UPDATE repositories SET department_id = ?, owner_id = 0 WHERE id = ?", targetDeptID, or.ID).Error; err != nil {
+						log.Printf("DB Migration Warning: failed to update repository %d to default owner: %v", or.ID, err)
+					}
+					log.Printf("DB Migration: Updated repository %d owner from %q to default (0)", or.ID, trimmedOwnerID)
 				}
 			}
 		}
@@ -207,18 +230,27 @@ func RunDataMigration(db *gorm.DB) {
 			AssigneeID string
 		}
 		var oldFindings []OldFinding
-		// Read raw ID and string assignee_id. Note that the GORM change might have modified the column or not.
-		// Since we query using raw SQL, we can inspect assignee_id.
 		if err := db.Raw("SELECT id, assignee_id FROM " + table).Scan(&oldFindings).Error; err == nil {
 			for _, f := range oldFindings {
-				if f.AssigneeID != "" {
-					if newAssigneeID, ok := memberIDMap[f.AssigneeID]; ok {
+				trimmedAssigneeID := strings.TrimSpace(f.AssigneeID)
+				if trimmedAssigneeID != "" {
+					// Check if already numeric
+					_, err := strconv.Atoi(trimmedAssigneeID)
+					if err == nil {
+						// Already migrated, keep it
+						continue
+					}
+
+					// Still an old string ID
+					if newAssigneeID, ok := memberIDMap[trimmedAssigneeID]; ok {
 						if err := db.Exec("UPDATE "+table+" SET assignee_id = ? WHERE id = ?", newAssigneeID, f.ID).Error; err != nil {
 							log.Printf("DB Migration Warning: failed to update table %s finding %d: %v", table, f.ID, err)
 						}
 					} else {
 						// Set to NULL if no match
-						_ = db.Exec("UPDATE "+table+" SET assignee_id = NULL WHERE id = ?", f.ID)
+						if err := db.Exec("UPDATE "+table+" SET assignee_id = NULL WHERE id = ?", f.ID).Error; err != nil {
+							log.Printf("DB Migration Warning: failed to set NULL for table %s finding %d: %v", table, f.ID, err)
+						}
 					}
 				}
 			}

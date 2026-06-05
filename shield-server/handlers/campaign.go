@@ -204,12 +204,17 @@ func GetCampaignRepos[T any](taskTypeName string) gin.HandlerFunc {
 				fixRate = 100.0
 			}
 
+			ownerName := repo.Owner.Name
+			if ownerName == "" {
+				ownerName = "已离职/未知"
+			}
+
 			summaries = append(summaries, CampaignRepoSummary{
 				RepoID:         repo.ID,
 				RepoName:       repo.Name,
 				RepoURL:        repo.URL,
 				Department:     repoDept,
-				OwnerName:      repo.Owner.Name,
+				OwnerName:      ownerName,
 				TotalIssues:    totalDefects,
 				Blocking:       blocking,
 				Critical:       critical,

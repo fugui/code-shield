@@ -159,12 +159,17 @@ func GetUTRepos(c *gin.Context) {
 			passRate = (float64(passCount) / float64(total)) * 100.0
 		}
 
+		ownerName := repo.Owner.Name
+		if ownerName == "" {
+			ownerName = "已离职/未知"
+		}
+
 		summaries = append(summaries, UTRepoSummary{
 			RepoID:       repo.ID,
 			RepoName:     repo.Name,
 			RepoURL:      repo.URL,
 			Department:   repoDept,
-			OwnerName:    repo.Owner.Name,
+			OwnerName:    ownerName,
 			TotalCases:   total,
 			PassCount:    passCount,
 			PassRate:     passRate,
