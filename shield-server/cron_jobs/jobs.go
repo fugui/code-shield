@@ -78,7 +78,7 @@ func ExecuteScheduleContext(schedID uint, triggerSource string) error {
 		var teamIDs []uint
 		json.Unmarshal(sched.TargetValues, &teamIDs)
 		if len(teamIDs) > 0 {
-			query = query.Where("team_id IN ?", teamIDs)
+			query = query.Where("department_id IN ?", teamIDs)
 		}
 	case "specific":
 		var repoIDs []uint
