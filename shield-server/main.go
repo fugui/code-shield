@@ -99,6 +99,7 @@ func main() {
 	{
 		api.GET("/me", handlers.GetMe)
 		api.PATCH("/password", handlers.UpdatePassword)
+		api.POST("/me/department", handlers.UpdateMyDepartment)
 
 		api.GET("/departments", handlers.GetDepartments)
 		api.POST("/departments", handlers.CreateDepartment)

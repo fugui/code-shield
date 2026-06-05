@@ -3,7 +3,9 @@ package handlers
 import (
 	"code-shield/models"
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -350,4 +352,59 @@ func UpdatePassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password updated successfully"})
+}
+
+// UpdateMyDepartment allows the current user to report and bind their department
+func UpdateMyDepartment(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in context"})
+		return
+	}
+
+	var req struct {
+		Department string `json:"department" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	deptName := strings.TrimSpace(req.Department)
+	if deptName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Department name cannot be empty"})
+		return
+	}
+
+	// 1. Find or create department
+	var dept models.Department
+	err := models.DB.Where("name = ?", deptName).First(&dept).Error
+	if err != nil {
+		// Not found, create it
+		dept = models.Department{
+			Name: deptName,
+		}
+		if createErr := models.DB.Create(&dept).Error; createErr != nil {
+			log.Printf("[User] Failed to create department %s: %v", deptName, createErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create department"})
+			return
+		}
+	}
+
+	// 2. Update user's department ID
+	if err := models.DB.Model(&models.User{}).Where("id = ?", userID).Update("department_id", dept.ID).Error; err != nil {
+		log.Printf("[User] Failed to update user %v department: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user department"})
+		return
+	}
+
+	// 3. Preload and retrieve updated user
+	var updatedUser models.User
+	if err := models.DB.Preload("Department").First(&updatedUser, userID).Error; err != nil {
+		log.Printf("[User] Failed to retrieve updated user: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve updated user info"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updatedUser)
 }

@@ -30,6 +30,7 @@ func GetAuthConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"oauth2_enabled":         authCfg.OAuth2.Enabled,
 		"password_login_enabled": authCfg.PasswordLoginEnabled,
+		"dept_api_url":           authCfg.OAuth2.DeptAPIURL,
 	})
 }
 

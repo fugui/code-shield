@@ -32,6 +32,7 @@ type OAuth2Config struct {
 	Scopes       []string           `yaml:"scopes"`        // 请求的 Scopes，默认 ["openid", "profile", "email"]
 	AdminList    []string           `yaml:"admin_list"`    // 自动提权为管理员的邮箱/用户名列表
 	FieldMapping FieldMappingConfig `yaml:"field_mapping"` // 用户属性字段映射
+	DeptAPIURL   string             `yaml:"dept_api_url"`  // 从 SSO 获取部门信息的外部 API 地址
 }
 
 type ModelConfig struct {
