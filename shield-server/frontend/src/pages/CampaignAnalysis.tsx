@@ -593,6 +593,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ ...styles.tableHeader, cursor: 'default', width: '60px' }}>序号</th>
                     <th onClick={() => handleSort('name')} style={styles.tableHeader}>
                       代码仓 {sortField === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
@@ -619,13 +620,14 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                 <tbody>
                   {repos.length === 0 ? (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: '4rem 1rem', color: '#94a3b8' }}>
+                      <td colSpan={10} style={{ textAlign: 'center', padding: '4rem 1rem', color: '#94a3b8' }}>
                         未找到包含扫描数据的代码仓。请先在“扫描任务”启动相关任务。
                       </td>
                     </tr>
                   ) : (
-                    paginatedRepos.map(r => (
+                    paginatedRepos.map((r, idx) => (
                       <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <td style={{ ...styles.tableCell, color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{startIndex + idx + 1}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 600 }}>
                           {r.repo_url ? (
                             <a
