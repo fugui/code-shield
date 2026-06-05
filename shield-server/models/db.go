@@ -37,8 +37,6 @@ func InitDB() {
 
 	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
 
-	// Run custom data migration if upgrading from old version
-	RunDataMigration(DB)
 
 	// Auto Migrate
 	err = DB.AutoMigrate(
