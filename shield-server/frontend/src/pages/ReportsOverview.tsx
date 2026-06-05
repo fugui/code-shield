@@ -386,7 +386,7 @@ function ReportsOverview() {
                     <span>
                       <span>{item.repo.owner.name}</span>
                       <br/>
-                      <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>{item.repo.owner.id}</span>
+                      <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>{item.repo.owner.employee_id || item.repo.owner.id}</span>
                     </span>
                   ) : (
                     <span style={{ color: '#94a3b8' }}>{item.repo?.owner_id || '-'}</span>
