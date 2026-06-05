@@ -19,7 +19,18 @@ import (
 
 func GetDepartments(c *gin.Context) {
 	var depts []models.Department
-	models.DB.Preload("Leader").Find(&depts)
+	if err := models.DB.Preload("Leader").Find(&depts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Calculate user count for each department
+	for i := range depts {
+		var count int64
+		models.DB.Model(&models.User{}).Where("department_id = ?", depts[i].ID).Count(&count)
+		depts[i].UserCount = count
+	}
+
 	c.JSON(http.StatusOK, depts)
 }
 
