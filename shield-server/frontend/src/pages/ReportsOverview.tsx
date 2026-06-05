@@ -33,7 +33,7 @@ function ReportsOverview() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    fetch('/api/teams')
+    fetch('/api/departments')
       .then(res => res.json())
       .then(data => {
         const list = Array.isArray(data) ? data : (data.items || []);
@@ -380,7 +380,7 @@ function ReportsOverview() {
                     );
                   })() : <span style={{ color: '#aaa' }}>已删除仓库</span>}
                 </td>
-                <td>{item.repo?.team?.name || teams.find(t => t.id === item.repo?.team_id)?.name || '-'}</td>
+                <td>{item.repo?.department?.name || teams.find(t => t.id === item.repo?.department_id)?.name || '-'}</td>
                 <td>
                   {item.repo?.owner ? (
                     <span>
