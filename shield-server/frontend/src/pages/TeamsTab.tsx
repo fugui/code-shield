@@ -151,18 +151,20 @@ function TeamsTab() {
               <th>ID</th>
               <th>部门名称</th>
               <th>部门人数</th>
+              <th>代码仓数</th>
               <th>部门负责人</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {teams.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂未录入任何部门</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂未录入任何部门</td></tr>
             ) : teams.map(t => (
               <tr key={t.id}>
                 <td style={{ fontWeight: 500 }}>{t.id}</td>
                 <td>{t.name}</td>
                 <td>{t.user_count || 0} 人</td>
+                <td>{t.repo_count || 0} 个</td>
                 <td>{t.leader ? `${t.leader.name} (${t.leader.employee_id || t.leader.id})` : t.leader_id || <span style={{ color: '#aaa' }}>未配置</span>}</td>
                 <td style={{ display: 'flex', gap: '0.5rem' }}>
                   <button className="btn" onClick={() => openEdit(t)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem' }}>编辑</button>
