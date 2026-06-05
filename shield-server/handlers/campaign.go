@@ -437,6 +437,7 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 type CampaignDeptSummary struct {
 	Department     string  `json:"department"`
 	ScannedRepos   int     `json:"scanned_repos"`
+	TotalRepos     int     `json:"total_repos"`
 	TotalIssues    int     `json:"total_issues"`
 	OpenIssues     int     `json:"open_issues"`
 	ResolvedIssues int     `json:"resolved_issues"`
@@ -498,6 +499,7 @@ func GetCampaignDepartments[T any]() gin.HandlerFunc {
 			summaries = append(summaries, CampaignDeptSummary{
 				Department:     dept.Name,
 				ScannedRepos:   int(scannedCount),
+				TotalRepos:     len(repos),
 				TotalIssues:    int(totalIssues),
 				OpenIssues:     int(openIssues),
 				ResolvedIssues: int(resolvedIssues),

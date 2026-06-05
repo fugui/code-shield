@@ -871,7 +871,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                               {d.department}
                             </span>
                           </td>
-                          <td style={styles.tableCell}>{d.scanned_repos}</td>
+                          <td style={styles.tableCell}>{d.scanned_repos}/{d.total_repos || 0}</td>
                           <td style={styles.tableCell}>{d.total_issues}</td>
                           <td style={{ ...styles.tableCell, color: d.open_issues > 0 ? '#ef4444' : 'inherit', fontWeight: d.open_issues > 0 ? 600 : 'normal' }}>{d.open_issues}</td>
                           <td style={styles.tableCell}>
