@@ -898,6 +898,7 @@ function UTAnalysis() {
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                                     <thead>
                                       <tr style={{ background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)', width: '60px' }}>序号</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>代码仓</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>负责人</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>测试用例总数</th>
@@ -909,8 +910,9 @@ function UTAnalysis() {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {deptRepos[d.department].map((r: any) => (
+                                      {deptRepos[d.department].map((r: any, idx: number) => (
                                         <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{idx + 1}</td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', fontWeight: 600 }}>
                                             {r.repo_url ? (
                                               <a
