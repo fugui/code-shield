@@ -3,12 +3,10 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation 
 import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
 import ReportsOverview from './pages/ReportsOverview';
 import RepoTaskHistory from './pages/RepoReviewHistory';
-import TeamManagement from './pages/TeamManagement';
 import PublicReportFindings from './pages/PublicReportFindings';
 import OAuthCallback from './pages/OAuthCallback';
 import ScanManagement from './pages/ScanManagement';
 import TaskTypeManagement from './pages/TaskTypeManagement';
-import UserManagement from './pages/UserManagement';
 import ExecutionLogs from './pages/ExecutionLogs';
 import UTAnalysis from './pages/UTAnalysis';
 import CoredumpAnalysis from './pages/CoredumpAnalysis';
@@ -414,9 +412,6 @@ function AppContent() {
           <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
           <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
           <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
-          <Route path="/admin/teams" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-          <Route path="/admin/teams/:tab" element={<PrivateRoute><TeamManagement /></PrivateRoute>} />
-          <Route path="/admin/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />
           <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
           {/* 公开报告 */}
