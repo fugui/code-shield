@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation 
 import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
 import ReportsOverview from './pages/ReportsOverview';
 import RepoTaskHistory from './pages/RepoReviewHistory';
-import Login from './pages/Login';
 import TeamManagement from './pages/TeamManagement';
 import PublicReportFindings from './pages/PublicReportFindings';
 import OAuthCallback from './pages/OAuthCallback';
@@ -25,6 +24,29 @@ window.fetch = async (...args) => {
   let [resource, config] = args;
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
   const url = resource.toString();
+
+  // Check if it is a portal request to bypass child micro-frontend interceptor
+  let isPortalRequest = false;
+  if (config && config.headers) {
+    if (config.headers instanceof Headers) {
+      isPortalRequest = config.headers.get('x-portal-request') === 'true';
+    } else if (Array.isArray(config.headers)) {
+      isPortalRequest = config.headers.some(([k, v]) => k.toLowerCase() === 'x-portal-request' && v === 'true');
+    } else {
+      const hdrs = config.headers as Record<string, string>;
+      const keys = Object.keys(hdrs);
+      for (const k of keys) {
+        if (k.toLowerCase() === 'x-portal-request' && hdrs[k] === 'true') {
+          isPortalRequest = true;
+          break;
+        }
+      }
+    }
+  }
+
+  if (isPortalRequest) {
+    return originalFetch(resource, config);
+  }
 
   // Auto-prepend BASE_PATH for absolute /api calls
   if (url.startsWith('/api')) {
@@ -57,10 +79,6 @@ window.fetch = async (...args) => {
   if (res.status === 401 && resource.toString().includes('/api')) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     window.dispatchEvent(new Event('auth-change'));
-    const loginPath = BASE_PATH + '/login';
-    if (window.location.pathname !== loginPath) {
-      window.location.href = loginPath;
-    }
   }
 
   return res;
@@ -139,7 +157,6 @@ function AuthHeader() {
   const handleLogout = () => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     window.dispatchEvent(new Event('auth-change'));
-    navigate(appNavigatePath('/login'));
   };
 
   const [showDropdown, setShowDropdown] = useState(false);
@@ -378,7 +395,7 @@ function AppContent() {
     <ToastProvider>
       <MainLayout>
         <Routes>
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<Navigate to={appNavigatePath("/")} replace />} />
           <Route path="/oauth2/callback" element={<OAuthCallback />} />
           <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
 

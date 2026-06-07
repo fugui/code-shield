@@ -6,7 +6,7 @@ node_modules/
 # Build artifacts
 dist/
 build/
-shield-server/frontend/dist/
+frontend/dist/
 
 # Logs
 logs/
@@ -16,14 +16,14 @@ yarn-debug.log*
 
 # Database & generated data
 *.db
-shield-server/code_shield.db
-shield-server/codes/
-shield-server/review-reports/
-shield-server/reports/
+code_shield.db
+codes/
+review-reports/
+reports/
 
 # Binary executables
-shield-server/code-shield-server
-shield-server/*.exe
+code-shield-server
+*.exe
 
 # Environment variables
 .env
@@ -33,10 +33,8 @@ shield-server/*.exe
 .vscode/
 .idea/
 .DS_Store
-shield-server/task-reports/
+task-reports/
 
 # Local configuration
-shield-server/config.yaml
 config.yaml
 settings.json
-shield-server/settings.json

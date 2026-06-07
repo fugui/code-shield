@@ -110,6 +110,7 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 
 	// 4. Setup mock models in DB
 	repo := models.Repository{
+		ID:   1,
 		Name: "test-repo",
 		URL:  "https://github.com/test/test-repo",
 	}
@@ -229,6 +230,7 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 
 	// 2. Setup mock models in DB
 	repo := models.Repository{
+		ID:   1,
 		Name: "test-repo",
 		URL:  "https://invalid-url-for-test.git",
 	}
@@ -291,6 +293,7 @@ func TestPrepareOutputPaths(t *testing.T) {
 	models.AppConfig.Storage.Root = "/tmp/code-shield-test"
 
 	repo := models.Repository{
+		ID:   1,
 		Name: "foo/bar",
 	}
 	taskType := models.TaskType{
@@ -394,6 +397,7 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 
 	// 4. Setup mock models in DB
 	repo := models.Repository{
+		ID:   1,
 		Name: "test-repo",
 		URL:  repoCodesPath,
 	}
@@ -554,6 +558,7 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 	exec.Command("git", "-C", repoCodesPath, "commit", "-m", "init").Run()
 
 	repo := models.Repository{
+		ID:   1,
 		Name: "test-repo",
 		URL:  repoCodesPath,
 	}
