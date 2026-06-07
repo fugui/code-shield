@@ -87,10 +87,13 @@ func main() {
 	{
 		auth.POST("/login", handlers.Login)
 		auth.GET("/auth/config", handlers.GetAuthConfig)
-		auth.GET("/oauth2/authorize", handlers.StartOAuth2Flow)
-		auth.GET("/oauth2/callback", handlers.OAuth2Callback)
 		auth.GET("/public/tasks/:id", handlers.GetPublicTaskDetails)
 		auth.GET("/public/tasks/:id/findings", handlers.GetPublicAnalysisFindings)
+
+		// Sync endpoints
+		auth.POST("/sync/user", handlers.SyncUser)
+		auth.POST("/sync/department", handlers.SyncDepartment)
+		auth.POST("/sync/repo", handlers.SyncRepo)
 	}
 
 	// Register API routes (protected)
@@ -102,21 +105,12 @@ func main() {
 		api.POST("/me/department", handlers.UpdateMyDepartment)
 
 		api.GET("/departments", handlers.GetDepartments)
-		api.POST("/departments", handlers.CreateDepartment)
-		api.POST("/departments/import", handlers.ImportDepartments)
 		api.GET("/departments/export", handlers.ExportDepartments)
-		api.PATCH("/departments/:id", handlers.UpdateDepartment)
-		api.DELETE("/departments/:id", handlers.DeleteDepartment)
 
 		api.GET("/users", handlers.GetUsers)
-		api.POST("/users/import", handlers.ImportUsers)
 		api.GET("/users/export", handlers.ExportUsers)
 
 		api.GET("/repos", handlers.GetRepos)
-		api.POST("/repos", handlers.CreateRepo)
-		api.PATCH("/repos/:id", handlers.UpdateRepo)
-		api.DELETE("/repos/:id", handlers.DeleteRepo)
-		api.POST("/repos/import", handlers.ImportRepos)
 		api.GET("/repos/export", handlers.ExportRepos)
 
 		api.GET("/config", handlers.GetConfig)
@@ -178,14 +172,6 @@ func main() {
 			admin.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
 			admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
 			admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
-
-			users := admin.Group("/users")
-			{
-				users.POST("", handlers.CreateUser)
-				users.PUT("/:id", handlers.UpdateUser)
-				users.PATCH("/:id/status", handlers.UpdateUserStatus)
-				users.DELETE("/:id", handlers.DeleteUser)
-			}
 		}
 	}
 

@@ -10,7 +10,7 @@ import (
 )
 
 type User struct {
-	ID           uint        `gorm:"primaryKey" json:"id"`                      // 系统内部自增唯一ID (稳定，永不变更)
+	ID           uint        `gorm:"primaryKey;autoIncrement:false" json:"id"`                      // 系统内部自增唯一ID (稳定，永不变更)
 	UniqueID     *string     `gorm:"uniqueIndex" json:"unique_id,omitempty"`    // SSO 平台唯一不变ID
 	EmployeeID   string      `gorm:"index;default:''" json:"employee_id"`       // 员工工号
 	EmployeeType string      `gorm:"default:''" json:"employee_type"`           // 员工类型
@@ -28,7 +28,7 @@ type User struct {
 }
 
 type Department struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        uint      `gorm:"primaryKey;autoIncrement:false" json:"id"`
 	Name      string    `gorm:"uniqueIndex;not null" json:"name"`
 	LeaderID  *uint     `json:"leader_id"`                                    // 关联 User.ID (允许为 NULL)
 	Leader    *User     `gorm:"foreignKey:LeaderID" json:"leader,omitempty"`
@@ -38,7 +38,7 @@ type Department struct {
 }
 
 type Repository struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
+	ID             uint           `gorm:"primaryKey;autoIncrement:false" json:"id"`
 	DepartmentID   uint           `json:"department_id"`
 	Department     Department     `gorm:"foreignKey:DepartmentID" json:"department"`
 	Name           string         `gorm:"uniqueIndex;not null" json:"name"`
