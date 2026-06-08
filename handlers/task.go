@@ -207,7 +207,65 @@ func getFindingsForReport(reportID string) ([]models.AnalysisFinding, error) {
 		if _, err := os.Stat(synthesisPath); err == nil {
 			data, err := os.ReadFile(synthesisPath)
 			if err == nil {
-				if err := json.Unmarshal(data, &findings); err == nil {
+				// 使用宽松的临时结构体反序列化，容错 assignee_id 等字段在 JSON 中为空字符串导致的解析崩溃
+				type tempFinding struct {
+					ID           uint        `json:"id"`
+					TaskReportID uint        `json:"task_report_id"`
+					TaskTypeID   uint        `json:"task_type_id"`
+					RepoID       uint        `json:"repo_id"`
+					Severity     string      `json:"severity"`
+					Category     string      `json:"category"`
+					FilePath     string      `json:"file_path"`
+					LineNumber   string      `json:"line_number"`
+					CodeSnippet  string      `json:"code_snippet"`
+					Title        string      `json:"title"`
+					Detail       string      `json:"detail"`
+					Suggestion   string      `json:"suggestion"`
+					AssigneeID   interface{} `json:"assignee_id"`
+					Feedback     string      `json:"feedback"`
+					FeedbackAt   *time.Time  `json:"feedback_at"`
+					CreatedAt    time.Time   `json:"created_at"`
+				}
+				var tempFindings []tempFinding
+				if err := json.Unmarshal(data, &tempFindings); err == nil {
+					for _, tf := range tempFindings {
+						var f models.AnalysisFinding
+						f.ID = tf.ID
+						f.TaskReportID = tf.TaskReportID
+						f.TaskTypeID = tf.TaskTypeID
+						f.RepoID = tf.RepoID
+						f.Severity = tf.Severity
+						f.Category = tf.Category
+						f.FilePath = tf.FilePath
+						f.LineNumber = tf.LineNumber
+						f.CodeSnippet = tf.CodeSnippet
+						f.Title = tf.Title
+						f.Detail = tf.Detail
+						f.Suggestion = tf.Suggestion
+						f.Feedback = tf.Feedback
+						f.FeedbackAt = tf.FeedbackAt
+						f.CreatedAt = tf.CreatedAt
+
+						// 兼容 assignee_id 为数值、数值字符串或空字符串等各种边界情况
+						if tf.AssigneeID != nil {
+							switch val := tf.AssigneeID.(type) {
+							case float64:
+								uVal := uint(val)
+								f.AssigneeID = &uVal
+							case int:
+								uVal := uint(val)
+								f.AssigneeID = &uVal
+							case string:
+								if val != "" {
+									if parsed, err := strconv.ParseUint(val, 10, 32); err == nil {
+										uVal := uint(parsed)
+										f.AssigneeID = &uVal
+									}
+								}
+							}
+						}
+						findings = append(findings, f)
+					}
 					return findings, nil
 				}
 			}
