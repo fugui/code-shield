@@ -20,6 +20,13 @@ import { ToastProvider, useToast } from './components/Toast';
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   let [resource, config] = args;
+
+  // Bypass interceptor for portal pages outside of shield sub-app path
+  const isEmbeddedMode = !!(window as any).__POWERED_BY_PORTAL__;
+  if (isEmbeddedMode && !window.location.pathname.startsWith('/shield')) {
+    return originalFetch(...args);
+  }
+
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
   const url = resource.toString();
 
