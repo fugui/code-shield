@@ -102,39 +102,6 @@ function AuthHeader() {
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '' });
   const navigate = useNavigate();
 
-  const triggerFetchDepartmentIfNeeded = (userData: any) => {
-    if (!userData.department_id && !userData.department) {
-      fetch('/api/auth/config')
-        .then(res => res.ok ? res.json() : null)
-        .then(config => {
-          if (config && config.dept_api_url) {
-            fetch(config.dept_api_url, { credentials: 'include' })
-              .then(res => res.ok ? res.json() : null)
-              .then(ssoData => {
-                const deptName = ssoData?.data?.department;
-                if (deptName) {
-                  fetch('/api/me/department', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ department: deptName })
-                  })
-                    .then(res => res.ok ? res.json() : null)
-                    .then(updatedUser => {
-                      if (updatedUser) {
-                        setUser(updatedUser);
-                        showToast(`已通过 SSO 自动同步您的归属部门为: ${deptName}`, 'success');
-                      }
-                    })
-                    .catch(err => console.error('Failed to report department', err));
-                }
-              })
-              .catch(err => console.error('Failed to fetch department from SSO', err));
-          }
-        })
-        .catch(err => console.error('Failed to load auth config', err));
-    }
-  };
-
   const loadUser = () => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     if (token) {
@@ -143,7 +110,6 @@ function AuthHeader() {
         .then(data => {
           if (data) {
             setUser(data);
-            triggerFetchDepartmentIfNeeded(data);
           }
           else handleLogout(); // Invalid token
         })
