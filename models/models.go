@@ -135,6 +135,17 @@ type TaskReport struct {
 	CreatedAt       time.Time      `json:"created_at"`
 }
 
+// GetAbsReportPath 返回报告文件的绝对路径（如果存储的是相对路径，则使用 storage.root 拼接）
+func (r *TaskReport) GetAbsReportPath() string {
+	if r.ReportPath == "" {
+		return ""
+	}
+	if filepath.IsAbs(r.ReportPath) {
+		return r.ReportPath
+	}
+	return filepath.Join(AppConfig.Storage.Root, r.ReportPath)
+}
+
 // AnalysisFinding 记录 AI 分析阶段输出的结构化问题
 type AnalysisFinding struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`

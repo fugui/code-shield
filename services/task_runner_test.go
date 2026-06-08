@@ -269,11 +269,11 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 	}
 
 	// 5. Verify that output.txt contains the git operation failure error message
-	outputPath := updatedReport.ReportPath + ".output.txt"
+	outputPath := updatedReport.GetAbsReportPath() + ".output.txt"
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
 		t.Fatal("expected output.txt to be created for early failure, but it does not exist")
 	}
-	defer os.RemoveAll(filepath.Dir(updatedReport.ReportPath)) // Cleanup report directory
+	defer os.RemoveAll(filepath.Dir(updatedReport.GetAbsReportPath())) // Cleanup report directory
 
 	content, err := os.ReadFile(outputPath)
 	if err != nil {
@@ -601,7 +601,7 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 			t.Errorf("expected synthesis to be attempted 3 times, got %d", invoker.SynthesisCount)
 		}
 
-		content, err := os.ReadFile(updatedReport.ReportPath)
+		content, err := os.ReadFile(updatedReport.GetAbsReportPath())
 		if err != nil {
 			t.Fatalf("failed to read report: %v", err)
 		}
@@ -645,7 +645,7 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 
 		// Verify output.txt exists and contains the failure
-		outputPath := updatedReport.ReportPath + ".output.txt"
+		outputPath := updatedReport.GetAbsReportPath() + ".output.txt"
 		content, err := os.ReadFile(outputPath)
 		if err != nil {
 			t.Fatalf("failed to read output.txt: %v", err)

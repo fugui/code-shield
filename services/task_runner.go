@@ -279,9 +279,9 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 // Note: ChunkedEngine constructs paths for chunk sub-reports independently.
 func (ctx *taskContext) prepareOutputPaths() {
 	if ctx.report.ReportPath != "" {
-		reportsDir := filepath.Dir(ctx.report.ReportPath)
+		ctx.reportPath = ctx.report.GetAbsReportPath()
+		reportsDir := filepath.Dir(ctx.reportPath)
 		os.MkdirAll(reportsDir, 0755)
-		ctx.reportPath = ctx.report.ReportPath
 		safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
 		ctx.jsonPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-%s.json", ctx.report.ID, safeRepoName))
 		return
@@ -1014,9 +1014,14 @@ func (ctx *taskContext) writeSummaryReport() {
 func (ctx *taskContext) finalize(result TaskResult) error {
 	metricsJSON, _ := json.Marshal(result.Metrics)
 
+	relReportPath := ctx.reportPath
+	if rel, err := filepath.Rel(models.AppConfig.Storage.Root, ctx.reportPath); err == nil {
+		relReportPath = rel
+	}
+
 	err := models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
 		"status":      models.StatusSuccess,
-		"report_path": ctx.reportPath,
+		"report_path": relReportPath,
 		"ai_summary":  result.Summary,
 		"score":       result.Score,
 		"metrics":     string(metricsJSON),
@@ -1043,7 +1048,11 @@ func (ctx *taskContext) markFailed(errMsg string) {
 		"created_at": time.Now(),
 	}
 	if ctx.reportPath != "" {
-		updates["report_path"] = ctx.reportPath
+		relPath := ctx.reportPath
+		if rel, err := filepath.Rel(models.AppConfig.Storage.Root, ctx.reportPath); err == nil {
+			relPath = rel
+		}
+		updates["report_path"] = relPath
 	}
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(updates)
 

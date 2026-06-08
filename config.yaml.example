@@ -15,7 +15,7 @@ server:
 
 # ── 数据存储 ──
 storage:
-  root: "/home/fugui/test_root"  # 数据根目录，下设 codes/ 和 reports/ 子目录（建议配置为绝对路径）
+  root: "."  # 数据根目录，下设 codes/ 和 reports/ 子目录（建议配置为绝对路径）
 
 # ── AI 引擎 ──
 ai:

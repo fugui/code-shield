@@ -64,9 +64,8 @@ func BackfillHistoricalFindings() error {
 			log.Printf("[Backfill] Error querying findings from database for Report ID %d: %v. Will fall back to file.", r.ID, err)
 		}
 
-		// Second: If database returned no findings, look for the synthesis JSON file on disk
 		if len(findings) == 0 && r.ReportPath != "" {
-			reportsDir := filepath.Dir(r.ReportPath)
+			reportsDir := filepath.Dir(r.GetAbsReportPath())
 			safeRepoName := strings.ReplaceAll(r.Repo.Name, "/", "-")
 			synthesisPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepoName))
 
