@@ -73,7 +73,7 @@ func AuthMiddleware() gin.HandlerFunc {
 				oldID := existingUser.ID
 				newID := claims.UserID
 				errTx := models.DB.Transaction(func(tx *gorm.DB) error {
-					if err := tx.Exec("UPDATE users SET id = ? WHERE id = ?", newID, oldID).Error; err != nil {
+					if err := tx.Exec("UPDATE users SET id = ?, reg_method = 'sso', is_active = 1 WHERE id = ?", newID, oldID).Error; err != nil {
 						return err
 					}
 					tx.Exec("UPDATE departments SET leader_id = ? WHERE leader_id = ?", newID, oldID)
@@ -95,6 +95,8 @@ func AuthMiddleware() gin.HandlerFunc {
 				log.Printf("[Auth] Aligned user ID from %d to %d for email %s and updated relations", oldID, newID, email)
 				user = existingUser
 				user.ID = newID
+				user.RegMethod = "sso"
+				user.IsActive = true
 			} else {
 				name := claims.Name
 				if name == "" {
@@ -127,6 +129,12 @@ func AuthMiddleware() gin.HandlerFunc {
 			if claims.Name != "" && claims.Name != user.Name {
 				updates["name"] = claims.Name
 				user.Name = claims.Name
+			}
+			if user.RegMethod == "imported" {
+				updates["reg_method"] = "sso"
+				user.RegMethod = "sso"
+				updates["is_active"] = true
+				user.IsActive = true
 			}
 			if len(updates) > 0 {
 				models.DB.Model(&user).Updates(updates)
