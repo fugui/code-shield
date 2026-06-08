@@ -107,7 +107,7 @@ func GetTaskReportMarkdown(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Report path is missing"})
 		return
 	}
-	content, err := os.ReadFile(report.ReportPath)
+	content, err := os.ReadFile(report.GetAbsReportPath())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read report file"})
 		return
@@ -129,7 +129,7 @@ func GetTaskReportSynthesisJSON(c *gin.Context) {
 	}
 
 	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
-	synthesisInputPath := filepath.Join(filepath.Dir(report.ReportPath), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
+	synthesisInputPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
 
 	content, err := os.ReadFile(synthesisInputPath)
 	if err != nil {
@@ -154,7 +154,7 @@ func GetTaskReportSummaryJSON(c *gin.Context) {
 	}
 
 	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
-	summaryPath := filepath.Join(filepath.Dir(report.ReportPath), fmt.Sprintf("report-%d-summary-%s.json", report.ID, safeRepoName))
+	summaryPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-summary-%s.json", report.ID, safeRepoName))
 
 	content, err := os.ReadFile(summaryPath)
 	if err != nil {
@@ -175,7 +175,7 @@ func getFindingsForReport(reportID string) ([]models.AnalysisFinding, error) {
 	// First: Try reading from synthesis JSON file on disk
 	if report.ReportPath != "" {
 		safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
-		synthesisPath := filepath.Join(filepath.Dir(report.ReportPath), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
+		synthesisPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
 
 		if _, err := os.Stat(synthesisPath); err == nil {
 			data, err := os.ReadFile(synthesisPath)
@@ -279,7 +279,7 @@ func TriggerManualNotification(c *gin.Context) {
 		Summary: report.AISummary,
 	}
 
-	services.NotifyTaskResult(report.Repo, report.TaskType, result, specificEmail, report.ID, report.ReportPath)
+	services.NotifyTaskResult(report.Repo, report.TaskType, result, specificEmail, report.ID, report.GetAbsReportPath())
 
 	c.JSON(http.StatusOK, gin.H{"message": "Notification dispatched"})
 }
