@@ -419,7 +419,19 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 		setFieldValue(&finding, "Status", input.Status)
 		setFieldValue(&finding, "StatusLog", datatypes.JSON(logBytes))
 		if input.AssigneeID != nil {
-			setFieldValue(&finding, "AssigneeID", *input.AssigneeID)
+			if *input.AssigneeID == "" || *input.AssigneeID == "0" {
+				var nilUint *uint
+				setFieldValue(&finding, "AssigneeID", nilUint)
+			} else {
+				val, err := strconv.Atoi(*input.AssigneeID)
+				if err == nil {
+					valUint := uint(val)
+					setFieldValue(&finding, "AssigneeID", &valUint)
+				} else {
+					var nilUint *uint
+					setFieldValue(&finding, "AssigneeID", nilUint)
+				}
+			}
 		}
 
 		if err := models.DB.Save(&finding).Error; err != nil {
