@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
 type PortalClaims struct {
@@ -65,27 +66,57 @@ func AuthMiddleware() gin.HandlerFunc {
 			if email == "" {
 				email = claims.Username
 			}
-			name := claims.Name
-			if name == "" {
-				name = email
-			}
 
-			user = models.User{
-				ID:        claims.UserID, // Use the exact same ID as code-bench!
-				Email:     email,
-				Name:      name,
-				IsAdmin:   claims.IsAdmin,
-				IsActive:  true,
-				RegMethod: "sso",
-				Password:  "$2a$10$SSO_USER_NO_PASSWORD_LOGIN",
+			var existingUser models.User
+			if errEmail := models.DB.Where("email = ?", email).First(&existingUser).Error; errEmail == nil {
+				// 账号 ID 未对齐，进行主键对齐和关联关系级联更新
+				oldID := existingUser.ID
+				newID := claims.UserID
+				errTx := models.DB.Transaction(func(tx *gorm.DB) error {
+					if err := tx.Exec("UPDATE users SET id = ? WHERE id = ?", newID, oldID).Error; err != nil {
+						return err
+					}
+					tx.Exec("UPDATE departments SET leader_id = ? WHERE leader_id = ?", newID, oldID)
+					tx.Exec("UPDATE repositories SET owner_id = ? WHERE owner_id = ?", newID, oldID)
+					tx.Exec("UPDATE test_case_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+					tx.Exec("UPDATE coredump_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+					tx.Exec("UPDATE float_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+					tx.Exec("UPDATE thread_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+					tx.Exec("UPDATE cjson_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+					tx.Exec("UPDATE key_issues SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+					return nil
+				})
+				if errTx != nil {
+					log.Printf("[Auth] Failed to align user ID from %d to %d for email %s: %v", oldID, newID, email, errTx)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "SSO user ID alignment failed"})
+					c.Abort()
+					return
+				}
+				log.Printf("[Auth] Aligned user ID from %d to %d for email %s and updated relations", oldID, newID, email)
+				user = existingUser
+				user.ID = newID
+			} else {
+				name := claims.Name
+				if name == "" {
+					name = email
+				}
+				user = models.User{
+					ID:        claims.UserID, // Use the exact same ID as code-bench!
+					Email:     email,
+					Name:      name,
+					IsAdmin:   claims.IsAdmin,
+					IsActive:  true,
+					RegMethod: "sso",
+					Password:  "$2a$10$SSO_USER_NO_PASSWORD_LOGIN",
+				}
+				if err := models.DB.Create(&user).Error; err != nil {
+					log.Printf("[Auth] Failed to auto-provision user ID %d: %v", claims.UserID, err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "SSO user auto-provisioning failed"})
+					c.Abort()
+					return
+				}
+				log.Printf("[Auth] Auto-provisioned shadow user ID %d (%s)", user.ID, user.Email)
 			}
-			if err := models.DB.Create(&user).Error; err != nil {
-				log.Printf("[Auth] Failed to auto-provision user ID %d: %v", claims.UserID, err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "SSO user auto-provisioning failed"})
-				c.Abort()
-				return
-			}
-			log.Printf("[Auth] Auto-provisioned shadow user ID %d (%s)", user.ID, user.Email)
 		} else {
 			// Update admin status or name from token if changed
 			updates := map[string]interface{}{}
