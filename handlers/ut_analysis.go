@@ -335,7 +335,16 @@ func UpdateUTFinding(c *gin.Context) {
 
 	updates := map[string]interface{}{}
 	if req.AssigneeID != nil {
-		updates["assignee_id"] = *req.AssigneeID
+		if *req.AssigneeID == "" || *req.AssigneeID == "0" {
+			updates["assignee_id"] = nil
+		} else {
+			val, err := strconv.Atoi(*req.AssigneeID)
+			if err == nil {
+				updates["assignee_id"] = val
+			} else {
+				updates["assignee_id"] = nil
+			}
+		}
 	}
 
 	if req.Status != nil && *req.Status != "" {
