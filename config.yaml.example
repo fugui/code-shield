@@ -39,26 +39,5 @@ notification:
 
 # ── 认证 ──
 auth:
-  jwt_secret: ""                     # JWT 签名密钥（至少 32 字符，留空则启动时随机生成临时密钥，重启后所有会话失效）
-  password_login_enabled: false      # 是否启用传统用户名/密码登录（若 OAuth2 未启用则自动启用作为兜底）
-  # portal_jwt_secret: ""            # 兼容旧版 Portal SSO 的共享 JWT 密钥（留空禁用）
-
-  oauth2:
-    enabled: false                   # 是否启用 OAuth2 / OIDC 单点登录
-    client_id: "code-shield"         # 在 OAuth2 Provider 中注册的 Client ID
-    client_secret: ""                # Client Secret（建议通过环境变量注入或使用密钥管理服务）
-    auth_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/auth"      # Authorization Endpoint
-    token_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/token"     # Token Endpoint
-    userinfo_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/userinfo" # UserInfo Endpoint
-    redirect_url: ""                 # 回调地址（留空则自动根据 external_url 推导为 <external_url>/api/oauth2/callback）
-    scopes: ["openid", "profile", "email"]  # 请求的 OAuth2 Scopes
-    # admin_list: ["fugui", "admin@company.com"]  # SSO 登录自动提权为系统管理员的邮箱/用户名白名单列表
-    field_mapping:                   # IdP 返回的用户属性字段映射
-      username: "preferred_username" # 映射为系统用户名的字段
-      email: "email"                 # 映射为邮箱的字段
-      name: "name"                   # 映射为显示名称的字段
-      employee_id: "employee_id"     # 映射为工号的字段
-      unique_id: "unique_id"         # 映射为身份证等唯一ID的字段
-      employee_type: "employee_type" # 映射为员工类型的字段
-    dept_api_url: ""                 # SSO 登录后如果部门信息缺失，由前端浏览器请求以同步用户部门名称的外部 API 地址
+  jwt_secret: ""                     # JWT 签名密钥（用于校验由 code-bench 签发的 Token，需保持一致；留空则启动时随机生成临时密钥）
 
