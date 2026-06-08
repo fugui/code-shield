@@ -19,7 +19,6 @@ import (
 	"golang.org/x/text/transform"
 )
 
-
 func GetUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))

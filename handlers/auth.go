@@ -133,18 +133,14 @@ func AuthMiddleware() gin.HandlerFunc {
 			if user.RegMethod == "imported" {
 				updates["reg_method"] = "sso"
 				user.RegMethod = "sso"
+			}
+			if !user.IsActive {
 				updates["is_active"] = true
 				user.IsActive = true
 			}
 			if len(updates) > 0 {
 				models.DB.Model(&user).Updates(updates)
 			}
-		}
-
-		if !user.IsActive {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Account is disabled"})
-			c.Abort()
-			return
 		}
 
 		c.Set("userID", user.ID)

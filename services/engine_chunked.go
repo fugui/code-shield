@@ -72,7 +72,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 
 	chunkDetailsList := make([]ChunkDetails, totalChunks)
 
-	loop:
+loop:
 	for name, files := range chunks {
 		if ctx.ctx.Err() != nil {
 			break loop
@@ -82,7 +82,7 @@ func (e *ChunkedEngine) Run(ctx *taskContext) error {
 		currentIndex := chunkIndex
 
 		wg.Add(1)
-		
+
 		// Acquire semaphore, but abort if context gets cancelled
 		select {
 		case <-ctx.ctx.Done():
@@ -573,14 +573,14 @@ func ResumeFailedChunks(reportID uint) error {
 		chunkStatusMap[ctx.Summary.Analysis.Chunks[i].ChunkName] = &ctx.Summary.Analysis.Chunks[i]
 	}
 
-	loop:
+loop:
 	for idx, failedChunk := range failedChunks {
 		if ctx.ctx.Err() != nil {
 			break loop
 		}
 
 		wg.Add(1)
-		
+
 		// Acquire semaphore, but abort if context gets cancelled
 		select {
 		case <-ctx.ctx.Done():
