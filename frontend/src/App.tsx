@@ -4,7 +4,7 @@ import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
 import ReportsOverview from './pages/ReportsOverview';
 import RepoTaskHistory from './pages/RepoReviewHistory';
 import PublicReportFindings from './pages/PublicReportFindings';
-import OAuthCallback from './pages/OAuthCallback';
+
 import ScanManagement from './pages/ScanManagement';
 import TaskTypeManagement from './pages/TaskTypeManagement';
 import ExecutionLogs from './pages/ExecutionLogs';
@@ -367,7 +367,7 @@ function AppContent() {
       <MainLayout>
         <Routes>
           <Route path="/login" element={<Navigate to={appNavigatePath("/")} replace />} />
-          <Route path="/oauth2/callback" element={<OAuthCallback />} />
+
           <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
 
           {/* 报告中心 */}
