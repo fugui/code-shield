@@ -37,7 +37,6 @@ func InitDB() {
 
 	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
 
-
 	// Auto Migrate
 	err = DB.AutoMigrate(
 		&User{},
@@ -179,6 +178,3 @@ func seedBuiltinTaskTypes() {
 		}
 	}
 }
-
-
-
