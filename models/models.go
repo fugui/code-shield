@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -141,6 +142,18 @@ func (r *TaskReport) GetAbsReportPath() string {
 		return ""
 	}
 	if filepath.IsAbs(r.ReportPath) {
+		// 1. 如果原始绝对路径文件存在，直接使用
+		if _, err := os.Stat(r.ReportPath); err == nil {
+			return r.ReportPath
+		}
+		// 2. 否则，如果路径中包含 "reports/"，截取相对路径并与当前 AppConfig.Storage.Root 拼接做兼容性容错
+		if idx := strings.Index(r.ReportPath, "reports/"); idx != -1 {
+			relPath := r.ReportPath[idx:]
+			absPath := filepath.Join(AppConfig.Storage.Root, relPath)
+			if _, err := os.Stat(absPath); err == nil {
+				return absPath
+			}
+		}
 		return r.ReportPath
 	}
 	return filepath.Join(AppConfig.Storage.Root, r.ReportPath)
