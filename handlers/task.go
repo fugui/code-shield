@@ -131,6 +131,15 @@ func GetTaskReportSynthesisJSON(c *gin.Context) {
 	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
 	synthesisInputPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
 
+	// 容错：如果以当前 Repo 名字命名的文件不存在，利用 Glob 模糊匹配寻找对应 report ID 的 json
+	if _, err := os.Stat(synthesisInputPath); os.IsNotExist(err) {
+		pattern := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-*.json", report.ID))
+		matches, err := filepath.Glob(pattern)
+		if err == nil && len(matches) > 0 {
+			synthesisInputPath = matches[0]
+		}
+	}
+
 	content, err := os.ReadFile(synthesisInputPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Synthesis JSON file not found"})
@@ -156,6 +165,15 @@ func GetTaskReportSummaryJSON(c *gin.Context) {
 	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
 	summaryPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-summary-%s.json", report.ID, safeRepoName))
 
+	// 容错：如果以当前 Repo 名字命名的文件不存在，利用 Glob 模糊匹配寻找对应 report ID 的 json
+	if _, err := os.Stat(summaryPath); os.IsNotExist(err) {
+		pattern := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-summary-*.json", report.ID))
+		matches, err := filepath.Glob(pattern)
+		if err == nil && len(matches) > 0 {
+			summaryPath = matches[0]
+		}
+	}
+
 	content, err := os.ReadFile(summaryPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Summary JSON file not found"})
@@ -176,6 +194,15 @@ func getFindingsForReport(reportID string) ([]models.AnalysisFinding, error) {
 	if report.ReportPath != "" {
 		safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
 		synthesisPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
+
+		// 容错：如果以当前 Repo 名字命名的文件不存在，利用 Glob 模糊匹配寻找对应 report ID 的 json
+		if _, err := os.Stat(synthesisPath); os.IsNotExist(err) {
+			pattern := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-*.json", report.ID))
+			matches, err := filepath.Glob(pattern)
+			if err == nil && len(matches) > 0 {
+				synthesisPath = matches[0]
+			}
+		}
 
 		if _, err := os.Stat(synthesisPath); err == nil {
 			data, err := os.ReadFile(synthesisPath)
