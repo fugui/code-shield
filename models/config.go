@@ -68,7 +68,6 @@ type Config struct {
 	Auth struct {
 		JWTSecret            string       `yaml:"jwt_secret"`             // JWT 签名密钥（替代硬编码，留空则启动时随机生成临时密钥）
 		PasswordLoginEnabled bool         `yaml:"password_login_enabled"` // 是否启用密码登录，默认 false
-		PortalJWTSecret      string       `yaml:"portal_jwt_secret"`      // Portal SSO 共享密钥（兼容旧版，留空禁用）
 		OAuth2               OAuth2Config `yaml:"oauth2"`
 	} `yaml:"auth"`
 }
