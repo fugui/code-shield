@@ -101,6 +101,7 @@ func main() {
 	api.Use(handlers.AuthMiddleware())
 	{
 		api.GET("/me", handlers.GetMe)
+		api.GET("/me/findings", handlers.GetMyFindings)
 		api.PATCH("/password", handlers.UpdatePassword)
 		api.POST("/me/department", handlers.UpdateMyDepartment)
 
