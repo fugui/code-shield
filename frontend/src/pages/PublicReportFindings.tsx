@@ -74,7 +74,7 @@ const getRepoSourceUrl = (
   if (!repoUrl) return '';
 
   const webUrl = sshToHttps(repoUrl);
-  const targetBranch = branch ? branch.trim() : 'main';
+  const targetBranch = branch ? branch.trim() : 'master';
 
   const encodedFilePath = encodeURIComponent(filePath);
   const encodedBranch = encodeURIComponent(targetBranch);
@@ -368,7 +368,7 @@ function PublicReportFindings() {
                 {report.repo?.name || '代码仓'}
               </h1>
               <div style={{ display: 'flex', gap: '1.5rem', color: '#64748b', fontSize: '0.875rem', flexWrap: 'wrap' }}>
-                <span><strong>分支:</strong> {report.repo?.branch || 'main'}</span>
+                <span><strong>分支:</strong> {report.repo?.branch || 'master'}</span>
                 <span><strong>时间:</strong> {report.created_at ? new Date(report.created_at).toLocaleString('zh-CN') : '-'}</span>
               </div>
             </div>

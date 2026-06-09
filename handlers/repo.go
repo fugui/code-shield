@@ -312,7 +312,7 @@ func ImportRepos(c *gin.Context) {
 			continue
 		}
 		if branch == "" {
-			branch = "main"
+			branch = "master"
 		}
 
 		// Resolve owner: try EmployeeID → Email → Name

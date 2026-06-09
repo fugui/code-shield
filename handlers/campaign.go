@@ -373,9 +373,9 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 		id, _ := strconv.Atoi(idStr)
 
 		var input struct {
-			Status     string  `json:"status"`
-			AssigneeID *string `json:"assignee_id"`
-			Feedback   string  `json:"feedback"`
+			Status     string       `json:"status"`
+			AssigneeID *interface{} `json:"assignee_id"`
+			Feedback   string       `json:"feedback"`
 		}
 		if err := c.ShouldBindJSON(&input); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -419,15 +419,42 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 		setFieldValue(&finding, "Status", input.Status)
 		setFieldValue(&finding, "StatusLog", datatypes.JSON(logBytes))
 		if input.AssigneeID != nil {
-			if *input.AssigneeID == "" || *input.AssigneeID == "0" {
+			if *input.AssigneeID == nil {
 				var nilUint *uint
 				setFieldValue(&finding, "AssigneeID", nilUint)
 			} else {
-				val, err := strconv.Atoi(*input.AssigneeID)
-				if err == nil {
-					valUint := uint(val)
-					setFieldValue(&finding, "AssigneeID", &valUint)
-				} else {
+				switch val := (*input.AssigneeID).(type) {
+				case string:
+					if val == "" || val == "0" {
+						var nilUint *uint
+						setFieldValue(&finding, "AssigneeID", nilUint)
+					} else {
+						idVal, err := strconv.Atoi(val)
+						if err == nil {
+							valUint := uint(idVal)
+							setFieldValue(&finding, "AssigneeID", &valUint)
+						} else {
+							var nilUint *uint
+							setFieldValue(&finding, "AssigneeID", nilUint)
+						}
+					}
+				case float64:
+					if val <= 0 {
+						var nilUint *uint
+						setFieldValue(&finding, "AssigneeID", nilUint)
+					} else {
+						valUint := uint(val)
+						setFieldValue(&finding, "AssigneeID", &valUint)
+					}
+				case int:
+					if val <= 0 {
+						var nilUint *uint
+						setFieldValue(&finding, "AssigneeID", nilUint)
+					} else {
+						valUint := uint(val)
+						setFieldValue(&finding, "AssigneeID", &valUint)
+					}
+				default:
 					var nilUint *uint
 					setFieldValue(&finding, "AssigneeID", nilUint)
 				}

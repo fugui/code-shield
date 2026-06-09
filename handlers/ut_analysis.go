@@ -317,9 +317,9 @@ func UpdateUTFinding(c *gin.Context) {
 	}
 
 	var req struct {
-		Status     *string `json:"status"`
-		AssigneeID *string `json:"assignee_id"`
-		Feedback   *string `json:"feedback"`
+		Status     *string      `json:"status"`
+		AssigneeID *interface{} `json:"assignee_id"`
+		Feedback   *string      `json:"feedback"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -335,13 +335,34 @@ func UpdateUTFinding(c *gin.Context) {
 
 	updates := map[string]interface{}{}
 	if req.AssigneeID != nil {
-		if *req.AssigneeID == "" || *req.AssigneeID == "0" {
+		if *req.AssigneeID == nil {
 			updates["assignee_id"] = nil
 		} else {
-			val, err := strconv.Atoi(*req.AssigneeID)
-			if err == nil {
-				updates["assignee_id"] = val
-			} else {
+			switch val := (*req.AssigneeID).(type) {
+			case string:
+				if val == "" || val == "0" {
+					updates["assignee_id"] = nil
+				} else {
+					idVal, err := strconv.Atoi(val)
+					if err == nil {
+						updates["assignee_id"] = idVal
+					} else {
+						updates["assignee_id"] = nil
+					}
+				}
+			case float64:
+				if val <= 0 {
+					updates["assignee_id"] = nil
+				} else {
+					updates["assignee_id"] = int(val)
+				}
+			case int:
+				if val <= 0 {
+					updates["assignee_id"] = nil
+				} else {
+					updates["assignee_id"] = val
+				}
+			default:
 				updates["assignee_id"] = nil
 			}
 		}
