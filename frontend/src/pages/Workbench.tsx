@@ -105,6 +105,17 @@ export default function Workbench() {
 	const [teamRepos, setTeamRepos] = useState<any[]>([]);
 	const [repoTasks, setRepoTasks] = useState<Record<number, any[]>>({});
 	const [reposLoading, setReposLoading] = useState(false);
+	const [repoSortOrder, setRepoSortOrder] = useState('latest_task_time_desc');
+
+	const toggleRepoSort = (field: string) => {
+		setRepoSortOrder(prev => prev === `${field}_desc` ? `${field}_asc` : `${field}_desc`);
+	};
+	const getRepoSortIcon = (field: string) => {
+		if (!repoSortOrder.startsWith(field)) return <span style={{ color: 'var(--text-secondary)', marginLeft: '3px' }}>⇅</span>;
+		return repoSortOrder.endsWith('_desc')
+			? <span style={{ marginLeft: '3px' }}>↓</span>
+			: <span style={{ marginLeft: '3px' }}>↑</span>;
+	};
 
 	// Report sidebar
 	const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -131,16 +142,16 @@ export default function Workbench() {
 	const loadTeamRepos = useCallback(async (deptId: number) => {
 		setReposLoading(true);
 		try {
-			const res = await fetch(`/api/repos?department_id=${deptId}&pageSize=50`);
+			const res = await fetch(`/api/repos?department_id=${deptId}&pageSize=200`);
 			if (!res.ok) return;
 			const data = await res.json();
 			const repos: any[] = data.items || data || [];
 			setTeamRepos(repos);
-			// For each repo, fetch recent tasks (limit 5)
+			// For each repo, fetch latest tasks (any status)
 			const taskMap: Record<number, any[]> = {};
-			await Promise.all(repos.slice(0, 20).map(async (repo: any) => {
+			await Promise.all(repos.slice(0, 50).map(async (repo: any) => {
 				try {
-					const r = await fetch(`/api/tasks?repo_id=${repo.id}&pageSize=5&status=success`);
+					const r = await fetch(`/api/tasks?repo_id=${repo.id}&pageSize=3`);
 					if (r.ok) {
 						const d = await r.json();
 						taskMap[repo.id] = d.items || [];
@@ -503,106 +514,145 @@ export default function Workbench() {
 						{myInfo?.department_id ? '暂无团队代码仓数据' : '暂未加入任何团队，无法展示代码仓报告。'}
 					</div>
 				) : (
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-						{teamRepos.map(repo => {
-							const tasks = repoTasks[repo.id] || [];
-							const shortName = repo.name?.includes(':') ? repo.name.split(':').pop() : repo.name;
-							const latestTask = tasks[0];
-							return (
-								<div key={repo.id} className="card" style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-									{/* Repo header */}
-									<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-										<div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
-											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-												<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
-											</svg>
-											<span
-												style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-color)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
-												onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`))}
-												title={repo.name}
-											>
-												{shortName}
-											</span>
-											{repo.url && (
-												<a href={sshToHttps(repo.url)} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', display: 'flex', flexShrink: 0 }}>
-													<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-														<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+					<div className="card" style={{ padding: 0, overflow: 'hidden', fontSize: '0.875rem' }}>
+						<table className="table">
+							<thead>
+								<tr>
+									<th style={{ minWidth: '200px' }}>代码仓</th>
+									<th style={{ width: '130px' }}>归属部门</th>
+									<th style={{ width: '90px' }}>负责人</th>
+									<th
+										onClick={() => toggleRepoSort('latest_task_time')}
+										style={{ width: '170px', cursor: 'pointer', userSelect: 'none', color: repoSortOrder.startsWith('latest_task_time') ? 'var(--primary-color)' : 'inherit', whiteSpace: 'nowrap' }}
+										title="点击切换排序方式"
+									>
+										最近执行时间{getRepoSortIcon('latest_task_time')}
+									</th>
+									<th
+										onClick={() => toggleRepoSort('status')}
+										style={{ width: '110px', cursor: 'pointer', userSelect: 'none', color: repoSortOrder.startsWith('status') ? 'var(--primary-color)' : 'inherit', whiteSpace: 'nowrap' }}
+										title="点击切换排序方式"
+									>
+										状态{getRepoSortIcon('status')}
+									</th>
+									<th style={{ width: '70px', textAlign: 'center' }}>评分</th>
+									<th style={{ width: '110px', textAlign: 'center' }}>历史报告</th>
+									<th style={{ width: '120px', textAlign: 'right' }}>操作</th>
+								</tr>
+							</thead>
+							<tbody>
+								{[...teamRepos].sort((a, b) => {
+									const aTask = (repoTasks[a.id] || [])[0];
+									const bTask = (repoTasks[b.id] || [])[0];
+									if (repoSortOrder.startsWith('latest_task_time')) {
+										const aTime = aTask?.created_at || '';
+										const bTime = bTask?.created_at || '';
+										return repoSortOrder.endsWith('_desc') ? bTime.localeCompare(aTime) : aTime.localeCompare(bTime);
+									}
+									if (repoSortOrder.startsWith('status')) {
+										const aS = aTask?.status || 'zzz';
+										const bS = bTask?.status || 'zzz';
+										return repoSortOrder.endsWith('_desc') ? bS.localeCompare(aS) : aS.localeCompare(bS);
+									}
+									return 0;
+								}).map(repo => {
+									const tasks = repoTasks[repo.id] || [];
+									const latestTask = tasks[0];
+									const shortName = repo.name?.includes(':') ? repo.name.split(':').pop() : repo.name;
+									const latestTime = latestTask?.created_at ? latestTask.created_at.replace('T', ' ').substring(0, 16) : null;
+									const reportCount = repo.report_count ?? tasks.filter((t: any) => t.status === 'success').length;
+									return (
+										<tr key={repo.id}>
+											<td style={{ fontWeight: 600 }}>
+												<div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+													<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+														<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
 													</svg>
-												</a>
-											)}
-										</div>
-										<div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-											{latestTask && (
-												<>
-													{latestTask.score !== undefined && latestTask.status === 'success' && (
-														<span style={{ fontWeight: 800, fontSize: '1rem', color: getScoreColor(latestTask.score), minWidth: '2rem', textAlign: 'center' }}>
-															{latestTask.score}
-														</span>
-													)}
-													{(() => {
-														const b = taskStatusBadge(latestTask.status);
-														return (
-															<span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '12px', background: b.bg, color: b.color, fontWeight: 600 }}>
-																{b.label}
-															</span>
-														);
-													})()}
-												</>
-											)}
-											<button
-												onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`))}
-												style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '5px', padding: '0.2rem 0.6rem', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-color)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-												onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-color)'; e.currentTarget.style.color = 'var(--primary-color)'; }}
-												onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-color)'; }}
-											>
-												<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-													<circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-												</svg>
-												历史报告
-											</button>
-										</div>
-									</div>
-
-									{/* Recent tasks bar */}
-									{tasks.length > 0 ? (
-										<div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
-											<span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginRight: '0.25rem' }}>近期报告:</span>
-											{tasks.map((task: any) => {
-												const b = taskStatusBadge(task.status);
-												const date = task.created_at ? task.created_at.substring(0, 10) : '';
-												return (
-													<button
-														key={task.id}
-														onClick={() => task.status === 'success' && handleOpenReport(task.id)}
-														title={`#${task.id} · ${date}${task.ai_summary ? '\n' + task.ai_summary : ''}`}
-														style={{
-															display: 'flex', alignItems: 'center', gap: '0.3rem',
-															padding: '0.2rem 0.55rem', borderRadius: '12px',
-															background: b.bg, color: b.color,
-															border: `1px solid ${b.color}25`,
-															fontSize: '0.72rem', fontWeight: 600,
-															cursor: task.status === 'success' ? 'pointer' : 'default',
-															transition: 'opacity 0.15s',
-														}}
-														onMouseEnter={e => { if (task.status === 'success') e.currentTarget.style.opacity = '0.75'; }}
-														onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+													<span
+														style={{ color: 'var(--primary-color)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+														onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`))}
+														onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
+														onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
+														title={repo.name}
 													>
-														{task.status === 'success' && task.score !== undefined && (
-															<span style={{ fontWeight: 800, fontSize: '0.75rem' }}>{task.score}</span>
-														)}
-														<span>{date || `#${task.id}`}</span>
+														{shortName}
+													</span>
+													{repo.url && (
+														<a href={sshToHttps(repo.url)} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', display: 'inline-flex', flexShrink: 0 }} title={repo.url}>
+															<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+																<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+															</svg>
+														</a>
+													)}
+												</div>
+												{latestTask?.task_type && (
+													<span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', background: 'rgba(59,130,246,0.08)', color: 'var(--primary-color)', borderRadius: '4px', fontWeight: 500, display: 'inline-block', marginTop: '0.2rem' }}>
+														{latestTask.task_type.display_name}
+													</span>
+												)}
+											</td>
+											<td style={{ color: 'var(--text-secondary)', fontSize: '0.825rem' }}>
+												{repo.department?.name || myInfo?.department?.name || '-'}
+											</td>
+											<td style={{ fontSize: '0.825rem' }}>
+												{repo.owner?.name || <span style={{ color: 'var(--text-secondary)' }}>-</span>}
+											</td>
+											<td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+												{latestTime || <span style={{ fontStyle: 'italic' }}>暂无记录</span>}
+											</td>
+											<td>
+												{latestTask ? (() => {
+													const b = taskStatusBadge(latestTask.status);
+													const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(latestTask.status);
+													return (
+														<span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '12px', background: b.bg, color: b.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
+															{isRunning && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block', animation: 'pulse 1.2s ease-in-out infinite' }} />}
+															{b.label}
+														</span>
+													);
+												})() : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>暂无扫描</span>}
+											</td>
+											<td style={{ textAlign: 'center' }}>
+												{latestTask?.status === 'success' && latestTask.score !== undefined
+													? <span style={{ fontWeight: 800, fontSize: '1rem', color: getScoreColor(latestTask.score) }}>{latestTask.score}</span>
+													: <span style={{ color: 'var(--text-secondary)' }}>-</span>}
+											</td>
+											<td style={{ textAlign: 'center' }}>
+												<div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+													<span style={{ fontWeight: 600, color: reportCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)' }}>{reportCount} 个</span>
+													<button
+														onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`))}
+														style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', padding: '2px', borderRadius: '4px' }}
+														title="查询历史报告列表"
+														onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.08)'; }}
+														onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+													>
+														<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+															<circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+														</svg>
 													</button>
-												);
-											})}
-										</div>
-									) : (
-										<div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-											暂无最近报告记录
-										</div>
-									)}
-								</div>
-							);
-						})}
+												</div>
+											</td>
+											<td style={{ textAlign: 'right' }}>
+												{latestTask?.status === 'success' ? (
+													<button
+														onClick={() => handleOpenReport(latestTask.id)}
+														style={{ background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+														onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-color)'; e.currentTarget.style.color = 'white'; }}
+														onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--primary-color)'; }}
+													>
+														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+															<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+														</svg>
+														查看报告
+													</button>
+												) : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>-</span>}
+											</td>
+										</tr>
+									);
+								})}
+							</tbody>
+						</table>
 					</div>
 				)}
 			</div>
