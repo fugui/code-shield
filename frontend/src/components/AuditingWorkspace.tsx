@@ -37,6 +37,7 @@ export interface Finding {
   };
   status_log?: string;
   repo?: WorkspaceRepoDetails;
+  task_report_id?: number;
 }
 
 const getRepoSourceUrl = (
@@ -48,7 +49,7 @@ const getRepoSourceUrl = (
   if (!repoUrl) return '';
 
   const webUrl = sshToHttps(repoUrl);
-  const targetBranch = branch ? branch.trim() : 'main';
+  const targetBranch = branch ? branch.trim() : 'master';
 
   const encodedFilePath = encodeURIComponent(filePath);
   const encodedBranch = encodeURIComponent(targetBranch);
@@ -75,6 +76,14 @@ interface AuditingWorkspaceProps {
   workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson';
   onWorkflowSaved?: () => void;
 }
+
+const TYPE_NAME_MAP: Record<string, string> = {
+  ut: 'ut_effectiveness',
+  coredump: 'coredump_risk',
+  float: 'float_comparison',
+  thread: 'thread_create',
+  cjson: 'cjson_scan'
+};
 
 export default function AuditingWorkspace({
   isOpen,
@@ -105,6 +114,78 @@ export default function AuditingWorkspace({
   const [workflowStatus, setWorkflowStatus] = useState('open');
   const [workflowAssignee, setWorkflowAssignee] = useState<number | ''>('');
   const [workflowComment, setWorkflowComment] = useState('');
+
+  // Resolved Task Report ID for synthesis JSON download
+  const [reportId, setReportId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (isOpen && repoId) {
+      const params = new URLSearchParams({
+        repo_id: repoId.toString(),
+        pageSize: '50'
+      });
+      const targetTypeName = TYPE_NAME_MAP[workspaceType];
+
+      fetch(apiUrl(`/api/tasks?${params.toString()}`))
+        .then(res => res.json())
+        .then(data => {
+          const items = data.items || data.reports || [];
+          // Find the latest successful task of this type
+          let targetTask = items.find((item: any) => 
+            item.task_type?.name === targetTypeName && 
+            (item.status === 'success' || item.status === 'skipped')
+          );
+          // Fallback to any task of this type
+          if (!targetTask) {
+            targetTask = items.find((item: any) => item.task_type?.name === targetTypeName);
+          }
+          if (targetTask) {
+            setReportId(targetTask.id || targetTask.ID);
+          } else {
+            setReportId(null);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to fetch tasks for report ID resolution:', err);
+        });
+    } else {
+      setReportId(null);
+    }
+  }, [isOpen, repoId, workspaceType]);
+
+  const handleDownloadJson = async () => {
+    let activeReportId = reportId;
+    if (!activeReportId && workspaceFindings.length > 0) {
+      const first = workspaceFindings.find(f => f.task_report_id || (f as any).TaskReportID);
+      if (first) {
+        activeReportId = first.task_report_id || (first as any).TaskReportID;
+      }
+    }
+
+    if (!activeReportId) {
+      showToast('未找到该工作区对应的任务报告，无法下载', 'info');
+      return;
+    }
+
+    try {
+      const res = await fetch(apiUrl(`/api/tasks/${activeReportId}/synthesis`));
+      if (!res.ok) {
+        showToast('无法获取问题记录 JSON 文件，请确认文件是否存在', 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${activeReportId}-synthesis.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('下载 JSON 文件成功', 'success');
+    } catch (err) {
+      console.error('Failed to download synthesis JSON:', err);
+      showToast('下载 JSON 文件失败', 'error');
+    }
+  };
 
   // Fetch findings
   const fetchWorkspaceFindings = (
@@ -337,13 +418,34 @@ export default function AuditingWorkspace({
           </span>
           <h3 style={{ margin: '0.1rem 0 0 0', fontSize: '1.2rem', fontWeight: 700 }}>📁 {repoName}</h3>
         </div>
-        <button 
-          className="btn btn-outline" 
-          onClick={onClose}
-          style={{ padding: '0.35rem 0.8rem', fontSize: '0.85rem' }}
-        >
-          关闭工作区
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            className="btn btn-outline"
+            onClick={handleDownloadJson}
+            style={{ 
+              padding: '0.35rem 0.8rem', 
+              fontSize: '0.85rem', 
+              borderColor: '#0284c7', 
+              color: '#0284c7', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.35rem' 
+            }}
+            title="下载全部问题记录 (JSON)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
+            </svg>
+            下载 JSON
+          </button>
+          <button 
+            className="btn btn-outline" 
+            onClick={onClose}
+            style={{ padding: '0.35rem 0.8rem', fontSize: '0.85rem' }}
+          >
+            关闭工作区
+          </button>
+        </div>
       </div>
 
       {/* Workspace Content */}
