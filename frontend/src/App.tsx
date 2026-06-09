@@ -13,6 +13,7 @@ import CoredumpAnalysis from './pages/CoredumpAnalysis';
 import FloatAnalysis from './pages/FloatAnalysis';
 import ThreadAnalysis from './pages/ThreadAnalysis';
 import CjsonAnalysis from './pages/CjsonAnalysis';
+import Workbench from './pages/Workbench';
 import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
 
@@ -332,6 +333,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                 const relativePath = location.pathname.startsWith(BASE_PATH)
                   ? location.pathname.slice(BASE_PATH.length)
                   : location.pathname;
+                if (relativePath.startsWith('/workbench')) return '个人工作台';
                 if (relativePath.startsWith('/reports/repo') || relativePath.startsWith('/tasks/repo')) return '历史报告';
                 if (relativePath.startsWith('/reports') || relativePath.startsWith('/tasks')) return '报告概览';
                 if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试用例有效性分析';
@@ -369,6 +371,9 @@ function AppContent() {
           <Route path="/login" element={<Navigate to={appNavigatePath("/")} replace />} />
 
           <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+
+          {/* 个人工作台 */}
+          <Route path="/workbench" element={<PrivateRoute><Workbench /></PrivateRoute>} />
 
           {/* 报告中心 */}
           <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
