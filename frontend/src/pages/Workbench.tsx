@@ -650,7 +650,7 @@ export default function Workbench() {
 					<div
 						onClick={e => e.stopPropagation()}
 						style={{
-							position: 'fixed', top: 0, right: 0, bottom: 0, width: '550px', maxWidth: '100vw',
+							position: 'fixed', top: 0, right: 0, bottom: 0, width: '1100px', maxWidth: '100vw',
 							background: 'var(--card-bg)', borderLeft: '1px solid var(--border-color)', boxShadow: '-10px 0 30px rgba(0,0,0,0.2)',
 							zIndex: 1000, display: 'flex', flexDirection: 'column', overflow: 'hidden',
 							animation: 'slideLeft 0.25s cubic-bezier(0.22, 1, 0.36, 1)'
