@@ -518,26 +518,12 @@ export default function Workbench() {
 						<table className="table">
 							<thead>
 								<tr>
+									<th style={{ width: '48px', textAlign: 'center' }}>序号</th>
 									<th style={{ minWidth: '200px' }}>代码仓</th>
-									<th style={{ width: '130px' }}>归属部门</th>
 									<th style={{ width: '90px' }}>负责人</th>
-									<th
-										onClick={() => toggleRepoSort('latest_task_time')}
-										style={{ width: '170px', cursor: 'pointer', userSelect: 'none', color: repoSortOrder.startsWith('latest_task_time') ? 'var(--primary-color)' : 'inherit', whiteSpace: 'nowrap' }}
-										title="点击切换排序方式"
-									>
-										最近执行时间{getRepoSortIcon('latest_task_time')}
-									</th>
-									<th
-										onClick={() => toggleRepoSort('status')}
-										style={{ width: '110px', cursor: 'pointer', userSelect: 'none', color: repoSortOrder.startsWith('status') ? 'var(--primary-color)' : 'inherit', whiteSpace: 'nowrap' }}
-										title="点击切换排序方式"
-									>
-										状态{getRepoSortIcon('status')}
-									</th>
-									<th style={{ width: '70px', textAlign: 'center' }}>评分</th>
-									<th style={{ width: '110px', textAlign: 'center' }}>历史报告</th>
-									<th style={{ width: '120px', textAlign: 'right' }}>操作</th>
+									<th style={{ width: '160px' }}>最新扫描报告</th>
+									<th style={{ width: '90px', textAlign: 'center' }}>评分</th>
+									<th style={{ width: '120px', textAlign: 'center' }}>历史报告</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -555,14 +541,19 @@ export default function Workbench() {
 										return repoSortOrder.endsWith('_desc') ? bS.localeCompare(aS) : aS.localeCompare(bS);
 									}
 									return 0;
-								}).map(repo => {
+								}).map((repo, rowIdx) => {
 									const tasks = repoTasks[repo.id] || [];
-									const latestTask = tasks[0];
+									const latestTask = tasks.find((t: any) => t.status === 'success') || null;
 									const shortName = repo.name?.includes(':') ? repo.name.split(':').pop() : repo.name;
 									const latestTime = latestTask?.created_at ? latestTask.created_at.replace('T', ' ').substring(0, 16) : null;
 									const reportCount = repo.report_count ?? tasks.filter((t: any) => t.status === 'success').length;
 									return (
 										<tr key={repo.id}>
+											{/* 序号 */}
+											<td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: 500 }}>
+												{rowIdx + 1}
+											</td>
+											{/* 代码仓 */}
 											<td style={{ fontWeight: 600 }}>
 												<div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
 													<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -570,7 +561,7 @@ export default function Workbench() {
 													</svg>
 													<span
 														style={{ color: 'var(--primary-color)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-														onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`))}
+														onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`), { state: { from: 'workbench' } })}
 														onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
 														onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
 														title={repo.name}
@@ -585,68 +576,58 @@ export default function Workbench() {
 														</a>
 													)}
 												</div>
-												{latestTask?.task_type && (
-													<span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', background: 'rgba(59,130,246,0.08)', color: 'var(--primary-color)', borderRadius: '4px', fontWeight: 500, display: 'inline-block', marginTop: '0.2rem' }}>
-														{latestTask.task_type.display_name}
-													</span>
-												)}
 											</td>
-											<td style={{ color: 'var(--text-secondary)', fontSize: '0.825rem' }}>
-												{repo.department?.name || myInfo?.department?.name || '-'}
-											</td>
+											{/* 负责人 */}
 											<td style={{ fontSize: '0.825rem' }}>
 												{repo.owner?.name || <span style={{ color: 'var(--text-secondary)' }}>-</span>}
 											</td>
-											<td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-												{latestTime || <span style={{ fontStyle: 'italic' }}>暂无记录</span>}
-											</td>
+											{/* 最新扫描报告：类型 + 时间 */}
 											<td>
-												{latestTask ? (() => {
-													const b = taskStatusBadge(latestTask.status);
-													const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(latestTask.status);
-													return (
-														<span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '12px', background: b.bg, color: b.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
-															{isRunning && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block', animation: 'pulse 1.2s ease-in-out infinite' }} />}
-															{b.label}
-														</span>
-													);
-												})() : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>暂无扫描</span>}
+												{latestTask ? (
+													<div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+														{latestTask.task_type?.display_name && (
+															<span style={{ fontSize: '0.78rem', padding: '0.1rem 0.45rem', background: 'rgba(59,130,246,0.08)', color: 'var(--primary-color)', borderRadius: '4px', fontWeight: 500, width: 'fit-content' }}>
+																{latestTask.task_type.display_name}
+															</span>
+														)}
+														<span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{latestTime}</span>
+													</div>
+												) : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', fontStyle: 'italic' }}>暂无成功报告</span>}
 											</td>
+											{/* 评分 + 查看图标 */}
 											<td style={{ textAlign: 'center' }}>
-												{latestTask?.status === 'success' && latestTask.score !== undefined
-													? <span style={{ fontWeight: 800, fontSize: '1rem', color: getScoreColor(latestTask.score) }}>{latestTask.score}</span>
-													: <span style={{ color: 'var(--text-secondary)' }}>-</span>}
+												{latestTask?.status === 'success' && latestTask.score !== undefined ? (
+													<div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+														<span style={{ fontWeight: 800, fontSize: '1rem', color: getScoreColor(latestTask.score) }}>{latestTask.score}</span>
+														<button
+															onClick={() => handleOpenReport(latestTask.id)}
+															title="查看最新报告"
+															style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', padding: '2px 3px', borderRadius: '4px' }}
+															onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.1)'; }}
+															onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+														>
+															<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+																<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+																<circle cx="12" cy="12" r="3" />
+															</svg>
+														</button>
+													</div>
+												) : <span style={{ color: 'var(--text-secondary)' }}>-</span>}
 											</td>
+											{/* 历史报告 + > 箭头 */}
 											<td style={{ textAlign: 'center' }}>
-												<div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-													<span style={{ fontWeight: 600, color: reportCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)' }}>{reportCount} 个</span>
-													<button
-														onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`))}
-														style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', padding: '2px', borderRadius: '4px' }}
-														title="查询历史报告列表"
-														onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.08)'; }}
-														onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-													>
-														<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-															<circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-														</svg>
-													</button>
-												</div>
-											</td>
-											<td style={{ textAlign: 'right' }}>
-												{latestTask?.status === 'success' ? (
-													<button
-														onClick={() => handleOpenReport(latestTask.id)}
-														style={{ background: 'transparent', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-														onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-color)'; e.currentTarget.style.color = 'white'; }}
-														onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--primary-color)'; }}
-													>
-														<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-															<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-														</svg>
-														查看报告
-													</button>
-												) : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>-</span>}
+												<button
+													onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`), { state: { from: 'workbench' } })}
+													style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: reportCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)', padding: '3px 6px', borderRadius: '5px' }}
+													title="查看历史报告"
+													onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.08)'; }}
+													onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+												>
+													<span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{reportCount} 个</span>
+													<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+														<polyline points="9 18 15 12 9 6" />
+													</svg>
+												</button>
 											</td>
 										</tr>
 									);

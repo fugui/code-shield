@@ -134,6 +134,8 @@ function RepoReviewHistory() {
           onClick={() => {
             if (from === 'scan-management') {
               navigate(appNavigatePath('/admin/scan/trigger'));
+            } else if (from === 'workbench') {
+              navigate(appNavigatePath('/workbench'));
             } else {
               navigate(appNavigatePath(`/reports${returnSearch ? '?' + returnSearch : ''}`));
             }
@@ -149,7 +151,7 @@ function RepoReviewHistory() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
-          {from === 'scan-management' ? '返回手动触发' : '返回概览'}
+          {from === 'scan-management' ? '返回手动触发' : from === 'workbench' ? '返回工作台' : '返回概览'}
         </button>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>
