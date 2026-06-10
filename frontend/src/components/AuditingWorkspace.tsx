@@ -35,7 +35,7 @@ export interface Finding {
     ID?: number;
     name: string;
   };
-  status_log?: string;
+  status_log?: string | any[];
   repo?: WorkspaceRepoDetails;
   task_report_id?: number;
 }
@@ -808,7 +808,14 @@ export default function AuditingWorkspace({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', textAlign: 'left' }}>
                   {editingFinding.status_log ? (() => {
                     try {
-                      const logs = JSON.parse(editingFinding.status_log);
+                      let logs: any[];
+                      if (Array.isArray(editingFinding.status_log)) {
+                        logs = editingFinding.status_log;
+                      } else if (typeof editingFinding.status_log === 'string') {
+                        logs = JSON.parse(editingFinding.status_log);
+                      } else {
+                        logs = [];
+                      }
                       if (!Array.isArray(logs) || logs.length === 0) {
                         return <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>暂无流转记录</div>;
                       }
@@ -824,10 +831,15 @@ export default function AuditingWorkspace({
                               {log.comment}
                             </div>
                           )}
+                          {log.reason && (
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.1rem' }}>
+                              原因: {log.reason}
+                            </div>
+                          )}
                         </div>
                       ));
                     } catch (err) {
-                      return <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>历史日志读取异常</div>;
+                      return <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>日志格式异常，请联系管理员</div>;
                     }
                   })() : (
                     <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>暂无流转记录</div>
