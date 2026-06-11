@@ -31,6 +31,26 @@
 
 **请严格按照以下 JSON 格式输出，不要包含任何 Markdown 代码块标记（如 ```json）或其他额外解释文本。输出必须是合法的 JSON：**
 
+### 1. JSON 格式说明（带字段约束提示）
+```json
+{
+  "findings": [
+    {
+      "severity": "致命|严重|一般|建议",
+      "category": "健壮性与稳定性|资源与生命周期管理|代码坏味道与重构问题",
+      "file_path": "相对代码仓根目录的相对路径（必须是相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
+      "line_number": "问题所在的行号或行范围（字符串格式，例如 \"42\" 或 \"42-45\"）",
+      "code_snippet": "问题发生处的原始代码片段（3-10行）",
+      "title": "问题简述（一句话概括）",
+      "detail": "详细说明问题的原因和可能的影响",
+      "suggestion": "具体的修复建议和改进方案，尽量含代码片段"
+    }
+  ],
+  "summary": "不超过300字的整体测试代码质量评估摘要，描述主要问题类别及其对测试套件健壮性、可维护性的影响"
+}
+```
+
+### 2. 标准 JSON 真实示例
 ```json
 {
   "findings": [
@@ -41,7 +61,7 @@
       "line_number": "42-45",
       "code_snippet": "def test_get_user(self):\n    time.sleep(2)  # 等待异步数据\n    result = self.client.get_user(1)\n    self.assertEqual(result.status, 'success')",
       "title": "测试中使用 time.sleep 引入了脆弱测试风险",
-      "detail": "测试使用硬编码的延时等待 (time.sleep) 来同步异步结果，这在 CI/CD 流水线因系统负载导致执行缓慢时很容易产生偶发性失败 (Flaky Test)。",
+      "detail": "测试使用硬编码的延时等待 (time.sleep) 来同步异步结果，这在 CI/CD 流水线因 system 负载导致执行缓慢时很容易产生偶发性失败 (Flaky Test)。",
       "suggestion": "建议改用基于轮询或重试检测机制（如使用 tenacity 库或主动等待特定状态发生），避免硬编码等待时间。"
     }
   ],

@@ -79,6 +79,26 @@
 
 ### 预期输出的 JSON 结构如下：
 
+### 1. JSON 格式说明（带字段约束提示）
+```json
+{
+  "findings": [
+    {
+      "severity": "致命|严重|一般|建议",
+      "category": "主分类-二级分类 (例如: 性能与运行效率-内存泄漏)",
+      "file_path": "相对代码仓根目录的相对路径（严禁包含硬盘绝对路径，如 /home/... 等）",
+      "line_number": "42-45",
+      "code_snippet": "问题发生处的原始代码片段\n    void* ptr = malloc(10);\n    if (err) return; // 漏掉 free",
+      "title": "问题标题（一句话言简意赅概括）",
+      "detail": "详细且精准的技术剖析，描述为什么这是一个隐患，触发该隐患的条件以及引发的危害",
+      "suggestion": "提供清晰具体的重构或修复方案，尽可能包含正确的修复代码或伪代码示例"
+    }
+  ],
+  "summary": "200-400 字的整体存量代码质量审计综述，评估系统性的架构健康度、主要风险暴露面以及长期的可维护性状态。"
+}
+```
+
+### 2. 标准 JSON 真实示例
 ```json
 {
   "findings": [
@@ -89,7 +109,7 @@
       "line_number": "112-118",
       "code_snippet": "void Cache::set(const std::string& key, const std::string& val) {\n    if (m_data.find(key) == m_data.end()) {\n        m_data[key] = val;\n    }\n}",
       "title": "多线程并发写入 std::unordered_map 未进行同步保护",
-      "detail": "在 Cache::set 方法中，m_data 是一个共享的 map 容器，对其进行并发查询和写入（m_data[key] = val）时，缺乏锁或原子变量等互斥同步机制。高并发写入场景下会产生竞争条件 (Race Condition)，直接导致未定义行为或进程崩溃异常。",
+      "detail": "在 Cache::set 方法中，m_data 是一个共享 of map 容器，对其进行并发查询和写入（m_data[key] = val）时，缺乏锁或原子变量等互斥同步机制。高并发写入场景下会产生竞争条件 (Race Condition)，直接导致未定义行为或进程崩溃异常。",
       "suggestion": "在对共享数据结构 m_data 进行读写前，使用 std::lock_guard 绑定互斥锁进行同步。\n\n正确代码示例：\nvoid Cache::set(const std::string& key, const std::string& val) {\n    std::lock_guard<std::mutex> lock(m_mutex);\n    m_data[key] = val;\n}"
     }
   ],
