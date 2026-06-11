@@ -21,6 +21,7 @@ function ReportsOverview() {
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
+  const [subsystems, setSubsystems] = useState<string[]>([]);
 
   const [pageSize, setPageSize] = useState<number>(25);
   const [totalItems, setTotalItems] = useState<number>(0);
@@ -52,6 +53,13 @@ function ReportsOverview() {
         if (data) {
           setIsAdmin(!!data.is_admin);
         }
+      })
+    fetch('/api/repos?pageSize=1000')
+      .then(res => res.json())
+      .then(data => {
+        const list = data.items || data || [];
+        const groups = Array.from(new Set(list.map((r: any) => r.service_group).filter(Boolean))) as string[];
+        setSubsystems(groups);
       })
       .catch(console.error);
   }, []);
@@ -241,16 +249,19 @@ function ReportsOverview() {
           </select>
         </div>
 
-        {/* Service Group */}
+        {/* Subsystem */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '150px' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>服务组</label>
-          <input
-            type="text"
-            placeholder="按服务组过滤..."
+          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>子系统</label>
+          <select
             value={filterServiceGroup}
             onChange={e => handleFilterChange('sg', e.target.value)}
-            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)' }}
-          />
+            style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer' }}
+          >
+            <option value="">全部子系统</option>
+            {subsystems.map(sub => (
+              <option key={sub} value={sub}>{sub}</option>
+            ))}
+          </select>
         </div>
 
         {/* Owner */}
