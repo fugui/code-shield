@@ -63,6 +63,16 @@
   "findings": [
     {
       "file_path": "tests/user_service_test.go",
+      "line_number": "10-20",
+      "title": "TestRegister_Success",
+      "detail": "验证当输入合法的用户名和密码时，注册能成功进行，并正确地返回无 error 的状态，数据库中能够成功保存该用户。",
+      "severity": "合格",
+      "category": "无问题",
+      "code_snippet": "func TestRegister_Success(t *testing.T) {\n    req := &RegisterReq{Username: \"testuser\", Password: \"pwd123\"}\n    resp, err := service.Register(context.Background(), req)\n    assert.NoError(t, err)\n    assert.NotNil(t, resp)\n    assert.Equal(t, \"testuser\", resp.Username)\n}",
+      "suggestion": "无"
+    },
+    {
+      "file_path": "tests/user_service_test.go",
       "line_number": "25-35",
       "title": "TestLogin_Success 存在永真断言逻辑",
       "detail": "用例在完成业务调用后，使用 assert.True(t, true) 进行无意义的硬编码对比，无法真实地验证业务逻辑是否正确，导致测试永远显示通过状态。",
@@ -72,6 +82,6 @@
       "suggestion": "移除 assert.True(t, true)，根据 Login 的真实返回状态或副作用，增加针对 err 或者是 Session 状态的断言。\n\n正确代码示例：\nassert.NoError(t, err)"
     }
   ],
-  "summary": "本次对 tests/user_service_test.go 进行了单元测试有效性审计。共发现1处严重缺陷，为测试用例中的永真断言问题。该用例未对真实的业务状态进行有效断言，隐藏了测试失效的风险，建议按照修改建议补充有效的状态校验。"
+  "summary": "本次对 tests/user_service_test.go 进行了单元测试有效性审计。共审计2个测试用例，其中1个用例合格，1个用例存在严重缺陷（永真断言问题）。对于有缺陷的用例，建议按照修改建议补充有效的状态校验。"
 }
 ```
