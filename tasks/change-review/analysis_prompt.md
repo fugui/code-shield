@@ -82,17 +82,17 @@
 {
   "findings": [
     {
-      "severity": "致命|严重|一般|建议",
-      "category": "主分类-二级分类 (例如: 接口兼容性-破坏性变更)",
-      "file_path": "相对代码仓根目录的相对路径（严禁包含硬盘绝对路径，如 /home/... 等）",
-      "line_number": "87-90",
-      "code_snippet": "问题发生处的原始代码片段\n    public void handle(Request req) {\n        // 新增的异常分支，缺失日志\n        if (req == null) return;\n    }",
-      "title": "问题标题（一句话言简意赅概括）",
-      "detail": "说明由于本次提交引入了何种缺陷，触发条件是什么，以及为什么该修改会带来风险",
-      "suggestion": "提供清晰具体的重构或修复方案，尽可能包含正确的修复代码或伪代码示例"
+      "severity": "致命",
+      "category": "接口兼容性-破坏性变更",
+      "file_path": "src/api/auth.go",
+      "line_number": "12-18",
+      "code_snippet": "- func Authenticate(username, password string) bool {\n+ func Authenticate(username, password, token string) bool {",
+      "title": "修改公共接口 Authenticate 签名导致破坏性变更风险",
+      "detail": "本次提交修改了公共函数 Authenticate 的入参签名，新增了 token 必填参数，但未对历史调用方进行同步适配，也没有提供重载或缺省实现，这属于破坏性变更（Breaking Change），会导致上下游代码编译直接失败，产生回归风险。",
+      "suggestion": "方案一：保留原 Authenticate 接口签名，新增 AuthenticateWithToken 接口供新功能调用。\n\n方案二：如果使用 Go 可以引入 Context 结构体或 options 模式，避免直接修改既有参数签名。"
     }
   ],
-  "summary": "200-400 字的增量变更代码质量审计综述，总结本次提交/合并的架构质量、兼容性风险、防御性编程表现以及是否允许安全合入。"
+  "summary": "本次对过去 7 天的增量代码进行了质量审计。共发现 1 处致命缺陷，即对核心鉴权接口的破坏性变更，该变更会导致上下游调用编译失败。建议立即对接口进行兼容性封装。其他部分变更有完备的错误处理，质量表现符合规范。"
 }
 ```
 

@@ -35,17 +35,17 @@ Important: If you have added an item to an array or an object already, you mustn
 {
   "findings": [
     {
-      "severity": "致命|严重|一般|建议",
-      "category": "内存泄漏的类型",
-      "file_path": "相对代码仓根目录的相对路径（必须是相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
-      "line_number": 42,
-      "code_snippet": "问题发生处的原始代码片段（3-10行）",
-      "title": "问题简述（一句话概括）",
-      "detail": "详细说明问题的原因和可能的影响",
-      "suggestion": "具体的修复建议和改进方案， 尽可能包含正确的修复代码， 或者伪代码"
+      "severity": "严重",
+      "category": "cJSON_Parse 内存泄漏",
+      "file_path": "src/parser.c",
+      "line_number": "56-62",
+      "code_snippet": "void parse_config(const char* json_str) {\n    cJSON *root = cJSON_Parse(json_str);\n    if (root == NULL) return;\n    cJSON *item = cJSON_GetObjectItem(root, \"port\");\n    printf(\"port: %d\\n\", item->valueint);\n    // 缺少 cJSON_Delete(root)\n}",
+      "title": "cJSON_Parse 解析后的 JSON 树未进行释放",
+      "detail": "在 parse_config 函数中，使用 cJSON_Parse 成功解析了 JSON 字符串并分配了内存，但在函数正常退出时未调用 cJSON_Delete(root) 释放整个树，导致严重的内存泄漏风险。",
+      "suggestion": "在函数执行完毕的退出路径上添加 cJSON_Delete(root) 释放内存。\n\n正确代码示例：\nvoid parse_config(const char* json_str) {\n    cJSON *root = cJSON_Parse(json_str);\n    if (root == NULL) return;\n    ...\n    cJSON_Delete(root);\n}"
     }
   ],
-  "summary": "200-400字的整体代码质量评估摘要，描述主要问题类别及其风险影响"
+  "summary": "本次审计主要关注 C/C++ 代码中使用 cJSON 库导致的潜在内存泄漏问题。共发现 1 处严重缺陷，为 cJSON_Parse 树在退出时未调用 cJSON_Delete 进行资源回收。高频调用该解析函数会持续耗尽堆内存，建议优先进行修复。"
 }
 ```
 

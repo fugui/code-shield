@@ -35,17 +35,17 @@
 {
   "findings": [
     {
-      "severity": "致命|严重|一般|建议",
-      "category": "健壮性与稳定性|资源与生命周期管理|代码坏味道与重构问题",
-      "file_path": "相对代码仓根目录的相对路径（必须是相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
-      "line_number": "问题所在的行号或行范围（字符串格式，例如 \"42\" 或 \"42-45\"）",
-      "code_snippet": "问题发生处的原始代码片段（3-10行）",
-      "title": "问题简述（一句话概括）",
-      "detail": "详细说明问题的原因和可能的影响",
-      "suggestion": "具体的修复建议和改进方案，尽量含代码片段"
+      "severity": "一般",
+      "category": "健壮性与稳定性",
+      "file_path": "tests/api_client_test.py",
+      "line_number": "42-45",
+      "code_snippet": "def test_get_user(self):\n    time.sleep(2)  # 等待异步数据\n    result = self.client.get_user(1)\n    self.assertEqual(result.status, 'success')",
+      "title": "测试中使用 time.sleep 引入了脆弱测试风险",
+      "detail": "测试使用硬编码的延时等待 (time.sleep) 来同步异步结果，这在 CI/CD 流水线因系统负载导致执行缓慢时很容易产生偶发性失败 (Flaky Test)。",
+      "suggestion": "建议改用基于轮询或重试检测机制（如使用 tenacity 库或主动等待特定状态发生），避免硬编码等待时间。"
     }
   ],
-  "summary": "不超过300字的整体测试代码质量评估摘要，描述主要问题类别及其对测试套件健壮性、可维护性的影响"
+  "summary": "本次审计对测试代码的可维护性与稳定性进行了扫描。发现1处由于使用 time.sleep 引入的脆弱测试风险，可能导致 CI 流水线产生随机失败。其余测试代码资源管理与 Mock 规范符合工程要求。"
 }
 ```
 
