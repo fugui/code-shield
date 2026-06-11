@@ -237,7 +237,7 @@ func GetUTFindings(c *gin.Context) {
 		pageSize = 20
 	}
 
-	query := models.DB.Model(&models.TestCaseFinding{}).Where("repo_id = ?", repoID).Preload("Assignee")
+	query := models.DB.Model(&models.TestCaseFinding{}).Where("repo_id = ?", repoID).Preload("Assignee").Preload("Repo")
 
 	if severity != "" {
 		query = query.Where("severity = ?", severity)
@@ -397,7 +397,7 @@ func UpdateUTFinding(c *gin.Context) {
 	}
 
 	// Reload finding with fully loaded assignee
-	models.DB.Preload("Assignee").First(&finding, id)
+	models.DB.Preload("Assignee").Preload("Repo").First(&finding, id)
 	c.JSON(http.StatusOK, finding)
 }
 
