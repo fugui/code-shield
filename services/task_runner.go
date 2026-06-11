@@ -703,16 +703,26 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 
 	// 2. Count all findings by severity for 100% accurate prompt injection
 	counts := map[string]int{
+		"致命":          0,
+		"fatal":       0,
+		"blocker":     0,
 		"阻塞":          0,
 		"blocking":    0,
 		"严重":          0,
 		"critical":    0,
+		"major_error": 0,
+		"error":       0,
+		"一般":          0,
+		"minor":       0,
+		"warning":     0,
 		"主要":          0,
 		"major":       0,
 		"提示":          0,
 		"info":        0,
+		"hint":        0,
 		"建议":          0,
 		"suggestion":  0,
+		"comment":     0,
 		"合格":          0,
 		"pass":        0,
 		"高风险":         0,
@@ -729,39 +739,48 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		counts[strings.ToLower(f.Severity)]++
 	}
 
-	blockingCount := counts["阻塞"] + counts["blocking"]
-	criticalCount := counts["严重"] + counts["critical"]
-	majorCount := counts["主要"] + counts["major"]
-	infoCount := counts["提示"] + counts["info"]
-	suggestionCount := counts["建议"] + counts["suggestion"]
+	fatalCount := counts["致命"] + counts["阻塞"] + counts["blocking"] + counts["fatal"] + counts["blocker"]
+	criticalCount := counts["严重"] + counts["critical"] + counts["major_error"] + counts["error"]
+	minorCount := counts["一般"] + counts["minor"] + counts["warning"] + counts["主要"] + counts["major"] + counts["提示"] + counts["info"] + counts["hint"]
+	suggestionCount := counts["建议"] + counts["suggestion"] + counts["comment"]
 
 	// Inject 100% accurate pre-calculated severity summary to the AI prompt
-	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n阻塞：%d，严重：%d，主要：%d，提示：%d，建议：%d\n```",
-		blockingCount, criticalCount, majorCount, infoCount, suggestionCount)
+	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n致命：%d，严重：%d，一般：%d，建议：%d\n```",
+		fatalCount, criticalCount, minorCount, suggestionCount)
 
 	// 3. Build a simplified list of findings for the AI if count exceeds the threshold to avoid context and output limit issues.
 	var aiFindings []models.AnalysisFinding
 
 	// Weight mapping for sorting severities (higher weight = higher priority)
 	severityWeight := map[string]int{
-		"阻塞":          5,
-		"blocking":    5,
-		"严重":          4,
-		"critical":    4,
-		"主要":          3,
-		"major":       3,
+		"致命":          4,
+		"fatal":       4,
+		"blocker":     4,
+		"阻塞":          4,
+		"blocking":    4,
+		"严重":          3,
+		"critical":    3,
+		"major_error": 3,
+		"error":       3,
+		"一般":          2,
+		"minor":       2,
+		"warning":     2,
+		"主要":          2,
+		"major":       2,
 		"提示":          2,
 		"info":        2,
+		"hint":        2,
 		"建议":          1,
 		"suggestion":  1,
+		"comment":     1,
 		"合格":          0,
 		"pass":        0,
-		"高风险":         5,
-		"high":        5,
-		"high_risk":   5,
-		"中风险":         3,
-		"medium":      3,
-		"medium_risk": 3,
+		"高风险":         4,
+		"high":        4,
+		"high_risk":   4,
+		"中风险":         2,
+		"medium":      2,
+		"medium_risk": 2,
 		"low":         1,
 		"低风险":         1,
 		"low_risk":    1,
@@ -883,24 +902,34 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	// 1. Load all findings for this report from the database to calculate score and metrics
 	findings := ctx.findings
 	severityWeight := map[string]int{
-		"阻塞":          5,
-		"blocking":    5,
-		"严重":          4,
-		"critical":    4,
-		"主要":          3,
-		"major":       3,
+		"致命":          4,
+		"fatal":       4,
+		"blocker":     4,
+		"阻塞":          4,
+		"blocking":    4,
+		"严重":          3,
+		"critical":    3,
+		"major_error": 3,
+		"error":       3,
+		"一般":          2,
+		"minor":       2,
+		"warning":     2,
+		"主要":          2,
+		"major":       2,
 		"提示":          2,
 		"info":        2,
+		"hint":        2,
 		"建议":          1,
 		"suggestion":  1,
+		"comment":     1,
 		"合格":          0,
 		"pass":        0,
-		"高风险":         5,
-		"high":        5,
-		"high_risk":   5,
-		"中风险":         3,
-		"medium":      3,
-		"medium_risk": 3,
+		"高风险":         4,
+		"high":        4,
+		"high_risk":   4,
+		"中风险":         2,
+		"medium":      2,
+		"medium_risk": 2,
 		"low":         1,
 		"低风险":         1,
 		"low_risk":    1,
@@ -915,15 +944,13 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 
 		key := sev
 		switch sev {
-		case "阻塞", "blocking":
+		case "致命", "fatal", "blocker", "阻塞", "blocking":
 			key = "blocking"
-		case "严重", "critical":
+		case "严重", "critical", "major_error", "error":
 			key = "critical"
-		case "主要", "major":
-			key = "major"
-		case "提示", "info":
-			key = "hint"
-		case "建议", "suggestion":
+		case "一般", "minor", "warning", "主要", "major", "提示", "info", "hint":
+			key = "minor"
+		case "建议", "suggestion", "comment":
 			key = "suggestion"
 		case "高风险", "high", "high_risk":
 			key = "high_risk"
@@ -940,16 +967,14 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	// 2. Construct clean summary directly from findings severity metrics
 	var summaryParts []string
 	if result.Metrics["blocking"] > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("阻塞：%d个", result.Metrics["blocking"]))
+		summaryParts = append(summaryParts, fmt.Sprintf("致命：%d个", result.Metrics["blocking"]))
 	}
 	if result.Metrics["critical"] > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("严重：%d个", result.Metrics["critical"]))
 	}
-	if result.Metrics["major"] > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("主要：%d个", result.Metrics["major"]))
-	}
-	if result.Metrics["hint"] > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("提示：%d个", result.Metrics["hint"]))
+	totalMinor := result.Metrics["minor"] + result.Metrics["major"] + result.Metrics["hint"]
+	if totalMinor > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("一般：%d个", totalMinor))
 	}
 	if result.Metrics["suggestion"] > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("建议：%d个", result.Metrics["suggestion"]))

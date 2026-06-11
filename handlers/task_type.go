@@ -71,7 +71,7 @@ func CreateTaskType(c *gin.Context) {
 		"{\n" +
 		"  \"findings\": [\n" +
 		"    {\n" +
-		"      \"severity\": \"阻塞|严重|主要|提示|建议\",\n" +
+		"      \"severity\": \"致命|严重|一般|建议\",\n" +
 		"      \"category\": \"问题分类-具体子问题\",\n" +
 		"      \"file_path\": \"src/example.cpp\",\n" +
 		"      \"line_number\": \"42-45\",\n" +

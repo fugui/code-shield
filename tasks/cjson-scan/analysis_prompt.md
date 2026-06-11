@@ -35,7 +35,7 @@ Important: If you have added an item to an array or an object already, you mustn
 {
   "findings": [
     {
-      "severity": "阻塞|严重|主要|提示|建议",
+      "severity": "致命|严重|一般|建议",
       "category": "内存泄漏的类型",
       "file_path": "相对代码仓根目录的相对路径（必须是相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
       "line_number": 42,
@@ -52,6 +52,6 @@ Important: If you have added an item to an array or an object already, you mustn
 > ⚠️ **输出约束（必须严格遵守）**：
 > - 输出必须是合法的纯 JSON，不得包含 ```json 或 ``` 等 Markdown 代码块标记
 > - file_path 字段必须是相对代码仓根目录的相对路径，绝对不能是宿主机的物理绝对路径（如以 /home/... 等开头）
-> - severity 只能是以下五个值之一：阻塞、严重、主要、提示、建议
+> - severity 只能是以下四个值之一：致命、严重、一般、建议
 > - code_snippet 必须包含问题发生处的原始源代码（3-10行），帮助开发者定位问题
 > - 如果没有发现任何问题，findings 数组为空 `[]`，summary 中说明代码质量良好

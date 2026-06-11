@@ -291,8 +291,8 @@ export default function AuditingWorkspace({
 
   // Custom UI labels and logic depending on workspace type
   const severitiesList = workspaceType === 'ut'
-    ? ['合格', '建议', '提示', '主要', '严重', '阻塞']
-    : ['建议', '提示', '主要', '严重', '阻塞'];
+    ? ['合格', '建议', '一般', '严重', '致命']
+    : ['建议', '一般', '严重', '致命'];
 
   const getStatusText = (status: string) => {
     switch (status) {
@@ -314,6 +314,7 @@ export default function AuditingWorkspace({
         bg = 'rgba(16, 185, 129, 0.12)';
         color = '#10b981';
         break;
+      case '致命':
       case '阻塞':
         bg = 'rgba(239, 68, 68, 0.12)';
         color = '#ef4444';
@@ -322,14 +323,15 @@ export default function AuditingWorkspace({
         bg = 'rgba(249, 115, 22, 0.12)';
         color = '#f97316';
         break;
+      case '一般':
       case '主要':
         bg = 'rgba(234, 179, 8, 0.12)';
         color = '#eab308';
         break;
       case '提示':
       case '建议':
-        bg = 'rgba(59, 130, 246, 0.12)';
-        color = '#3b82f6';
+        bg = 'rgba(100, 116, 139, 0.12)';
+        color = '#64748b';
         break;
     }
     return {
