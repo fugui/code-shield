@@ -165,7 +165,7 @@ type AnalysisFinding struct {
 	TaskReportID uint       `gorm:"index" json:"task_report_id"`   // 关联到 TaskReport
 	TaskTypeID   uint       `gorm:"index" json:"task_type_id"`     // 哪个任务类型触发的
 	RepoID       uint       `gorm:"index" json:"repo_id"`          // 来自哪个代码仓
-	Severity     string     `gorm:"not null" json:"severity"`      // 严重程度（阻塞/严重/主要/提示/建议）
+	Severity     string     `gorm:"not null" json:"severity"`      // 严重程度（致命/严重/一般/建议）
 	Category     string     `json:"category"`                      // 问题分类（multithreading, memory_leak, library...）
 	FilePath     string     `json:"file_path"`                     // 问题所在文件
 	LineNumber   string     `json:"line_number"`                   // 行号（支持范围如 "100-125" 或多行 "41,42"）
@@ -190,7 +190,7 @@ type TestCaseFinding struct {
 	LineNumber   string         `json:"line_number"`
 	TestCaseName string         `gorm:"uniqueIndex:idx_repo_file_name;size:255;not null;column:test_case_name" json:"test_case_name"` // 测试用例名称
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 合格、阻塞、严重、主要、提示、建议
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 合格、致命、严重、一般、建议
 	Category     string         `gorm:"size:100" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
@@ -279,7 +279,7 @@ type CoredumpFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 阻塞、严重、主要、提示、建议
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
 	Category     string         `gorm:"size:100" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
@@ -301,7 +301,7 @@ type FloatFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 阻塞、严重、主要、提示、建议
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
 	Category     string         `gorm:"size:100" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
@@ -323,7 +323,7 @@ type ThreadFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 阻塞、严重、主要、提示、建议
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 合格、致命、严重、一般、建议
 	Category     string         `gorm:"size:100" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
@@ -345,7 +345,7 @@ type CjsonFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 阻塞、严重、主要、提示、建议
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
 	Category     string         `gorm:"size:100" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
