@@ -633,14 +633,16 @@ func GetUTTrends(c *gin.Context) {
 		}
 
 		pass := metrics["pass"]
+		if pass == 0 && metrics["合格"] > 0 {
+			pass = metrics["合格"]
+		}
 		blocking := metrics["blocking"]
 		critical := metrics["critical"]
-		major := metrics["major"]
-		hint := metrics["hint"]
+		minor := metrics["minor"] + metrics["major"] + metrics["hint"]
 		suggestion := metrics["suggestion"]
 
-		total := pass + blocking + critical + major + hint + suggestion
-		issues := blocking + critical + major + hint + suggestion
+		total := pass + blocking + critical + minor + suggestion
+		issues := blocking + critical + minor + suggestion
 
 		if total == 0 {
 			continue
