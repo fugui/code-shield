@@ -59,6 +59,7 @@ function ReportsOverview() {
       .then(data => {
         const list = data.items || data || [];
         const groups = Array.from(new Set(list.map((r: any) => r.service_group).filter(Boolean))) as string[];
+        groups.sort((a, b) => a.localeCompare(b));
         setSubsystems(groups);
       })
       .catch(console.error);
