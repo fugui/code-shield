@@ -146,10 +146,10 @@ func GetUTRepos(c *gin.Context) {
 		// Severity metrics
 		repoSeverities := severityMap[repo.ID]
 		passCount := repoSeverities["合格"]
-		blocking := repoSeverities["阻塞"]
+		blocking := repoSeverities["致命"] + repoSeverities["阻塞"]
 		critical := repoSeverities["严重"]
-		major := repoSeverities["主要"]
-		hint := repoSeverities["提示"]
+		major := repoSeverities["一般"] + repoSeverities["主要"] + repoSeverities["提示"]
+		hint := 0
 		suggestion := repoSeverities["建议"]
 
 		total := passCount + blocking + critical + major + hint + suggestion
@@ -258,7 +258,7 @@ func GetUTFindings(c *gin.Context) {
 
 	var findings []models.TestCaseFinding
 	offset := (page - 1) * pageSize
-	query.Order("CASE severity WHEN '阻塞' THEN 1 WHEN '严重' THEN 2 WHEN '主要' THEN 3 WHEN '提示' THEN 4 WHEN '建议' THEN 5 ELSE 6 END, file_path, test_case_name").
+	query.Order("CASE severity WHEN '致命' THEN 1 WHEN '阻塞' THEN 1 WHEN '严重' THEN 2 WHEN '一般' THEN 3 WHEN '主要' THEN 3 WHEN '提示' THEN 3 WHEN '建议' THEN 4 WHEN '合格' THEN 5 ELSE 6 END, file_path, test_case_name").
 		Offset(offset).Limit(pageSize).Find(&findings)
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
@@ -467,14 +467,12 @@ func GetUTDepartments(c *gin.Context) {
 			if s.Severity == "合格" {
 				passCount += s.Count
 			} else {
-				if s.Severity == "阻塞" {
+				if s.Severity == "致命" || s.Severity == "阻塞" {
 					blocking += s.Count
 				} else if s.Severity == "严重" {
 					critical += s.Count
-				} else if s.Severity == "主要" {
+				} else if s.Severity == "一般" || s.Severity == "主要" || s.Severity == "提示" {
 					major += s.Count
-				} else if s.Severity == "提示" {
-					hint += s.Count
 				} else if s.Severity == "建议" {
 					suggestion += s.Count
 				}

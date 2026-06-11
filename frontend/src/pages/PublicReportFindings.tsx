@@ -44,6 +44,8 @@ interface ReportDetails {
 }
 
 const severityColors: Record<string, { color: string; bg: string }> = {
+  '致命': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
+  'fatal': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
   '阻塞': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
   'blocking': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
   '严重': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.1)' },
@@ -51,6 +53,8 @@ const severityColors: Record<string, { color: string; bg: string }> = {
   '高风险': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
   'high': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
   'high_risk': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' },
+  '一般': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.1)' },
+  'minor': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.1)' },
   '主要': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.1)' },
   'major': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.1)' },
   '中风险': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.1)' },
@@ -407,7 +411,7 @@ function PublicReportFindings() {
         {/* Severity Metrics Dashboard */}
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
           {Object.entries(severityColors)
-            .filter(([k]) => !['blocking', 'critical', 'high', 'high_risk', 'major', 'medium', 'info', 'low', 'suggestion', 'pass'].includes(k))
+            .filter(([k]) => !['blocking', 'critical', 'high', 'high_risk', 'major', 'medium', 'info', 'low', 'suggestion', 'pass', 'fatal', 'minor'].includes(k))
             .map(([name, style]) => {
               const count = severityCounts[name] || 0;
               if (count === 0) return null;

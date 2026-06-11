@@ -186,10 +186,10 @@ func GetCampaignRepos[T any](taskTypeName string) gin.HandlerFunc {
 
 			// Severity metrics
 			repoSeverities := severityMap[repo.ID]
-			blocking := repoSeverities["阻塞"]
+			blocking := repoSeverities["致命"] + repoSeverities["阻塞"]
 			critical := repoSeverities["严重"]
-			major := repoSeverities["主要"]
-			hint := repoSeverities["提示"]
+			major := repoSeverities["一般"] + repoSeverities["主要"] + repoSeverities["提示"]
+			hint := 0
 			suggestion := repoSeverities["建议"]
 
 			openCount := statusMap[repo.ID]

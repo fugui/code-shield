@@ -28,10 +28,12 @@ interface WorkbenchFinding {
 }
 
 const severityColors: Record<string, { color: string; bg: string }> = {
+	'致命': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)' },
 	'阻塞': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)' },
 	'严重': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
+	'一般': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.12)' },
 	'主要': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.12)' },
-	'提示': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
+	'提示': { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.12)' },
 	'建议': { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.12)' },
 	'合格': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }
 };
@@ -228,7 +230,10 @@ export default function Workbench() {
 			f.file_path.toLowerCase().includes(search.toLowerCase()) ||
 			f.detail.toLowerCase().includes(search.toLowerCase());
 		const matchType = filterType === '' || f.type === filterType;
-		const matchSeverity = filterSeverity === '' || f.severity === filterSeverity;
+		const matchSeverity = filterSeverity === '' || 
+			f.severity === filterSeverity ||
+			(filterSeverity === '一般' && (f.severity === '主要' || f.severity === '提示')) ||
+			(filterSeverity === '致命' && f.severity === '阻塞');
 		return matchSearch && matchType && matchSeverity;
 	});
 
@@ -372,11 +377,10 @@ export default function Workbench() {
 						style={{ padding: '0.55rem 1.5rem 0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.875rem', cursor: 'pointer' }}
 					>
 						<option value="">所有影响等级</option>
-						<option value="阻塞">阻塞 (Blocking)</option>
-						<option value="严重">严重 (Critical)</option>
-						<option value="主要">主要 (Major)</option>
-						<option value="提示">提示 (Hint)</option>
-						<option value="建议">建议 (Suggestion)</option>
+						<option value="致命">致命 (Blocker / Critical)</option>
+						<option value="严重">严重 (Major / Error)</option>
+						<option value="一般">一般 (Minor / Warning)</option>
+						<option value="建议">建议 (Info / Suggestion)</option>
 						<option value="合格">合格 (Pass)</option>
 					</select>
 				</div>

@@ -247,6 +247,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
           bg = 'rgba(16, 185, 129, 0.12)';
           color = '#10b981';
           break;
+        case '致命':
         case '阻塞':
           bg = 'rgba(239, 68, 68, 0.12)';
           color = '#ef4444';
@@ -255,14 +256,15 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
           bg = 'rgba(249, 115, 22, 0.12)';
           color = '#f97316';
           break;
+        case '一般':
         case '主要':
           bg = 'rgba(234, 179, 8, 0.12)';
           color = '#eab308';
           break;
         case '提示':
         case '建议':
-          bg = 'rgba(59, 130, 246, 0.12)';
-          color = '#3b82f6';
+          bg = 'rgba(100, 116, 139, 0.12)';
+          color = '#64748b';
           break;
       }
       return {
@@ -485,7 +487,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
             <ShieldAlertIcon />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>阻塞 / 严重缺陷</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>致命 / 严重缺陷</div>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#ef4444' }}>
               {totalBlocking} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: '#94a3b8' }}>/</span> {totalCritical}
             </div>
@@ -603,7 +605,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                       跟踪缺陷数 {sortField === 'total_issues' && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
                     <th onClick={() => handleSort('blocking')} style={styles.tableHeader}>
-                      阻塞 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}
+                      致命 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
                     <th onClick={() => handleSort('critical')} style={styles.tableHeader}>
                       严重 {sortField === 'critical' && (sortOrder === 'asc' ? '↑' : '↓')}
@@ -868,7 +870,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>代码仓</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>负责人</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>跟踪缺陷数</th>
-                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>阻塞</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>致命</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>严重</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>修复进度</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>最近扫描</th>
