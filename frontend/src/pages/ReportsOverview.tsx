@@ -195,10 +195,10 @@ function ReportsOverview() {
         const m = typeof item.metrics === 'string' ? JSON.parse(item.metrics) : item.metrics;
         const parts: string[] = [];
         
-        if (m.blocking > 0) parts.push(`阻塞:${m.blocking}个`);
+        if (m.blocking > 0) parts.push(`致命:${m.blocking}个`);
         if (m.critical > 0) parts.push(`严重:${m.critical}个`);
-        if (m.major > 0) parts.push(`主要:${m.major}个`);
-        if (m.hint > 0) parts.push(`提示:${m.hint}个`);
+        const totalMinor = (m.minor || 0) + (m.major || 0) + (m.hint || 0);
+        if (totalMinor > 0) parts.push(`一般:${totalMinor}个`);
         if (m.suggestion > 0) parts.push(`建议:${m.suggestion}个`);
 
         if (m.high_risk > 0) parts.push(`高风险:${m.high_risk}个`);

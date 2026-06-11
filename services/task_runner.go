@@ -952,6 +952,8 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 			key = "minor"
 		case "建议", "suggestion", "comment":
 			key = "suggestion"
+		case "合格", "pass":
+			key = "pass"
 		case "高风险", "high", "high_risk":
 			key = "high_risk"
 		case "中风险", "medium", "medium_risk":

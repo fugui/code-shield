@@ -10,19 +10,19 @@
 ### 1. 断言有效性 (Assertion Validity)
 * **空测试 (Empty Test)** [Category: `断言有效性-空测试`, 对应 Severity: `严重`]: 仅调用了被测方法，但没有任何断言语句。此类测试通常纯粹是为了刷覆盖率而写。
 * **永真断言 (Tautological Assertions)** [Category: `断言有效性-永真断言`, 对应 Severity: `严重`]: 使用硬编码对比（如 `assertTrue(true)`, `EXPECT_EQ(1, 1)`），或者对必然不可能为空的常量/全局变量做存在性断言，导致测试永远不会失败。
-* **无效异常捕获 (Silent Catching)** [Category: `断言有效性-无效捕获`, 对应 Severity: `阻塞`]: 在测试中使用 `try-catch` 捕获异常，但 `catch` 块中漏掉了唤起测试失败的语句（如 `fail()` 或 `ADD_FAILURE()`），使得被测代码抛出异常时测试依然被判断为“通过”。
-* **Mock 契约/行为校验遗漏 (Missing Mock Verification)** [Category: `断言有效性-Mock遗漏`, 对应 Severity: `主要`]: 使用了 Mock 对象但仅做了行为插桩（Stub），缺少对关键交互 and 契约的最终行为验证（如缺少 Mockito 的 `verify(...)` 或 GTest 的 `EXPECT_CALL`），只确保了代码不崩溃，未验证内部协作逻辑。
+* **无效异常捕获 (Silent Catching)** [Category: `断言有效性-无效捕获`, 对应 Severity: `致命`]: 在测试中使用 `try-catch` 捕获异常，但 `catch` 块中漏掉了唤起测试失败的语句（如 `fail()` 或 `ADD_FAILURE()`），使得被测代码抛出异常时测试依然被判断为“通过”。
+* **Mock 契约/行为校验遗漏 (Missing Mock Verification)** [Category: `断言有效性-Mock遗漏`, 对应 Severity: `一般`]: 使用了 Mock 对象但仅做了行为插桩（Stub），缺少对关键交互 and 契约的最终行为验证（如缺少 Mockito 的 `verify(...)` 或 GTest 的 `EXPECT_CALL`），只确保了代码不崩溃，未验证内部协作逻辑。
 
 ### 2. 提前返回与跳过缺陷 (Early Exit & Skip Abuse)
 * **非法提前退出 (Illegal Early Exit)** [Category: `提前返回-非法退出`, 对应 Severity: `严重`]: 测试用例内部存在 `if (condition) return;` 或逻辑分支跳出，导致后面的关键断言逻辑在某些环境下被静默跳过。
-* **过宽的静默跳过 (Silent Skip Abuse)** [Category: `提前返回-静默跳过`, 对应 Severity: `主要`]: 滥用 `assumeTrue` (JUnit) 或 `GTEST_SKIP()` (GTest) 机制，导致大批测试用例在自动化 CI 流水线中实际上根本没有被执行，却显示为通过状态。
+* **过宽的静默跳过 (Silent Skip Abuse)** [Category: `提前返回-静默跳过`, 对应 Severity: `一般`]: 滥用 `assumeTrue` (JUnit) 或 `GTEST_SKIP()` (GTest) 机制，导致大批测试用例在自动化 CI 流水线中实际上根本没有被执行，却显示为通过状态。
 
 ### 3. 用例单一性与职责 (Test Singularity)
 * **面条式混合断言 (Spaghetti Test)** [Category: `功能单一性-面条测试`, 对应 Severity: `建议`]: 一个测试用例内部包含多组不相关的 Arrange-Act-Assert（AAA）序列，混杂了过多独立的业务检查点，破坏了单一职责原则。
-* **路径混合 (Path Mixture)** [Category: `功能单一性-路径混合`, 对应 Severity: `提示`]: 在同一个测试用例里同时验证了正常成功逻辑和异常失败逻辑，应当被拆分为独立的用例。
+* **路径混合 (Path Mixture)** [Category: `功能单一性-路径混合`, 对应 Severity: `一般`]: 在同一个测试用例里同时验证了正常成功逻辑和异常失败逻辑，应当被拆分为独立的用例。
 
 ### 4. 测试目的与行为有效性 (Test Intent & Coverage Validity)
-* **逻辑空跑 (Logic Dry-Run)** [Category: `其它`, 对应 Severity: `阻塞`]: 过度 Mock。连同“被测目标类/方法”本身的行为也被 Mock 掉，或者将所有底层依赖全部 Mock 且只返回空值，导致测试只在 Mock 框架的内存中空跑，没有真实执行任何核心业务逻辑。
+* **逻辑空跑 (Logic Dry-Run)** [Category: `其它`, 对应 Severity: `致命`]: 过度 Mock。连同“被测目标类/方法”本身的行为也被 Mock 掉，或者将所有底层依赖全部 Mock 且只返回空值，导致测试只在 Mock 框架的内存中空跑，没有真实执行任何核心业务逻辑。
 * **无意义的重复测试 (Redundant Verification)** [Category: `其它`, 对应 Severity: `建议`]: 多个用例使用完全相同的 Arrange 场景 and 断言，没有覆盖任何新边界或输入，属于冗余用例。
 
 ## 输出方式与格式 (Output Method & Format)
@@ -52,7 +52,7 @@
 
 > ⚠️ **输出约束（必须严格遵守）**：
 > - **关于 severity 字段取值的硬性规定（严禁混淆）**：
->   - `severity` 字段表示严重程度，其取值**必须且只能**是：`"合格"`、`"阻塞"`、`"严重"`、`"主要"`、`"提示"`、`"建议"`。**严禁在 severity 中填入任何分类文字（如“断言有效性-空测试”等）！**
+>   - `severity` 字段表示严重程度，其取值**必须且只能**是：`"合格"`、`"致命"`、`"严重"`、`"一般"`、`"建议"`。**严禁在 severity 中填入任何分类文字（如“断言有效性-空测试”等）！**
 >   - 如果测试用例运行良好、无任何有效性缺陷，`severity` 必须填为 `"合格"`。
 > - **关于 category 字段取值的硬性规定**：
 >   - `category` 字段表示缺陷类别，其取值**必须且只能**是：`"无问题"`、`"断言有效性-空测试"`、`"断言有效性-永真断言"`、`"断言有效性-无效捕获"`、`"断言有效性-Mock遗漏"`、`"提前返回-非法退出"`、`"提前返回-静默跳过"`、`"功能单一性-面条测试"`、`"功能单一性-路径混合"`、`"其它"`。如果用例合格，`category` 必须填为 `"无问题"`。
