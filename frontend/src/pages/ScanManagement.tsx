@@ -455,7 +455,7 @@ function ScanManagement() {
                   <th>代码仓名称</th>
                   <th>归属部门</th>
                   <th>负责人</th>
-                  <th>服务组</th>
+                  <th>子系统</th>
                   <th style={{ width: '120px' }}>历史报告</th>
                   <th style={{ width: '150px' }}>状态</th>
                   <th style={{ width: '180px', textAlign: 'right' }}>操作</th>
@@ -833,7 +833,7 @@ function ScanManagement() {
                       <td style={{ padding: '1rem', fontFamily: 'monospace' }}>{sched.cron_expr}</td>
                       <td style={{ padding: '1rem' }}>
                         <span style={{ background: 'var(--bg-color)', padding: '0.25rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid var(--border-color)', textTransform: 'capitalize' as const }}>
-                          {sched.target_mode === 'all' ? '所有代码仓' : sched.target_mode === 'service_group' ? '按服务组' : sched.target_mode === 'team' ? '按团队' : '指定代码仓'}
+                          {sched.target_mode === 'all' ? '所有代码仓' : sched.target_mode === 'service_group' ? '按子系统' : sched.target_mode === 'team' ? '按部门' : '指定代码仓'}
                         </span>
                       </td>
                       <td style={{ padding: '1rem' }}>

@@ -32,7 +32,7 @@ const CRON_PRESETS = [
 
 const TARGET_MODES = [
   { key: 'all', label: '所有仓库' },
-  { key: 'service_group', label: '按服务组' },
+  { key: 'service_group', label: '按子系统' },
   { key: 'team', label: '按部门' },
   { key: 'specific', label: '指定仓库' },
 ];
@@ -69,7 +69,7 @@ function parseCronToHuman(expr: string): string {
 function getTargetSummary(mode: string): string {
   switch (mode) {
     case 'all': return '将对系统中所有已激活的代码仓执行任务';
-    case 'service_group': return '仅对所选服务组内的代码仓执行任务';
+    case 'service_group': return '仅对所选子系统内的代码仓执行任务';
     case 'team': return '仅对所选部门名下的代码仓执行任务';
     case 'specific': return '仅对手动选定的代码仓执行任务';
     default: return '';
@@ -82,6 +82,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
   });
   const [closing, setClosing] = useState(false);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
+  const subsystems = Array.from(new Set((repos || []).map(r => r.service_group).filter(Boolean))) as string[];
 
   // Fetch task types
   useEffect(() => {
@@ -276,17 +277,30 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
 
               {/* Sub-options based on target mode */}
               {form.target_mode === 'service_group' && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <label className="sidebar-label">服务组名称</label>
-                  <input
-                    className="sidebar-input"
-                    placeholder="例如：Backend, Frontend（多个用逗号分隔）"
-                    value={(form.target_values || []).join(', ')}
-                    onChange={(e) => setForm({
-                      ...form,
-                      target_values: e.target.value.split(',').map(s => s.trim()).filter(s => s)
-                    })}
-                  />
+                <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                  {subsystems.length === 0 ? (
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>暂无子系统数据</span>
+                  ) : subsystems.map(sub => (
+                    <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', cursor: 'pointer', padding: '0.3rem 0.6rem', borderRadius: '6px', background: (form.target_values || []).includes(sub) ? 'rgba(37,99,235,0.08)' : 'transparent', border: `1px solid ${(form.target_values || []).includes(sub) ? 'var(--primary-color)' : 'var(--border-color)'}`, transition: 'all 0.15s' }}>
+                      <input
+                        type="checkbox"
+                        checked={(form.target_values || []).includes(sub)}
+                        onChange={(e) => {
+                          const newVals = e.target.checked
+                            ? [...(form.target_values || []), sub]
+                            : (form.target_values || []).filter((s: string) => s !== sub);
+                          setForm({ ...form, target_values: newVals });
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                      <span style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${(form.target_values || []).includes(sub) ? 'var(--primary-color)' : '#cbd5e1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: (form.target_values || []).includes(sub) ? 'var(--primary-color)' : 'transparent', transition: 'all 0.15s' }}>
+                        {(form.target_values || []).includes(sub) && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        )}
+                      </span>
+                      {sub}
+                    </label>
+                  ))}
                 </div>
               )}
 
