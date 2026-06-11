@@ -39,17 +39,17 @@
 {
   "findings": [
     {
-      "file_path": "线程创建处的相对文件路径（必须是相对代码仓根目录的相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
-      "line_number": "线程创建语句所在的行号或行范围（如 42 或 [42-45]）",
-      "title": "线程创建机制简述（例如: 使用 std::thread 显式创建线程）",
-      "detail": "说明此线程创建的场景与目的、它是如何管理生命周期的，以及它可能存在的安全或设计缺陷",
-      "severity": "合格|致命|严重|一般|建议",
-      "category": "无问题|必要性-频繁创建|生命周期-join遗漏|生命周期-未安全退出|异常安全-析构崩溃|数据安全-悬空引用|同步安全-数据竞争|其它",
-      "code_snippet": "显式创建线程发生处的原始代码片段（3-10行，包含创建及生命周期管理相关的上下文代码）",
-      "suggestion": "如果 severity 不为合格，则在此给出具体的重构或修复代码方案（例如改用 RAII 包装器、引入 mutex 保护、使用线程池等）；如果合格，填入 '无'"
+      "file_path": "src/task_runner.cpp",
+      "line_number": "88-95",
+      "title": "使用 std::thread 显式创建线程但未调用 join 或 detach",
+      "detail": "在 start() 中显式创建了 std::thread 线程对象，但在其析构前未调用 join() 或 detach()。根据 C++11 标准，这将在 std::thread 析构时触发 std::terminate() 导致进程异常崩溃。",
+      "severity": "致命",
+      "category": "异常安全-析构崩溃",
+      "code_snippet": "void start() {\n    std::thread t(worker_func);\n    // 缺少 t.join() 或 t.detach() 调用\n}",
+      "suggestion": "使用 RAII 模式管理线程生命周期，或显式在生命周期结束前调用 t.join() 或 t.detach()。在 C++17 中，可编写自定义的 RAII 线程包装器。"
     }
   ],
-  "summary": "不超过300字的整体线程分析评估摘要，描述总共显式创建线程的数量、安全与不安全线程占比及其带来的运行风险"
+  "summary": "本次审计对项目内显式线程创建情况进行了排查。发现1处致命缺陷，即 std::thread 创建后析构未回收资源，可能导致进程异常终止。建议按照建议补充 join 或采用 RAII 管理。"
 }
 ```
 

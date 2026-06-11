@@ -36,17 +36,17 @@
 {
   "findings": [
     {
-      "file_path": "测试用例所在的相对文件路径（必须是相对代码仓根目录的相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
-      "line_number": "测试用例定义的行号或行范围，如 [12-25]",
-      "title": "测试函数的完整名称（如 TestUserLogin_Success）",
-      "detail": "精炼描述该用例的测试目的以及它试图验证的具体业务行为",
-      "severity": "必须且仅能填入以下固定值之一：'合格' | '致命' | '严重' | '一般' | '建议'",
-      "category": "必须且仅能填入以下固定值之一：'无问题' | '断言有效性-空测试' | '断言有效性-永真断言' | '断言有效性-无效捕获' | '断言有效性-Mock遗漏' | '提前返回-非法退出' | '提前返回-静默跳过' | '功能单一性-面条测试' | '功能单一性-路径混合' | '其它'",
-      "code_snippet": "该测试用例的完整源代码片段",
-      "suggestion": "如果 severity 不为合格，则在此给出具体的重构或修复代码方案；如果合格，填入 '无'"
+      "file_path": "tests/user_service_test.go",
+      "line_number": "25-35",
+      "title": "TestLogin_Success 存在永真断言逻辑",
+      "detail": "用例在完成业务调用后，使用 assert.True(t, true) 进行无意义的硬编码对比，无法真实地验证业务逻辑是否正确，导致测试永远显示通过状态。",
+      "severity": "严重",
+      "category": "断言有效性-永真断言",
+      "code_snippet": "func TestLogin_Success(t *testing.T) {\n    err := service.Login(\"admin\", \"123\")\n    assert.Nil(t, err)\n    assert.True(t, true)\n}",
+      "suggestion": "移除 assert.True(t, true)，根据 Login 的真实返回状态或副作用，增加针对 err 或者是 Session 状态的断言。\n\n正确代码示例：\nassert.NoError(t, err)"
     }
   ],
-  "summary": "不超过300字的整体用例有效性评估摘要，描述总用例数、有效与无效用例占比及其带来的隐藏逻辑风险"
+  "summary": "本次对 tests/user_service_test.go 进行了单元测试有效性审计。共发现1处严重缺陷，为测试用例中的永真断言问题。该用例未对真实的业务状态进行有效断言，隐藏了测试失效的风险，建议按照修改建议补充有效的状态校验。"
 }
 ```
 

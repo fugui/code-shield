@@ -94,17 +94,17 @@
 {
   "findings": [
     {
-      "severity": "致命|严重|一般|建议",
-      "category": "基础内存泄漏|资源泄漏|野指针与悬空指针|重复释放|异常安全|智能指针问题|RAII原则违反|其他常见问题",
-      "file_path": "相对代码仓根目录的相对路径（必须是相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
-      "line_number": 42,
-      "code_snippet": "问题发生处的原始代码片段（3-10行）",
-      "title": "问题简述（一句话概括）",
-      "detail": "详细说明问题的原因和可能的影响",
-      "suggestion": "具体的修复建议和改进方案， 尽可能包含正确的修复代码， 或者伪代码"
+      "severity": "严重",
+      "category": "基础内存泄漏",
+      "file_path": "src/utils/parser.cpp",
+      "line_number": "75-82",
+      "code_snippet": "char* buffer = (char*)malloc(1024);\nif (read_data(buffer) < 0) {\n    return -1;\n}\nfree(buffer);",
+      "title": "函数异常提前返回导致 malloc 分配的内存未释放",
+      "detail": "在 parser 逻辑中，当 read_data 返回负数（表示读取失败）时，函数直接返回 -1 退出，但在退出路径上未调用 free(buffer) 释放已分配的堆内存，导致内存泄漏。",
+      "suggestion": "在提前返回前显式调用 free(buffer)，或者使用 RAII（如 std::vector<char>）自动管理内存生命周期。\n\n正确代码示例：\nstd::vector<char> buffer(1024);\nif (read_data(buffer.data()) < 0) {\n    return -1;\n}"
     }
   ],
-  "summary": "200-400字的整体代码质量评估摘要，描述主要问题类别及其风险影响"
+  "summary": "本次审计重点对代码库中的堆内存分配与回收路径进行了检查。共发现 1 处严重缺陷，为异常分支中提前退出导致的内存泄漏。建议按照修改意见使用 RAII 容器进行自动资源管理重构。"
 }
 ```
 
