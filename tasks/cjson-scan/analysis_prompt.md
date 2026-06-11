@@ -31,6 +31,26 @@ Important: If you have added an item to an array or an object already, you mustn
 
 **请严格按照以下 JSON 格式输出，不要包含任何 Markdown 代码块标记或其他额外文本。输出必须是合法的 JSON：**
 
+### 1. JSON 格式说明（带字段约束提示）
+```json
+{
+  "findings": [
+    {
+      "severity": "致命|严重|一般|建议",
+      "category": "内存泄漏的类型",
+      "file_path": "相对代码仓根目录的相对路径（必须是相对路径，严禁包含硬盘绝对物理路径，如 /home/... 等）",
+      "line_number": 42,
+      "code_snippet": "问题发生处的原始代码片段（3-10行）",
+      "title": "问题简述（一句话概括）",
+      "detail": "详细说明问题的原因和可能的影响",
+      "suggestion": "具体的修复建议和改进方案， 尽可能包含正确的修复代码， 或者伪代码"
+    }
+  ],
+  "summary": "200-400字的整体代码质量评估摘要，描述主要问题类别及其风险影响"
+}
+```
+
+### 2. 标准 JSON 真实示例
 ```json
 {
   "findings": [
