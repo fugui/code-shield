@@ -31,7 +31,7 @@ type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// ── 引擎前处理：解析配置并扫描分片 ──
-	cfg := ChunkConfig{MaxFiles: 25, Depth: 1, Concurrency: 4}
+	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 4}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
@@ -470,7 +470,7 @@ func ResumeFailedChunks(reportID uint) error {
 	ctx.repo = report.Repo
 
 	// 2. 解析引擎配置
-	cfg := ChunkConfig{MaxFiles: 25, Depth: 1, Concurrency: 4}
+	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 4}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
