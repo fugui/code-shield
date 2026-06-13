@@ -97,6 +97,39 @@ const PrivateRoute = ({ children }: { children: JSX.Element }) => {
   return children;
 };
 
+const AdminRoute = ({ children }: { children: JSX.Element }) => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!token) {
+      setIsAdmin(false);
+      return;
+    }
+    fetch('/api/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        setIsAdmin(data ? !!data.is_admin : false);
+      })
+      .catch(() => setIsAdmin(false));
+  }, [token]);
+
+  if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
+  if (isAdmin === null) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '6rem' }}>
+        <div style={{ textAlign: 'center', color: '#64748b' }}>
+          <div style={{ animation: 'spin 1s linear infinite', border: '3px solid rgba(59, 130, 246, 0.1)', borderTop: '3px solid #3b82f6', borderRadius: '50%', width: '32px', height: '32px', margin: '0 auto 1rem' }} />
+          正在校验权限...
+        </div>
+      </div>
+    );
+  }
+  if (!isAdmin) return <Navigate to={appNavigatePath("/reports")} replace />;
+
+  return children;
+};
+
 function AuthHeader() {
   const { showToast } = useToast();
   const [user, setUser] = useState<any>(null);
@@ -378,7 +411,7 @@ function AppContent() {
           <Route path="/workbench" element={<PrivateRoute><Workbench /></PrivateRoute>} />
 
           {/* 代码实时看护 */}
-          <Route path="/realtime/mr" element={<PrivateRoute><RealtimeMr /></PrivateRoute>} />
+          <Route path="/realtime/mr" element={<AdminRoute><RealtimeMr /></AdminRoute>} />
 
           {/* 报告中心 */}
           <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
