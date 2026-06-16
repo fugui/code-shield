@@ -71,16 +71,12 @@ cd code-shield
 
 #### 2. 安装依赖并构建
 ```bash
-# 编译前端
-cd shield-server/frontend && npm install && npm run build
-
-# 编译主程序与通知组件
-cd ../../
+# 编译并构建整个系统（一键完成前端构建与后端编译）
 make build
 ```
 
 #### 3. 配置系统
-修改 `shield-server/config.yaml`（首次运行会自动生成并读取缺省值）：
+修改 `config.yaml`（首次运行会自动生成并读取缺省值）：
 ```yaml
 server:
   port: ":8080"
@@ -117,7 +113,7 @@ make run
 VITE_BASE_PATH=/shield/ make build
 
 # 或者手动进入前端目录进行构建
-cd shield-server/frontend
+cd frontend
 VITE_BASE_PATH=/shield/ npm run build
 ```
 
@@ -138,7 +134,7 @@ server {
     # 1. 托管前端静态资源
     location /shield/ {
         # 指向打包生成的 dist 目录绝对路径
-        alias /path/to/code-shield/shield-server/frontend/dist/;
+        alias /path/to/code-shield/frontend/dist/;
         index index.html;
         try_files $uri $uri/ /shield/index.html;
     }
@@ -187,19 +183,18 @@ make run
 
 ```text
 code-shield/
-├── shield-server/          # Go 核心主服务
-│   ├── config.yaml         # 系统配置文件
-│   ├── main.go             # 程序入口
-│   ├── models/             # 数据库模型与全局配置解析
-│   ├── handlers/           # HTTP API 接口路由与处理逻辑
-│   ├── services/           # 核心业务组件
-│   │   ├── task_runner.go  # 任务生命周期状态机
-│   │   ├── engine*.go      # Single / Chunked 执行引擎实现
-│   │   ├── opencode_cli.go # OpenCode AI 后端适配器
-│   │   ├── claude_cli.go   # Claude AI 后端适配器
-│   │   └── agent_sync.go   # OpenCode Agent 配置文件生命周期同步服务
-│   ├── cron_jobs/          # 定时调度逻辑
-│   └── frontend/           # React 前端源码
+├── config.yaml             # 系统配置文件
+├── main.go                 # 程序入口
+├── models/                 # 数据库模型与全局配置解析
+├── handlers/               # HTTP API 接口路由与处理逻辑
+├── services/               # 核心业务组件
+│   ├── task_runner.go      # 任务生命周期状态机
+│   ├── engine*.go          # Single / Chunked 执行引擎实现
+│   ├── opencode_cli.go     # OpenCode AI 后端适配器
+│   ├── claude_cli.go       # Claude AI 后端适配器
+│   └── agent_sync.go       # OpenCode Agent 配置文件生命周期同步服务
+├── cron_jobs/              # 定时调度逻辑
+├── frontend/               # React 前端源码
 ├── notifier/               # Windows Outlook 邮件投递代理服务
 ├── templates/              # CSV 数据导入模板
 └── Makefile                # 一键构建与启动脚本
@@ -216,7 +211,7 @@ code-shield/
 > 系统开启了 `--dangerously-skip-permissions`，请检查当前宿主机上的 OpenCode CLI 版本，确保符合配置要求。同时，请确认 `~/.config/opencode/agents/` 的写入权限，因为任务类型更新会自动同步至此目录。
 
 **Q: 如何更改全局允许并发执行的最大任务数？**
-> 请修改 `shield-server/config.yaml` 中的 `server.worker_count`，默认为 5。此修改需重启 `shield-server` 生效。
+> 请修改 `config.yaml` 中的 `server.worker_count`，默认为 5。此修改需重启服务生效。
 
 ## 🏷️ 版本历史 (Release History)
 
@@ -225,7 +220,7 @@ code-shield/
 - **报告 ID 单体快速交互**：表格首列新增「报告 ID」，支持直接点击 ID 快速滑出详细报告抽屉，极大地简化了用户获取具体审计报告的步骤。
 - **高精确缺陷数量统计**：后端在任务完成时直接基于问题严重性分级（阻塞、严重、主要、提示、建议、高风险、中风险、低风险）统计缺陷数并写入数据库；前端配合指标 JSON 实现高保真容错渲染，消除了正则解析 AI 报告的误差。
 - **微前端极简级联检索**：提供了极简化高集成的筛选控制面板，支持一键重置，并且在 `code-bench` 宿主中完美支持动态折叠/展现二级分组菜单及 Admin 权限守卫。
-- **测试任务增强 (Go + C/C++)**：在 `ut-effectiveness` 和 `ut-quality` 任务中增加了对 GO 语言 (`.go` 文件) 的完整支持，并升级了 [engine_chunked.go](file:///home/fugui/codes/code-shield/shield-server/services/engine_chunked.go) 的 `isTestFile` 过滤算法，自动过滤业务代码，确保 UT 任务精确只扫测试文件。
+- **测试任务增强 (Go + C/C++)**：在 `ut-effectiveness` 和 `ut-quality` 任务中增加了对 GO 语言 (`.go` 文件) 的完整支持，并升级了 [engine_chunked.go](file:///home/fugui/codes/code-shield/services/engine_chunked.go) 的 `isTestFile` 过滤算法，自动过滤业务代码，确保 UT 任务精确只扫测试文件。
 - **底层架构鲁棒性**：修复了 GORM v2 中由 `Select("task_reports.*")` 引发的 SQLite 分页 COUNT 语法错误与 Builder 状态污染问题，保证海量数据分页稳定流畅。
 
 ---
