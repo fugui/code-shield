@@ -181,9 +181,9 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 		return
 	}
 
-	var findings []models.AnalysisFinding
+	var findings []map[string]interface{}
 	if err := json.Unmarshal(content, &findings); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse synthesis JSON"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse synthesis JSON: " + err.Error()})
 		return
 	}
 
@@ -199,16 +199,28 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 	writer.Write([]string{"缺陷ID", "严重程度", "缺陷分类", "文件路径", "行号", "问题标题", "详细描述", "修复建议"})
 	for _, f := range findings {
 		writer.Write([]string{
-			fmt.Sprintf("%d", f.ID),
-			f.Severity,
-			f.Category,
-			f.FilePath,
-			f.LineNumber,
-			f.Title,
-			f.Detail,
-			f.Suggestion,
+			getMapStringField(f, "id", "ID"),
+			getMapStringField(f, "severity", "Severity"),
+			getMapStringField(f, "category", "Category"),
+			getMapStringField(f, "file_path", "FilePath"),
+			getMapStringField(f, "line_number", "LineNumber"),
+			getMapStringField(f, "title", "Title"),
+			getMapStringField(f, "detail", "Detail"),
+			getMapStringField(f, "suggestion", "Suggestion"),
 		})
 	}
+}
+
+func getMapStringField(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if val, ok := m[k]; ok && val != nil {
+			if s, ok := val.(string); ok {
+				return s
+			}
+			return fmt.Sprintf("%v", val)
+		}
+	}
+	return ""
 }
 
 // GetTaskReportSummaryJSON returns the summary JSON file contents (execution trace metrics)
