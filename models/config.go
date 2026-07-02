@@ -22,18 +22,18 @@ type FieldMappingConfig struct {
 }
 
 type OAuth2Config struct {
-	Enabled             bool               `yaml:"enabled"`       // 是否启用 OAuth2 SSO
-	ClientID            string             `yaml:"client_id"`     // OAuth2 Client ID
-	ClientSecret        string             `yaml:"client_secret"` // OAuth2 Client Secret
-	AuthURL             string             `yaml:"auth_url"`      // Authorization Endpoint URL
-	TokenURL            string             `yaml:"token_url"`     // Token Endpoint URL
-	UserInfoURL         string             `yaml:"userinfo_url"`  // UserInfo Endpoint URL
-	RedirectURL         string             `yaml:"redirect_url"`  // 回调地址 (如 https://shield.company.com/api/oauth2/callback)
-	Scopes              []string           `yaml:"scopes"`        // 请求的 Scopes，默认 ["openid", "profile", "email"]
-	AdminList           []string           `yaml:"admin_list"`    // 自动提权为管理员的邮箱/用户名列表
+	Enabled             bool               `yaml:"enabled"`               // 是否启用 OAuth2 SSO
+	ClientID            string             `yaml:"client_id"`             // OAuth2 Client ID
+	ClientSecret        string             `yaml:"client_secret"`         // OAuth2 Client Secret
+	AuthURL             string             `yaml:"auth_url"`              // Authorization Endpoint URL
+	TokenURL            string             `yaml:"token_url"`             // Token Endpoint URL
+	UserInfoURL         string             `yaml:"userinfo_url"`          // UserInfo Endpoint URL
+	RedirectURL         string             `yaml:"redirect_url"`          // 回调地址 (如 https://shield.company.com/api/oauth2/callback)
+	Scopes              []string           `yaml:"scopes"`                // 请求的 Scopes，默认 ["openid", "profile", "email"]
+	AdminList           []string           `yaml:"admin_list"`            // 自动提权为管理员的邮箱/用户名列表
 	AllowedEmailDomains []string           `yaml:"allowed_email_domains"` // 允许登录的邮箱后缀白名单，留空表示不限制
-	FieldMapping        FieldMappingConfig `yaml:"field_mapping"` // 用户属性字段映射
-	DeptAPIURL          string             `yaml:"dept_api_url"`  // 从 SSO 获取部门信息的外部 API 地址
+	FieldMapping        FieldMappingConfig `yaml:"field_mapping"`         // 用户属性字段映射
+	DeptAPIURL          string             `yaml:"dept_api_url"`          // 从 SSO 获取部门信息的外部 API 地址
 }
 
 type ModelConfig struct {
