@@ -187,6 +187,40 @@ export default function AuditingWorkspace({
     }
   };
 
+  const handleDownloadExcel = async () => {
+    let activeReportId = reportId;
+    if (!activeReportId && workspaceFindings.length > 0) {
+      const first = workspaceFindings.find(f => f.task_report_id || (f as any).TaskReportID);
+      if (first) {
+        activeReportId = first.task_report_id || (first as any).TaskReportID;
+      }
+    }
+
+    if (!activeReportId) {
+      showToast('未找到该工作区对应的任务报告，无法下载', 'info');
+      return;
+    }
+
+    try {
+      const res = await fetch(apiUrl(`/api/tasks/${activeReportId}/synthesis/csv`));
+      if (!res.ok) {
+        showToast('无法获取问题记录 CSV 文件，请确认文件是否存在', 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${activeReportId}-synthesis.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('下载 Excel (CSV) 文件成功', 'success');
+    } catch (err) {
+      console.error('Failed to download synthesis CSV:', err);
+      showToast('下载 Excel 文件失败', 'error');
+    }
+  };
+
   // Fetch findings
   const fetchWorkspaceFindings = (
     rId: number,
@@ -439,6 +473,29 @@ export default function AuditingWorkspace({
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
             </svg>
             下载 JSON
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={handleDownloadExcel}
+            style={{ 
+              padding: '0.35rem 0.8rem', 
+              fontSize: '0.85rem', 
+              borderColor: '#16a34a', 
+              color: '#16a34a', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.35rem' 
+            }}
+            title="下载全部问题记录 (Excel)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            下载 Excel
           </button>
           <button 
             className="btn btn-outline" 

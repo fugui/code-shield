@@ -9,24 +9,24 @@ import (
 )
 
 type WorkbenchFinding struct {
-	ID           uint        `json:"id"`
-	Type         string      `json:"type"`          // "ut", "coredump", "float", "thread", "cjson"
-	TypeName     string      `json:"type_name"`     // "测试用例有效性", "Coredump 风险", etc.
-	RepoID       uint        `json:"repo_id"`
-	RepoName     string      `json:"repo_name"`
-	RepoURL      string      `json:"repo_url"`
-	FilePath     string      `json:"file_path"`
-	LineNumber   string      `json:"line_number"`
-	Title        string      `json:"title"`
-	Detail       string      `json:"detail"`
-	Severity     string      `json:"severity"`
-	Category     string      `json:"category"`
-	CodeSnippet  string      `json:"code_snippet"`
-	Suggestion   string      `json:"suggestion"`
-	Status       string      `json:"status"`
-	StatusLog    interface{} `json:"status_log"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+	ID          uint        `json:"id"`
+	Type        string      `json:"type"`      // "ut", "coredump", "float", "thread", "cjson"
+	TypeName    string      `json:"type_name"` // "测试用例有效性", "Coredump 风险", etc.
+	RepoID      uint        `json:"repo_id"`
+	RepoName    string      `json:"repo_name"`
+	RepoURL     string      `json:"repo_url"`
+	FilePath    string      `json:"file_path"`
+	LineNumber  string      `json:"line_number"`
+	Title       string      `json:"title"`
+	Detail      string      `json:"detail"`
+	Severity    string      `json:"severity"`
+	Category    string      `json:"category"`
+	CodeSnippet string      `json:"code_snippet"`
+	Suggestion  string      `json:"suggestion"`
+	Status      string      `json:"status"`
+	StatusLog   interface{} `json:"status_log"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
 func GetMyFindings(c *gin.Context) {

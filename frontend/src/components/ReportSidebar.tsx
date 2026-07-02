@@ -144,6 +144,27 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
     }
   };
 
+  const handleDownloadExcel = async () => {
+    if (!reportId) return;
+    try {
+      const res = await fetch(`/api/tasks/${reportId}/synthesis/csv`);
+      if (!res.ok) {
+        alert('无法获取问题记录文件，请确认该文件是否存在。');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${reportId}-synthesis.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download synthesis CSV:', err);
+      alert('下载文件时发生错误。');
+    }
+  };
+
   const handleOpenPublicDetails = () => {
     if (!reportId) return;
     window.open(`${BASE_PATH}/public/reports/${reportId}`, '_blank');
@@ -198,6 +219,22 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
                       </svg>
                       下载 JSON
+                    </button>
+                  )}
+                  {reportId && (
+                    <button
+                      onClick={handleDownloadExcel}
+                      style={{ background: 'transparent', border: '1px solid #16a34a', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#16a34a', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                      title="下载全部问题记录 (Excel)"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                      </svg>
+                      下载 Excel
                     </button>
                   )}
                   {reportId && (

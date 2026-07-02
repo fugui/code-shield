@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/models"
 	"code-shield/services"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -147,6 +148,67 @@ func GetTaskReportSynthesisJSON(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=report-%d-synthesis-%s.json", report.ID, safeRepoName))
 	c.Data(http.StatusOK, "application/json; charset=utf-8", content)
+}
+
+// ExportTaskReportSynthesisCSV exports the synthesis JSON file contents as CSV (Excel compatible)
+func ExportTaskReportSynthesisCSV(c *gin.Context) {
+	id := c.Param("id")
+	var report models.TaskReport
+	if err := models.DB.Preload("Repo").First(&report, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
+		return
+	}
+	if report.ReportPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Report path is missing"})
+		return
+	}
+
+	safeRepoName := strings.ReplaceAll(report.Repo.Name, "/", "-")
+	synthesisInputPath := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-%s.json", report.ID, safeRepoName))
+
+	// 容错：如果以当前 Repo 名字命名的文件不存在，利用 Glob 模糊匹配寻找对应 report ID 的 json
+	if _, err := os.Stat(synthesisInputPath); os.IsNotExist(err) {
+		pattern := filepath.Join(filepath.Dir(report.GetAbsReportPath()), fmt.Sprintf("report-%d-synthesis-*.json", report.ID))
+		matches, err := filepath.Glob(pattern)
+		if err == nil && len(matches) > 0 {
+			synthesisInputPath = matches[0]
+		}
+	}
+
+	content, err := os.ReadFile(synthesisInputPath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Synthesis JSON file not found"})
+		return
+	}
+
+	var findings []models.AnalysisFinding
+	if err := json.Unmarshal(content, &findings); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse synthesis JSON"})
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=report-%d-synthesis-%s.csv", report.ID, safeRepoName))
+
+	// 写入 UTF-8 BOM，保证 Excel 中文不乱码
+	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(c.Writer)
+	defer writer.Flush()
+
+	writer.Write([]string{"缺陷ID", "严重程度", "缺陷分类", "文件路径", "行号", "问题标题", "详细描述", "修复建议"})
+	for _, f := range findings {
+		writer.Write([]string{
+			fmt.Sprintf("%d", f.ID),
+			f.Severity,
+			f.Category,
+			f.FilePath,
+			f.LineNumber,
+			f.Title,
+			f.Detail,
+			f.Suggestion,
+		})
+	}
 }
 
 // GetTaskReportSummaryJSON returns the summary JSON file contents (execution trace metrics)

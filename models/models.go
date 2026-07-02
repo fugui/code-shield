@@ -360,19 +360,18 @@ type CjsonFinding struct {
 // MrEvent 合并请求推送事件记录
 type MrEvent struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
-	MrID           int64     `gorm:"index" json:"mr_id"`           // 来自华为 CodeArts 的 MR 内部 ID
-	MrNum          int64     `json:"mr_num"`                       // MR 的序号
+	MrID           int64     `gorm:"index" json:"mr_id"` // 来自华为 CodeArts 的 MR 内部 ID
+	MrNum          int64     `json:"mr_num"`             // MR 的序号
 	RepoName       string    `gorm:"size:255" json:"repo_name"`
 	RepoURL        string    `gorm:"size:1024" json:"repo_url"`
 	Title          string    `gorm:"size:512" json:"title"`
 	SourceBranch   string    `gorm:"size:255" json:"source_branch"`
 	TargetBranch   string    `gorm:"size:255" json:"target_branch"`
 	Author         string    `gorm:"size:255" json:"author"`
-	Action         string    `gorm:"size:50" json:"action"`        // open, close, merge, update 等
-	MrURL          string    `gorm:"size:1024" json:"mr_url"`      // 跳转到 CodeArts 的页面 URL
-	Payload        string    `gorm:"type:text" json:"payload"`     // 原始 json 字符串
+	Action         string    `gorm:"size:50" json:"action"`                      // open, close, merge, update 等
+	MrURL          string    `gorm:"size:1024" json:"mr_url"`                    // 跳转到 CodeArts 的页面 URL
+	Payload        string    `gorm:"type:text" json:"payload"`                   // 原始 json 字符串
 	IsProtoChange  bool      `gorm:"default:false;index" json:"is_proto_change"` // 是否包含接口相关修改
 	InterfaceFiles string    `gorm:"type:text" json:"interface_files"`           // 接口相关修改的文件列表 (JSON string 数组)
 	CreatedAt      time.Time `json:"created_at"`
 }
-

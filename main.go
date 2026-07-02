@@ -134,6 +134,7 @@ func main() {
 		api.GET("/tasks/:id", handlers.GetTaskDetails)
 		api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
 		api.GET("/tasks/:id/synthesis", handlers.GetTaskReportSynthesisJSON)
+		api.GET("/tasks/:id/synthesis/csv", handlers.ExportTaskReportSynthesisCSV)
 		api.GET("/tasks/:id/summary", handlers.GetTaskReportSummaryJSON)
 		api.GET("/tasks/:id/findings", handlers.GetAnalysisFindings)
 
