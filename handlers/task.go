@@ -150,11 +150,58 @@ func GetTaskReportSynthesisJSON(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", content)
 }
 
+func getLatestComment(statusLogBytes []byte) string {
+	if len(statusLogBytes) == 0 {
+		return ""
+	}
+	var logs []map[string]interface{}
+	if err := json.Unmarshal(statusLogBytes, &logs); err != nil {
+		return ""
+	}
+	if len(logs) == 0 {
+		return ""
+	}
+	// Get the last log entry's comment
+	lastEntry := logs[len(logs)-1]
+	if comment, ok := lastEntry["comment"].(string); ok {
+		return comment
+	}
+	return ""
+}
+
+func getStatusChinese(status string, isUT bool) string {
+	switch status {
+	case "open":
+		return "待处理"
+	case "analyzing":
+		return "问题分析"
+	case "resolved":
+		return "已解决"
+	case "closed":
+		return "已关闭"
+	case "invalid":
+		if isUT {
+			return "无效问题"
+		}
+		return "忽略/误报"
+	default:
+		return status
+	}
+}
+
+func makeFindingKey(filePath, lineNumber, title string) string {
+	return filePath + "|" + lineNumber + "|" + title
+}
+
+func makeTestCaseKey(filePath, testCaseName string) string {
+	return filePath + "||" + testCaseName
+}
+
 // ExportTaskReportSynthesisCSV exports the synthesis JSON file contents as CSV (Excel compatible)
 func ExportTaskReportSynthesisCSV(c *gin.Context) {
 	id := c.Param("id")
 	var report models.TaskReport
-	if err := models.DB.Preload("Repo").First(&report, id).Error; err != nil {
+	if err := models.DB.Preload("Repo").Preload("TaskType").First(&report, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
 		return
 	}
@@ -187,6 +234,87 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 		return
 	}
 
+	// 提取数据库中的审计流转字段信息
+	statusMap := make(map[string]string)
+	assigneeMap := make(map[string]string)
+	commentMap := make(map[string]string)
+
+	taskTypeName := report.TaskType.Name
+	if taskTypeName == "ut_effectiveness" {
+		var dbFindings []models.TestCaseFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeTestCaseKey(dbf.FilePath, dbf.TestCaseName)
+				statusMap[key] = dbf.Status
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = getLatestComment(dbf.StatusLog)
+			}
+		}
+	} else if taskTypeName == "coredump_risk" {
+		var dbFindings []models.CoredumpFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
+				statusMap[key] = dbf.Status
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = getLatestComment(dbf.StatusLog)
+			}
+		}
+	} else if taskTypeName == "float_comparison" {
+		var dbFindings []models.FloatFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
+				statusMap[key] = dbf.Status
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = getLatestComment(dbf.StatusLog)
+			}
+		}
+	} else if taskTypeName == "thread_create" {
+		var dbFindings []models.ThreadFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
+				statusMap[key] = dbf.Status
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = getLatestComment(dbf.StatusLog)
+			}
+		}
+	} else if taskTypeName == "cjson_scan" {
+		var dbFindings []models.CjsonFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
+				statusMap[key] = dbf.Status
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = getLatestComment(dbf.StatusLog)
+			}
+		}
+	} else {
+		// Fallback to generic AnalysisFinding
+		var dbFindings []models.AnalysisFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
+				statusMap[key] = ""
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = dbf.Feedback
+			}
+		}
+	}
+
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=report-%d-synthesis-%s.csv", report.ID, safeRepoName))
 
@@ -196,17 +324,40 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 	writer := csv.NewWriter(c.Writer)
 	defer writer.Flush()
 
-	writer.Write([]string{"缺陷ID", "严重程度", "缺陷分类", "文件路径", "行号", "问题标题", "详细描述", "修复建议"})
+	writer.Write([]string{"缺陷ID", "严重程度", "缺陷分类", "文件路径", "行号", "问题标题", "详细描述", "修复建议", "状态", "责任人", "跟踪意见"})
 	for _, f := range findings {
+		filePath := getMapStringField(f, "file_path", "FilePath")
+		lineNumber := getMapStringField(f, "line_number", "LineNumber")
+		title := getMapStringField(f, "title", "Title")
+
+		var statusVal, assigneeVal, commentVal string
+		isUT := taskTypeName == "ut_effectiveness"
+		if isUT {
+			key := makeTestCaseKey(filePath, title)
+			statusVal = statusMap[key]
+			assigneeVal = assigneeMap[key]
+			commentVal = commentMap[key]
+		} else {
+			key := makeFindingKey(filePath, lineNumber, title)
+			statusVal = statusMap[key]
+			assigneeVal = assigneeMap[key]
+			commentVal = commentMap[key]
+		}
+
+		statusChinese := getStatusChinese(statusVal, isUT)
+
 		writer.Write([]string{
 			getMapStringField(f, "id", "ID"),
 			getMapStringField(f, "severity", "Severity"),
 			getMapStringField(f, "category", "Category"),
-			getMapStringField(f, "file_path", "FilePath"),
-			getMapStringField(f, "line_number", "LineNumber"),
-			getMapStringField(f, "title", "Title"),
+			filePath,
+			lineNumber,
+			title,
 			getMapStringField(f, "detail", "Detail"),
 			getMapStringField(f, "suggestion", "Suggestion"),
+			statusChinese,
+			assigneeVal,
+			commentVal,
 		})
 	}
 }
