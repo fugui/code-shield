@@ -95,8 +95,7 @@ func main() {
 		auth.POST("/sync/department", handlers.SyncDepartment)
 		auth.POST("/sync/repo", handlers.SyncRepo)
 
-		// Webhook endpoint
-		auth.POST("/webhook", handlers.HandleWebhook)
+
 	}
 
 	// Register API routes (protected)
@@ -107,10 +106,6 @@ func main() {
 		api.GET("/me/findings", handlers.GetMyFindings)
 		api.PATCH("/password", handlers.UpdatePassword)
 		api.POST("/me/department", handlers.UpdateMyDepartment)
-
-		// Merge Request Realtime Monitoring
-		api.GET("/mr", handlers.GetMrEvents)
-		api.GET("/mr/:id", handlers.GetMrEventDetail)
 
 		api.GET("/departments", handlers.GetDepartments)
 		api.GET("/departments/export", handlers.ExportDepartments)

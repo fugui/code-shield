@@ -14,7 +14,7 @@ import FloatAnalysis from './pages/FloatAnalysis';
 import ThreadAnalysis from './pages/ThreadAnalysis';
 import CjsonAnalysis from './pages/CjsonAnalysis';
 import Workbench from './pages/Workbench';
-import RealtimeMr from './pages/RealtimeMr';
+
 import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
 
@@ -368,7 +368,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                   ? location.pathname.slice(BASE_PATH.length)
                   : location.pathname;
                 if (relativePath.startsWith('/workbench')) return '个人工作台';
-                if (relativePath.startsWith('/realtime/mr')) return 'Merge Request 看护';
+
                 if (relativePath.startsWith('/reports/repo') || relativePath.startsWith('/tasks/repo')) return '历史报告';
                 if (relativePath.startsWith('/reports') || relativePath.startsWith('/tasks')) return '报告概览';
                 if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试用例有效性分析';
@@ -410,8 +410,7 @@ function AppContent() {
           {/* 个人工作台 */}
           <Route path="/workbench" element={<PrivateRoute><Workbench /></PrivateRoute>} />
 
-          {/* 代码实时看护 */}
-          <Route path="/realtime/mr" element={<AdminRoute><RealtimeMr /></AdminRoute>} />
+
 
           {/* 报告中心 */}
           <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
