@@ -3,7 +3,14 @@
   "display_name": "Python 浮点数比较缺陷扫描",
   "description": "专项分析 Python 代码中由于浮点数直接进行等值 (==)、不等 (!=) 或边界 (<=, >=) 比较导致的精度与逻辑缺陷风险",
   "engine_mode": "chunked",
-  "engine_config": {"file_extensions": [".py"]},
+  "engine_config": {
+    "file_extensions": [
+      ".py"
+    ],
+    "exclude_paths": [
+      "thirdparts"
+    ]
+  },
   "ai_backend": "",
   "target_scope": "business",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
