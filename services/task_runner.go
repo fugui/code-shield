@@ -373,9 +373,7 @@ func cleanJSONFromAI(raw []byte) []byte {
 			s = s[idx+1:]
 		}
 		// Remove the trailing ```
-		if strings.HasSuffix(s, "```") {
-			s = s[:len(s)-3]
-		}
+		s = strings.TrimSuffix(s, "```")
 		s = strings.TrimSpace(s)
 	}
 

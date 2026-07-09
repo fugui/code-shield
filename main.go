@@ -95,7 +95,6 @@ func main() {
 		auth.POST("/sync/department", handlers.SyncDepartment)
 		auth.POST("/sync/repo", handlers.SyncRepo)
 
-
 	}
 
 	// Register API routes (protected)

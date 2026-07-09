@@ -25,7 +25,7 @@ type ChunkConfig struct {
 	Concurrency     int      `json:"concurrency"`
 	FileExtensions  []string `json:"file_extensions"`  // 任务级文件扩展名白名单，为空时使用全局 sourceExtensions
 	ContentKeywords []string `json:"content_keywords"` // 任务级文件内容关键字白名单，只有当文件内容包含其中任意关键字时才进行分析
-	ExcludePaths    []string `json:"exclude_paths"`     // 任务级忽略路径
+	ExcludePaths    []string `json:"exclude_paths"`    // 任务级忽略路径
 }
 
 // ChunkedEngine 将代码仓按目录结构拆分成多个分片，逐个提交给 AI 分析后汇总。
