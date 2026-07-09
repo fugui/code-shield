@@ -885,11 +885,11 @@ func TestGetFilteredFilesWithKeywordsAndExcludes(t *testing.T) {
 	exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.com").Run()
 
 	files := map[string]string{
-		"main.c":                     "// use cJSON_Parse to decode json\ncJSON *root = cJSON_Parse(data);",
-		"utils.c":                    "int add(int a, int b) { return a + b; }",
-		"thirdparts/json_impl.c":      "// cJSON_Parse is here too, but in thirdparts\ncJSON *node = cJSON_Parse(data);",
-		"third_party/other_lib.c":    "// cJSON_CreateObject is also third party\ncJSON *obj = cJSON_CreateObject();",
-		"docs/readme.txt":            "this is just documentation about cJSON",
+		"main.c":                  "// use cJSON_Parse to decode json\ncJSON *root = cJSON_Parse(data);",
+		"utils.c":                 "int add(int a, int b) { return a + b; }",
+		"thirdparts/json_impl.c":  "// cJSON_Parse is here too, but in thirdparts\ncJSON *node = cJSON_Parse(data);",
+		"third_party/other_lib.c": "// cJSON_CreateObject is also third party\ncJSON *obj = cJSON_CreateObject();",
+		"docs/readme.txt":         "this is just documentation about cJSON",
 	}
 
 	for name, content := range files {
