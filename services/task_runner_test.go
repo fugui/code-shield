@@ -872,3 +872,60 @@ func TestScanAndChunkWithFileExtensions(t *testing.T) {
 		}
 	})
 }
+
+func TestGetFilteredFilesWithKeywordsAndExcludes(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test-filter-keyword-exclude-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	exec.Command("git", "-C", tempDir, "init").Run()
+	exec.Command("git", "-C", tempDir, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.com").Run()
+
+	files := map[string]string{
+		"main.c":                     "// use cJSON_Parse to decode json\ncJSON *root = cJSON_Parse(data);",
+		"utils.c":                    "int add(int a, int b) { return a + b; }",
+		"thirdparts/json_impl.c":      "// cJSON_Parse is here too, but in thirdparts\ncJSON *node = cJSON_Parse(data);",
+		"third_party/other_lib.c":    "// cJSON_CreateObject is also third party\ncJSON *obj = cJSON_CreateObject();",
+		"docs/readme.txt":            "this is just documentation about cJSON",
+	}
+
+	for name, content := range files {
+		fullPath := filepath.Join(tempDir, name)
+		os.MkdirAll(filepath.Dir(fullPath), 0755)
+		os.WriteFile(fullPath, []byte(content), 0644)
+	}
+
+	exec.Command("git", "-C", tempDir, "add", ".").Run()
+	exec.Command("git", "-C", tempDir, "commit", "-m", "init").Run()
+
+	cfg := ChunkConfig{
+		MaxFiles:        100,
+		Depth:           1,
+		FileExtensions:  []string{".c"},
+		ContentKeywords: []string{"cJSON_"},
+		ExcludePaths:    []string{"thirdparts"},
+	}
+
+	t.Run("filter main.c only", func(t *testing.T) {
+		// targetScope is "all"
+		filtered, err := getFilteredFiles(tempDir, cfg, "all")
+		if err != nil {
+			t.Fatalf("getFilteredFiles failed: %v", err)
+		}
+
+		// 预期只有 main.c 被包含。
+		// utils.c: 不包含 cJSON_ (排除)
+		// thirdparts/json_impl.c: 在 ExcludePaths 里 (排除)
+		// third_party/other_lib.c: 在全局 isSourceFile 过滤 skip 列表包含 "third_party/" (排除)
+		// docs/readme.txt: 后缀不是 .c (排除)
+		if len(filtered) != 1 {
+			t.Fatalf("expected exactly 1 file, got %d: %v", len(filtered), filtered)
+		}
+		if filtered[0] != "main.c" {
+			t.Errorf("expected filtered file to be 'main.c', got '%s'", filtered[0])
+		}
+	})
+}

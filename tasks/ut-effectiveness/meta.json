@@ -3,7 +3,23 @@
   "display_name": "测试用例有效性评估",
   "description": "以单个测试用例为最小单位，深度审计其断言有效性、提前返回、空测试等，评估每个用例是否真实独立地校验了业务逻辑",
   "engine_mode": "chunked",
-  "engine_config": {"file_extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".py", ".java", ".go"]},
+  "engine_config": {
+    "file_extensions": [
+      ".c",
+      ".cpp",
+      ".cc",
+      ".cxx",
+      ".h",
+      ".hpp",
+      ".hxx",
+      ".py",
+      ".java",
+      ".go"
+    ],
+    "exclude_paths": [
+      "thirdparts"
+    ]
+  },
   "ai_backend": "",
   "target_scope": "test",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",

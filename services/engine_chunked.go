@@ -20,10 +20,12 @@ import (
 
 // ChunkConfig 定义分片引擎的配置参数
 type ChunkConfig struct {
-	MaxFiles       int      `json:"max_files"`
-	Depth          int      `json:"depth"`
-	Concurrency    int      `json:"concurrency"`
-	FileExtensions []string `json:"file_extensions"` // 任务级文件扩展名白名单，为空时使用全局 sourceExtensions
+	MaxFiles        int      `json:"max_files"`
+	Depth           int      `json:"depth"`
+	Concurrency     int      `json:"concurrency"`
+	FileExtensions  []string `json:"file_extensions"`  // 任务级文件扩展名白名单，为空时使用全局 sourceExtensions
+	ContentKeywords []string `json:"content_keywords"` // 任务级文件内容关键字白名单，只有当文件内容包含其中任意关键字时才进行分析
+	ExcludePaths    []string `json:"exclude_paths"`     // 任务级忽略路径
 }
 
 // ChunkedEngine 将代码仓按目录结构拆分成多个分片，逐个提交给 AI 分析后汇总。
@@ -234,8 +236,28 @@ loop:
 	return ctx.executeSynthesis(allFindings)
 }
 
-// scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
-func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[string][]string, error) {
+// fileContainsKeywords 检测文件内容是否包含任意给定的关键字（高效流式读取）
+func fileContainsKeywords(filePath string, keywords []string) (bool, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		for _, kw := range keywords {
+			if strings.Contains(line, kw) {
+				return true, nil
+			}
+		}
+	}
+	return false, scanner.Err()
+}
+
+// getFilteredFiles 获取过滤后的待分析源码文件列表
+func getFilteredFiles(codesPath string, cfg ChunkConfig, targetScope string) ([]string, error) {
 	cmd := exec.Command("git", "-C", codesPath, "ls-files")
 	output, err := cmd.Output()
 	if err != nil {
@@ -252,11 +274,10 @@ func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[st
 			}
 			taskExtensions[strings.ToLower(ext)] = true
 		}
-		log.Printf("[ChunkedEngine] Using task-level file extensions filter: %v\n", cfg.FileExtensions)
 	}
 
 	files := strings.Split(strings.TrimSpace(string(output)), "\n")
-	rawChunks := make(map[string][]string)
+	var filtered []string
 
 	for _, file := range files {
 		if file == "" {
@@ -282,6 +303,50 @@ func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[st
 			continue
 		}
 
+		// 自定义忽略路径过滤
+		if len(cfg.ExcludePaths) > 0 {
+			excluded := false
+			normalizedFile := filepath.ToSlash(file)
+			for _, skipPath := range cfg.ExcludePaths {
+				normalizedSkip := filepath.ToSlash(skipPath)
+				if strings.HasPrefix(normalizedFile, normalizedSkip) || strings.Contains(normalizedFile, "/"+normalizedSkip) {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
+		}
+
+		// 关键字内容过滤
+		if len(cfg.ContentKeywords) > 0 {
+			matched, err := fileContainsKeywords(filepath.Join(codesPath, file), cfg.ContentKeywords)
+			if err != nil {
+				log.Printf("[Engine] Failed to check file content for %s: %v\n", file, err)
+				continue
+			}
+			if !matched {
+				continue
+			}
+		}
+
+		filtered = append(filtered, file)
+	}
+
+	return filtered, nil
+}
+
+// scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
+func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[string][]string, error) {
+	filteredFiles, err := getFilteredFiles(codesPath, cfg, targetScope)
+	if err != nil {
+		return nil, err
+	}
+
+	rawChunks := make(map[string][]string)
+
+	for _, file := range filteredFiles {
 		parts := strings.Split(file, string(filepath.Separator))
 		chunkName := "root"
 		if len(parts) > 1 {
@@ -350,7 +415,7 @@ func isSourceFile(file string, taskExtensions map[string]bool) bool {
 
 	// 跳过常见的非源码目录
 	lower := strings.ToLower(file)
-	for _, skip := range []string{"vendor/", "node_modules/", "__pycache__/", "dist/", "build/"} {
+	for _, skip := range []string{"vendor/", "node_modules/", "__pycache__/", "dist/", "build/", "thirdparts/", "thirdparty/", "third_party/", "3rdparty/"} {
 		if strings.Contains(lower, skip) {
 			return false
 		}
