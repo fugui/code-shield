@@ -209,6 +209,7 @@ const (
 	StatusPreProcessing  = "pre_processing"
 	StatusAnalyzing      = "analyzing"
 	StatusPostProcessing = "post_processing"
+	StatusMerging        = "merging"
 	StatusSuccess        = "success"
 	StatusFailed         = "failed"
 	StatusSkipped        = "skipped"

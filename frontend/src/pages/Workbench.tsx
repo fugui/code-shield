@@ -310,7 +310,8 @@ export default function Workbench() {
 			case 'cloning':
 			case 'pre_processing':
 			case 'analyzing':
-			case 'post_processing': return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' };
+			case 'post_processing':
+			case 'merging': return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' };
 			case 'queued': return { label: '排队中', color: '#6b7280', bg: 'rgba(107,114,128,0.1)' };
 			default: return { label: status, color: '#6b7280', bg: 'rgba(107,114,128,0.1)' };
 		}

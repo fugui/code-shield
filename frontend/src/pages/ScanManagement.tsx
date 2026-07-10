@@ -292,7 +292,7 @@ function ScanManagement() {
     const latestLog = recentLogs.find(log => log.repo_id === repoId);
     if (!latestLog) return { status: 'none', text: '未分析', badgeCls: 'info', isRunning: false, isPending: false, log: null };
 
-    const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(latestLog.status);
+    const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(latestLog.status);
     const isPending = latestLog.status === 'pending' || latestLog.status === 'queued';
 
     let text = latestLog.status;
@@ -340,6 +340,10 @@ function ScanManagement() {
         break;
       case 'post_processing':
         text = '结果分析';
+        badgeCls = 'primary';
+        break;
+      case 'merging':
+        text = '问题归并';
         badgeCls = 'primary';
         break;
     }
