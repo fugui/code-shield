@@ -205,6 +205,18 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 		f.SetRowStyle(sheet1, row, row, dataStyle)
 	}
 
+	// 冻结首行表头，在滚动查看明细时保持可见
+	_ = f.SetPanes(sheet1, &excelize.Panes{
+		Freeze:      true,
+		Split:       false,
+		YSplit:      1,
+		TopLeftCell: "A2",
+		ActivePane:  "bottomLeft",
+		Selection: []excelize.Selection{
+			{SQRef: "A2", ActiveCell: "A2", Pane: "bottomLeft"},
+		},
+	})
+
 	// Sheet 2: 数据统计与图表
 	sheet2 := "数据统计与图表"
 	_, err = f.NewSheet(sheet2)
