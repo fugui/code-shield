@@ -519,11 +519,16 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 	}
 
 	matchedOldIDs := make(map[uint]bool)
+	matchedFindingsMap := make(map[int]*T) // index of finding -> matched old finding
 
-	for _, f := range findings {
+	// ==========================================
+	// Phase 1: 确定性硬规则内存比对 (无大模型调用，极快)
+	// ==========================================
+	for idx, f := range findings {
 		var matchedFinding *T
 		fHash := computeCodeHash(f.CodeSnippet)
 
+		// 1.1 精确行号/代码片段 Hash 比对
 		for i := range allOldFindings {
 			oldF := &allOldFindings[i]
 			oldID := GetFieldValue(oldF, "ID").(uint)
@@ -549,6 +554,7 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 			}
 		}
 
+		// 1.2 高分评分匹配 (无需 LLM)
 		if matchedFinding == nil {
 			for i := range allOldFindings {
 				oldF := &allOldFindings[i]
@@ -560,7 +566,6 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 				oldPath := GetFieldValue(oldF, "FilePath").(string)
 				oldLine := GetFieldValue(oldF, "LineNumber").(string)
 				oldTitle := GetFieldValue(oldF, "Title").(string)
-				oldSnippet := GetFieldValue(oldF, "CodeSnippet").(string)
 				oldCategory := GetFieldValue(oldF, "Category").(string)
 
 				if oldPath == f.FilePath {
@@ -577,18 +582,145 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 						matchedFinding = oldF
 						break
 					}
-
-					if score >= 0.45 {
-						oldDetail := GetFieldValue(oldF, "Detail").(string)
-						if askLLMIfSameFinding(ctx, oldTitle, oldDetail, oldSnippet, f.Title, f.Detail, f.CodeSnippet) {
-							matchedFinding = oldF
-							break
-						}
-					}
 				}
 			}
 		}
 
+		if matchedFinding != nil {
+			matchedOldIDs[GetFieldValue(matchedFinding, "ID").(uint)] = true
+			matchedFindingsMap[idx] = matchedFinding
+		}
+	}
+
+	// ==========================================
+	// Phase 2: 并发收集大模型校验任务并执行
+	// ==========================================
+	type llmMatchTask struct {
+		findingIdx    int
+		oldFindingIdx int
+		oldTitle      string
+		oldDetail     string
+		oldSnippet    string
+		newTitle      string
+		newDetail     string
+		newSnippet    string
+	}
+
+	var llmTasks []llmMatchTask
+
+	for idx, f := range findings {
+		if matchedFindingsMap[idx] != nil {
+			continue // 已经匹配成功，不需要大模型
+		}
+
+		// 寻找该缺陷对应的所有可能候选历史缺陷 (基于模糊评分)
+		for i := range allOldFindings {
+			oldF := &allOldFindings[i]
+			oldID := GetFieldValue(oldF, "ID").(uint)
+			if matchedOldIDs[oldID] {
+				continue
+			}
+
+			oldPath := GetFieldValue(oldF, "FilePath").(string)
+			oldLine := GetFieldValue(oldF, "LineNumber").(string)
+			oldTitle := GetFieldValue(oldF, "Title").(string)
+			oldSnippet := GetFieldValue(oldF, "CodeSnippet").(string)
+			oldCategory := GetFieldValue(oldF, "Category").(string)
+
+			if oldPath == f.FilePath {
+				catSim := 0.0
+				if oldCategory == f.Category {
+					catSim = 1.0
+				}
+				lineSim := calculateLineSimilarity(oldLine, f.LineNumber)
+				titleSim := calculateStringSimilarity(oldTitle, f.Title)
+
+				score := 0.3*catSim + 0.3*lineSim + 0.4*titleSim
+
+				// 模糊匹配区间 [0.45, 0.85)
+				if score >= 0.45 && score < 0.85 {
+					oldDetail := GetFieldValue(oldF, "Detail").(string)
+					llmTasks = append(llmTasks, llmMatchTask{
+						findingIdx:    idx,
+						oldFindingIdx: i,
+						oldTitle:      oldTitle,
+						oldDetail:     oldDetail,
+						oldSnippet:    oldSnippet,
+						newTitle:      f.Title,
+						newDetail:     f.Detail,
+						newSnippet:    f.CodeSnippet,
+					})
+				}
+			}
+		}
+	}
+
+	// 并发执行大模型比对
+	if len(llmTasks) > 0 {
+		log.Printf("[TaskHooks] Concurrently invoking LLM for %d similarity verification tasks...", len(llmTasks))
+
+		// 限制最大并发量为 10，避免大模型限频或过多连接
+		concurrencyLimit := 10
+		if concurrencyLimit > len(llmTasks) {
+			concurrencyLimit = len(llmTasks)
+		}
+
+		sem := make(chan struct{}, concurrencyLimit)
+
+		// 结果收集 map（key: findingIdx_oldFindingIdx -> value: isSame）
+		var resultsMu sync.Mutex
+		resultsMap := make(map[string]bool)
+
+		var wg sync.WaitGroup
+		for _, task := range llmTasks {
+			wg.Add(1)
+			go func(t llmMatchTask) {
+				defer wg.Done()
+				sem <- struct{}{}        // Acquire token
+				defer func() { <-sem }() // Release token
+
+				isSame := askLLMIfSameFinding(ctx, t.oldTitle, t.oldDetail, t.oldSnippet, t.newTitle, t.newDetail, t.newSnippet)
+
+				resultsMu.Lock()
+				key := fmt.Sprintf("%d_%d", t.findingIdx, t.oldFindingIdx)
+				resultsMap[key] = isSame
+				resultsMu.Unlock()
+			}(task)
+		}
+		wg.Wait()
+
+		// ==========================================
+		// Phase 3: 顺序判定模糊匹配的缺陷归属 (顺序，防竞争)
+		// ==========================================
+		for idx := range findings {
+			if matchedFindingsMap[idx] != nil {
+				continue
+			}
+
+			// 按顺序寻找最符合的候选并匹配
+			for i := range allOldFindings {
+				oldF := &allOldFindings[i]
+				oldID := GetFieldValue(oldF, "ID").(uint)
+				if matchedOldIDs[oldID] {
+					continue
+				}
+
+				key := fmt.Sprintf("%d_%d", idx, i)
+				if resultsMap[key] {
+					// 发现符合大模型相同的缺陷且当前历史缺陷未被绑定过
+					matchedFindingsMap[idx] = oldF
+					matchedOldIDs[oldID] = true
+					break
+				}
+			}
+		}
+	}
+
+	// ==========================================
+	// 顺序同步落库与老问题逻辑关闭阶段
+	// ==========================================
+	for idx, f := range findings {
+		matchedFinding := matchedFindingsMap[idx]
 		targetStatus := "open"
 		if f.Severity == "合格" {
 			targetStatus = "closed"
@@ -667,6 +799,7 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 		}
 	}
 
+	// 历史遗留且未匹配到的缺陷，逻辑状态置为 resolved
 	for i := range allOldFindings {
 		oldF := &allOldFindings[i]
 		oldID := GetFieldValue(oldF, "ID").(uint)
