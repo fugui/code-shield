@@ -188,36 +188,58 @@ export default function AuditingWorkspace({
   };
 
   const handleDownloadExcel = async () => {
-    let activeReportId = reportId;
-    if (!activeReportId && workspaceFindings.length > 0) {
-      const first = workspaceFindings.find(f => f.task_report_id || (f as any).TaskReportID);
-      if (first) {
-        activeReportId = first.task_report_id || (first as any).TaskReportID;
-      }
-    }
+    // 构造查询过滤参数
+    const params = new URLSearchParams({
+      repo_id: repoId.toString(),
+      severity: wsSeverity,
+      status: wsStatus,
+      category: wsCategory,
+      keyword: wsKeyword
+    });
 
-    if (!activeReportId) {
-      showToast('未找到该工作区对应的任务报告，无法下载', 'info');
-      return;
+    let downloadUrl = '';
+    let filename = '';
+
+    if (workspaceType === 'ut') {
+      downloadUrl = apiUrl(`/api/analysis/ut/findings/export?${params.toString()}`);
+      filename = `synthesis_ut_${repoName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    } else if (workspaceType) {
+      downloadUrl = apiUrl(`${apiPrefix}/findings/export?${params.toString()}`);
+      filename = `synthesis_${workspaceType}_${repoName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    } else {
+      let activeReportId = reportId;
+      if (!activeReportId && workspaceFindings.length > 0) {
+        const first = workspaceFindings.find(f => f.task_report_id || (f as any).TaskReportID);
+        if (first) {
+          activeReportId = first.task_report_id || (first as any).TaskReportID;
+        }
+      }
+
+      if (!activeReportId) {
+        showToast('未找到该工作区对应的任务报告，无法下载', 'info');
+        return;
+      }
+      downloadUrl = apiUrl(`/api/tasks/${activeReportId}/synthesis/csv`);
+      filename = `report-${activeReportId}-synthesis.csv`;
     }
 
     try {
-      const res = await fetch(apiUrl(`/api/tasks/${activeReportId}/synthesis/csv`));
+      const res = await fetch(downloadUrl);
       if (!res.ok) {
-        showToast('无法获取问题记录 CSV 文件，请确认文件是否存在', 'error');
+        showToast('无法获取问题记录，请确认服务是否正常', 'error');
         return;
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `report-${activeReportId}-synthesis.csv`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('下载 Excel (CSV) 文件成功', 'success');
+      showToast('下载 Excel 成功', 'success');
     } catch (err) {
-      console.error('Failed to download synthesis CSV:', err);
-      showToast('下载 Excel 文件失败', 'error');
+      console.error('Failed to download synthesis Excel:', err);
+      showToast('下载 Excel 失败', 'error');
     }
   };
 
