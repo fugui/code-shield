@@ -144,6 +144,7 @@ func main() {
 		// UT Effectiveness Dashboard
 		api.GET("/analysis/ut/repos", handlers.GetUTRepos)
 		api.GET("/analysis/ut/findings", handlers.GetUTFindings)
+		api.GET("/analysis/ut/findings/export", handlers.ExportUTFindings)
 		api.PATCH("/analysis/ut/findings/:id", handlers.UpdateUTFinding)
 		api.GET("/analysis/ut/departments", handlers.GetUTDepartments)
 		api.GET("/analysis/ut/trends", handlers.GetUTTrends)
@@ -274,6 +275,7 @@ func main() {
 func registerCampaignRoutes[T any](rg *gin.RouterGroup, campaignPath string, taskTypeName string) {
 	rg.GET("/analysis/"+campaignPath+"/repos", handlers.GetCampaignRepos[T](taskTypeName))
 	rg.GET("/analysis/"+campaignPath+"/findings", handlers.GetCampaignFindings[T]())
+	rg.GET("/analysis/"+campaignPath+"/findings/export", handlers.ExportCampaignFindings[T]())
 	rg.PATCH("/analysis/"+campaignPath+"/findings/:id", handlers.UpdateCampaignFinding[T]())
 	rg.GET("/analysis/"+campaignPath+"/departments", handlers.GetCampaignDepartments[T]())
 	rg.GET("/analysis/"+campaignPath+"/trends", handlers.GetCampaignTrends[T]())
