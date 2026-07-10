@@ -392,6 +392,13 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
                     <span className="pipeline-label">综合报告生成</span>
                     <span className="pipeline-sub">{formatDuration(summary.synthesis?.duration_seconds)}</span>
                   </div>
+                  <div className={`pipeline-step ${summary.merging?.status === 'success' ? 'success' : summary.merging?.status === 'failed' ? 'failed' : summary.merging?.status === 'active' ? 'active' : ''}`}>
+                    <div className={`pipeline-dot ${summary.merging?.status === 'success' ? 'success' : summary.merging?.status === 'failed' ? 'failed' : summary.merging?.status === 'active' ? 'active' : ''}`}>
+                      {summary.merging?.status === 'success' ? '✓' : summary.merging?.status === 'failed' ? '✗' : summary.merging?.status === 'active' ? '...' : '-'}
+                    </div>
+                    <span className="pipeline-label">缺陷分析归并</span>
+                    <span className="pipeline-sub">{formatDuration(summary.merging?.duration_seconds)}</span>
+                  </div>
                 </div>
 
                 {/* 3. Chunk details browser */}

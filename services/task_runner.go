@@ -61,6 +61,15 @@ type SynthesisSummary struct {
 	ErrorMessage    string    `json:"error_message,omitempty"`
 }
 
+// MergingSummary holds metrics and details for the Merging/Hooks Phase.
+type MergingSummary struct {
+	Status          string    `json:"status"` // "success" or "failed" or "active"
+	StartTime       time.Time `json:"start_time"`
+	EndTime         time.Time `json:"end_time"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
 // TaskSummaryReport defines the unified execution summary for the entire task.
 type TaskSummaryReport struct {
 	TaskID          uint             `json:"task_id"`
@@ -73,6 +82,7 @@ type TaskSummaryReport struct {
 	DurationSeconds float64          `json:"duration_seconds"`
 	Analysis        AnalysisSummary  `json:"analysis"`
 	Synthesis       SynthesisSummary `json:"synthesis"`
+	Merging         MergingSummary   `json:"merging"`
 }
 
 // taskContext holds all necessary data for a single task execution run
@@ -1044,6 +1054,23 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 		relReportPath = rel
 	}
 
+	// 1. 先将任务状态置为 "merging"（问题归并中），同步更新数据库与执行日志
+	updateTaskStatus(ctx.report.ID, models.StatusMerging)
+
+	// 2. 初始化归并阶段统计，并写入一次中间 summary 报告（供前端获取先前的静态分析/综合生成耗时指标）
+	ctx.Summary.Merging.Status = "active"
+	ctx.Summary.Merging.StartTime = time.Now()
+	ctx.writeSummaryReport()
+
+	// 3. 执行缺陷归并 hooks（这可能比较耗时，包含缺陷指派和 LLM 语义识别等）
+	ctx.executeHooks(ctx.findings)
+
+	// 4. 归并完毕，更新归并耗时指标
+	ctx.Summary.Merging.Status = "success"
+	ctx.Summary.Merging.EndTime = time.Now()
+	ctx.Summary.Merging.DurationSeconds = ctx.Summary.Merging.EndTime.Sub(ctx.Summary.Merging.StartTime).Seconds()
+
+	// 5. 将任务状态最终置为 "success" 并保存所有的报告及度量指标
 	err := models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
 		"status":      models.StatusSuccess,
 		"report_path": relReportPath,
@@ -1052,9 +1079,6 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 		"metrics":     string(metricsJSON),
 		"created_at":  time.Now(),
 	}).Error
-
-	// Trigger task hooks (if any registered for this task type)
-	ctx.executeHooks(ctx.findings)
 
 	ctx.Summary.Status = "success"
 	ctx.writeSummaryReport()

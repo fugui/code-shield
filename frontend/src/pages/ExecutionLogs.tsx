@@ -174,6 +174,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       pre_processing: { cls: 'primary', label: '前置检查中...' },
       analyzing: { cls: 'primary', label: 'AI 检视中...' },
       post_processing: { cls: 'primary', label: '结果分析中...' },
+      merging: { cls: 'primary', label: '问题归并中...' },
     };
     const s = map[status] || { cls: 'warning', label: status };
 
@@ -237,7 +238,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               const expanded = expandedIds.has(log.id);
               const report = log.task_report;
               const hasReport = !!report;
-              const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing'].includes(log.status);
+              const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(log.status);
               const isPending = log.status === 'pending' || log.status === 'queued';
               const canCancel = isRunning || isPending;
 

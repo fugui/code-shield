@@ -420,7 +420,7 @@ function ReportsOverview() {
                     <div style={{ color: 'var(--danger-color)', fontSize: '0.825rem', fontStyle: 'italic' }}>
                       任务执行失败，AI 审计中断。
                     </div>
-                  ) : (item.status === 'running' || item.status === 'cloning' || item.status === 'pre_processing' || item.status === 'analyzing' || item.status === 'post_processing') ? (
+                  ) : (item.status === 'running' || item.status === 'cloning' || item.status === 'pre_processing' || item.status === 'analyzing' || item.status === 'post_processing' || item.status === 'merging') ? (
                     <div style={{ color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span className="spinner-mini" />
                       <span>正在分析代码库，AI 深入审计中...</span>
