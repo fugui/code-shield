@@ -929,3 +929,222 @@ func TestGetFilteredFilesWithKeywordsAndExcludes(t *testing.T) {
 		}
 	})
 }
+
+type MockAIInvokerForMatch struct{}
+
+func (m *MockAIInvokerForMatch) Name() string { return "mock_match_backend" }
+func (m *MockAIInvokerForMatch) Invoke(req AIRequest) error {
+	isSame := "false"
+	if strings.Contains(req.PromptMsg, "cJSON Memory Leak in parse_config") &&
+		strings.Contains(req.PromptMsg, "cJSON Memory Leak in parse_config (Updated)") {
+		isSame = "true"
+	}
+
+	jsonResult := fmt.Sprintf(`{"is_same": %s}`, isSame)
+	_ = os.MkdirAll(filepath.Dir(req.OutputPath), 0755)
+	return os.WriteFile(req.OutputPath, []byte(jsonResult), 0644)
+}
+
+func TestCampaignHooks(t *testing.T) {
+	// 1. 初始化 sqlite 内存数据库
+	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	oldDB := models.DB
+	models.DB = testDB
+	defer func() {
+		models.DB = oldDB
+	}()
+
+	err = models.DB.AutoMigrate(
+		&models.Repository{},
+		&models.TaskReport{},
+		&models.TaskType{},
+		&models.User{},
+		&models.CjsonFinding{},
+		&models.TestCaseFinding{},
+	)
+	if err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
+	}
+
+	// 注册并配置 Mock AI Backend
+	mockInvoker := &MockAIInvokerForMatch{}
+	RegisterAIInvoker("mock_match_backend", mockInvoker)
+	oldBackend := models.AppConfig.AI.Backend
+	models.AppConfig.AI.Backend = "mock_match_backend"
+	defer func() {
+		models.AppConfig.AI.Backend = oldBackend
+	}()
+
+	// 2. 初始化基本实体
+	repo := models.Repository{ID: 1, Name: "test-repo", URL: "http://xxx.git"}
+	models.DB.Create(&repo)
+
+	taskType := models.TaskType{ID: 1, Name: "cjson_scan", DisplayName: "cJSON内存泄露"}
+	models.DB.Create(&taskType)
+
+	user := models.User{ID: 1, Name: "UserX", Email: "userx@test.com", Password: "pwd"}
+	models.DB.Create(&user)
+
+	report1 := models.TaskReport{ID: 10, RepoID: 1, TaskTypeID: 1, Status: "success"}
+	models.DB.Create(&report1)
+
+	ctx1 := &taskContext{
+		repo:     repo,
+		report:   report1,
+		taskType: taskType,
+	}
+
+	// 3. 第一次扫描：发现 2 个缺陷
+	finding1 := models.AnalysisFinding{
+		FilePath:    "src/main.c",
+		LineNumber:  "55",
+		Title:       "cJSON Memory Leak in parse_config",
+		Detail:      "cJSON object allocated but not deleted on error path.",
+		CodeSnippet: "cJSON *json = cJSON_Parse(data);\nif (!json) return;",
+		Severity:    "严重",
+		Category:    "memory_leak",
+		Suggestion:  "Call cJSON_Delete(json) before returning.",
+	}
+	finding2 := models.AnalysisFinding{
+		FilePath:    "src/utils.c",
+		LineNumber:  "120",
+		Title:       "cJSON leak in process",
+		Detail:      "Memory leak at cJSON object creation.",
+		CodeSnippet: "cJSON *item = cJSON_CreateObject();",
+		Severity:    "一般",
+		Category:    "memory_leak",
+		Suggestion:  "Call cJSON_Delete(item).",
+	}
+
+	err = handleCampaignHook[models.CjsonFinding](ctx1, []models.AnalysisFinding{finding1, finding2})
+	if err != nil {
+		t.Fatalf("handleCampaignHook failed on scan 1: %v", err)
+	}
+
+	// 验证数据正确入库
+	var dbFindings []models.CjsonFinding
+	models.DB.Find(&dbFindings)
+	if len(dbFindings) != 2 {
+		t.Fatalf("expected 2 findings in DB, got %d", len(dbFindings))
+	}
+
+	// 4. 开发人员修改 Finding 属性以测试“人工数据保护”
+	var f1 models.CjsonFinding
+	models.DB.Where("file_path = ? AND line_number = ?", "src/main.c", "55").First(&f1)
+	assigneeID := uint(1)
+	f1.AssigneeID = &assigneeID
+	f1.Severity = "建议"
+	f1.Status = "invalid"
+	models.DB.Save(&f1)
+
+	// 5. 第二次扫描：
+	report2 := models.TaskReport{ID: 20, RepoID: 1, TaskTypeID: 1, Status: "success"}
+	models.DB.Create(&report2)
+	ctx2 := &taskContext{
+		repo:     repo,
+		report:   report2,
+		taskType: taskType,
+	}
+
+	finding1Updated := models.AnalysisFinding{
+		FilePath:    "src/main.c",
+		LineNumber:  "55-63",
+		Title:       "cJSON Memory Leak in parse_config (Updated)",
+		Detail:      "cJSON object leak",
+		CodeSnippet: "cJSON *json = cJSON_Parse(data);\nif (!json) return;",
+		Severity:    "严重",
+		Category:    "memory_leak",
+		Suggestion:  "Fix it",
+	}
+	finding2Resolved := models.AnalysisFinding{
+		FilePath:    "src/utils.c",
+		LineNumber:  "120",
+		Title:       "cJSON leak in process",
+		Detail:      "Memory leak at cJSON object creation.",
+		CodeSnippet: "cJSON *item = cJSON_CreateObject();",
+		Severity:    "合格",
+		Category:    "memory_leak",
+		Suggestion:  "Call cJSON_Delete(item).",
+	}
+	finding3 := models.AnalysisFinding{
+		FilePath:    "src/main.c",
+		LineNumber:  "210",
+		Title:       "cJSON leak in main",
+		Detail:      "Leaked at main exit.",
+		CodeSnippet: "cJSON *root = cJSON_CreateArray();",
+		Severity:    "严重",
+		Category:    "memory_leak",
+		Suggestion:  "Delete it.",
+	}
+
+	err = handleCampaignHook[models.CjsonFinding](ctx2, []models.AnalysisFinding{finding1Updated, finding2Resolved, finding3})
+	if err != nil {
+		t.Fatalf("handleCampaignHook failed on scan 2: %v", err)
+	}
+
+	// 6. 验证合并和覆盖保护结果
+	var f1After models.CjsonFinding
+	models.DB.Where("file_path = ? AND line_number = ?", "src/main.c", "55-63").First(&f1After)
+	if f1After.ID == 0 {
+		t.Fatalf("Finding 1 (shifted line number) was not matched/updated")
+	}
+	if f1After.Status != "invalid" {
+		t.Errorf("expected User Status 'invalid' to be preserved, got '%s'", f1After.Status)
+	}
+	if f1After.Severity != "建议" {
+		t.Errorf("expected User Severity '建议' to be preserved, got '%s'", f1After.Severity)
+	}
+	if f1After.AssigneeID == nil || *f1After.AssigneeID != 1 {
+		t.Errorf("expected AssigneeID = 1 to be preserved")
+	}
+
+	// 验证 Finding 2 状态被自动置为 "closed"
+	var f2After models.CjsonFinding
+	models.DB.Where("file_path = ? AND line_number = ?", "src/utils.c", "120").First(&f2After)
+	if f2After.Status != "closed" {
+		t.Errorf("expected Finding 2 to be automatically closed, got '%s'", f2After.Status)
+	}
+
+	// 验证 Finding 3 入库
+	var f3After models.CjsonFinding
+	models.DB.Where("file_path = ? AND line_number = ?", "src/main.c", "210").First(&f3After)
+	if f3After.ID == 0 {
+		t.Errorf("Finding 3 was not created")
+	}
+
+	// 7. 测试“逻辑消亡（不物理删除）”：
+	findingObsolete := models.CjsonFinding{
+		RepoID:       1,
+		TaskReportID: 20,
+		FilePath:     "src/obsolete.c",
+		LineNumber:   "90",
+		Title:        "Unresolved leak",
+		Status:       "open",
+	}
+	models.DB.Create(&findingObsolete)
+
+	report3 := models.TaskReport{ID: 30, RepoID: 1, TaskTypeID: 1, Status: "success"}
+	models.DB.Create(&report3)
+	ctx3 := &taskContext{
+		repo:     repo,
+		report:   report3,
+		taskType: taskType,
+	}
+
+	err = handleCampaignHook[models.CjsonFinding](ctx3, []models.AnalysisFinding{finding3})
+	if err != nil {
+		t.Fatalf("handleCampaignHook failed on scan 3: %v", err)
+	}
+
+	var fObsAfter models.CjsonFinding
+	err = models.DB.Where("file_path = ?", "src/obsolete.c").First(&fObsAfter).Error
+	if err != nil {
+		t.Fatalf("obsolete finding was physically deleted: %v", err)
+	}
+	if fObsAfter.Status != "resolved" {
+		t.Errorf("expected obsolete finding to be logically resolved, got '%s'", fObsAfter.Status)
+	}
+}
