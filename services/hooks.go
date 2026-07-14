@@ -425,7 +425,7 @@ func calculateStringSimilarity(s1, s2 string) float64 {
 }
 
 // askLLMIfSameFinding 使用大模型辅助语义匹配
-func askLLMIfSameFinding(ctx *taskContext, oldTitle, oldDetail, oldSnippet, newTitle, newDetail, newSnippet string) bool {
+func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail, oldSnippet, newPath, newLine, newTitle, newDetail, newSnippet string) bool {
 	backend := ""
 	if ctx.runParams.AIBackend != nil {
 		backend = *ctx.runParams.AIBackend
@@ -446,12 +446,16 @@ func askLLMIfSameFinding(ctx *taskContext, oldTitle, oldDetail, oldSnippet, newT
 	prompt := fmt.Sprintf(`你是一个资深的代码安全审计专家。请判断以下两个在不同扫描周期中上报的问题，是否属于【代码中的同一个核心缺陷】。
 
 # Old Finding (历史记录)
+- 文件路径: %s
+- 行号: %s
 - 标题: %s
 - 描述: %s
 - 代码片段: 
 %s
 
 # New Finding (本次发现)
+- 文件路径: %s
+- 行号: %s
 - 标题: %s
 - 描述: %s
 - 代码片段:
@@ -459,13 +463,13 @@ func askLLMIfSameFinding(ctx *taskContext, oldTitle, oldDetail, oldSnippet, newT
 
 # Task
 请分析：
-1. 代码片段是否为同一处业务逻辑，行号或代码上下文的展开程度不同是否只是表现形式的不同？
-2. 两者描述的安全隐患/缺陷（例如特定的 cJSON 内存泄漏点）是否本质相同？
+1. 这两个问题在物理位置上是否属于同一处或极近的业务代码逻辑（文件路径、行号以及代码上下文是否高度重合）？
+2. 两者描述的安全隐患/缺陷（例如特定的线程创建问题、内存泄漏点等）是否本质相同？
 
 请必须以 JSON 格式输出，不要输出任何 markdown 格式的代码块（不要带 %s 或 %s 标记），不要输出任何解释文字。格式如下：
 {
   "is_same": true
-}`, oldTitle, oldDetail, oldSnippet, newTitle, newDetail, newSnippet, "```json", "```")
+}`, oldPath, oldLine, oldTitle, oldDetail, oldSnippet, newPath, newLine, newTitle, newDetail, newSnippet, "```json", "```")
 
 	tmpDir := filepath.Join(models.AppConfig.Storage.Root, "tmp")
 	_ = os.MkdirAll(tmpDir, 0755)
@@ -578,6 +582,12 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 
 					score := 0.3*catSim + 0.3*lineSim + 0.4*titleSim
 
+					// 物理位置高度相近（行号相似度较高且在同文件）且标题有一定相关性（大于 0.4），无需大模型判定，直接归并
+					if lineSim >= 0.9 && titleSim >= 0.4 {
+						matchedFinding = oldF
+						break
+					}
+
 					if score >= 0.85 {
 						matchedFinding = oldF
 						break
@@ -598,9 +608,13 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 	type llmMatchTask struct {
 		findingIdx    int
 		oldFindingIdx int
+		oldPath       string
+		oldLine       string
 		oldTitle      string
 		oldDetail     string
 		oldSnippet    string
+		newPath       string
+		newLine       string
 		newTitle      string
 		newDetail     string
 		newSnippet    string
@@ -637,15 +651,27 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 
 				score := 0.3*catSim + 0.3*lineSim + 0.4*titleSim
 
+				// 物理位置高度相近（行号相似度较高且在同文件），给予强加分确保能进入 LLM 语义识别判定
+				if lineSim >= 0.8 {
+					score += 0.2
+					if score > 1.0 {
+						score = 1.0
+					}
+				}
+
 				// 模糊匹配区间 [0.45, 0.85)
 				if score >= 0.45 && score < 0.85 {
 					oldDetail := GetFieldValue(oldF, "Detail").(string)
 					llmTasks = append(llmTasks, llmMatchTask{
 						findingIdx:    idx,
 						oldFindingIdx: i,
+						oldPath:       oldPath,
+						oldLine:       oldLine,
 						oldTitle:      oldTitle,
 						oldDetail:     oldDetail,
 						oldSnippet:    oldSnippet,
+						newPath:       f.FilePath,
+						newLine:       f.LineNumber,
 						newTitle:      f.Title,
 						newDetail:     f.Detail,
 						newSnippet:    f.CodeSnippet,
@@ -679,7 +705,7 @@ func handleCampaignHook[T any](ctx *taskContext, findings []models.AnalysisFindi
 				sem <- struct{}{}        // Acquire token
 				defer func() { <-sem }() // Release token
 
-				isSame := askLLMIfSameFinding(ctx, t.oldTitle, t.oldDetail, t.oldSnippet, t.newTitle, t.newDetail, t.newSnippet)
+				isSame := askLLMIfSameFinding(ctx, t.oldPath, t.oldLine, t.oldTitle, t.oldDetail, t.oldSnippet, t.newPath, t.newLine, t.newTitle, t.newDetail, t.newSnippet)
 
 				resultsMu.Lock()
 				key := fmt.Sprintf("%d_%d", t.findingIdx, t.oldFindingIdx)
