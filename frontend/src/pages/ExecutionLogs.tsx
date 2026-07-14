@@ -253,20 +253,20 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
         </div>
       )}
 
-      <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="card" style={{ padding: '0', overflowX: 'auto' }}>
+        <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left', background: 'var(--bg-color)' }}>
               <th style={{ padding: '1rem', fontWeight: 600, width: '2rem' }}></th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>任务 ID</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '80px' }}>任务 ID</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>所属代码仓</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>任务类型</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>触发方式</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>执行引擎</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>开始时间</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>执行耗时</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>状态</th>
-              <th style={{ padding: '1rem', fontWeight: 600 }}>操作</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '120px' }}>任务类型</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '100px' }}>触发方式</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '100px' }}>执行引擎</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '160px' }}>开始时间</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '100px' }}>执行耗时</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '150px' }}>状态</th>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '100px' }}>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -549,7 +549,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                 padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
                 borderRadius: '4px', cursor: page === 1 ? 'not-allowed' : 'pointer',
                 color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s', whiteSpace: 'nowrap'
               }}
               onMouseEnter={e => { if (page !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -578,7 +578,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                     background: page === pageNum ? 'var(--primary-color)' : 'transparent',
                     color: page === pageNum ? 'white' : 'var(--text-color)',
                     borderRadius: '4px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: page === pageNum ? 600 : 400,
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s', whiteSpace: 'nowrap'
                   }}
                   onMouseEnter={e => { if (page !== pageNum) e.currentTarget.style.background = 'rgba(37,99,235,0.04)'; }}
                   onMouseLeave={e => { if (page !== pageNum) e.currentTarget.style.background = 'transparent'; }}
@@ -595,7 +595,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                 padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
                 borderRadius: '4px', cursor: page === totalPages ? 'not-allowed' : 'pointer',
                 color: page === totalPages ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s', whiteSpace: 'nowrap'
               }}
               onMouseEnter={e => { if (page !== totalPages) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
