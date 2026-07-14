@@ -441,8 +441,8 @@ function ScanManagement() {
             </div>
           </div>
 
-          <div className="card" style={{ padding: 0, fontSize: '0.875rem' }}>
-            <table className="table">
+          <div className="card" style={{ padding: 0, fontSize: '0.875rem', overflowX: 'auto' }}>
+            <table className="table" style={{ minWidth: '1000px' }}>
               <thead>
                 <tr>
                   <th style={{ width: '40px', textAlign: 'center' }}>
@@ -646,7 +646,7 @@ function ScanManagement() {
                     padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
                     borderRadius: '4px', cursor: activePage === 1 ? 'not-allowed' : 'pointer',
                     color: activePage === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s', whiteSpace: 'nowrap'
                   }}
                   onMouseEnter={e => { if (activePage !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -660,10 +660,10 @@ function ScanManagement() {
                   if (activePage <= 3) pageNum = i + 1;
                   else if (activePage >= totalPages - 2) pageNum = totalPages - 4 + i;
                   else pageNum = activePage - 2 + i;
-
+ 
                   // Guard pageNum bounds
                   if (pageNum < 1 || pageNum > totalPages) return null;
-
+ 
                   return (
                     <button
                       key={pageNum}
@@ -675,7 +675,7 @@ function ScanManagement() {
                         background: activePage === pageNum ? 'var(--primary-color)' : 'transparent',
                         color: activePage === pageNum ? 'white' : 'var(--text-color)',
                         borderRadius: '4px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: activePage === pageNum ? 600 : 400,
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s', whiteSpace: 'nowrap'
                       }}
                       onMouseEnter={e => { if (activePage !== pageNum) e.currentTarget.style.background = 'rgba(37,99,235,0.04)'; }}
                       onMouseLeave={e => { if (activePage !== pageNum) e.currentTarget.style.background = 'transparent'; }}
@@ -684,7 +684,7 @@ function ScanManagement() {
                     </button>
                   );
                 })}
-
+ 
                 <button
                   disabled={activePage === totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
@@ -692,7 +692,7 @@ function ScanManagement() {
                     padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
                     borderRadius: '4px', cursor: activePage === totalPages ? 'not-allowed' : 'pointer',
                     color: activePage === totalPages ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s', whiteSpace: 'nowrap'
                   }}
                   onMouseEnter={e => { if (activePage !== totalPages) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
