@@ -48,6 +48,13 @@ function ScanManagement() {
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
   const [gapTaskTypeId, setGapTaskTypeId] = useState<string>('');
   const [gapDays, setGapDays] = useState<number>(7);
+  const [gapServiceGroup, setGapServiceGroup] = useState<string>('');
+
+  const subsystems = React.useMemo(() => {
+    const groups = Array.from(new Set(repos.map((r: any) => r.service_group).filter(Boolean))) as string[];
+    groups.sort((a, b) => a.localeCompare(b));
+    return groups;
+  }, [repos]);
 
   // --- Invalid Reports ---
   const [invalidReportCount, setInvalidReportCount] = useState<number | null>(null);
@@ -234,7 +241,8 @@ function ScanManagement() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           task_type_id: Number(gapTaskTypeId),
-          days: gapDays
+          days: gapDays,
+          service_group: gapServiceGroup
         })
       });
       const data = await res.json();
@@ -760,6 +768,20 @@ function ScanManagement() {
                   <option value={7}>过去 7 天内未扫描 (一周)</option>
                   <option value={14}>过去 14 天内未扫描 (两周)</option>
                   <option value={30}>过去 30 天内未扫描 (一月)</option>
+                </select>
+              </div>
+
+              <div style={{ flex: '1', minWidth: '150px' }}>
+                <label className="sidebar-label" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>子系统</label>
+                <select
+                  value={gapServiceGroup}
+                  onChange={e => setGapServiceGroup(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', fontSize: '0.875rem', height: '40px' }}
+                >
+                  <option value="">全部子系统</option>
+                  {subsystems.map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
                 </select>
               </div>
 

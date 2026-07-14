@@ -146,8 +146,8 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 
 	// 统一的高级表头样式（深 Slate 背景，白色粗体字）
 	headerStyle, err := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Color: "FFFFFF", Size: 11},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"334155"}, Pattern: 1},
+		Font:      &excelize.Font{Bold: true, Color: "FFFFFF", Size: 11},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"334155"}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "left", Color: "CBD5E1", Style: 1},
@@ -163,7 +163,7 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 
 	// 数据行样式
 	dataStyle, err := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Size: 10, Color: "334155"},
+		Font:      &excelize.Font{Size: 10, Color: "334155"},
 		Alignment: &excelize.Alignment{Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "left", Color: "E2E8F0", Style: 1},
@@ -251,7 +251,7 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 
 	// 页面标题
 	titleStyle, err := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Size: 14, Color: "0F172A"},
+		Font:      &excelize.Font{Bold: true, Size: 14, Color: "0F172A"},
 		Alignment: &excelize.Alignment{Vertical: "center"},
 	})
 	if err == nil {
@@ -262,8 +262,8 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 
 	// 统计表表头与合计行的样式
 	tblHeaderStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Color: "FFFFFF", Size: 10},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"475569"}, Pattern: 1}, // Muted Slate
+		Font:      &excelize.Font{Bold: true, Color: "FFFFFF", Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"475569"}, Pattern: 1}, // Muted Slate
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "left", Color: "CBD5E1", Style: 1},
@@ -274,9 +274,9 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 	})
 
 	totalStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Size: 10, Color: "1E293B"},
+		Font:      &excelize.Font{Bold: true, Size: 10, Color: "1E293B"},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"F1F5F9"}, Pattern: 1},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"F1F5F9"}, Pattern: 1},
 		Border: []excelize.Border{
 			{Type: "top", Color: "94A3B8", Style: 1},
 			{Type: "bottom", Color: "94A3B8", Style: 6}, // 双底边线
@@ -284,8 +284,8 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 	})
 
 	pctStyle, _ := f.NewStyle(&excelize.Style{
-		NumFmt: 9, // "0%" 百分比格式
-		Font: &excelize.Font{Size: 10, Color: "334155"},
+		NumFmt:    9, // "0%" 百分比格式
+		Font:      &excelize.Font{Size: 10, Color: "334155"},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "left", Color: "E2E8F0", Style: 1},
