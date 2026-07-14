@@ -709,6 +709,40 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
 
+	// 如果没有发现任何缺陷，直接跳过大模型综合报告合成阶段，写入静态报告快照并直接返回成功
+	if len(allFindings) == 0 {
+		emptyReportMarkdown := fmt.Sprintf(`# Code-Shield 代码检视报告
+
+## 一、检视结果概要
+
+本次扫描已完成，未发现任何安全隐患或代码缺陷。
+
+- **扫描仓库**: %s
+- **任务类型**: %s
+- **完成时间**: %s
+- **综合得分**: 100分
+
+## 二、发现的问题
+
+本次分析未发现符合 %s 规则的缺陷。代码状态良好，符合安全规范。
+
+## 三、优化建议
+
+暂无。本模块相应规则评估合格，建议继续保持。
+`, ctx.repo.Name, ctx.taskType.DisplayName, time.Now().Format("2006-01-02 15:04:05"), ctx.taskType.DisplayName)
+
+		if err := os.WriteFile(ctx.reportPath, []byte(emptyReportMarkdown), 0644); err != nil {
+			return fmt.Errorf("failed to write static empty report: %w", err)
+		}
+
+		log.Printf("[TaskRunner] No findings detected. Skipped LLM synthesis and wrote static empty report for ReportID %d", ctx.report.ID)
+		ctx.Summary.Synthesis.Status = "success"
+		ctx.Summary.Synthesis.StartTime = time.Now()
+		ctx.Summary.Synthesis.EndTime = time.Now()
+		ctx.Summary.Synthesis.DurationSeconds = 0
+		return nil
+	}
+
 	// 2. Count all findings by severity for 100% accurate prompt injection
 	counts := map[string]int{
 		"致命":          0,

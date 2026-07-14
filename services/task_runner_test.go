@@ -510,7 +510,20 @@ func (m *MockSynthesisAIInvoker) Name() string { return "mock_synthesis_ai" }
 func (m *MockSynthesisAIInvoker) Invoke(req AIRequest) error {
 	if strings.Contains(req.OutputPath, ".json") {
 		m.AnalysisCount++
-		os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock summary"}`), 0644)
+		os.WriteFile(req.OutputPath, []byte(`{
+			"findings": [
+				{
+					"severity": "建议",
+					"category": "test",
+					"file_path": "file1.go",
+					"line_number": "1",
+					"title": "test title",
+					"detail": "test detail",
+					"suggestion": "test suggestion"
+				}
+			],
+			"summary": "mock summary"
+		}`), 0644)
 		return nil
 	}
 
