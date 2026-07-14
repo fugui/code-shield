@@ -18,12 +18,20 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(15);
+  const [statusGroup, setStatusGroup] = useState<string>('all');
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
 
   const fetchLogs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/executions?page=${page}&pageSize=${pageSize}`);
+      const params = new URLSearchParams({
+        page: page.toString(),
+        pageSize: pageSize.toString()
+      });
+      if (statusGroup !== 'all') {
+        params.append('status_group', statusGroup);
+      }
+      const res = await fetch(`/api/executions?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setLogs(data.items || []);
@@ -33,7 +41,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     } catch (err) {
       console.error('Failed to fetch execution logs:', err);
     }
-  }, [page, pageSize]);
+  }, [page, pageSize, statusGroup]);
 
   const clearCompleted = async () => {
     if (!window.confirm('确认清除所有已完成（成功/失败/已跳过）的执行记录？进行中的任务不受影响。')) return;
@@ -193,7 +201,23 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       {!embedded ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>执行日志</h2>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.5rem' }}>
+              <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none' }}>状态</label>
+              <select
+                value={statusGroup}
+                onChange={e => {
+                  setStatusGroup(e.target.value);
+                  setPage(1);
+                }}
+                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer', height: '32px' }}
+              >
+                <option value="all">全部</option>
+                <option value="running">执行中</option>
+                <option value="pending">排队中</option>
+                <option value="completed">已完成</option>
+              </select>
+            </div>
             <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
               刷新列表
             </button>
@@ -203,7 +227,23 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.5rem' }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none' }}>状态</label>
+            <select
+              value={statusGroup}
+              onChange={e => {
+                setStatusGroup(e.target.value);
+                setPage(1);
+              }}
+              style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer', height: '32px' }}
+            >
+              <option value="all">全部</option>
+              <option value="running">执行中</option>
+              <option value="pending">排队中</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
           <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
             刷新列表
           </button>

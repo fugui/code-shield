@@ -156,6 +156,15 @@ func GetExecutionLogs(c *gin.Context) {
 		query = query.Where("task_type_id = ?", taskTypeID)
 	}
 
+	statusGroup := c.Query("status_group")
+	if statusGroup == "running" {
+		query = query.Where("status IN ?", []string{"cloning", "pre_processing", "analyzing", "post_processing", "running"})
+	} else if statusGroup == "pending" {
+		query = query.Where("status = ?", "pending")
+	} else if statusGroup == "completed" {
+		query = query.Where("status IN ?", []string{"success", "failed", "skipped"})
+	}
+
 	var total int64
 	query.Count(&total)
 
