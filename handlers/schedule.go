@@ -166,10 +166,10 @@ CASE status
   WHEN 'analyzing' THEN 1
   WHEN 'post_processing' THEN 1
   WHEN 'running' THEN 1
-  WHEN 'success' THEN 2
-  WHEN 'failed' THEN 2
-  WHEN 'skipped' THEN 2
-  WHEN 'pending' THEN 3
+  WHEN 'pending' THEN 2
+  WHEN 'success' THEN 3
+  WHEN 'failed' THEN 3
+  WHEN 'skipped' THEN 3
   ELSE 4 
 END ASC,
 CASE 
