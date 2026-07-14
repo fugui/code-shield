@@ -203,7 +203,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
           <h2 style={{ margin: 0 }}>执行日志</h2>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none' }}>状态</label>
+              <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none', whiteSpace: 'nowrap' }}>状态</label>
               <select
                 value={statusGroup}
                 onChange={e => {
@@ -229,7 +229,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       ) : (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.5rem' }}>
-            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none' }}>状态</label>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none', whiteSpace: 'nowrap' }}>状态</label>
             <select
               value={statusGroup}
               onChange={e => {
