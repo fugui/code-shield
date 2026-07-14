@@ -864,8 +864,9 @@ func GetPublicAnalysisFindings(c *gin.Context) {
 // TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days
 func TriggerMissingTasks(c *gin.Context) {
 	var req struct {
-		TaskTypeID uint `json:"task_type_id" binding:"required"`
-		Days       int  `json:"days" binding:"required,min=1"`
+		TaskTypeID   uint   `json:"task_type_id" binding:"required"`
+		Days         int    `json:"days" binding:"required,min=1"`
+		ServiceGroup string `json:"service_group"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -878,9 +879,13 @@ func TriggerMissingTasks(c *gin.Context) {
 		return
 	}
 
-	// 1. Find all active repositories
+	// 1. Find all active repositories (optionally filtered by service_group)
 	var repos []models.Repository
-	if err := models.DB.Where("is_active = ?", true).Find(&repos).Error; err != nil {
+	dbQuery := models.DB.Where("is_active = ?", true)
+	if req.ServiceGroup != "" {
+		dbQuery = dbQuery.Where("service_group = ?", req.ServiceGroup)
+	}
+	if err := dbQuery.Find(&repos).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取代码仓失败: " + err.Error()})
 		return
 	}
