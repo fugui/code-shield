@@ -13,6 +13,16 @@
       ".hpp",
       ".hxx"
     ],
+    "content_keywords": [
+      "pthread_create",
+      "std::thread",
+      "std::jthread",
+      "std::async",
+      "QThread",
+      "omp parallel",
+      "boost::asio::thread_pool",
+      "CFThreadCreate"
+    ],
     "exclude_paths": [
       "thirdparts"
     ]
