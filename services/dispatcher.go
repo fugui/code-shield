@@ -4,7 +4,9 @@ import (
 	"code-shield/models"
 	"context"
 	"log"
+	"math"
 	"sync"
+	"time"
 )
 
 // ModelResource 代表单台 LLM 服务器的模型资源以及并发追踪
@@ -29,10 +31,12 @@ func (r *ModelResource) ModelName(backend string) string {
 
 // ModelDispatcher 负责协调跨不同物理/逻辑 LLM 服务器的 AI 并发
 type ModelDispatcher struct {
-	mu        sync.Mutex
-	cond      *sync.Cond
-	resources []*ModelResource
-	enabled   bool
+	mu               sync.Mutex
+	cond             *sync.Cond
+	resources        []*ModelResource
+	enabled          bool
+	concurrencyScale float64   // 内存中的并发折扣系数
+	scaleExpiresAt   time.Time // 折扣失效时间
 }
 
 // Dispatcher 为多 LLM 并发分配器的全局单例
@@ -42,6 +46,7 @@ var Dispatcher *ModelDispatcher
 func InitModelDispatcher() {
 	d := &ModelDispatcher{}
 	d.cond = sync.NewCond(&d.mu)
+	d.concurrencyScale = 1.0 // 默认折算系数为 1.0
 
 	for i, mc := range models.AppConfig.AI.Models {
 		concurrent := mc.Concurrent
@@ -70,6 +75,41 @@ func InitModelDispatcher() {
 	Dispatcher = d
 }
 
+// GetScaleAndExpiration 获取当前的并发折扣比率与过期时间
+func (d *ModelDispatcher) GetScaleAndExpiration() (float64, time.Time) {
+	if d == nil {
+		return 1.0, time.Time{}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if !d.scaleExpiresAt.IsZero() && time.Now().After(d.scaleExpiresAt) {
+		// 已过期，重置为 1.0
+		d.concurrencyScale = 1.0
+		d.scaleExpiresAt = time.Time{}
+	}
+	return d.concurrencyScale, d.scaleExpiresAt
+}
+
+// SetScale 设置并发折扣比率与持续时间
+func (d *ModelDispatcher) SetScale(scale float64, duration time.Duration) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.concurrencyScale = scale
+	if duration > 0 {
+		d.scaleExpiresAt = time.Now().Add(duration)
+	} else {
+		d.scaleExpiresAt = time.Time{}
+	}
+
+	// 唤醒所有正在等待槽位的 Goroutine，因为并发限额改变了
+	d.cond.Broadcast()
+}
+
 // Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位。
 // 如果目前所有槽位已满，则阻塞等待，直到有槽位空出或 Context 被取消。
 // 返回 nil, "", nil 表示调度器未启用（降级回默认全局行为）。
@@ -87,20 +127,39 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 			return nil, "", err
 		}
 
+		// 检查过期时间并获取当前内存系数
+		if !d.scaleExpiresAt.IsZero() && time.Now().After(d.scaleExpiresAt) {
+			d.concurrencyScale = 1.0
+			d.scaleExpiresAt = time.Time{}
+		}
+		scale := d.concurrencyScale
+
 		// 2. 寻找有可用配额且支持当前后端的 LLM 配置
 		var bestRes *ModelResource
 		for _, res := range d.resources {
 			modelName := res.ModelName(backend)
-			if modelName != "" && res.Active < res.Concurrent {
-				bestRes = res
-				break
+			if modelName != "" {
+				// 动态计算实际并发限额
+				limit := int(math.Round(float64(res.Concurrent) * scale))
+				if scale > 0 && limit < 1 {
+					limit = 1
+				}
+				if res.Active < limit {
+					bestRes = res
+					break
+				}
 			}
 		}
 
 		if bestRes != nil {
 			bestRes.Active++
-			log.Printf("[Dispatcher] [Acquire] Server #%d allocated for backend %s (model: %s). Concurrency: %d/%d\n",
-				bestRes.Index, backend, bestRes.ModelName(backend), bestRes.Active, bestRes.Concurrent)
+			// 计算实际限制用于日志输出
+			limit := int(math.Round(float64(bestRes.Concurrent) * scale))
+			if scale > 0 && limit < 1 {
+				limit = 1
+			}
+			log.Printf("[Dispatcher] [Acquire] Server #%d allocated for backend %s (model: %s). Concurrency: %d/%d (Scale: %.2f, Raw limit: %d)\n",
+				bestRes.Index, backend, bestRes.ModelName(backend), bestRes.Active, limit, scale, bestRes.Concurrent)
 			return bestRes, bestRes.ModelName(backend), nil
 		}
 
