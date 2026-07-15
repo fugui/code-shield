@@ -46,7 +46,7 @@ const ChevronRightIcon = () => (
 );
 
 interface CampaignAnalysisProps {
-  campaign: 'coredump' | 'float' | 'thread' | 'cjson';
+  campaign: 'coredump' | 'float' | 'thread' | 'cjson' | 'deep-review';
   title: string;
   description: string;
   taskTypeName: string;

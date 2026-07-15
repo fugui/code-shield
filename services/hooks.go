@@ -61,6 +61,8 @@ func init() {
 	RegisterTaskHook("thread_create", handleCampaignHook[models.ThreadFinding])
 	// Register hook for cjson memory leak scan
 	RegisterTaskHook("cjson_scan", handleCampaignHook[models.CjsonFinding])
+	// Register hook for deep review scan
+	RegisterTaskHook("deep_review", handleCampaignHook[models.DeepReviewFinding])
 }
 
 func handleUTEffectivenessHook(ctx *taskContext, findings []models.AnalysisFinding) error {

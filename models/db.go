@@ -53,6 +53,7 @@ func InitDB() {
 		&FloatFinding{},
 		&ThreadFinding{},
 		&CjsonFinding{},
+		&DeepReviewFinding{},
 		&AnalysisFinding{},
 	)
 	if err != nil {
