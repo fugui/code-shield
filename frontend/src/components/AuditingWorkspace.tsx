@@ -73,7 +73,7 @@ interface AuditingWorkspaceProps {
   repoId: number;
   repoName: string;
   apiPrefix: string; // e.g., "/api/analysis/float", "/api/analysis/coredump", "/api/analysis/ut"
-  workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson';
+  workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson' | 'deep-review';
   onWorkflowSaved?: () => void;
 }
 
@@ -82,7 +82,8 @@ const TYPE_NAME_MAP: Record<string, string> = {
   coredump: 'coredump_risk',
   float: 'float_comparison',
   thread: 'thread_create',
-  cjson: 'cjson_scan'
+  cjson: 'cjson_scan',
+  'deep-review': 'deep_review'
 };
 
 export default function AuditingWorkspace({
@@ -667,6 +668,38 @@ export default function AuditingWorkspace({
                     <option value="cJSON_Duplicate 泄漏">cJSON_Duplicate 泄漏</option>
                     <option value="其它泄漏">其它泄漏类型</option>
                   </optgroup>
+                )}
+
+                {/* Deep Review */}
+                {workspaceType === 'deep-review' && (
+                  <>
+                    <optgroup label="📐 逻辑与正确性">
+                      <option value="逻辑与正确性-并发安全">逻辑与正确性 - 并发安全</option>
+                      <option value="逻辑与正确性-边界处理">逻辑与正确性 - 边界处理</option>
+                      <option value="逻辑与正确性-逻辑漏洞">逻辑与正确性 - 逻辑漏洞</option>
+                      <option value="逻辑与正确性-异常控制">逻辑与正确性 - 异常控制</option>
+                    </optgroup>
+                    <optgroup label="💾 性能与运行效率">
+                      <option value="性能与运行效率-内存泄漏">性能与运行效率 - 内存泄漏</option>
+                      <option value="性能与运行效率-资源未释放">性能与运行效率 - 资源未释放</option>
+                      <option value="性能与运行效率-CPU与I/O瓶颈">性能与运行效率 - CPU与I/O瓶颈</option>
+                    </optgroup>
+                    <optgroup label="🛡️ 安全风险">
+                      <option value="安全风险-内存破坏">安全风险 - 内存破坏</option>
+                      <option value="安全风险-敏感硬编码">安全风险 - 敏感硬编码</option>
+                      <option value="安全风险-输入注入">安全风险 - 输入注入</option>
+                    </optgroup>
+                    <optgroup label="⚙️ 可维护性">
+                      <option value="可维护性-魔鬼数字">可维护性 - 魔鬼数字</option>
+                      <option value="可维护性-圈复杂度过高">可维护性 - 圈复杂度过高</option>
+                      <option value="可维护性-冗余代码">可维护性 - 冗余代码</option>
+                    </optgroup>
+                    <optgroup label="🏗️ 架构与设计">
+                      <option value="架构与设计-高耦合">架构与设计 - 高耦合</option>
+                      <option value="架构与设计-职责违背">架构与设计 - 职责违背</option>
+                      <option value="架构与设计-三方依赖">架构与设计 - 三方依赖</option>
+                    </optgroup>
+                  </>
                 )}
               </select>
             </div>

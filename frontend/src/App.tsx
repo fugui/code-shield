@@ -13,6 +13,7 @@ import CoredumpAnalysis from './pages/CoredumpAnalysis';
 import FloatAnalysis from './pages/FloatAnalysis';
 import ThreadAnalysis from './pages/ThreadAnalysis';
 import CjsonAnalysis from './pages/CjsonAnalysis';
+import DeepReviewAnalysis from './pages/DeepReviewAnalysis';
 import Workbench from './pages/Workbench';
 
 import { menuGroups } from './menu';
@@ -376,6 +377,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                 if (relativePath.startsWith('/analysis/float')) return 'Python浮点数专项';
                 if (relativePath.startsWith('/analysis/thread')) return '显式创建线程专项';
                 if (relativePath.startsWith('/analysis/cjson')) return 'cJSON 内存泄露专项';
+                if (relativePath.startsWith('/analysis/deep-review')) return '深度代码分析专项';
                 if (relativePath.startsWith('/admin/scan')) return '扫描任务管理';
                 if (relativePath.startsWith('/admin/task-types')) return '任务类型管理';
                 if (relativePath.startsWith('/admin/teams') || relativePath.startsWith('/teams')) return '团队与代码仓管理';
@@ -422,6 +424,7 @@ function AppContent() {
           <Route path="/analysis/float" element={<PrivateRoute><FloatAnalysis /></PrivateRoute>} />
           <Route path="/analysis/thread" element={<PrivateRoute><ThreadAnalysis /></PrivateRoute>} />
           <Route path="/analysis/cjson" element={<PrivateRoute><CjsonAnalysis /></PrivateRoute>} />
+          <Route path="/analysis/deep-review" element={<PrivateRoute><DeepReviewAnalysis /></PrivateRoute>} />
 
           {/* 管理中心 */}
           <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />

@@ -154,6 +154,7 @@ func main() {
 		registerCampaignRoutes[models.FloatFinding](api, "float", "float_comparison")
 		registerCampaignRoutes[models.ThreadFinding](api, "thread", "thread_create")
 		registerCampaignRoutes[models.CjsonFinding](api, "cjson", "cjson_scan")
+		registerCampaignRoutes[models.DeepReviewFinding](api, "deep-review", "deep_review")
 
 		api.GET("/schedules", handlers.GetSchedules)
 		api.POST("/schedules", handlers.CreateSchedule)

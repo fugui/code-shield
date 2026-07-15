@@ -33,6 +33,7 @@ export const menuGroups: MenuGroup[] = [
       { path: '/analysis/float', label: 'Python浮点数专项', icon: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z' },
       { path: '/analysis/thread', label: '显式创建线程专项', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
       { path: '/analysis/cjson', label: 'cJSON 内存泄露专项', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+      { path: '/analysis/deep-review', label: '深度代码分析专项', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     ],
   },
   {
@@ -54,6 +55,7 @@ export const menuItems: SubMenuItem[] = [
   { path: '/analysis/float', label: 'Python浮点数专项', icon: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z' },
   { path: '/analysis/thread', label: '显式创建线程专项', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { path: '/analysis/cjson', label: 'cJSON 内存泄露专项', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { path: '/analysis/deep-review', label: '深度代码分析专项', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { path: '/admin/scan', label: '扫描任务', icon: 'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z', adminOnly: true },
   { path: '/admin/task-types', label: '任务类型', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', adminOnly: true }
 ];
