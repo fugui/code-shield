@@ -116,7 +116,6 @@ func main() {
 		api.GET("/repos/export", handlers.ExportRepos)
 
 		api.GET("/config", handlers.GetConfig)
-		api.PATCH("/config", handlers.UpdateConfig)
 
 		// Task routes (generic, replaces /reviews/*)
 		api.GET("/tasks/overview", handlers.GetTaskOverview)
@@ -177,6 +176,7 @@ func main() {
 			admin.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
 			admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
 			admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
+			admin.PATCH("/config", handlers.UpdateConfig)
 		}
 	}
 

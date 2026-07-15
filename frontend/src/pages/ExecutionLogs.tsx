@@ -22,6 +22,57 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
 
+  // AI 并发流控状态
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [sysConfig, setSysConfig] = useState<any>(null);
+  const [selectedScale, setSelectedScale] = useState<number>(1.0);
+  const [durationHours, setDurationHours] = useState<number>(2);
+  const [applyingConfig, setApplyingConfig] = useState(false);
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const data = await res.json();
+        setSysConfig(data);
+        if (data.concurrency_scale !== undefined) {
+          setSelectedScale(data.concurrency_scale);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch config:', err);
+    }
+  }, []);
+
+  const handleApplyConfig = async (scale: number, duration: number) => {
+    setApplyingConfig(true);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          concurrency_scale: scale,
+          duration_hours: duration
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSysConfig(data);
+        showToast('AI 并发限流调节应用成功', 'success');
+      } else {
+        const err = await res.json();
+        showToast(err.error || '调节失败，请重试', 'error');
+      }
+    } catch {
+      showToast('网络请求异常，调节失败', 'error');
+    } finally {
+      setApplyingConfig(false);
+    }
+  };
+
+
   const fetchLogs = useCallback(async () => {
     try {
       const params = new URLSearchParams({
@@ -146,10 +197,24 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   };
 
   useEffect(() => {
+    fetch('/api/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) setIsAdmin(!!data.is_admin);
+      })
+      .catch(() => {});
+    fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
     fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
-    return () => clearInterval(interval);
-  }, [fetchLogs]);
+    const configInterval = setInterval(fetchConfig, 15000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(configInterval);
+    };
+  }, [fetchLogs, fetchConfig]);
 
   const formatDuration = (seconds: number) => {
     if (seconds == null) return '-';
@@ -196,8 +261,160 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     return <span className={`badge ${s.cls}`}>{s.label}</span>;
   };
 
+  const isThrottleActive = !!(sysConfig && sysConfig.concurrency_scale !== 1.0 && sysConfig.scale_expires_at && new Date(sysConfig.scale_expires_at).getTime() > Date.now());
+
   return (
     <div>
+      {/* AI 并发流控卡片 */}
+      <div style={{
+        background: 'var(--card-bg, #ffffff)',
+        border: '1px solid var(--border-color, #e2e8f0)',
+        borderRadius: '12px',
+        padding: '1.25rem',
+        marginBottom: '1.5rem',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '1rem'
+      }}>
+        {/* 左侧状态显示 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '300px', flex: '1 1 auto' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '8px',
+            background: isThrottleActive
+              ? (sysConfig.concurrency_scale === 0 ? 'rgba(239, 68, 68, 0.1)' : (sysConfig.concurrency_scale < 1 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)'))
+              : 'rgba(59, 130, 246, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: isThrottleActive
+              ? (sysConfig.concurrency_scale === 0 ? '#ef4444' : (sysConfig.concurrency_scale < 1 ? '#f59e0b' : '#10b981'))
+              : '#2563eb',
+            flexShrink: 0
+          }}>
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>AI 扫描并发流控</h4>
+              {isThrottleActive ? (
+                sysConfig.concurrency_scale === 0 ? (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>临时暂停中</span>
+                ) : sysConfig.concurrency_scale < 1 ? (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>限速中 {sysConfig.concurrency_scale * 100}%</span>
+                ) : (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#d1fae5', color: '#059669', fontWeight: 600 }}>加速中 {sysConfig.concurrency_scale * 100}%</span>
+                )
+              ) : (
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>正常速度运行</span>
+              )}
+            </div>
+            <p style={{ margin: 0, fontSize: '0.825rem', color: '#64748b', lineHeight: '1.3' }}>
+              {isThrottleActive ? (
+                <>
+                  当前并发已被临时调整为配置限额的 <strong>{sysConfig.concurrency_scale * 100}%</strong>，预计于 <strong>{new Date(sysConfig.scale_expires_at).toLocaleTimeString()}</strong> 自动恢复。
+                </>
+              ) : (
+                '使用系统配置文件中预设的并发配额处理扫描任务。'
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* 右侧控制栏 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {isAdmin ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#64748b' }}>并发速度：</span>
+                <select
+                  value={selectedScale}
+                  onChange={e => setSelectedScale(parseFloat(e.target.value))}
+                  style={{
+                    padding: '0.35rem 0.5rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    outline: 'none',
+                    fontSize: '0.875rem',
+                    background: 'var(--bg-color)',
+                    color: 'var(--text-color)',
+                    cursor: 'pointer',
+                    height: '32px'
+                  }}
+                >
+                  <option value={0}>0% (临时暂停所有扫描)</option>
+                  <option value={0.25}>25% (极度限速)</option>
+                  <option value={0.5}>50% (半速运行)</option>
+                  <option value={0.75}>75% (微调限速)</option>
+                  <option value={1.0}>100% (恢复默认速度)</option>
+                  <option value={1.25}>125% (微调加速)</option>
+                  <option value={1.5}>150% (快速运行)</option>
+                  <option value={2.0}>200% (双倍加速 - 高物理负载)</option>
+                </select>
+              </div>
+
+              {selectedScale !== 1.0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#64748b' }}>持续时间：</span>
+                  <select
+                    value={durationHours}
+                    onChange={e => setDurationHours(parseFloat(e.target.value))}
+                    style={{
+                      padding: '0.35rem 0.5rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      outline: 'none',
+                      fontSize: '0.875rem',
+                      background: 'var(--bg-color)',
+                      color: 'var(--text-color)',
+                      cursor: 'pointer',
+                      height: '32px'
+                    }}
+                  >
+                    <option value={0.5}>0.5 小时 (30分钟)</option>
+                    <option value={1}>1 小时</option>
+                    <option value={2}>2 小时</option>
+                    <option value={4}>4 小时</option>
+                    <option value={8}>8 小时</option>
+                    <option value={12}>12 小时</option>
+                    <option value={24}>24 小时</option>
+                  </select>
+                </div>
+              )}
+
+              <button
+                className="btn"
+                disabled={applyingConfig}
+                onClick={() => handleApplyConfig(selectedScale, selectedScale === 1.0 ? 0 : durationHours)}
+                style={{
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  fontSize: '0.825rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  background: selectedScale === 1.0 ? 'transparent' : 'var(--primary-color)',
+                  color: selectedScale === 1.0 ? 'var(--text-color)' : 'white',
+                  border: selectedScale === 1.0 ? '1px solid var(--border-color)' : '1px solid transparent'
+                }}
+              >
+                {applyingConfig ? '应用中...' : (selectedScale === 1.0 ? '重置速度' : '应用调节')}
+              </button>
+            </>
+          ) : (
+            <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontStyle: 'italic' }}>
+              * 仅系统管理员拥有流控调节权限。
+            </span>
+          )}
+        </div>
+      </div>
+
       {!embedded ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0 }}>执行日志</h2>
