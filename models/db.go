@@ -53,6 +53,7 @@ func InitDB() {
 		&FloatFinding{},
 		&ThreadFinding{},
 		&CjsonFinding{},
+		&UnorderedCollectionFinding{},
 		&DeepReviewFinding{},
 		&AnalysisFinding{},
 	)

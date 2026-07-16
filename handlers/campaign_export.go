@@ -64,6 +64,8 @@ func ExportCampaignFindings[T any]() gin.HandlerFunc {
 			campaignTitle = "新建线程分析"
 		case "CjsonFinding":
 			campaignTitle = "cJSON 内存泄漏"
+		case "UnorderedCollectionFinding":
+			campaignTitle = "无序集合导出缺陷"
 		}
 
 		// 转换并生成 Excel

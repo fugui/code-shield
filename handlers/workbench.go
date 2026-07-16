@@ -10,7 +10,7 @@ import (
 
 type WorkbenchFinding struct {
 	ID          uint        `json:"id"`
-	Type        string      `json:"type"`      // "ut", "coredump", "float", "thread", "cjson"
+	Type        string      `json:"type"`      // "ut", "coredump", "float", "thread", "cjson", "unordered-collection"
 	TypeName    string      `json:"type_name"` // "测试用例有效性", "Coredump 风险", etc.
 	RepoID      uint        `json:"repo_id"`
 	RepoName    string      `json:"repo_name"`
@@ -151,6 +151,32 @@ func GetMyFindings(c *gin.Context) {
 			ID:          f.ID,
 			Type:        "cjson",
 			TypeName:    "cJSON 内存泄漏",
+			RepoID:      f.RepoID,
+			RepoName:    f.Repo.Name,
+			RepoURL:     f.Repo.URL,
+			FilePath:    f.FilePath,
+			LineNumber:  f.LineNumber,
+			Title:       f.Title,
+			Detail:      f.Detail,
+			Severity:    f.Severity,
+			Category:    f.Category,
+			CodeSnippet: f.CodeSnippet,
+			Suggestion:  f.Suggestion,
+			Status:      f.Status,
+			StatusLog:   f.StatusLog,
+			CreatedAt:   f.CreatedAt,
+			UpdatedAt:   f.UpdatedAt,
+		})
+	}
+
+	// 6. UnorderedCollectionFinding (unordered-collection)
+	var unorderedFindings []models.UnorderedCollectionFinding
+	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&unorderedFindings)
+	for _, f := range unorderedFindings {
+		list = append(list, WorkbenchFinding{
+			ID:          f.ID,
+			Type:        "unordered-collection",
+			TypeName:    "无序集合导出缺陷",
 			RepoID:      f.RepoID,
 			RepoName:    f.Repo.Name,
 			RepoURL:     f.Repo.URL,

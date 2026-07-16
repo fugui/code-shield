@@ -358,6 +358,29 @@ type CjsonFinding struct {
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
+// UnorderedCollectionFinding 记录 "无序集合导出缺陷扫描" (unordered_collection_scan) 任务的扫描结果与跟踪
+type UnorderedCollectionFinding struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	RepoID       uint           `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;index" json:"repo_id"`
+	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID uint           `gorm:"index" json:"task_report_id"`
+	FilePath     string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:255;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:50" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:255;not null" json:"title"`
+	Detail       string         `gorm:"type:text" json:"detail"`
+	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:100" json:"category"`
+	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
+	Suggestion   string         `gorm:"type:text" json:"suggestion"`
+	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	AssigneeID   *uint          `json:"assignee_id"`
+	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+
 // DeepReviewFinding 记录 "深度代码检视" (deep_review) 任务的扫描结果与跟踪
 type DeepReviewFinding struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`

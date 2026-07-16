@@ -73,7 +73,7 @@ interface AuditingWorkspaceProps {
   repoId: number;
   repoName: string;
   apiPrefix: string; // e.g., "/api/analysis/float", "/api/analysis/coredump", "/api/analysis/ut"
-  workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson' | 'deep-review';
+  workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson' | 'deep-review' | 'unordered-collection';
   onWorkflowSaved?: () => void;
 }
 
@@ -83,6 +83,7 @@ const TYPE_NAME_MAP: Record<string, string> = {
   float: 'float_comparison',
   thread: 'thread_create',
   cjson: 'cjson_scan',
+  'unordered-collection': 'unordered_collection',
   'deep-review': 'deep_review'
 };
 
@@ -473,7 +474,7 @@ export default function AuditingWorkspace({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
         <div>
           <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--primary-color)', fontWeight: 700, letterSpacing: '0.05em' }}>
-            {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : workspaceType === 'thread' ? '显式创建线程安全审计工作区' : workspaceType === 'cjson' ? 'cJSON内存泄漏安全审计工作区' : '代码仓缺陷审计工作区'}
+            {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : workspaceType === 'thread' ? '显式创建线程安全审计工作区' : workspaceType === 'cjson' ? 'cJSON内存泄漏安全审计工作区' : workspaceType === 'unordered-collection' ? '无序集合导出安全审计工作区' : '代码仓缺陷审计工作区'}
           </span>
           <h3 style={{ margin: '0.1rem 0 0 0', fontSize: '1.2rem', fontWeight: 700 }}>📁 {repoName}</h3>
         </div>
@@ -667,6 +668,16 @@ export default function AuditingWorkspace({
                     <option value="cJSON_Detach 泄漏">cJSON_Detach 泄漏</option>
                     <option value="cJSON_Duplicate 泄漏">cJSON_Duplicate 泄漏</option>
                     <option value="其它泄漏">其它泄漏类型</option>
+                  </optgroup>
+                )}
+
+                {/* Unordered Collection Order Dependencies */}
+                {workspaceType === 'unordered-collection' && (
+                  <optgroup label="📦 无序集合导出隐患">
+                    <option value="无序集合-哈希签名顺序依赖">无序集合-哈希签名顺序依赖</option>
+                    <option value="无序集合-单元测试断言不确定性">无序集合-单元测试断言不确定性</option>
+                    <option value="无序集合-序列化比较缺陷">无序集合-序列化比较缺陷</option>
+                    <option value="其它问题-其它无序性隐患">其它问题-其它无序性隐患</option>
                   </optgroup>
                 )}
 

@@ -369,6 +369,7 @@ export default function Workbench() {
 						<option value="float">Python 浮点数比较</option>
 						<option value="thread">显式创建线程</option>
 						<option value="cjson">cJSON 内存泄漏</option>
+						<option value="unordered-collection">无序集合导出缺陷</option>
 					</select>
 				</div>
 				<div>
