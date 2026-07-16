@@ -16,7 +16,7 @@ func BackfillHistoricalFindings() error {
 	log.Println("[Backfill] Starting backfill of historical findings...")
 
 	// 1. Resolve the three specialized task types
-	campaignTaskTypes := []string{"ut_effectiveness", "coredump_risk", "float_comparison"}
+	campaignTaskTypes := []string{"ut_effectiveness", "coredump_risk", "float_comparison", "unordered_collection"}
 	var taskTypes []models.TaskType
 	if err := models.DB.Where("name IN ?", campaignTaskTypes).Find(&taskTypes).Error; err != nil {
 		return fmt.Errorf("failed to query specialized task types: %w", err)

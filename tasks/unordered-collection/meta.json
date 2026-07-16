@@ -1,0 +1,49 @@
+{
+  "name": "unordered_collection",
+  "display_name": "无序集合导出缺陷扫描",
+  "description": "针对 map 和 set 等无序集合，检测因直接迭代、导出为数组并依赖其内部排列顺序而导致的数据不稳定或计算一致性风险",
+  "engine_mode": "chunked",
+  "engine_config": {
+    "file_extensions": [
+      ".go",
+      ".java",
+      ".cpp",
+      ".cc",
+      ".cxx",
+      ".h",
+      ".hpp",
+      ".hxx",
+      ".js",
+      ".ts",
+      ".jsx",
+      ".tsx",
+      ".py"
+    ],
+    "content_keywords": [
+      "map[",
+      "Map",
+      "Set",
+      "unordered_map",
+      "unordered_set",
+      "iterator",
+      "iterate",
+      "entrySet",
+      "keySet",
+      "keyEntry",
+      "keys",
+      "values",
+      "entries"
+    ],
+    "exclude_paths": [
+      "thirdparts",
+      "third_party"
+    ]
+  },
+  "ai_backend": "",
+  "target_scope": "business",
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "notify_cc": [],
+  "timeout": 60,
+  "is_active": true
+}

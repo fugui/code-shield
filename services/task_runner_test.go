@@ -976,6 +976,7 @@ func TestCampaignHooks(t *testing.T) {
 		&models.TaskType{},
 		&models.User{},
 		&models.CjsonFinding{},
+		&models.UnorderedCollectionFinding{},
 		&models.TestCaseFinding{},
 	)
 	if err != nil {

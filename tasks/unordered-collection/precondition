@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# 启用递归通配符
+shopt -s globstar nullglob
+
+# 收集所有匹配的文件
+files=(**/*.go **/*.java **/*.cpp **/*.cc **/*.cxx **/*.h **/*.hpp **/*.hxx **/*.js **/*.ts **/*.jsx **/*.tsx **/*.py)
+
+if [ ${#files[@]} -gt 0 ]; then
+    exit 0
+else
+    echo "当前项目没有符合无序集合导出扫描的源文件"
+    exit 1
+fi

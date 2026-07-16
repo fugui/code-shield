@@ -300,6 +300,18 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 				commentMap[key] = getLatestComment(dbf.StatusLog)
 			}
 		}
+	} else if taskTypeName == "unordered_collection" {
+		var dbFindings []models.UnorderedCollectionFinding
+		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
+				statusMap[key] = dbf.Status
+				if dbf.Assignee != nil {
+					assigneeMap[key] = dbf.Assignee.Name
+				}
+				commentMap[key] = getLatestComment(dbf.StatusLog)
+			}
+		}
 	} else {
 		// Fallback to generic AnalysisFinding
 		var dbFindings []models.AnalysisFinding
@@ -783,6 +795,9 @@ func ClearInvalidReports(c *gin.Context) {
 		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.CjsonFinding{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.UnorderedCollectionFinding{}).Error; err != nil {
+			return err
+		}
 		// 最后删除 TaskReport 自身记录
 		if err := tx.Where("id IN ?", reportIDs).Delete(&models.TaskReport{}).Error; err != nil {
 			return err
@@ -967,6 +982,9 @@ func DeleteTaskReport(c *gin.Context) {
 			return err
 		}
 		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.CjsonFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.UnorderedCollectionFinding{}).Error; err != nil {
 			return err
 		}
 		// 最后删除 TaskReport 自身记录
