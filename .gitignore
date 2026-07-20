@@ -16,7 +16,11 @@ yarn-debug.log*
 
 # Database & generated data
 *.db
+*.db-shm
+*.db-wal
 code_shield.db
+code_shield.db-shm
+code_shield.db-wal
 codes/
 review-reports/
 reports/
