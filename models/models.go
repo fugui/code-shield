@@ -116,16 +116,16 @@ func (t *TaskType) AgentName(phase string) string {
 // TaskReport 通用任务报告
 type TaskReport struct {
 	ID              uint           `gorm:"primaryKey" json:"id"`
-	RepoID          uint           `json:"repo_id"`
+	RepoID          uint           `gorm:"index" json:"repo_id"`
 	Repo            Repository     `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskTypeID      uint           `json:"task_type_id"`
+	TaskTypeID      uint           `gorm:"index" json:"task_type_id"`
 	TaskType        TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	ParentID        uint           `gorm:"default:0" json:"parent_id"`   // 0 if it is a parent or independent task
+	ParentID        uint           `gorm:"default:0;index" json:"parent_id"`   // 0 if it is a parent or independent task
 	ChunkName       string         `gorm:"default:''" json:"chunk_name"` // Name of the directory or file group
 	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`
 	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`
 	SuccessChunks   int            `gorm:"default:0" json:"success_chunks"`
-	Status          string         `gorm:"default:pending" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
+	Status          string         `gorm:"default:pending;index" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
 	CloneStatus     string         `gorm:"default:pending" json:"clone_status"`
 	AISummary       string         `json:"ai_summary"`
 	ReportPath      string         `json:"report_path"`
@@ -133,7 +133,7 @@ type TaskReport struct {
 	Metrics         datatypes.JSON `json:"metrics"` // {"blocking":0,"critical":3,...}
 	BaseCommit      string         `json:"base_commit"`
 	HeadCommit      string         `json:"head_commit"`
-	CreatedAt       time.Time      `json:"created_at"`
+	CreatedAt       time.Time      `gorm:"index" json:"created_at"`
 }
 
 // GetAbsReportPath 返回报告文件的绝对路径（如果存储的是相对路径，则使用 storage.root 拼接）
@@ -165,8 +165,8 @@ type AnalysisFinding struct {
 	TaskReportID uint       `gorm:"index" json:"task_report_id"`   // 关联到 TaskReport
 	TaskTypeID   uint       `gorm:"index" json:"task_type_id"`     // 哪个任务类型触发的
 	RepoID       uint       `gorm:"index" json:"repo_id"`          // 来自哪个代码仓
-	Severity     string     `gorm:"not null" json:"severity"`      // 严重程度（致命/严重/一般/建议）
-	Category     string     `json:"category"`                      // 问题分类（multithreading, memory_leak, library...）
+	Severity     string     `gorm:"not null;index" json:"severity"`      // 严重程度（致命/严重/一般/建议）
+	Category     string     `gorm:"index" json:"category"`                      // 问题分类（multithreading, memory_leak, library...）
 	FilePath     string     `json:"file_path"`                     // 问题所在文件
 	LineNumber   string     `json:"line_number"`                   // 行号（支持范围如 "100-125" 或多行 "41,42"）
 	CodeSnippet  string     `gorm:"type:text" json:"code_snippet"` // 问题发生处的原始代码片段
@@ -190,15 +190,15 @@ type TestCaseFinding struct {
 	LineNumber   string         `json:"line_number"`
 	TestCaseName string         `gorm:"uniqueIndex:idx_repo_file_name;size:255;not null;column:test_case_name" json:"test_case_name"` // 测试用例名称
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 合格、致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 合格、致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (问题解决), closed (问题关闭), invalid (无效问题)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (问题解决), closed (问题关闭), invalid (无效问题)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 用于记录时间节点：[{"status":"open","time":"2026-06-01...","user":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
@@ -254,20 +254,20 @@ type ScheduleConfig struct {
 
 type TaskExecutionLog struct {
 	ID           uint            `gorm:"primaryKey" json:"id"`
-	ScheduleID   *uint           `json:"schedule_id"`
+	ScheduleID   *uint           `gorm:"index" json:"schedule_id"`
 	Schedule     *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule"`
-	RepoID       uint            `json:"repo_id"`
+	RepoID       uint            `gorm:"index" json:"repo_id"`
 	Repo         Repository      `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskReportID *uint           `json:"task_report_id"`
+	TaskReportID *uint           `gorm:"index" json:"task_report_id"`
 	TaskReport   *TaskReport     `gorm:"foreignKey:TaskReportID" json:"task_report"`
-	TaskTypeID   uint            `json:"task_type_id"`
+	TaskTypeID   uint            `gorm:"index" json:"task_type_id"`
 	TaskType     TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
 	TriggerType  string          `gorm:"not null" json:"trigger_type"`  // "cron", "manual", "webhook"
-	Status       string          `gorm:"default:pending" json:"status"` // "pending", "running", "success", "failed", "skipped"
+	Status       string          `gorm:"default:pending;index" json:"status"` // "pending", "running", "success", "failed", "skipped"
 	ErrorMessage string          `json:"error_message"`
 	StartTime    time.Time       `json:"start_time"`
 	EndTime      *time.Time      `json:"end_time"`
-	CreatedAt    time.Time       `json:"created_at"`
+	CreatedAt    time.Time       `gorm:"index" json:"created_at"`
 }
 
 // CoredumpFinding 记录 "C/C++ Coredump 风险分析" (coredump_risk) 任务的扫描结果与跟踪
@@ -280,15 +280,15 @@ type CoredumpFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
@@ -302,15 +302,15 @@ type FloatFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
@@ -324,15 +324,15 @@ type ThreadFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 合格、致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 合格、致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
@@ -346,15 +346,15 @@ type CjsonFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
@@ -368,15 +368,15 @@ type UnorderedCollectionFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
@@ -391,14 +391,14 @@ type DeepReviewFinding struct {
 	LineNumber   string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:50" json:"line_number"`
 	Title        string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:255;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100" json:"category"`
+	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:100;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
-	Status       string         `gorm:"default:'open';size:50" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
+	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
 	AssigneeID   *uint          `json:"assignee_id"`
 	Assignee     *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog    datatypes.JSON `json:"status_log"` // 状态演进记录：[{"status":"open","time":"...","user":"xxx","comment":"xxx"}]
-	CreatedAt    time.Time      `json:"created_at"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }

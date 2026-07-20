@@ -35,6 +35,25 @@ func InitDB() {
 		log.Fatalf("failed to connect database: %v", err)
 	}
 
+	sqlDB, err := DB.DB()
+	if err == nil {
+		// SQLite optimization for single-node deployment
+		sqlDB.SetMaxOpenConns(10)
+		sqlDB.SetMaxIdleConns(5)
+		sqlDB.SetConnMaxLifetime(time.Hour)
+
+		// Enable WAL mode
+		var journalMode string
+		sqlDB.QueryRow("PRAGMA journal_mode=WAL;").Scan(&journalMode)
+		log.Printf("SQLite journal mode set to: %s", journalMode)
+
+		// Performance-tuning pragmas
+		sqlDB.Exec("PRAGMA busy_timeout=5000;")
+		sqlDB.Exec("PRAGMA synchronous=NORMAL;")
+		sqlDB.Exec("PRAGMA cache_size=-32000;") // ~32MB RAM cache
+		log.Println("SQLite connection tuning pragmas initialized.")
+	}
+
 	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
 
 	// Auto Migrate
