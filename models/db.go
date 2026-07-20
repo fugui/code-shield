@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,13 +19,23 @@ var DB *gorm.DB
 
 func InitDB() {
 	var err error
+
+	// Open or create slow_sql.log file to write SQL warning/slow logs
+	logFile, err := os.OpenFile("slow_sql.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	var logWriter io.Writer = os.Stdout
+	if err == nil {
+		logWriter = io.MultiWriter(os.Stdout, logFile)
+	} else {
+		log.Printf("Warning: failed to open slow_sql.log for writing: %v", err)
+	}
+
 	newLogger := logger.New(
-		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		log.New(logWriter, "\r\n", log.LstdFlags),
 		logger.Config{
 			SlowThreshold:             time.Second,
 			LogLevel:                  logger.Warn,
 			IgnoreRecordNotFoundError: true, // 忽略 record not found 报错日志
-			Colorful:                  true,
+			Colorful:                  false, // Disable colorful console escape codes for log file readability
 		},
 	)
 
