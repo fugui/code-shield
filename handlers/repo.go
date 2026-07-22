@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
+	"gorm.io/datatypes"
 )
 
 func GetRepos(c *gin.Context) {
@@ -168,7 +169,7 @@ func UpdateRepo(c *gin.Context) {
 			updates["related_members"] = nil // clear
 		} else {
 			b, _ := json.Marshal(*input.RelatedMembers)
-			updates["related_members"] = b
+			updates["related_members"] = datatypes.JSON(b)
 		}
 	}
 

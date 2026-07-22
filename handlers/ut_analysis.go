@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/datatypes"
 )
 
 // UTRepoSummary defines the structure of repository statistics
@@ -389,7 +390,7 @@ func UpdateUTFinding(c *gin.Context) {
 			"comment": comment,
 		})
 		logBytes, _ := json.Marshal(logEntries)
-		updates["status_log"] = logBytes
+		updates["status_log"] = datatypes.JSON(logBytes)
 	}
 
 	if len(updates) > 0 {
