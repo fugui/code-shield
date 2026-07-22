@@ -42,7 +42,10 @@ func InitDB() {
 	dsn := AppConfig.Database.GetDSN()
 	log.Printf("[DB] Connecting to PostgreSQL database...")
 
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+	DB, err = gorm.Open(postgres.New(postgres.Config{
+		DSN:                  dsn,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{
 		Logger:                                   newLogger,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
