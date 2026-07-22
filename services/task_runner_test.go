@@ -22,7 +22,10 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if dsn == "" {
 		dsn = "host=127.0.0.1 port=5432 user=code_shield password=code_shield_password dbname=code_shield_test sslmode=disable"
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  dsn,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
 	if err != nil {
 		t.Skipf("Skipping DB test: PostgreSQL not available (%v)", err)
 		return nil
