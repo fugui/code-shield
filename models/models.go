@@ -242,11 +242,11 @@ type SystemConfig struct {
 
 type ScheduleConfig struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
-	Name         string         `gorm:"not null" json:"name"`
-	CronExpr     string         `gorm:"not null" json:"cron_expr"`
+	Name         string         `gorm:"not null;default:''" json:"name"`
+	CronExpr     string         `gorm:"not null;default:''" json:"cron_expr"`
 	TaskTypeID   uint           `json:"task_type_id"`
 	TaskType     TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	TargetMode   string         `gorm:"not null" json:"target_mode"` // "all", "service_group", "team", "specific"
+	TargetMode   string         `gorm:"not null;default:'all'" json:"target_mode"` // "all", "service_group", "team", "specific"
 	TargetValues datatypes.JSON `json:"target_values"`               // JSON array
 	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
