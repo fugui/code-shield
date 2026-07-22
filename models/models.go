@@ -253,21 +253,36 @@ type ScheduleConfig struct {
 }
 
 type TaskExecutionLog struct {
-	ID           uint            `gorm:"primaryKey" json:"id"`
-	ScheduleID   *uint           `gorm:"index" json:"schedule_id"`
-	Schedule     *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule"`
-	RepoID       uint            `gorm:"index" json:"repo_id"`
-	Repo         Repository      `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskReportID *uint           `gorm:"index" json:"task_report_id"`
-	TaskReport   *TaskReport     `gorm:"foreignKey:TaskReportID" json:"task_report"`
-	TaskTypeID   uint            `gorm:"index" json:"task_type_id"`
-	TaskType     TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	TriggerType  string          `gorm:"not null" json:"trigger_type"`  // "cron", "manual", "webhook"
-	Status       string          `gorm:"default:pending;index" json:"status"` // "pending", "running", "success", "failed", "skipped"
-	ErrorMessage string          `json:"error_message"`
-	StartTime    time.Time       `json:"start_time"`
-	EndTime      *time.Time      `json:"end_time"`
-	CreatedAt    time.Time       `gorm:"index" json:"created_at"`
+	ID             uint            `gorm:"primaryKey" json:"id"`
+	ScheduleID     *uint           `gorm:"index" json:"schedule_id"`
+	Schedule       *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule"`
+	RepoID         uint            `gorm:"index" json:"repo_id"`
+	Repo           Repository      `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID   *uint           `gorm:"index" json:"task_report_id"`
+	TaskReport     *TaskReport     `gorm:"foreignKey:TaskReportID" json:"task_report"`
+	TaskTypeID     uint            `gorm:"index" json:"task_type_id"`
+	TaskType       TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	TriggerType    string          `gorm:"not null" json:"trigger_type"`                                   // "cron", "manual", "webhook"
+	Status         string          `gorm:"default:pending;index" json:"status"`                            // "pending", "running", "success", "failed", "skipped"
+	StatusPriority int             `gorm:"default:2;index:idx_status_priority_id" json:"status_priority"` // 1: running/analyzing, 2: pending, 3: completed/failed, 4: other
+	ErrorMessage   string          `json:"error_message"`
+	StartTime      time.Time       `json:"start_time"`
+	EndTime        *time.Time      `json:"end_time"`
+	CreatedAt      time.Time       `gorm:"index" json:"created_at"`
+}
+
+// GetStatusPriority 返回状态排序优先级 (1=进行中, 2=待处理, 3=已结束, 4=其它)
+func GetStatusPriority(status string) int {
+	switch status {
+	case "cloning", "pre_processing", "analyzing", "post_processing", "running":
+		return 1
+	case "pending":
+		return 2
+	case "success", "failed", "skipped":
+		return 3
+	default:
+		return 4
+	}
 }
 
 // CoredumpFinding 记录 "C/C++ Coredump 风险分析" (coredump_risk) 任务的扫描结果与跟踪

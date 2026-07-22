@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -39,7 +39,10 @@ func InitDB() {
 		},
 	)
 
-	DB, err = gorm.Open(sqlite.Open("code_shield.db"), &gorm.Config{
+	dsn := AppConfig.Database.GetDSN()
+	log.Printf("[DB] Connecting to PostgreSQL database...")
+
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: newLogger,
 	})
 	if err != nil {
@@ -48,24 +51,21 @@ func InitDB() {
 
 	sqlDB, err := DB.DB()
 	if err == nil {
-		// SQLite optimization for single-node deployment
-		sqlDB.SetMaxOpenConns(10)
-		sqlDB.SetMaxIdleConns(5)
+		maxOpen := AppConfig.Database.MaxOpenConns
+		if maxOpen <= 0 {
+			maxOpen = 50
+		}
+		maxIdle := AppConfig.Database.MaxIdleConns
+		if maxIdle <= 0 {
+			maxIdle = 10
+		}
+		sqlDB.SetMaxOpenConns(maxOpen)
+		sqlDB.SetMaxIdleConns(maxIdle)
 		sqlDB.SetConnMaxLifetime(time.Hour)
-
-		// Enable WAL mode
-		var journalMode string
-		sqlDB.QueryRow("PRAGMA journal_mode=WAL;").Scan(&journalMode)
-		log.Printf("SQLite journal mode set to: %s", journalMode)
-
-		// Performance-tuning pragmas
-		sqlDB.Exec("PRAGMA busy_timeout=5000;")
-		sqlDB.Exec("PRAGMA synchronous=NORMAL;")
-		sqlDB.Exec("PRAGMA cache_size=-32000;") // ~32MB RAM cache
-		log.Println("SQLite connection tuning pragmas initialized.")
+		log.Printf("[DB] PostgreSQL connection pool initialized (MaxOpen: %d, MaxIdle: %d)", maxOpen, maxIdle)
 	}
 
-	log.Println("AutoMigrating database schema (creates code_shield.db if it does not exist)...")
+	log.Println("[DB] AutoMigrating database schema...")
 
 	// Auto Migrate
 	err = DB.AutoMigrate(
