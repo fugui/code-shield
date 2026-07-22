@@ -168,29 +168,8 @@ func GetExecutionLogs(c *gin.Context) {
 	var total int64
 	query.Count(&total)
 
-	orderClause := `
-CASE status 
-  WHEN 'cloning' THEN 1
-  WHEN 'pre_processing' THEN 1
-  WHEN 'analyzing' THEN 1
-  WHEN 'post_processing' THEN 1
-  WHEN 'running' THEN 1
-  WHEN 'pending' THEN 2
-  WHEN 'success' THEN 3
-  WHEN 'failed' THEN 3
-  WHEN 'skipped' THEN 3
-  ELSE 4 
-END ASC,
-CASE 
-  WHEN status IN ('cloning', 'pre_processing', 'analyzing', 'post_processing', 'running', 'success', 'failed', 'skipped') THEN id
-END DESC,
-CASE 
-  WHEN status = 'pending' THEN id
-END ASC
-`
-
 	offset := (page - 1) * pageSize
-	query.Order(orderClause).Offset(offset).Limit(pageSize).Find(&logs)
+	query.Order("status_priority ASC, id DESC").Offset(offset).Limit(pageSize).Find(&logs)
 
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 

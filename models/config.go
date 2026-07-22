@@ -3,6 +3,7 @@ package models
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -42,6 +43,49 @@ type ModelConfig struct {
 	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
 }
 
+type DatabaseConfig struct {
+	Host         string `yaml:"host"`
+	Port         int    `yaml:"port"`
+	User         string `yaml:"user"`
+	Password     string `yaml:"password"`
+	DBName       string `yaml:"dbname"`
+	SSLMode      string `yaml:"sslmode"`
+	MaxOpenConns int    `yaml:"max_open_conns"`
+	MaxIdleConns int    `yaml:"max_idle_conns"`
+	DSN          string `yaml:"dsn"`
+}
+
+func (d *DatabaseConfig) GetDSN() string {
+	if envDSN := os.Getenv("DB_DSN"); envDSN != "" {
+		return envDSN
+	}
+	if d.DSN != "" {
+		return d.DSN
+	}
+	host := d.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := d.Port
+	if port <= 0 {
+		port = 5432
+	}
+	user := d.User
+	if user == "" {
+		user = "code_shield"
+	}
+	dbname := d.DBName
+	if dbname == "" {
+		dbname = "code_shield"
+	}
+	sslmode := d.SSLMode
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, d.Password, dbname, sslmode)
+}
+
 type Config struct {
 	Server struct {
 		Port              string        `yaml:"port"`
@@ -57,7 +101,8 @@ type Config struct {
 	Storage struct {
 		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
 	} `yaml:"storage"`
-	AI struct {
+	Database DatabaseConfig `yaml:"database"`
+	AI       struct {
 		Backend      string        `yaml:"backend"`       // CLI 后端：claude 或 opencode，默认 claude
 		DebugLogs    bool          `yaml:"debug_logs"`    // 是否输出 AI 引擎底层的 debug 级别日志
 		OutputFormat string        `yaml:"output_format"` // 输出格式：text 或 json，默认 text

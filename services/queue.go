@@ -52,12 +52,13 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 
 	// 1. Create a pending execution log
 	execLog := models.TaskExecutionLog{
-		ScheduleID:  scheduleID,
-		RepoID:      repoID,
-		TaskTypeID:  taskTypeID,
-		TriggerType: triggerType,
-		Status:      models.StatusPending,
-		StartTime:   time.Now(),
+		ScheduleID:     scheduleID,
+		RepoID:         repoID,
+		TaskTypeID:     taskTypeID,
+		TriggerType:    triggerType,
+		Status:         models.StatusPending,
+		StatusPriority: models.GetStatusPriority(models.StatusPending),
+		StartTime:      time.Now(),
 	}
 
 	if err := models.DB.Create(&execLog).Error; err != nil {
@@ -170,22 +171,25 @@ func worker(id int) {
 		} else if errors.Is(err, ErrSkipped) {
 			log.Printf("[Worker %d] Skipping Repo %d — precondition not met.\n", id, task.RepoID)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":        models.StatusSkipped,
-				"error_message": "前置条件未满足，跳过执行",
-				"end_time":      &now,
+				"status":          models.StatusSkipped,
+				"status_priority": models.GetStatusPriority(models.StatusSkipped),
+				"error_message":   "前置条件未满足，跳过执行",
+				"end_time":        &now,
 			})
 		} else if err != nil {
 			log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":        models.StatusFailed,
-				"error_message": err.Error(),
-				"end_time":      &now,
+				"status":          models.StatusFailed,
+				"status_priority": models.GetStatusPriority(models.StatusFailed),
+				"error_message":   err.Error(),
+				"end_time":        &now,
 			})
 		} else {
 			log.Printf("[Worker %d] Task completed for Repo %d\n", id, task.RepoID)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":   models.StatusSuccess,
-				"end_time": &now,
+				"status":          models.StatusSuccess,
+				"status_priority": models.GetStatusPriority(models.StatusSuccess),
+				"end_time":        &now,
 			})
 		}
 	}
@@ -194,7 +198,8 @@ func worker(id int) {
 func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status": status,
+		"status":          status,
+		"status_priority": models.GetStatusPriority(status),
 	}
 	if errMsg != "" {
 		updates["error_message"] = errMsg

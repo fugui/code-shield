@@ -49,7 +49,7 @@
 
 | 组件 | 技术栈 | 默认端口 | 说明 |
 |------|--------|------|------|
-| **shield-server** | Go 1.21+, Gin, GORM, SQLite | `8080` | 核心主服务，提供 API 接口及任务调度管线 |
+| **shield-server** | Go 1.21+, Gin, GORM, PostgreSQL | `8080` | 核心主服务，提供 API 接口及任务调度管线 |
 | **notifier** | Go 1.21+, Winigo, Outlook COM | `8081` | 独立的邮件投递微服务（仅限 Windows 运行） |
 
 ---
@@ -57,7 +57,7 @@
 ## 🚀 快速开始
 
 ### 运行环境
-- **主服务**：Linux / macOS / Windows, Go 1.21+, Node.js 18+（用于前端构建）。
+- **主服务**：Linux / macOS / Windows, Go 1.21+, PostgreSQL 12+, Node.js 18+（用于前端构建）。
 - **通知服务**：需 Windows 系统并安装 Microsoft Outlook。
 - **AI 依赖**：主机环境中必须可用 `claude` 或 `opencode` 命令行工具。
 
@@ -76,13 +76,20 @@ make build
 ```
 
 #### 3. 配置系统
-修改 `config.yaml`（首次运行会自动生成并读取缺省值）：
+修改 `config.yaml`（配置 PostgreSQL 数据库）：
 ```yaml
 server:
   port: ":8080"
   worker_count: 5              # 全局任务池并发度
 storage:
   root: "/path/to/data"        # 数据落地根目录（代码克隆与结果存储）
+database:
+  host: "127.0.0.1"            # PostgreSQL 地址
+  port: 5432
+  user: "code_shield"
+  password: "code_shield_password"
+  dbname: "code_shield"
+  sslmode: "disable"
 ai:
   backend: "opencode"          # AI 后端："claude" 或 "opencode"
 notification:

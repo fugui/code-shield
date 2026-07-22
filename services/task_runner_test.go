@@ -13,9 +13,22 @@ import (
 
 	"code-shield/models"
 
-	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func setupTestDB(t *testing.T) *gorm.DB {
+	dsn := os.Getenv("TEST_DB_DSN")
+	if dsn == "" {
+		dsn = "host=127.0.0.1 port=5432 user=code_shield password=code_shield_password dbname=code_shield_test sslmode=disable"
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Skipf("Skipping DB test: PostgreSQL not available (%v)", err)
+		return nil
+	}
+	return db
+}
 
 func TestFixUnescapedQuotes(t *testing.T) {
 	tests := []struct {
@@ -79,13 +92,13 @@ func (m *MockAIInvoker) Invoke(req AIRequest) error {
 }
 
 func TestChunkedEngineErrorAggregation(t *testing.T) {
-	// 1. Initialize isolated in-memory DB
-	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
+	// 1. Initialize isolated DB
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
 	}
 	models.DB = testDB
-	err = models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -217,13 +230,13 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 }
 
 func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
-	// 1. Initialize isolated in-memory DB
-	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
+	// 1. Initialize DB
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
 	}
 	models.DB = testDB
-	err = models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -363,13 +376,13 @@ func TestPrepareOutputPaths(t *testing.T) {
 }
 
 func TestResumeFailedChunksCumulative(t *testing.T) {
-	// 1. Initialize isolated in-memory DB
-	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
+	// 1. Initialize DB
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
 	}
 	models.DB = testDB
-	err = models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
+	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -542,13 +555,13 @@ func (m *MockSynthesisAIInvoker) Invoke(req AIRequest) error {
 }
 
 func TestSynthesisFailureAndRetries(t *testing.T) {
-	// 1. Initialize isolated in-memory DB
-	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
+	// 1. Initialize DB
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
 	}
 	models.DB = testDB
-	err = models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
+	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -959,10 +972,10 @@ func (m *MockAIInvokerForMatch) Invoke(req AIRequest) error {
 }
 
 func TestCampaignHooks(t *testing.T) {
-	// 1. 初始化 sqlite 内存数据库
-	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
+	// 1. 初始化 PostgreSQL 数据库
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
 	}
 	oldDB := models.DB
 	models.DB = testDB
@@ -970,7 +983,7 @@ func TestCampaignHooks(t *testing.T) {
 		models.DB = oldDB
 	}()
 
-	err = models.DB.AutoMigrate(
+	err := models.DB.AutoMigrate(
 		&models.Repository{},
 		&models.TaskReport{},
 		&models.TaskType{},
