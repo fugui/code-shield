@@ -294,12 +294,12 @@ type CoredumpFinding struct {
 	RepoID       uint           `gorm:"uniqueIndex:idx_repo_file_line_title;index" json:"repo_id"`
 	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint           `gorm:"index" json:"task_report_id"`
-	FilePath     string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255;not null" json:"file_path"`
-	LineNumber   string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:50" json:"line_number"`
-	Title        string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255;not null" json:"title"`
+	FilePath     string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:500;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:255" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_repo_file_line_title;size:500;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100;index" json:"category"`
+	Severity     string         `gorm:"size:100;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:255;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
@@ -316,12 +316,12 @@ type FloatFinding struct {
 	RepoID       uint           `gorm:"uniqueIndex:idx_float_repo_file_line_title;index" json:"repo_id"`
 	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint           `gorm:"index" json:"task_report_id"`
-	FilePath     string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:255;not null" json:"file_path"`
-	LineNumber   string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:50" json:"line_number"`
-	Title        string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:255;not null" json:"title"`
+	FilePath     string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:500;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:255" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_float_repo_file_line_title;size:500;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100;index" json:"category"`
+	Severity     string         `gorm:"size:100;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:255;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
@@ -338,12 +338,12 @@ type ThreadFinding struct {
 	RepoID       uint           `gorm:"uniqueIndex:idx_thread_repo_file_line_title;index" json:"repo_id"`
 	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint           `gorm:"index" json:"task_report_id"`
-	FilePath     string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:255;not null" json:"file_path"`
-	LineNumber   string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:50" json:"line_number"`
-	Title        string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:255;not null" json:"title"`
+	FilePath     string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:500;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:255" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_thread_repo_file_line_title;size:500;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 合格、致命、严重、一般、建议
-	Category     string         `gorm:"size:100;index" json:"category"`
+	Severity     string         `gorm:"size:100;not null;index" json:"severity"` // 合格、致命、严重、一般、建议
+	Category     string         `gorm:"size:255;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
@@ -360,12 +360,12 @@ type CjsonFinding struct {
 	RepoID       uint           `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;index" json:"repo_id"`
 	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint           `gorm:"index" json:"task_report_id"`
-	FilePath     string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:255;not null" json:"file_path"`
-	LineNumber   string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:50" json:"line_number"`
-	Title        string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:255;not null" json:"title"`
+	FilePath     string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:500;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:255" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_cjson_repo_file_line_title;size:500;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100;index" json:"category"`
+	Severity     string         `gorm:"size:100;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:255;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
@@ -382,12 +382,12 @@ type UnorderedCollectionFinding struct {
 	RepoID       uint           `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;index" json:"repo_id"`
 	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint           `gorm:"index" json:"task_report_id"`
-	FilePath     string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:255;not null" json:"file_path"`
-	LineNumber   string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:50" json:"line_number"`
-	Title        string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:255;not null" json:"title"`
+	FilePath     string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:500;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:255" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_unordered_col_repo_file_line_title;size:500;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100;index" json:"category"`
+	Severity     string         `gorm:"size:100;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:255;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
@@ -405,12 +405,12 @@ type DeepReviewFinding struct {
 	RepoID       uint           `gorm:"uniqueIndex:idx_deep_repo_file_line_title;index" json:"repo_id"`
 	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint           `gorm:"index" json:"task_report_id"`
-	FilePath     string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:255;not null" json:"file_path"`
-	LineNumber   string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:50" json:"line_number"`
-	Title        string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:255;not null" json:"title"`
+	FilePath     string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:500;not null" json:"file_path"`
+	LineNumber   string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:255" json:"line_number"`
+	Title        string         `gorm:"uniqueIndex:idx_deep_repo_file_line_title;size:500;not null" json:"title"`
 	Detail       string         `gorm:"type:text" json:"detail"`
-	Severity     string         `gorm:"size:50;not null;index" json:"severity"` // 致命、严重、一般、建议
-	Category     string         `gorm:"size:100;index" json:"category"`
+	Severity     string         `gorm:"size:100;not null;index" json:"severity"` // 致命、严重、一般、建议
+	Category     string         `gorm:"size:255;index" json:"category"`
 	CodeSnippet  string         `gorm:"type:text" json:"code_snippet"`
 	Suggestion   string         `gorm:"type:text" json:"suggestion"`
 	Status       string         `gorm:"default:'open';size:50;index" json:"status"` // open (待处理), analyzing (问题分析), resolved (已解决), closed (已关闭), invalid (忽略/误报)
