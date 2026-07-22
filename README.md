@@ -234,7 +234,7 @@ code-shield/
 - **高精确缺陷数量统计**：后端在任务完成时直接基于问题严重性分级（阻塞、严重、主要、提示、建议、高风险、中风险、低风险）统计缺陷数并写入数据库；前端配合指标 JSON 实现高保真容错渲染，消除了正则解析 AI 报告的误差。
 - **微前端极简级联检索**：提供了极简化高集成的筛选控制面板，支持一键重置，并且在 `code-bench` 宿主中完美支持动态折叠/展现二级分组菜单及 Admin 权限守卫。
 - **测试任务增强 (Go + C/C++)**：在 `ut-effectiveness` 和 `ut-quality` 任务中增加了对 GO 语言 (`.go` 文件) 的完整支持，并升级了 [engine_chunked.go](file:///home/fugui/codes/code-shield/services/engine_chunked.go) 的 `isTestFile` 过滤算法，自动过滤业务代码，确保 UT 任务精确只扫测试文件。
-- **底层架构鲁棒性**：修复了 GORM v2 中由 `Select("task_reports.*")` 引发的 SQLite 分页 COUNT 语法错误与 Builder 状态污染问题，保证海量数据分页稳定流畅。
+- **底层架构鲁棒性**：修复了 GORM v2 中由 `Select("task_reports.*")` 引发的数据库分页 COUNT 语法错误与 Builder 状态污染问题，保证海量数据分页稳定流畅。
 
 ---
 
