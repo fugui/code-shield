@@ -41,13 +41,13 @@ func main() {
 
 	log.Printf("Code-Shield Server %s (commit: %s, built: %s)\n", Version, CommitID, BuildTime)
 
-	// Initialize database
-	models.InitDB()
-
 	// Load global configuration
 	if err := models.LoadConfig("config.yaml"); err != nil {
 		log.Fatalf("Failed to load config.yaml: %v", err)
 	}
+
+	// Initialize database
+	models.InitDB()
 
 	// 初始化多 LLM 调度分配器
 	services.InitModelDispatcher()
