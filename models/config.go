@@ -62,28 +62,58 @@ func (d *DatabaseConfig) GetDSN() string {
 	if d.DSN != "" {
 		return d.DSN
 	}
-	host := d.Host
+
+	host := os.Getenv("DB_HOST")
+	if host == "" {
+		host = d.Host
+	}
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	port := d.Port
+
+	portStr := os.Getenv("DB_PORT")
+	port := 0
+	if portStr != "" {
+		fmt.Sscanf(portStr, "%d", &port)
+	}
+	if port <= 0 {
+		port = d.Port
+	}
 	if port <= 0 {
 		port = 5432
 	}
-	user := d.User
+
+	user := os.Getenv("DB_USER")
+	if user == "" {
+		user = d.User
+	}
 	if user == "" {
 		user = "code_shield"
 	}
-	dbname := d.DBName
+
+	password := os.Getenv("DB_PASSWORD")
+	if password == "" {
+		password = d.Password
+	}
+
+	dbname := os.Getenv("DB_NAME")
+	if dbname == "" {
+		dbname = d.DBName
+	}
 	if dbname == "" {
 		dbname = "code_shield"
 	}
-	sslmode := d.SSLMode
+
+	sslmode := os.Getenv("DB_SSLMODE")
+	if sslmode == "" {
+		sslmode = d.SSLMode
+	}
 	if sslmode == "" {
 		sslmode = "disable"
 	}
+
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, d.Password, dbname, sslmode)
+		host, port, user, password, dbname, sslmode)
 }
 
 type Config struct {
