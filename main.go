@@ -89,12 +89,6 @@ func main() {
 		auth.GET("/auth/config", handlers.GetAuthConfig)
 		auth.GET("/public/tasks/:id", handlers.GetPublicTaskDetails)
 		auth.GET("/public/tasks/:id/findings", handlers.GetPublicAnalysisFindings)
-
-		// Sync endpoints
-		auth.POST("/sync/user", handlers.SyncUser)
-		auth.POST("/sync/department", handlers.SyncDepartment)
-		auth.POST("/sync/repo", handlers.SyncRepo)
-
 	}
 
 	// Register API routes (protected)
