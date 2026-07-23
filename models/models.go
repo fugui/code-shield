@@ -266,6 +266,7 @@ type TaskExecutionLog struct {
 	TaskTypeID     uint            `gorm:"index" json:"task_type_id"`
 	TaskType       TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
 	TriggerType    string          `gorm:"not null" json:"trigger_type"`                                   // "cron", "manual", "webhook"
+	Phase          string          `gorm:"default:'';size:50" json:"phase"`                                // 执行阶段
 	Status         string          `gorm:"default:pending;index" json:"status"`                            // "pending", "running", "success", "failed", "skipped"
 	StatusPriority int             `gorm:"default:2;index:idx_status_priority_id" json:"status_priority"` // 1: running/analyzing, 2: pending, 3: completed/failed, 4: other
 	ErrorMessage   string          `json:"error_message"`
