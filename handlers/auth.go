@@ -12,11 +12,12 @@ import (
 )
 
 type PortalClaims struct {
-	UserID   uint   `json:"user_id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	IsAdmin  bool   `json:"is_admin"`
+	UserID   uint     `json:"user_id"`
+	Username string   `json:"username"`
+	Email    string   `json:"email"`
+	Name     string   `json:"name"`
+	IsAdmin  bool     `json:"is_admin"`
+	Roles    []string `json:"roles"`
 	jwt.RegisteredClaims
 }
 
@@ -146,6 +147,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("userID", user.ID)
 		c.Set("username", user.Email)
 		c.Set("email", user.Email)
+		c.Set("roles", claims.Roles)
 		c.Next()
 	}
 }
@@ -166,7 +168,20 @@ func AdminMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if !user.IsAdmin {
+		rolesVal, rolesExists := c.Get("roles")
+		hasRole := false
+		if rolesExists {
+			if roles, ok := rolesVal.([]string); ok {
+				for _, r := range roles {
+					if r == "super_admin" || r == "shield_admin" {
+						hasRole = true
+						break
+					}
+				}
+			}
+		}
+
+		if !user.IsAdmin && !hasRole {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Admin privileges required"})
 			c.Abort()
 			return
@@ -189,7 +204,19 @@ func GetMe(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	rolesVal, _ := c.Get("roles")
+	roles, _ := rolesVal.([]string)
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":            user.ID,
+		"email":         user.Email,
+		"name":          user.Name,
+		"is_admin":      user.IsAdmin,
+		"is_active":     user.IsActive,
+		"roles":         roles,
+		"department_id": user.DepartmentID,
+		"department":    user.Department,
+	})
 }
 
 func UpdatePassword(c *gin.Context) {

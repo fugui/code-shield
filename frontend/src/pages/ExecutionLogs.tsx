@@ -200,7 +200,10 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (data) setIsAdmin(!!data.is_admin);
+        if (data) {
+          const isShieldAdmin = !!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')));
+          setIsAdmin(isShieldAdmin);
+        }
       })
       .catch(() => {});
     fetchConfig();

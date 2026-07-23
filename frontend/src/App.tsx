@@ -111,7 +111,8 @@ const AdminRoute = ({ children }: { children: JSX.Element }) => {
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        setIsAdmin(data ? !!data.is_admin : false);
+        const isShieldAdmin = data ? (!!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')))) : false;
+        setIsAdmin(isShieldAdmin);
       })
       .catch(() => setIsAdmin(false));
   }, [token]);
@@ -289,7 +290,12 @@ function Sidebar() {
   useEffect(() => {
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
-      .then(data => { if (data) setIsAdmin(!!data.is_admin); })
+      .then(data => {
+        if (data) {
+          const isShieldAdmin = !!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')));
+          setIsAdmin(isShieldAdmin);
+        }
+      })
       .catch(() => {});
   }, []);
 

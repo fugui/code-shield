@@ -51,7 +51,8 @@ function ReportsOverview() {
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data) {
-          setIsAdmin(!!data.is_admin);
+          const isShieldAdmin = !!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')));
+          setIsAdmin(isShieldAdmin);
         }
       })
     fetch('/api/repos?pageSize=1000')
