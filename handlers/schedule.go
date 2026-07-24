@@ -250,11 +250,10 @@ func DeletePendingExecution(c *gin.Context) {
 		return
 	}
 
-	// If the task is running (i.e. not pending/queued), cancel it first
-	if execLog.Status != models.StatusPending && execLog.Status != models.StatusQueued {
-		if execLog.TaskReportID != nil {
-			services.CancelRunningTask(*execLog.TaskReportID)
-		}
+	// 无条件尝试取消：消除 Worker 已领取任务但状态尚未更新为 running 的 TOCTOU 竞态窗口。
+	// CancelRunningTask 在 activeTasks 中找不到 reportID 时安全返回 false，无副作用。
+	if execLog.TaskReportID != nil {
+		services.CancelRunningTask(*execLog.TaskReportID)
 	}
 
 	// Delete the linked TaskReport first (if any)

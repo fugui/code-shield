@@ -287,7 +287,8 @@ function ScanManagement() {
       const data = await res.json();
       if (res.ok) {
         showToast(data.message || '任务已删除', 'success');
-        fetchRecentLogs();
+        // 乐观 UI：从本地 state 中移除，避免每次删除都触发全量重查询
+        setRecentLogs(prev => prev.filter(l => l.id !== logId));
       } else {
         showToast(data.error || '删除失败', 'error');
       }

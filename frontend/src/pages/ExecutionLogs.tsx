@@ -140,7 +140,9 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       const data = await res.json();
       if (res.ok) {
         showToast(data.message || '任务已删除', 'success');
-        fetchLogs();
+        // 乐观 UI：从本地 state 中移除，避免每次删除都触发全量重查询。
+        // 已有的 5 秒自动刷新会自然同步完整数据。
+        setLogs(prev => prev.filter(l => l.id !== logId));
       } else {
         showToast(data.error || '删除失败', 'error');
       }
