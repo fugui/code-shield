@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -220,6 +221,50 @@ func (ctx *taskContext) load(reportID, taskTypeID uint) error {
 	return nil
 }
 
+// execCommandWithProcessGroup 执行外部命令，并为其创建独立的 Linux 进程组 (Setpgid)。
+// 当 Context 被取消（例如用户删除/取消任务）时，无条件向整个进程组 (-pgid) 发送 SIGKILL 强杀，
+// 彻底防止 precondition 脚本、git clone 或衍生出来的 cppcheck/clang/python 等孤儿进程继续在后台占满 CPU。
+func execCommandWithProcessGroup(ctx context.Context, dir string, name string, args ...string) ([]byte, int, error) {
+	cmd := exec.Command(name, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGKILL,
+	}
+
+	var outputBuf bytes.Buffer
+	cmd.Stdout = &outputBuf
+	cmd.Stderr = &outputBuf
+
+	if err := cmd.Start(); err != nil {
+		return nil, -1, err
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		exitCode := 0
+		if cmd.ProcessState != nil {
+			exitCode = cmd.ProcessState.ExitCode()
+		}
+		return outputBuf.Bytes(), exitCode, err
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			pgid := cmd.Process.Pid
+			log.Printf("[ProcessGroup] Context canceled, killing entire process group %d (%s %v)\n", pgid, name, args)
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+		<-done
+		return outputBuf.Bytes(), -1, ctx.Err()
+	}
+}
+
 // prepareAndSync handles URL parsing and git operations
 func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	u, err := url.Parse(repoURL)
@@ -236,16 +281,17 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 
 	updateTaskStatus(ctx.report.ID, models.StatusCloning)
 
-	var cmd *exec.Cmd
-	if stat, err := os.Stat(filepath.Join(ctx.codesPath, ".git")); err == nil && stat.IsDir() {
+	var output []byte
+	var gitErr error
+	if stat, errStat := os.Stat(filepath.Join(ctx.codesPath, ".git")); errStat == nil && stat.IsDir() {
 		log.Printf("[TaskRunner] Running git pull in %s\n", ctx.codesPath)
-		cmd = exec.CommandContext(ctx.ctx, "git", "-C", ctx.codesPath, "pull")
+		output, _, gitErr = execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "pull")
 	} else {
 		log.Printf("[TaskRunner] Running git clone %s %s\n", repoURL, ctx.codesPath)
-		cmd = exec.CommandContext(ctx.ctx, "git", "clone", repoURL, ctx.codesPath)
+		output, _, gitErr = execCommandWithProcessGroup(ctx.ctx, "", "git", "clone", repoURL, ctx.codesPath)
 	}
 
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if gitErr != nil {
 		models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "failed")
 		return fmt.Errorf("git operation failed: %s", string(output))
 	}
@@ -266,12 +312,11 @@ func (ctx *taskContext) checkPrecondition() (bool, error) {
 	// Ensure the script is executable
 	os.Chmod(absScript, 0755)
 
-	cmd := exec.CommandContext(ctx.ctx, absScript, ctx.codesPath)
-	output, err := cmd.CombinedOutput()
+	output, exitCode, err := execCommandWithProcessGroup(ctx.ctx, "", absScript, ctx.codesPath)
 	outputStr := strings.TrimSpace(string(output))
 
 	if err != nil {
-		if cmd.ProcessState.ExitCode() == 1 {
+		if exitCode == 1 {
 			log.Printf("[TaskRunner] Precondition skip: %s\n", outputStr)
 			models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
 				"status":     models.StatusSkipped,
