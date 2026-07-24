@@ -10,7 +10,7 @@
   --warning-color: #f59e0b;
 }
 
-body {
+.shield-app {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -19,9 +19,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-color);
   color: var(--text-color);
+  min-height: 100vh;
 }
 
-.card {
+.shield-app .card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -29,12 +30,12 @@ body {
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   transition: transform 0.2s, box-shadow 0.2s;
 }
-.card:hover {
+.shield-app .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
-.btn {
+.shield-app .btn {
   background: var(--primary-color);
   color: white;
   border: 1px solid transparent;
@@ -45,38 +46,37 @@ body {
   transition: background-color 0.2s, border-color 0.2s, color 0.2s;
   white-space: nowrap;
 }
-.btn:hover:not(:disabled) {
+.shield-app .btn:hover:not(:disabled) {
   background: #1d4ed8;
 }
-.btn:disabled {
+.shield-app .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.btn.btn-outline {
+.shield-app .btn.btn-outline {
   background: transparent;
   border-color: var(--border-color);
   color: var(--text-color);
 }
-.btn.btn-outline:hover:not(:disabled) {
+.shield-app .btn.btn-outline:hover:not(:disabled) {
   background: var(--bg-color);
 }
 
-
-.table {
+.shield-app .table {
   width: 100%;
   border-collapse: collapse;
 }
-.table th, .table td {
+.shield-app .table th, .shield-app .table td {
   padding: 0.75rem;
   text-align: left;
   border-bottom: 1px solid var(--border-color);
 }
-.table th {
+.shield-app .table th {
   color: #94a3b8;
   font-weight: 500;
 }
-.badge {
+.shield-app .badge {
   padding: 0.25rem 0.5rem;
   border-radius: 9999px;
   font-size: 0.75rem;
@@ -85,9 +85,9 @@ body {
   white-space: nowrap;
   display: inline-block;
 }
-.badge.success { background: rgba(16, 185, 129, 0.2); color: var(--success-color); }
-.badge.warning { background: rgba(245, 158, 11, 0.2); color: var(--warning-color); }
-.badge.danger { background: rgba(239, 68, 68, 0.2); color: var(--danger-color); }
+.shield-app .badge.success { background: rgba(16, 185, 129, 0.2); color: var(--success-color); }
+.shield-app .badge.warning { background: rgba(245, 158, 11, 0.2); color: var(--warning-color); }
+.shield-app .badge.danger { background: rgba(239, 68, 68, 0.2); color: var(--danger-color); }
 .badge.info { background: rgba(14, 165, 233, 0.15); color: #0284c7; }
 
 /* ===== Sidebar Drawer ===== */
@@ -208,33 +208,33 @@ body {
 }
 
 /* Form controls */
-input[type="text"],
-input[type="password"],
-input[type="email"],
-input[type="number"],
-input[type="search"],
-select,
-textarea {
+.shield-app input[type="text"],
+.shield-app input[type="password"],
+.shield-app input[type="email"],
+.shield-app input[type="number"],
+.shield-app input[type="search"],
+.shield-app select,
+.shield-app textarea {
   background-color: var(--bg-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-input[type="text"]:focus,
-input[type="password"]:focus,
-input[type="email"]:focus,
-input[type="number"]:focus,
-input[type="search"]:focus,
-select:focus,
-textarea:focus {
+.shield-app input[type="text"]:focus,
+.shield-app input[type="password"]:focus,
+.shield-app input[type="email"]:focus,
+.shield-app input[type="number"]:focus,
+.shield-app input[type="search"]:focus,
+.shield-app select:focus,
+.shield-app textarea:focus {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
   outline: none;
 }
 
-input::placeholder,
-textarea::placeholder {
+.shield-app input::placeholder,
+.shield-app textarea::placeholder {
   color: var(--text-secondary);
 }
 

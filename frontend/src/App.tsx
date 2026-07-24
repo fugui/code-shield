@@ -410,50 +410,52 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   return (
-    <ToastProvider>
-      <MainLayout>
-        <Routes>
-          <Route path="/login" element={<Navigate to={appNavigatePath("/")} replace />} />
+    <div className="shield-app">
+      <ToastProvider>
+        <MainLayout>
+          <Routes>
+            <Route path="/login" element={<Navigate to={appNavigatePath("/")} replace />} />
 
-          <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+            <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
 
-          {/* 个人工作台 */}
-          <Route path="/workbench" element={<PrivateRoute><Workbench /></PrivateRoute>} />
+            {/* 个人工作台 */}
+            <Route path="/workbench" element={<PrivateRoute><Workbench /></PrivateRoute>} />
 
 
 
-          {/* 报告中心 */}
-          <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
-          <Route path="/reports/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
+            {/* 报告中心 */}
+            <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
+            <Route path="/reports/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
 
-          {/* 专项分析 */}
-          <Route path="/analysis/ut" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
-          <Route path="/analysis/coredump" element={<PrivateRoute><CoredumpAnalysis /></PrivateRoute>} />
-          <Route path="/analysis/float" element={<PrivateRoute><FloatAnalysis /></PrivateRoute>} />
-          <Route path="/analysis/thread" element={<PrivateRoute><ThreadAnalysis /></PrivateRoute>} />
-          <Route path="/analysis/cjson" element={<PrivateRoute><CjsonAnalysis /></PrivateRoute>} />
-          <Route path="/analysis/unordered-collection" element={<PrivateRoute><UnorderedCollectionAnalysis /></PrivateRoute>} />
-          <Route path="/analysis/deep-review" element={<PrivateRoute><DeepReviewAnalysis /></PrivateRoute>} />
+            {/* 专项分析 */}
+            <Route path="/analysis/ut" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
+            <Route path="/analysis/coredump" element={<PrivateRoute><CoredumpAnalysis /></PrivateRoute>} />
+            <Route path="/analysis/float" element={<PrivateRoute><FloatAnalysis /></PrivateRoute>} />
+            <Route path="/analysis/thread" element={<PrivateRoute><ThreadAnalysis /></PrivateRoute>} />
+            <Route path="/analysis/cjson" element={<PrivateRoute><CjsonAnalysis /></PrivateRoute>} />
+            <Route path="/analysis/unordered-collection" element={<PrivateRoute><UnorderedCollectionAnalysis /></PrivateRoute>} />
+            <Route path="/analysis/deep-review" element={<PrivateRoute><DeepReviewAnalysis /></PrivateRoute>} />
 
-          {/* 管理中心 */}
-          <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
-          <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
-          <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
-          <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
+            {/* 管理中心 */}
+            <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
+            <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
+            <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
+            <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
-          {/* 公开报告 */}
-          <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
-          <Route path="/public/reports/:reportId" element={<PublicReportFindings />} />
+            {/* 公开报告 */}
+            <Route path="/public/report/:reportId" element={<PublicReportFindings />} />
+            <Route path="/public/reports/:reportId" element={<PublicReportFindings />} />
 
-          {/* 兼容旧路由重定向 */}
-          <Route path="/tasks" element={<Navigate to={appNavigatePath("/reports")} replace />} />
-          <Route path="/tasks/*" element={<Navigate to={appNavigatePath("/reports")} replace />} />
-          <Route path="/issues" element={<Navigate to={appNavigatePath("/reports")} replace />} />
-          <Route path="/config" element={<Navigate to={appNavigatePath("/admin/scan")} replace />} />
-          <Route path="/config/*" element={<Navigate to={appNavigatePath("/admin/scan")} replace />} />
-        </Routes>
-      </MainLayout>
-    </ToastProvider>
+            {/* 兼容旧路由重定向 */}
+            <Route path="/tasks" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+            <Route path="/tasks/*" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+            <Route path="/issues" element={<Navigate to={appNavigatePath("/reports")} replace />} />
+            <Route path="/config" element={<Navigate to={appNavigatePath("/admin/scan")} replace />} />
+            <Route path="/config/*" element={<Navigate to={appNavigatePath("/admin/scan")} replace />} />
+          </Routes>
+        </MainLayout>
+      </ToastProvider>
+    </div>
   );
 }
 
