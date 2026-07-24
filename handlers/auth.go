@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"code-shield/models"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -126,6 +128,11 @@ func AuthMiddleware() gin.HandlerFunc {
 			if claims.IsAdmin != user.IsAdmin {
 				updates["is_admin"] = claims.IsAdmin
 				user.IsAdmin = claims.IsAdmin
+			}
+			rolesJSON, _ := json.Marshal(claims.Roles)
+			if string(user.Roles) != string(rolesJSON) {
+				updates["roles"] = datatypes.JSON(rolesJSON)
+				user.Roles = datatypes.JSON(rolesJSON)
 			}
 			if claims.Name != "" && claims.Name != user.Name {
 				updates["name"] = claims.Name

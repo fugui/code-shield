@@ -22,6 +22,7 @@ type User struct {
 	RegMethod    string      `gorm:"default:'local'" json:"reg_method"`        // "local", "sso", "imported"
 	IsActive     bool        `gorm:"default:true" json:"is_active"`            // 是否允许登录
 	IsAdmin      bool        `gorm:"default:false" json:"is_admin"`            // 是否管理员
+	Roles        datatypes.JSON `gorm:"type:text" json:"roles"`                 // 系统角色列表 e.g. ["shield_admin"]
 	LastLogin    *time.Time  `json:"last_login"`
 	LastIP       string      `gorm:"default:''" json:"last_ip"` // 最后登录IP
 	DepartmentID *uint       `json:"department_id"`             // 关联部门ID
