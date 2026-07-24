@@ -1,4 +1,4 @@
-:root {
+.shield-app {
   --primary-color: var(--portal-primary-color, #2563eb);
   --bg-color: var(--portal-bg-color, #f8fafc);
   --text-color: var(--portal-text-color, #334155);
@@ -8,9 +8,7 @@
   --success-color: #10b981;
   --danger-color: #ef4444;
   --warning-color: #f59e0b;
-}
 
-.shield-app {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -88,23 +86,23 @@
 .shield-app .badge.success { background: rgba(16, 185, 129, 0.2); color: var(--success-color); }
 .shield-app .badge.warning { background: rgba(245, 158, 11, 0.2); color: var(--warning-color); }
 .shield-app .badge.danger { background: rgba(239, 68, 68, 0.2); color: var(--danger-color); }
-.badge.info { background: rgba(14, 165, 233, 0.15); color: #0284c7; }
+.shield-app .badge.info { background: rgba(14, 165, 233, 0.15); color: #0284c7; }
 
 /* ===== Sidebar Drawer ===== */
-.sidebar-overlay {
+.shield-app .sidebar-overlay {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
   z-index: 900;
   opacity: 0;
-  animation: fadeIn 0.25s ease forwards;
+  animation: shield-fade-in 0.25s ease forwards;
 }
-.sidebar-overlay.closing {
-  animation: fadeOut 0.25s ease forwards;
+.shield-app .sidebar-overlay.closing {
+  animation: shield-fade-out 0.25s ease forwards;
 }
 
-.sidebar-panel {
+.shield-app .sidebar-panel {
   position: fixed;
   top: 0;
   right: 0;
@@ -117,13 +115,13 @@
   flex-direction: column;
   box-shadow: -8px 0 30px rgba(0, 0, 0, 0.12);
   transform: translateX(100%);
-  animation: slideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: shield-slide-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
-.sidebar-panel.closing {
-  animation: slideOut 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+.shield-app .sidebar-panel.closing {
+  animation: shield-slide-out 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.sidebar-panel::before {
+.shield-app .sidebar-panel::before {
   content: '';
   position: absolute;
   top: 0;
@@ -132,7 +130,7 @@
   height: 3px;
   background: linear-gradient(90deg, #2563eb, #7c3aed, #2563eb);
   background-size: 200% 100%;
-  animation: gradientShift 3s ease infinite;
+  animation: shield-gradient-shift 3s ease infinite;
 }
 
 .sidebar-header {
@@ -397,26 +395,30 @@
 }
 
 /* Animations */
-@keyframes fadeIn {
+@keyframes shield-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-@keyframes fadeOut {
+@keyframes shield-fade-out {
   from { opacity: 1; }
   to { opacity: 0; }
 }
-@keyframes slideIn {
+@keyframes shield-slide-in {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
 }
-@keyframes slideOut {
+@keyframes shield-slide-out {
   from { transform: translateX(0); }
   to { transform: translateX(100%); }
 }
-@keyframes gradientShift {
+@keyframes shield-gradient-shift {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+@keyframes shield-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* ===== Portal Embedded Theme Adaptor ===== */
