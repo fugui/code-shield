@@ -221,7 +221,26 @@ function AuthHeader() {
         </div>
         <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-color)', lineHeight: 1.2 }}>{user.name || user.email || user.username}</span>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{user.is_admin ? '管理员' : '普通用户'}</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            {(() => {
+              let roles: string[] = [];
+              if (Array.isArray(user.roles)) {
+                roles = user.roles;
+              } else if (typeof user.roles === 'string') {
+                try { roles = JSON.parse(user.roles); } catch (e) { roles = []; }
+              }
+              if (roles.includes('super_admin')) return '超级管理员';
+              const roleNameMap: Record<string, string> = {
+                pipeline_admin: 'Pipeline管理员',
+                shield_admin: 'Shield管理员',
+                pdm_admin: 'PDM管理员',
+                bench_admin: 'Bench管理员',
+              };
+              const matched = roles.map(r => roleNameMap[r]).filter(Boolean);
+              if (matched.length > 0) return matched.join(' · ');
+              return user.is_admin ? '管理员' : '普通用户';
+            })()}
+          </span>
         </div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '0.5rem', transform: showDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
           <polyline points="6 9 12 15 18 9"></polyline>
