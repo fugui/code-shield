@@ -39,10 +39,11 @@ func StartWorkerPool(workers int) {
 // EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
 func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) {
 	// Check if this repository + task type is already pending or running to prevent duplicate queues
+	// 使用排除终结状态而非白名单，防止用户删除 pending 记录后去重保护失效导致 Cron 重入队风暴
 	var count int64
 	models.DB.Model(&models.TaskExecutionLog{}).
-		Where("repo_id = ? AND task_type_id = ? AND status IN (?, ?)",
-			repoID, taskTypeID, "pending", "running").
+		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
+			repoID, taskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
 		Count(&count)
 
 	if count > 0 {
