@@ -557,8 +557,8 @@ func TriggerTask(c *gin.Context) {
 
 	var count int64
 	models.DB.Model(&models.TaskExecutionLog{}).
-		Where("repo_id = ? AND task_type_id = ? AND status IN (?, ?)",
-			req.RepoID, req.TaskTypeID, "pending", "running").
+		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
+			req.RepoID, req.TaskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
 		Count(&count)
 
 	if count > 0 {
