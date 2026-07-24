@@ -582,10 +582,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '6rem' }}>
           <div style={{ textAlign: 'center', color: '#64748b' }}>
-            <div style={{ animation: 'spin 1s linear infinite', border: '3px solid rgba(59, 130, 246, 0.1)', borderTop: '3px solid #3b82f6', borderRadius: '50%', width: '32px', height: '32px', margin: '0 auto 1rem' }} />
+            <div style={{ animation: 'shield-spin 1s linear infinite', border: '3px solid rgba(59, 130, 246, 0.1)', borderTop: '3px solid #3b82f6', borderRadius: '50%', width: '32px', height: '32px', margin: '0 auto 1rem' }} />
             数据加载中，请稍候...
           </div>
-          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         </div>
       ) : (
         <>
