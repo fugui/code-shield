@@ -229,7 +229,7 @@ function AuthHeader() {
               try { roles = JSON.parse(user.roles); } catch (e) { roles = []; }
             }
 
-            if (roles.includes('super_admin')) {
+            if (roles.includes('super_admin') || user.is_admin) {
               return <span style={{ fontSize: '0.75rem', color: '#64748b' }}>超级管理员</span>;
             }
 
@@ -287,7 +287,7 @@ function AuthHeader() {
                   try { roles = JSON.parse(user.roles); } catch (e) { roles = []; }
                 }
 
-                if (roles.includes('super_admin')) {
+                if (roles.includes('super_admin') || user.is_admin) {
                   return (
                     <span style={{ fontSize: '0.725rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: 600, width: 'fit-content' }}>
                       超级管理员
