@@ -4,6 +4,7 @@ import (
 	"code-shield/cron_jobs"
 	"code-shield/models"
 	"code-shield/services"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -268,6 +269,68 @@ func DeletePendingExecution(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已成功停止并删除该任务"})
+}
+
+// BatchDeletePendingExecutions 批量删除多条排队或运行中的执行记录。
+// 请求体: {"ids": [1, 2, 3]}
+// 相比逐条调用 DELETE /api/executions/:id，此接口在单次请求中完成全部操作，
+// 显著减少前端并发 HTTP 请求数量和后端 DB 事务压力。
+func BatchDeletePendingExecutions(c *gin.Context) {
+	var req struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供需要删除的执行记录 ID 列表"})
+		return
+	}
+
+	// 1. 查询所有待删除的执行记录
+	var execLogs []models.TaskExecutionLog
+	if err := models.DB.Where("id IN ?", req.IDs).Find(&execLogs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询执行记录失败: " + err.Error()})
+		return
+	}
+
+	// 2. 过滤掉已完成的记录，收集可删除的 ID 和关联的 ReportID
+	var deletableLogIDs []uint
+	var reportIDs []uint
+	skipped := 0
+	for _, log := range execLogs {
+		isFinished := log.Status == models.StatusSuccess ||
+			log.Status == models.StatusFailed ||
+			log.Status == models.StatusSkipped
+		if isFinished {
+			skipped++
+			continue
+		}
+		deletableLogIDs = append(deletableLogIDs, log.ID)
+
+		// 无条件尝试取消运行中的任务
+		if log.TaskReportID != nil {
+			services.CancelRunningTask(*log.TaskReportID)
+			reportIDs = append(reportIDs, *log.TaskReportID)
+		}
+	}
+
+	if len(deletableLogIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "没有可删除的执行记录", "deleted": 0, "skipped": skipped})
+		return
+	}
+
+	// 3. 批量删除关联的 TaskReport 和 ExecutionLog
+	if len(reportIDs) > 0 {
+		models.DB.Where("id IN ?", reportIDs).Delete(&models.TaskReport{})
+	}
+	if err := models.DB.Where("id IN ?", deletableLogIDs).Delete(&models.TaskExecutionLog{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量删除失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("已成功删除 %d 条执行记录", len(deletableLogIDs)),
+		"deleted": len(deletableLogIDs),
+		"skipped": skipped,
+	})
 }
 
 // TriggerSchedule manually triggers a schedule config and queues jobs for repos immediately
