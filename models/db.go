@@ -34,7 +34,7 @@ func InitDB() {
 		logger.Config{
 			SlowThreshold:             time.Second,
 			LogLevel:                  logger.Warn,
-			IgnoreRecordNotFoundError: true, // 忽略 record not found 报错日志
+			IgnoreRecordNotFoundError: true,  // 忽略 record not found 报错日志
 			Colorful:                  false, // Disable colorful console escape codes for log file readability
 		},
 	)
