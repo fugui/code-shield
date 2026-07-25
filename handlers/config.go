@@ -80,4 +80,3 @@ func UpdateConfig(c *gin.Context) {
 		"scale_expires_at":  expiresPtr,
 	})
 }
-

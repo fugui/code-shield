@@ -188,7 +188,7 @@ func AdminMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		if !user.IsAdmin && !hasRole {
+		if !user.HasRole("shield_admin") && !hasRole {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Admin privileges required"})
 			c.Abort()
 			return

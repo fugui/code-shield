@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,23 +12,63 @@ import (
 )
 
 type User struct {
-	ID           uint        `gorm:"primaryKey" json:"id"`                     // 系统内部自增唯一ID
-	UniqueID     *string     `gorm:"uniqueIndex" json:"unique_id,omitempty"`   // SSO 平台唯一不变ID
-	EmployeeID   string      `gorm:"index;default:''" json:"employee_id"`      // 员工工号
-	EmployeeType string      `gorm:"default:''" json:"employee_type"`          // 员工类型
-	Email        string      `gorm:"uniqueIndex;not null" json:"email"`        // 邮箱地址
-	Username     string      `gorm:"index;default:''" json:"username"`       // 用户名
-	Name         string      `gorm:"not null;default:''" json:"name"`          // 姓名
-	Password     string      `gorm:"not null" json:"-"`                        // 密码哈希
-	RegMethod    string      `gorm:"default:'local'" json:"reg_method"`        // "local", "sso", "imported"
-	IsActive     bool        `gorm:"default:true" json:"is_active"`            // 是否允许登录
-	IsAdmin      bool        `gorm:"default:false" json:"is_admin"`            // 是否管理员
+	ID           uint           `gorm:"primaryKey" json:"id"`                   // 系统内部自增唯一ID
+	UniqueID     *string        `gorm:"uniqueIndex" json:"unique_id,omitempty"` // SSO 平台唯一不变ID
+	EmployeeID   string         `gorm:"index;default:''" json:"employee_id"`    // 员工工号
+	EmployeeType string         `gorm:"default:''" json:"employee_type"`        // 员工类型
+	Email        string         `gorm:"uniqueIndex;not null" json:"email"`      // 邮箱地址
+	Username     string         `gorm:"index;default:''" json:"username"`       // 用户名
+	Name         string         `gorm:"not null;default:''" json:"name"`        // 姓名
+	Password     string         `gorm:"not null" json:"-"`                      // 密码哈希
+	RegMethod    string         `gorm:"default:'local'" json:"reg_method"`      // "local", "sso", "imported"
+	IsActive     bool           `gorm:"default:true" json:"is_active"`          // 是否允许登录
+	IsAdmin      bool           `gorm:"default:false" json:"is_admin"`          // 是否管理员
 	Roles        datatypes.JSON `gorm:"type:text" json:"roles"`                 // 系统角色列表 e.g. ["shield_admin"]
-	LastLogin    *time.Time  `json:"last_login"`
-	LastIP       string      `gorm:"default:''" json:"last_ip"` // 最后登录IP
-	DepartmentID *uint       `json:"department_id"`             // 关联部门ID
-	Department   *Department `gorm:"foreignKey:DepartmentID" json:"department,omitempty"`
-	CreatedAt    time.Time   `json:"created_at"`
+	LastLogin    *time.Time     `json:"last_login"`
+	LastIP       string         `gorm:"default:''" json:"last_ip"` // 最后登录IP
+	DepartmentID *uint          `json:"department_id"`             // 关联部门ID
+	Department   *Department    `gorm:"foreignKey:DepartmentID" json:"department,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+}
+
+func (u *User) GetRoles() []string {
+	var roles []string
+	if len(u.Roles) > 0 {
+		_ = json.Unmarshal(u.Roles, &roles)
+	}
+	if u.IsAdmin {
+		hasSuper := false
+		for _, r := range roles {
+			if r == "super_admin" {
+				hasSuper = true
+				break
+			}
+		}
+		if !hasSuper {
+			roles = append([]string{"super_admin"}, roles...)
+		}
+	}
+	return roles
+}
+
+func (u *User) HasRole(targetRole string) bool {
+	roles := u.GetRoles()
+	for _, r := range roles {
+		if r == "super_admin" || r == targetRole {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *User) IsSuperAdmin() bool {
+	roles := u.GetRoles()
+	for _, r := range roles {
+		if r == "super_admin" {
+			return true
+		}
+	}
+	return false
 }
 
 type Department struct {
@@ -124,8 +165,8 @@ type TaskReport struct {
 	Repo            Repository     `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskTypeID      uint           `gorm:"index" json:"task_type_id"`
 	TaskType        TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	ParentID        uint           `gorm:"default:0;index" json:"parent_id"`   // 0 if it is a parent or independent task
-	ChunkName       string         `gorm:"default:''" json:"chunk_name"` // Name of the directory or file group
+	ParentID        uint           `gorm:"default:0;index" json:"parent_id"` // 0 if it is a parent or independent task
+	ChunkName       string         `gorm:"default:''" json:"chunk_name"`     // Name of the directory or file group
 	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`
 	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`
 	SuccessChunks   int            `gorm:"default:0" json:"success_chunks"`
@@ -166,18 +207,18 @@ func (r *TaskReport) GetAbsReportPath() string {
 // AnalysisFinding 记录 AI 分析阶段输出的结构化问题
 type AnalysisFinding struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`
-	TaskReportID uint       `gorm:"index" json:"task_report_id"`   // 关联到 TaskReport
-	TaskTypeID   uint       `gorm:"index" json:"task_type_id"`     // 哪个任务类型触发的
-	RepoID       uint       `gorm:"index" json:"repo_id"`          // 来自哪个代码仓
-	Severity     string     `gorm:"not null;index" json:"severity"`      // 严重程度（致命/严重/一般/建议）
-	Category     string     `gorm:"index" json:"category"`                      // 问题分类（multithreading, memory_leak, library...）
-	FilePath     string     `json:"file_path"`                     // 问题所在文件
-	LineNumber   string     `json:"line_number"`                   // 行号（支持范围如 "100-125" 或多行 "41,42"）
-	CodeSnippet  string     `gorm:"type:text" json:"code_snippet"` // 问题发生处的原始代码片段
-	Title        string     `gorm:"not null" json:"title"`         // 问题标题
-	Detail       string     `gorm:"type:text" json:"detail"`       // 详细描述
-	Suggestion   string     `gorm:"type:text" json:"suggestion"`   // 修复建议
-	AssigneeID   *uint      `json:"assignee_id"`                   // 处理人 ID
+	TaskReportID uint       `gorm:"index" json:"task_report_id"`    // 关联到 TaskReport
+	TaskTypeID   uint       `gorm:"index" json:"task_type_id"`      // 哪个任务类型触发的
+	RepoID       uint       `gorm:"index" json:"repo_id"`           // 来自哪个代码仓
+	Severity     string     `gorm:"not null;index" json:"severity"` // 严重程度（致命/严重/一般/建议）
+	Category     string     `gorm:"index" json:"category"`          // 问题分类（multithreading, memory_leak, library...）
+	FilePath     string     `json:"file_path"`                      // 问题所在文件
+	LineNumber   string     `json:"line_number"`                    // 行号（支持范围如 "100-125" 或多行 "41,42"）
+	CodeSnippet  string     `gorm:"type:text" json:"code_snippet"`  // 问题发生处的原始代码片段
+	Title        string     `gorm:"not null" json:"title"`          // 问题标题
+	Detail       string     `gorm:"type:text" json:"detail"`        // 详细描述
+	Suggestion   string     `gorm:"type:text" json:"suggestion"`    // 修复建议
+	AssigneeID   *uint      `json:"assignee_id"`                    // 处理人 ID
 	Assignee     *User      `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	Feedback     string     `gorm:"type:text" json:"feedback"` // 用户反馈内容
 	FeedbackAt   *time.Time `json:"feedback_at"`               // 反馈时间
@@ -248,7 +289,7 @@ type ScheduleConfig struct {
 	TaskTypeID   uint           `json:"task_type_id"`
 	TaskType     TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
 	TargetMode   string         `gorm:"not null;default:'all'" json:"target_mode"` // "all", "service_group", "team", "specific"
-	TargetValues datatypes.JSON `json:"target_values"`               // JSON array
+	TargetValues datatypes.JSON `json:"target_values"`                             // JSON array
 	AutoNotify   bool           `gorm:"default:true" json:"auto_notify"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time      `json:"created_at"`
@@ -266,8 +307,8 @@ type TaskExecutionLog struct {
 	TaskReport     *TaskReport     `gorm:"foreignKey:TaskReportID" json:"task_report"`
 	TaskTypeID     uint            `gorm:"index" json:"task_type_id"`
 	TaskType       TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	TriggerType    string          `gorm:"not null" json:"trigger_type"`                                   // "cron", "manual", "webhook"
-	Status         string          `gorm:"default:pending;index" json:"status"`                            // "pending", "running", "success", "failed", "skipped"
+	TriggerType    string          `gorm:"not null" json:"trigger_type"`                                  // "cron", "manual", "webhook"
+	Status         string          `gorm:"default:pending;index" json:"status"`                           // "pending", "running", "success", "failed", "skipped"
 	StatusPriority int             `gorm:"default:2;index:idx_status_priority_id" json:"status_priority"` // 1: running/analyzing, 2: pending, 3: completed/failed, 4: other
 	ErrorMessage   string          `json:"error_message"`
 	StartTime      time.Time       `json:"start_time"`
@@ -398,7 +439,6 @@ type UnorderedCollectionFinding struct {
 	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
-
 
 // DeepReviewFinding 记录 "深度代码检视" (deep_review) 任务的扫描结果与跟踪
 type DeepReviewFinding struct {
