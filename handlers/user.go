@@ -93,7 +93,6 @@ func CreateUser(c *gin.Context) {
 		UniqueID     string `json:"unique_id"`
 		EmployeeType string `json:"employee_type"`
 		DepartmentID *uint  `json:"department_id"`
-		IsAdmin      bool   `json:"is_admin"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -132,7 +131,6 @@ func CreateUser(c *gin.Context) {
 		DepartmentID: req.DepartmentID,
 		RegMethod:    "local",
 		IsActive:     true,
-		IsAdmin:      req.IsAdmin,
 	}
 
 	if err := models.DB.Create(&user).Error; err != nil {
@@ -155,7 +153,6 @@ func UpdateUser(c *gin.Context) {
 	var req struct {
 		Email        string `json:"email"`
 		Name         string `json:"name"`
-		IsAdmin      *bool  `json:"is_admin"`
 		Password     string `json:"password"`
 		EmployeeID   string `json:"employee_id"`
 		UniqueID     string `json:"unique_id"`
@@ -188,9 +185,6 @@ func UpdateUser(c *gin.Context) {
 	}
 	if req.Name != "" {
 		user.Name = req.Name
-	}
-	if req.IsAdmin != nil {
-		user.IsAdmin = *req.IsAdmin
 	}
 	if req.Password != "" {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -299,9 +293,9 @@ func ExportUsers(c *gin.Context) {
 		if u.IsActive {
 			status = "启用"
 		}
-		role := "普通用户"
-		if u.IsAdmin {
-			role = "管理员"
+		role := strings.Join(u.GetRoles(), ", ")
+		if role == "" {
+			role = "普通用户"
 		}
 		writer.Write([]string{
 			u.EmployeeID,

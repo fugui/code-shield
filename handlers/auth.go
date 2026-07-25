@@ -18,7 +18,6 @@ type PortalClaims struct {
 	Username string   `json:"username"`
 	Email    string   `json:"email"`
 	Name     string   `json:"name"`
-	IsAdmin  bool     `json:"is_admin"`
 	Roles    []string `json:"roles"`
 	jwt.RegisteredClaims
 }
@@ -106,10 +105,9 @@ func AuthMiddleware() gin.HandlerFunc {
 					name = email
 				}
 				user = models.User{
-					ID:        claims.UserID, // Use the exact same ID as code-bench!
+					ID:        claims.UserID,
 					Email:     email,
 					Name:      name,
-					IsAdmin:   claims.IsAdmin,
 					IsActive:  true,
 					RegMethod: "sso",
 					Password:  "$2a$10$SSO_USER_NO_PASSWORD_LOGIN",
@@ -125,10 +123,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		} else {
 			// Update admin status or name from token if changed
 			updates := map[string]interface{}{}
-			if claims.IsAdmin != user.IsAdmin {
-				updates["is_admin"] = claims.IsAdmin
-				user.IsAdmin = claims.IsAdmin
-			}
 			rolesJSON, _ := json.Marshal(claims.Roles)
 			if string(user.Roles) != string(rolesJSON) {
 				updates["roles"] = datatypes.JSON(rolesJSON)
