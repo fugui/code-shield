@@ -116,9 +116,23 @@ export default function AuditingWorkspace({
   const [workflowStatus, setWorkflowStatus] = useState('open');
   const [workflowAssignee, setWorkflowAssignee] = useState<number | ''>('');
   const [workflowComment, setWorkflowComment] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Resolved Task Report ID for synthesis JSON download
   const [reportId, setReportId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/me')
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.id) {
+            setCurrentUser(data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && repoId) {
@@ -886,7 +900,29 @@ export default function AuditingWorkspace({
                 <form onSubmit={submitWorkflow} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', color: '#64748b', marginBottom: '0.25rem', textAlign: 'left' }}>处理人/领受人</label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                        <label style={{ fontSize: '0.8rem', color: '#64748b', textAlign: 'left' }}>处理人/领受人</label>
+                        {currentUser && (
+                          <button
+                            type="button"
+                            onClick={() => setWorkflowAssignee(currentUser.id)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: workflowAssignee === currentUser.id ? '#10b981' : '#3b82f6',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              fontWeight: 500,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px',
+                              padding: 0
+                            }}
+                          >
+                            {workflowAssignee === currentUser.id ? '✓ 已指派给自己' : '👤 指派给我'}
+                          </button>
+                        )}
+                      </div>
                       <MemberSearchSelect 
                         value={workflowAssignee}
                         onChange={(memberId) => setWorkflowAssignee(memberId)}

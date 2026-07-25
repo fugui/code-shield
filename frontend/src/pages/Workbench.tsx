@@ -725,7 +725,29 @@ export default function Workbench() {
 								<form onSubmit={handleSaveAudit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 									<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
 										<div>
-											<label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem', textAlign: 'left', fontWeight: 500 }}>指派处理人</label>
+											<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+												<label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'left', fontWeight: 500 }}>指派处理人</label>
+												{myInfo && (
+													<button
+														type="button"
+														onClick={() => setEditAssignee(myInfo.id)}
+														style={{
+															background: 'none',
+															border: 'none',
+															color: Number(editAssignee) === myInfo.id ? '#10b981' : '#3b82f6',
+															fontSize: '0.75rem',
+															cursor: 'pointer',
+															fontWeight: 500,
+															display: 'flex',
+															alignItems: 'center',
+															gap: '2px',
+															padding: 0
+														}}
+													>
+														{Number(editAssignee) === myInfo.id ? '✓ 已指派给自己' : '👤 指派给我'}
+													</button>
+												)}
+											</div>
 											<MemberSearchSelect
 												value={editAssignee}
 												onChange={setEditAssignee}
