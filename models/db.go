@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -96,6 +97,13 @@ func InitDB() {
 	}
 
 	// Seed admin user if no users exist
+	seedDatabase()
+
+	// Seed built-in task types
+	seedBuiltinTaskTypes()
+}
+
+func seedDatabase() {
 	var count int64
 	DB.Model(&User{}).Count(&count)
 	if count == 0 {
@@ -105,7 +113,7 @@ func InitDB() {
 			Email:      "admin@code-shield.com",
 			Name:       "管理员",
 			Password:   string(hashed),
-			IsAdmin:    true,
+			Roles:      datatypes.JSON([]byte("[\"super_admin\"]")),
 			IsActive:   true,
 			RegMethod:  "local",
 		}

@@ -589,7 +589,7 @@ func TriggerManualNotification(c *gin.Context) {
 	var specificEmail string
 	if userID, exists := c.Get("userID"); exists {
 		var user models.User
-		if err := models.DB.First(&user, userID).Error; err == nil && !user.IsAdmin {
+		if err := models.DB.First(&user, userID).Error; err == nil && !user.HasRole("shield_admin") {
 			if _, err := mail.ParseAddress(user.Email); err == nil {
 				specificEmail = user.Email
 			}
