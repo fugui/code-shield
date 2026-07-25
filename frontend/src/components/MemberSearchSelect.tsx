@@ -29,6 +29,24 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number | null>(null);
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Fetch current user info for quick selection
+  useEffect(() => {
+    fetch('/api/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.id) {
+          setCurrentUser({
+            id: data.id,
+            name: data.name,
+            employee_id: data.employee_id || ''
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // When value changes externally, resolve the display name
   useEffect(() => {
     if (value && !displayText) {
@@ -155,14 +173,36 @@ function MemberSearchSelect({ value, onChange, style }: MemberSearchSelectProps)
           borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
           maxHeight: '240px', overflowY: 'auto', zIndex: 100
         }}>
+          {currentUser && (!query || currentUser.name.includes(query) || (currentUser.employee_id && currentUser.employee_id.includes(query))) && (
+            <div
+              onClick={() => handleSelect(currentUser)}
+              style={{
+                padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.875rem',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                borderBottom: '1px dashed var(--border-color)',
+                background: currentUser.id === Number(value) ? 'rgba(37,99,235,0.12)' : 'rgba(59,130,246,0.04)',
+                color: 'var(--text-color)'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'}
+              onMouseLeave={e => e.currentTarget.style.background = currentUser.id === Number(value) ? 'rgba(37,99,235,0.12)' : 'rgba(59,130,246,0.04)'}
+            >
+              <span>
+                <span style={{ fontWeight: 600, color: '#3b82f6' }}>⭐ 我 (当前账号: {currentUser.name})</span>
+                <span style={{ color: '#94a3b8', marginLeft: '0.4rem', fontSize: '0.8rem' }}>({currentUser.employee_id || currentUser.id})</span>
+              </span>
+              <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', fontWeight: 500 }}>
+                快捷指派
+              </span>
+            </div>
+          )}
           {loading ? (
             <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>搜索中...</div>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && !currentUser ? (
             <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
               {query ? '未找到匹配的人员' : '输入关键字开始搜索'}
             </div>
           ) : (
-            results.map(m => {
+            results.filter(m => !currentUser || m.id !== currentUser.id).map(m => {
               const deptName = typeof m.department === 'object' && m.department !== null ? m.department.name : m.department;
               return (
                 <div
