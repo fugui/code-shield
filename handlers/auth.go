@@ -2,14 +2,12 @@ package handlers
 
 import (
 	"code-shield/models"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -123,11 +121,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		} else {
 			// Update admin status or name from token if changed
 			updates := map[string]interface{}{}
-			rolesJSON, _ := json.Marshal(claims.Roles)
-			if string(user.Roles) != string(rolesJSON) {
-				updates["roles"] = datatypes.JSON(rolesJSON)
-				user.Roles = datatypes.JSON(rolesJSON)
-			}
 			if claims.Name != "" && claims.Name != user.Name {
 				updates["name"] = claims.Name
 				user.Name = claims.Name
@@ -145,10 +138,16 @@ func AuthMiddleware() gin.HandlerFunc {
 			}
 		}
 
+		effectiveRoles := claims.Roles
+		dbRoles := user.GetRoles()
+		if len(dbRoles) > 0 {
+			effectiveRoles = dbRoles
+		}
+
 		c.Set("userID", user.ID)
 		c.Set("username", user.Email)
 		c.Set("email", user.Email)
-		c.Set("roles", claims.Roles)
+		c.Set("roles", effectiveRoles)
 		c.Next()
 	}
 }
