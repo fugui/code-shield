@@ -766,10 +766,12 @@ func ClearInvalidReports(c *gin.Context) {
 		return
 	}
 
-	// 收集报告 ID 列表
+	// 收集报告 ID 列表，并取消所有可能正在运行的关联任务
 	var reportIDs []uint
 	for _, r := range reports {
 		reportIDs = append(reportIDs, r.ID)
+		// 无条件尝试取消：防止正在运行的任务在 Report 被删后继续产生孤儿进程或数据不一致
+		services.CancelRunningTask(r.ID)
 	}
 
 	// 在数据库事务中彻底清除关联日志、Findings 和报告本身

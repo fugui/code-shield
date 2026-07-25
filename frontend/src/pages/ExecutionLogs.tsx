@@ -151,6 +151,66 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     }
   };
 
+  // 批量选中状态
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // 获取当前页所有可删除（非终态）的日志 ID
+  const selectableIds = logs.filter(l => !['success', 'failed', 'skipped'].includes(l.status)).map(l => l.id);
+
+  const toggleSelectAll = () => {
+    if (selectableIds.every(id => selectedIds.has(id))) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        selectableIds.forEach(id => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        selectableIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  };
+
+  const batchDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const hasRunning = ids.some(id => {
+      const log = logs.find(l => l.id === id);
+      return log && ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(log.status);
+    });
+    const message = hasRunning
+      ? `确认批量删除 ${ids.length} 条任务？其中包含运行中的任务，将被强制终止。\n警告：此操作不可恢复。`
+      : `确认批量删除 ${ids.length} 条排队任务？此操作不可恢复。`;
+    if (!window.confirm(message)) return;
+    try {
+      const res = await fetch('/api/executions/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || `已删除 ${data.deleted} 条`, 'success');
+        setLogs(prev => prev.filter(l => !selectedIds.has(l.id)));
+        setSelectedIds(new Set());
+      } else {
+        showToast(data.error || '批量删除失败', 'error');
+      }
+    } catch {
+      showToast('网络异常，批量删除失败', 'error');
+    }
+  };
+
   const handleNotify = async (reportId: number) => {
     try {
       const res = await fetch(`/api/tasks/${reportId}/notify`, { method: 'POST' });
@@ -443,6 +503,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
             <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
               刷新列表
             </button>
+            {selectedIds.size > 0 && (
+              <button className="btn" onClick={batchDelete} style={{ background: 'var(--danger-color)', color: 'white', border: '1px solid var(--danger-color)' }}>
+                批量删除 ({selectedIds.size})
+              </button>
+            )}
             <button className="btn" onClick={clearCompleted} style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>
               清除已完成
             </button>
@@ -469,6 +534,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
           <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
             刷新列表
           </button>
+          {selectedIds.size > 0 && (
+            <button className="btn" onClick={batchDelete} style={{ background: 'var(--danger-color)', color: 'white', border: '1px solid var(--danger-color)' }}>
+              批量删除 ({selectedIds.size})
+            </button>
+          )}
           <button className="btn" onClick={clearCompleted} style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>
             清除已完成
           </button>
@@ -479,6 +549,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
         <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left', background: 'var(--bg-color)' }}>
+              <th style={{ padding: '1rem', fontWeight: 600, width: '2rem' }}>
+                {selectableIds.length > 0 && (
+                  <input type="checkbox" checked={selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id))} onChange={toggleSelectAll} style={{ cursor: 'pointer', accentColor: 'var(--primary-color)' }} title="全选/取消全选" />
+                )}
+              </th>
               <th style={{ padding: '1rem', fontWeight: 600, width: '2rem' }}></th>
               <th style={{ padding: '1rem', fontWeight: 600, width: '80px' }}>任务 ID</th>
               <th style={{ padding: '1rem', fontWeight: 600 }}>所属代码仓</th>
@@ -494,7 +569,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
           <tbody>
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={10} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
+                <td colSpan={11} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
               </tr>
             ) : logs.map(log => {
               const expanded = expandedIds.has(log.id);
@@ -510,6 +585,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                     style={{ borderBottom: expanded ? 'none' : '1px solid var(--border-color)', fontSize: '0.875rem', cursor: hasReport ? 'pointer' : 'default', background: expanded ? 'var(--bg-color)' : 'transparent' }}
                     onClick={() => hasReport && toggleExpand(log.id)}
                   >
+                    <td style={{ padding: '1rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                      {canCancel && (
+                        <input type="checkbox" checked={selectedIds.has(log.id)} onChange={() => toggleSelect(log.id)} style={{ cursor: 'pointer', accentColor: 'var(--primary-color)' }} />
+                      )}
+                    </td>
                     <td style={{ padding: '1rem', color: '#94a3b8', textAlign: 'center' }}>
                       {hasReport ? (expanded ? '▼' : '▶') : ''}
                     </td>
@@ -588,7 +668,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
                   {expanded && hasReport && (
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td colSpan={10} style={{ padding: '1.25rem 1.5rem 1.5rem 3.5rem', background: 'var(--bg-color)' }}>
+                      <td colSpan={11} style={{ padding: '1.25rem 1.5rem 1.5rem 3.5rem', background: 'var(--bg-color)' }}>
                         <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
                           
                           {/* Left Panel: Score, Summary & Buttons */}

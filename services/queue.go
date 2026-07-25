@@ -38,16 +38,26 @@ func StartWorkerPool(workers int) {
 
 // EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
 func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) {
-	// Check if this repository + task type is already pending or running to prevent duplicate queues
-	// 使用排除终结状态而非白名单，防止用户删除 pending 记录后去重保护失效导致 Cron 重入队风暴
-	var count int64
+	// 双重去重保护：检查 ExecutionLog 和 TaskReport，防止用户删除 pending 后 Cron 重入队风暴。
+	// 1. 检查执行日志：是否有未完成的执行记录
+	var logCount int64
 	models.DB.Model(&models.TaskExecutionLog{}).
 		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
 			repoID, taskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
-		Count(&count)
+		Count(&logCount)
+	if logCount > 0 {
+		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active execution log.\n", repoID, taskTypeID)
+		return
+	}
 
-	if count > 0 {
-		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) because it is already pending or running.\n", repoID, taskTypeID)
+	// 2. 检查任务报告：是否有尚未完成的报告（channel 中的幽灵任务可能已删除 log 但 report 仍在排队）
+	var reportCount int64
+	models.DB.Model(&models.TaskReport{}).
+		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
+			repoID, taskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
+		Count(&reportCount)
+	if reportCount > 0 {
+		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active task report.\n", repoID, taskTypeID)
 		return
 	}
 
@@ -126,12 +136,15 @@ func EnqueueResumeTask(report models.TaskReport) error {
 
 func worker(id int) {
 	for task := range TaskQueue {
-		// 校验任务是否已被清理/取消（例如被 ClearInvalidReports 删除）
+		// 校验任务是否已被清理/取消（例如被 ClearInvalidReports 删除）。
+		// 批量删除场景下，channel 中可能积压大量已被删除的“幽灵任务”，
+		// 跳过时加 10ms 延迟防止高速空转导致 DB 查询风暴。
 		if task.LogID > 0 {
 			var count int64
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Count(&count)
 			if count == 0 {
 				log.Printf("[Worker %d] TaskExecutionLog %d not found (likely cleared/cancelled). Skipping task.\n", id, task.LogID)
+				time.Sleep(10 * time.Millisecond)
 				continue
 			}
 		} else {
@@ -139,6 +152,7 @@ func worker(id int) {
 			models.DB.Model(&models.TaskReport{}).Where("id = ?", task.ReportID).Count(&count)
 			if count == 0 {
 				log.Printf("[Worker %d] TaskReport %d not found (likely cleared/cancelled). Skipping task.\n", id, task.ReportID)
+				time.Sleep(10 * time.Millisecond)
 				continue
 			}
 		}
