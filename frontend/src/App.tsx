@@ -111,7 +111,7 @@ const AdminRoute = ({ children }: { children: JSX.Element }) => {
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        const isShieldAdmin = data ? (!!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')))) : false;
+        const isShieldAdmin = data ? (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin'))) : false;
         setIsAdmin(isShieldAdmin);
       })
       .catch(() => setIsAdmin(false));
@@ -229,7 +229,7 @@ function AuthHeader() {
               try { roles = JSON.parse(user.roles); } catch (e) { roles = []; }
             }
 
-            if (roles.includes('super_admin') || user.is_admin) {
+            if (roles.includes('super_admin')) {
               return <span style={{ fontSize: '0.75rem', color: '#64748b' }}>超级管理员</span>;
             }
 
@@ -262,7 +262,7 @@ function AuthHeader() {
               );
             }
 
-            return user.is_admin ? <span style={{ fontSize: '0.75rem', color: '#64748b' }}>管理员</span> : null;
+            return null;
           })()}
         </div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '0.5rem', transform: showDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
@@ -287,7 +287,7 @@ function AuthHeader() {
                   try { roles = JSON.parse(user.roles); } catch (e) { roles = []; }
                 }
 
-                if (roles.includes('super_admin') || user.is_admin) {
+                if (roles.includes('super_admin')) {
                   return (
                     <span style={{ fontSize: '0.725rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: 600, width: 'fit-content' }}>
                       超级管理员
@@ -309,14 +309,6 @@ function AuthHeader() {
                       {r.label}
                     </span>
                   ));
-                }
-
-                if (user.is_admin) {
-                  return (
-                    <span style={{ fontSize: '0.725rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(100, 116, 139, 0.15)', color: '#64748b', fontWeight: 500, width: 'fit-content' }}>
-                      管理员
-                    </span>
-                  );
                 }
 
                 return (
@@ -385,7 +377,7 @@ function Sidebar() {
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data) {
-          const isShieldAdmin = !!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')));
+          const isShieldAdmin = Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin'));
           setIsAdmin(isShieldAdmin);
         }
       })

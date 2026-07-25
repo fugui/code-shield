@@ -51,7 +51,7 @@ function ReportsOverview() {
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data) {
-          const isShieldAdmin = !!data.is_admin || (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin')));
+          const isShieldAdmin = Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin'));
           setIsAdmin(isShieldAdmin);
         }
       })
