@@ -225,7 +225,7 @@ func LoadConfig(filename string) error {
 		AppConfig.Server.ReadHeaderTimeout = 10 * time.Second
 	}
 	if AppConfig.Server.WriteTimeout == 0 {
-		AppConfig.Server.WriteTimeout = 15 * time.Second
+		AppConfig.Server.WriteTimeout = 60 * time.Second
 	}
 	if AppConfig.Server.IdleTimeout == 0 {
 		AppConfig.Server.IdleTimeout = 60 * time.Second

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"time"
@@ -453,22 +454,23 @@ func generateCampaignExcel(c *gin.Context, repoName string, campaignTitle string
 
 	// 导出 HTTP 头配置，文件名格式：synthesis_[专题名称]_YYYY-MM-DD.xlsx
 	filename := fmt.Sprintf("synthesis_%s_%s.xlsx", campaignTitle, time.Now().Format("2006-01-02"))
+	encodedFilename := url.QueryEscape(filename)
 	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", filename, encodedFilename))
 
 	if err := f.Write(c.Writer); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出 Excel 文件写入失败: " + err.Error()})
 	}
 }
 
-// adjustColWidth 自适应优化调整 Excel 工作表列宽
+// adjustColWidth 自适应优化调整 Excel 工作表列宽（高性能版）
 func adjustColWidth(f *excelize.File, sheetName string, colCount int) {
-	for colIdx := 1; colIdx <= colCount; colIdx++ {
+	cols, err := f.GetCols(sheetName)
+	if err != nil || len(cols) == 0 {
+		return
+	}
+	for colIdx := 1; colIdx <= colCount && colIdx <= len(cols); colIdx++ {
 		colName, _ := excelize.ColumnNumberToName(colIdx)
-		cols, _ := f.GetCols(sheetName)
-		if len(cols) < colIdx {
-			continue
-		}
 		maxLen := 10 // 最小宽度为 10
 		for _, val := range cols[colIdx-1] {
 			actualLen := 0
@@ -478,10 +480,16 @@ func adjustColWidth(f *excelize.File, sheetName string, colCount int) {
 				} else {
 					actualLen += 1
 				}
+				if actualLen >= 50 { // 单列宽度上限设为 50，避免长字符过度遍历与表格变形
+					break
+				}
 			}
 			if actualLen > maxLen {
 				maxLen = actualLen
 			}
+		}
+		if maxLen > 50 {
+			maxLen = 50
 		}
 		_ = f.SetColWidth(sheetName, colName, colName, float64(maxLen+4))
 	}
