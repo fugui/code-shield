@@ -143,7 +143,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
   const activeCronPreset = CRON_PRESETS.find(p => p.value === form.cron_expr);
 
   const sidebarContent = (
-    <>
+    <div className="shield-app">
       {/* Overlay */}
       <div
         className={`sidebar-overlay${closing ? ' closing' : ''}`}
@@ -414,7 +414,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
           </div>
         </form>
       </div>
-    </>
+    </div>
   );
 
   return ReactDOM.createPortal(sidebarContent, document.body);
