@@ -38,6 +38,11 @@ func StartWorkerPool(workers int) {
 
 // EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
 func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) {
+	EnqueueTaskWithTriggerLog(scheduleID, nil, repoID, repoURL, taskTypeID, autoNotify, triggerType, runParams)
+}
+
+// EnqueueTaskWithTriggerLog supports linking a parent TaskTriggerLog and returns true if enqueued successfully
+func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) bool {
 	// 双重去重保护：检查 ExecutionLog 和 TaskReport，防止用户删除 pending 后 Cron 重入队风暴。
 	// 1. 检查执行日志：是否有未完成的执行记录
 	var logCount int64
@@ -47,7 +52,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 		Count(&logCount)
 	if logCount > 0 {
 		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active execution log.\n", repoID, taskTypeID)
-		return
+		return false
 	}
 
 	// 2. 检查任务报告：是否有尚未完成的报告（channel 中的幽灵任务可能已删除 log 但 report 仍在排队）
@@ -58,12 +63,13 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 		Count(&reportCount)
 	if reportCount > 0 {
 		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active task report.\n", repoID, taskTypeID)
-		return
+		return false
 	}
 
 	// 1. Create a pending execution log
 	execLog := models.TaskExecutionLog{
 		ScheduleID:     scheduleID,
+		TriggerLogID:   triggerLogID,
 		RepoID:         repoID,
 		TaskTypeID:     taskTypeID,
 		TriggerType:    triggerType,
@@ -74,7 +80,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 
 	if err := models.DB.Create(&execLog).Error; err != nil {
 		log.Printf("[WorkerPool] Failed to create TaskExecutionLog for Repo %d: %v\n", repoID, err)
-		return
+		return false
 	}
 
 	// 2. Create the initial queued TaskReport
@@ -88,7 +94,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 	}
 	if err := models.DB.Create(&report).Error; err != nil {
 		log.Printf("[WorkerPool] Failed to create TaskReport for Repo %d: %v\n", repoID, err)
-		return
+		return false
 	}
 
 	task := Task{
@@ -107,9 +113,11 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 	select {
 	case TaskQueue <- task:
 		log.Printf("[WorkerPool] Enqueued Repo %d (TaskType %d). Queue size: %d\n", repoID, taskTypeID, len(TaskQueue))
+		return true
 	default:
 		log.Printf("[WorkerPool] Queue is full! Dropping task for Repo %d\n", repoID)
 		UpdateTaskExecutionLog(execLog.ID, models.StatusFailed, "Queue is full")
+		return false
 	}
 }
 

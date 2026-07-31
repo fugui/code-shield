@@ -161,6 +161,10 @@ func main() {
 		api.DELETE("/executions/batch", handlers.BatchDeletePendingExecutions)
 		api.DELETE("/executions/:id", handlers.DeletePendingExecution)
 
+		api.GET("/audit-logs", handlers.GetAuditLogs)
+		api.GET("/audit-logs/stats", handlers.GetAuditLogStats)
+		api.GET("/audit-logs/:id", handlers.GetAuditLogDetail)
+
 		// Admin only routes
 		admin := api.Group("/")
 		admin.Use(handlers.AdminMiddleware())

@@ -343,7 +343,28 @@ func TriggerSchedule(c *gin.Context) {
 		return
 	}
 
-	if err := cron_jobs.ExecuteScheduleContext(schedule.ID, "manual"); err != nil {
+	var opID *uint
+	opName := "管理员手动触发"
+	clientIP := c.ClientIP()
+	if userIDVal, exists := c.Get("userID"); exists {
+		if uid, ok := userIDVal.(uint); ok && uid > 0 {
+			opID = &uid
+			var user models.User
+			if err := models.DB.First(&user, uid).Error; err == nil {
+				opName = user.Name
+				if opName == "" {
+					opName = user.Email
+				}
+			}
+		}
+	}
+	if opName == "管理员手动触发" {
+		if name, exists := c.Get("username"); exists {
+			opName = fmt.Sprintf("%v", name)
+		}
+	}
+
+	if err := cron_jobs.ExecuteScheduleContextWithOperator(schedule.ID, "manual", opID, opName, clientIP); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "触发策略失败: " + err.Error()})
 		return
 	}

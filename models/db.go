@@ -82,6 +82,7 @@ func InitDB() {
 		&KeyIssue{},
 		&SystemConfig{},
 		&ScheduleConfig{},
+		&TaskTriggerLog{},
 		&TaskExecutionLog{},
 		&TestCaseFinding{},
 		&CoredumpFinding{},

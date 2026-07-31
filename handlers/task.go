@@ -532,6 +532,30 @@ func GetAnalysisFindings(c *gin.Context) {
 	c.JSON(http.StatusOK, findings)
 }
 
+func getOperatorInfo(c *gin.Context) (operatorID *uint, operatorName string, clientIP string) {
+	clientIP = c.ClientIP()
+	if userIDVal, exists := c.Get("userID"); exists {
+		if uid, ok := userIDVal.(uint); ok && uid > 0 {
+			operatorID = &uid
+			var user models.User
+			if err := models.DB.First(&user, uid).Error; err == nil {
+				operatorName = user.Name
+				if operatorName == "" {
+					operatorName = user.Email
+				}
+			}
+		}
+	}
+	if operatorName == "" {
+		if name, exists := c.Get("username"); exists {
+			operatorName = fmt.Sprintf("%v", name)
+		} else {
+			operatorName = "系统用户"
+		}
+	}
+	return
+}
+
 // TriggerTask triggers a task for a specific repository
 func TriggerTask(c *gin.Context) {
 	var req struct {
@@ -566,7 +590,30 @@ func TriggerTask(c *gin.Context) {
 		return
 	}
 
-	services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+	opID, opName, clientIP := getOperatorInfo(c)
+	batchNo := fmt.Sprintf("TRG-%s-%d", time.Now().Format("20060102150405"), repo.ID)
+
+	triggerLog := models.TaskTriggerLog{
+		TriggerBatch:  batchNo,
+		TriggerType:   "manual_single",
+		OperatorID:    opID,
+		OperatorName:  opName,
+		TaskTypeID:    taskType.ID,
+		TargetMode:    "single",
+		TargetSummary: fmt.Sprintf("代码仓: %s", repo.Name),
+		TotalRepos:    1,
+		SuccessCount:  1,
+		ClientIP:      clientIP,
+		CreatedAt:     time.Now(),
+	}
+	models.DB.Create(&triggerLog)
+
+	var tLogID *uint
+	if triggerLog.ID > 0 {
+		tLogID = &triggerLog.ID
+	}
+
+	services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": taskType.DisplayName + " 任务已下发"})
 }
@@ -935,13 +982,61 @@ func TriggerMissingTasks(c *gin.Context) {
 		return
 	}
 
+	opID, opName, clientIP := getOperatorInfo(c)
+	batchNo := fmt.Sprintf("TRG-%s-MISSING", time.Now().Format("20060102150405"))
+
+	targetSummary := fmt.Sprintf("快速补扫: 过去 %d 天未扫代码仓 (共 %d 个)", req.Days, len(missingRepos))
+	if req.ServiceGroup != "" {
+		targetSummary += fmt.Sprintf(" [服务组件: %s]", req.ServiceGroup)
+	}
+
+	filterParamsBytes, _ := json.Marshal(map[string]interface{}{
+		"days":          req.Days,
+		"service_group": req.ServiceGroup,
+	})
+
+	triggerLog := models.TaskTriggerLog{
+		TriggerBatch:  batchNo,
+		TriggerType:   "manual_batch",
+		OperatorID:    opID,
+		OperatorName:  opName,
+		TaskTypeID:    taskType.ID,
+		TargetMode:    "missing_days",
+		TargetSummary: targetSummary,
+		FilterParams:  filterParamsBytes,
+		TotalRepos:    len(missingRepos),
+		ClientIP:      clientIP,
+		CreatedAt:     time.Now(),
+	}
+	models.DB.Create(&triggerLog)
+
+	var tLogID *uint
+	if triggerLog.ID > 0 {
+		tLogID = &triggerLog.ID
+	}
+
+	successCount := 0
+	skipCount := 0
+
 	// 4. Enqueue tasks for each missing repo
 	for _, repo := range missingRepos {
-		services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+		ok := services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+		if ok {
+			successCount++
+		} else {
+			skipCount++
+		}
+	}
+
+	if triggerLog.ID > 0 {
+		models.DB.Model(&triggerLog).Updates(map[string]interface{}{
+			"success_count": successCount,
+			"skip_count":    skipCount,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务", len(missingRepos), taskType.DisplayName),
+		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务 (成功排队 %d, 跳过 %d)", len(missingRepos), taskType.DisplayName, successCount, skipCount),
 	})
 }
 
