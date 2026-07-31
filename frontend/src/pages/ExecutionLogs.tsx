@@ -301,7 +301,10 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   };
 
   const statusBadge = (log: any) => {
-    const status = (log.status === 'running' && log.task_report?.status) ? log.task_report.status : log.status;
+    const activeStatus = log.task_report?.status && log.task_report.status !== 'queued' && log.task_report.status !== 'pending'
+      ? log.task_report.status
+      : log.status;
+
     const map: Record<string, { cls: string; label: string }> = {
       success: { cls: 'success', label: '执行成功' },
       failed:  { cls: 'danger',  label: '执行失败' },
@@ -311,12 +314,13 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       cloning: { cls: 'primary', label: '代码克隆中...' },
       pre_processing: { cls: 'primary', label: '前置检查中...' },
       analyzing: { cls: 'primary', label: 'AI 检视中...' },
-      post_processing: { cls: 'primary', label: '结果分析中...' },
+      synthesis: { cls: 'primary', label: '报告总结中...' },
+      post_processing: { cls: 'primary', label: '后置分析中...' },
       merging: { cls: 'primary', label: '问题归并中...' },
     };
-    const s = map[status] || { cls: 'warning', label: status };
+    const s = map[activeStatus] || { cls: 'warning', label: activeStatus };
 
-    if (log.engine_mode === 'chunked' && status === 'analyzing' && log.task_report) {
+    if (log.engine_mode === 'chunked' && activeStatus === 'analyzing' && log.task_report) {
       const { processed_chunks, total_chunks } = log.task_report;
       if (total_chunks > 0) {
         return <span className={`badge ${s.cls}`}>{`AI 检视中 (${processed_chunks}/${total_chunks})...`}</span>;
