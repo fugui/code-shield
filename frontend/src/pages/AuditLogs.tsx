@@ -219,6 +219,23 @@ function AuditLogs() {
 
   const totalPages = Math.ceil(total / pageSize) || 1;
 
+  const handleClearLogs = async () => {
+    if (!window.confirm('确认清除历史触发日志吗？此操作不可恢复。')) return;
+    try {
+      const res = await fetch('/api/audit-logs', { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || '历史触发日志已成功清除', 'success');
+        fetchLogs();
+        fetchStats();
+      } else {
+        showToast('清除日志失败', 'error');
+      }
+    } catch {
+      showToast('网络请求失败', 'error');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       {/* 顶部统计卡片 */}
@@ -332,15 +349,27 @@ function AuditLogs() {
             </button>
           </div>
 
-          <button
-            onClick={fetchLogs}
-            style={{ padding: '0.45rem 0.9rem', fontSize: '0.875rem', fontWeight: 500, color: '#fff', background: 'var(--primary-color, #2563eb)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            刷新数据
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={handleClearLogs}
+              style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', fontWeight: 500, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+            >
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              清除历史日志
+            </button>
+
+            <button
+              onClick={fetchLogs}
+              style={{ padding: '0.45rem 0.9rem', fontSize: '0.875rem', fontWeight: 500, color: '#fff', background: 'var(--primary-color, #2563eb)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              刷新数据
+            </button>
+          </div>
         </div>
       </div>
 

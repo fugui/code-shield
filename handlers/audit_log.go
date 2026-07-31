@@ -128,3 +128,25 @@ func GetAuditLogStats(c *gin.Context) {
 		"total_repos_scanned": totalReposScanned,
 	})
 }
+
+// ClearAuditLogs allows deleting historical trigger audit logs
+func ClearAuditLogs(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
+
+	query := models.DB.Model(&models.TaskTriggerLog{})
+	if days > 0 {
+		cutoffTime := time.Now().AddDate(0, 0, -days)
+		query = query.Where("created_at < ?", cutoffTime)
+	}
+
+	result := query.Delete(&models.TaskTriggerLog{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear audit logs: " + result.Error.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"deleted": result.RowsAffected,
+		"message": "日志清除成功",
+	})
+}
