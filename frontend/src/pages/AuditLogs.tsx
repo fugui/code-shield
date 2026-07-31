@@ -80,6 +80,22 @@ function AuditLogs() {
   const [detailExecLogs, setDetailExecLogs] = useState<ExecLogDetail[]>([]);
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
 
+  // User Role State
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const res = await fetch('/api/me');
+      if (res.ok) {
+        const data = await res.json();
+        const isSuper = data?.is_super_admin === true || (Array.isArray(data?.roles) && data.roles.includes('super_admin'));
+        setIsSuperAdmin(isSuper);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const fetchStats = async () => {
     try {
       const res = await fetch('/api/audit-logs/stats');
@@ -125,6 +141,7 @@ function AuditLogs() {
   useEffect(() => {
     fetchStats();
     fetchTaskTypes();
+    fetchCurrentUser();
   }, []);
 
   useEffect(() => {
@@ -350,15 +367,17 @@ function AuditLogs() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              onClick={handleClearLogs}
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', fontWeight: 500, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-            >
-              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              清除历史日志
-            </button>
+            {isSuperAdmin && (
+              <button
+                onClick={handleClearLogs}
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', fontWeight: 500, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+              >
+                <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                清除历史日志
+              </button>
+            )}
 
             <button
               onClick={fetchLogs}

@@ -164,12 +164,12 @@ func main() {
 		api.GET("/audit-logs", handlers.GetAuditLogs)
 		api.GET("/audit-logs/stats", handlers.GetAuditLogStats)
 		api.GET("/audit-logs/:id", handlers.GetAuditLogDetail)
-		api.DELETE("/audit-logs", handlers.ClearAuditLogs)
 
 		// Admin only routes
 		admin := api.Group("/")
 		admin.Use(handlers.AdminMiddleware())
 		{
+			admin.DELETE("/audit-logs", handlers.ClearAuditLogs)
 			admin.POST("/task-types", handlers.CreateTaskType)
 			admin.PATCH("/task-types/:id", handlers.UpdateTaskType)
 			admin.DELETE("/task-types/:id", handlers.DeleteTaskType)
