@@ -198,12 +198,18 @@ function AuditLogs() {
         return <span className="px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800">成功</span>;
       case 'failed':
         return <span className="px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-800">失败</span>;
+      case 'synthesis':
+        return <span className="px-2 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-800 animate-pulse">报告总结中</span>;
       case 'analyzing':
       case 'cloning':
+      case 'pre_processing':
+      case 'post_processing':
+      case 'merging':
       case 'running':
         return <span className="px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 animate-pulse">进行中</span>;
       case 'pending':
-        return <span className="px-2 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-800">待处理</span>;
+      case 'queued':
+        return <span className="px-2 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-800">排队中</span>;
       case 'skipped':
         return <span className="px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">跳过</span>;
       default:

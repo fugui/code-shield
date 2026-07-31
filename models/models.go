@@ -247,6 +247,7 @@ const (
 	StatusCloning        = "cloning"
 	StatusPreProcessing  = "pre_processing"
 	StatusAnalyzing      = "analyzing"
+	StatusSynthesis      = "synthesis"
 	StatusPostProcessing = "post_processing"
 	StatusMerging        = "merging"
 	StatusSuccess        = "success"
@@ -338,7 +339,7 @@ type TaskExecutionLog struct {
 // GetStatusPriority 返回状态排序优先级 (1=进行中, 2=待处理, 3=已结束, 4=其它)
 func GetStatusPriority(status string) int {
 	switch status {
-	case "cloning", "pre_processing", "analyzing", "post_processing", "running":
+	case "cloning", "pre_processing", "analyzing", "synthesis", "post_processing", "merging", "running":
 		return 1
 	case "pending":
 		return 2

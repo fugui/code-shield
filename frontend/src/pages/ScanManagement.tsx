@@ -302,16 +302,15 @@ function ScanManagement() {
     const latestLog = recentLogs.find(log => log.repo_id === repoId);
     if (!latestLog) return { status: 'none', text: '未分析', badgeCls: 'info', isRunning: false, isPending: false, log: null };
 
-    const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(latestLog.status);
+    const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(latestLog.status) || (latestLog.task_report && ['cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(latestLog.task_report.status));
     const isPending = latestLog.status === 'pending' || latestLog.status === 'queued';
 
     let text = latestLog.status;
     let badgeCls = 'info';
 
-    let activeStatus = latestLog.status;
-    if (activeStatus === 'running' && latestLog.task_report && latestLog.task_report.status) {
-      activeStatus = latestLog.task_report.status;
-    }
+    let activeStatus = (latestLog.task_report && latestLog.task_report.status && latestLog.task_report.status !== 'pending' && latestLog.task_report.status !== 'queued')
+      ? latestLog.task_report.status
+      : latestLog.status;
 
     switch (activeStatus) {
       case 'success':
@@ -346,6 +345,10 @@ function ScanManagement() {
         } else {
           text = '分析中';
         }
+        badgeCls = 'primary';
+        break;
+      case 'synthesis':
+        text = '报告总结中';
         badgeCls = 'primary';
         break;
       case 'post_processing':

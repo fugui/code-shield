@@ -746,6 +746,9 @@ func (ctx *taskContext) loadFindingsFromChunkFile(jsonPath string) ([]models.Ana
 
 // executeSynthesis runs the synthesis phase: AI generates final Markdown report from JSON findings, retrying up to 3 times on failure.
 func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) error {
+	// 及时更新 TaskReport 和 TaskExecutionLog 状态为 synthesis (报告总结中)
+	updateTaskStatus(ctx.report.ID, models.StatusSynthesis)
+
 	// 1. Serialize all findings (complete list) to synthesisInputPath for Outlook attachment and database records.
 	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
@@ -1351,7 +1354,10 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 
 func updateTaskStatus(reportID uint, status string) {
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(map[string]interface{}{
-		"status":     status,
-		"created_at": time.Now(),
+		"status": status,
+	})
+	models.DB.Model(&models.TaskExecutionLog{}).Where("task_report_id = ?", reportID).Updates(map[string]interface{}{
+		"status":          status,
+		"status_priority": models.GetStatusPriority(status),
 	})
 }
