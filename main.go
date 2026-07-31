@@ -164,6 +164,7 @@ func main() {
 		api.GET("/audit-logs", handlers.GetAuditLogs)
 		api.GET("/audit-logs/stats", handlers.GetAuditLogStats)
 		api.GET("/audit-logs/:id", handlers.GetAuditLogDetail)
+		api.DELETE("/audit-logs", handlers.ClearAuditLogs)
 
 		// Admin only routes
 		admin := api.Group("/")
