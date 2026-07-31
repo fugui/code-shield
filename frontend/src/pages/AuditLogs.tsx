@@ -366,14 +366,14 @@ function AuditLogs() {
                   <td colSpan={8} style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span className="spinner-mini" style={{ width: '16px', height: '16px' }} />
-                      正在加载审计日志...
+                      正在加载触发日志...
                     </div>
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
-                    暂无符合要求的任务触发审计日志
+                    暂无符合要求的触发日志
                   </td>
                 </tr>
               ) : (
