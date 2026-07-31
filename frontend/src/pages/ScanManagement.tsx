@@ -5,9 +5,10 @@ import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
 import ReportSidebar from '../components/ReportSidebar';
 import ExecutionLogs from './ExecutionLogs';
+import AuditLogs from './AuditLogs';
 import { sshToHttps } from '../utils/urlUtils';
 
-type ScanTab = 'trigger' | 'schedules' | 'logs';
+type ScanTab = 'trigger' | 'schedules' | 'logs' | 'audit';
 
 function ScanManagement() {
   const { showToast } = useToast();
@@ -376,9 +377,12 @@ function ScanManagement() {
     <div>
       <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
         <button onClick={() => handleTabChange('logs')} style={tabStyle('logs')}>执行日志</button>
+        <button onClick={() => handleTabChange('audit')} style={tabStyle('audit')}>触发审计日志</button>
         <button onClick={() => handleTabChange('trigger')} style={tabStyle('trigger')}>手动触发</button>
         <button onClick={() => handleTabChange('schedules')} style={tabStyle('schedules')}>批量触发</button>
       </div>
+
+      {activeTab === 'audit' && <AuditLogs />}
 
       {activeTab === 'trigger' && (
         <div>
