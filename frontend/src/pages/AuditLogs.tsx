@@ -226,7 +226,7 @@ function AuditLogs() {
         <div className="audit-stats-grid">
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', tracking: '0.05em' }}>今日触发批次</div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>今日触发批次</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', marginTop: '0.2rem' }}>{stats.today_batches}</div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>历史总计 {stats.total_batches} 次下发</div>
             </div>
@@ -239,7 +239,7 @@ function AuditLogs() {
 
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', tracking: '0.05em' }}>手动操作 (单仓/批量)</div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>手动操作 (单仓/批量)</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>{stats.manual_count}</div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>人类主动交互下发</div>
             </div>
@@ -252,7 +252,7 @@ function AuditLogs() {
 
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', tracking: '0.05em' }}>定时任务触发</div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>定时任务触发</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#059669', marginTop: '0.2rem' }}>{stats.cron_count}</div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>自动 Cron 策略下发</div>
             </div>
@@ -265,7 +265,7 @@ function AuditLogs() {
 
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', tracking: '0.05em' }}>触发累积覆盖仓库</div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>触发累积覆盖仓库</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#d97706', marginTop: '0.2rem' }}>{stats.total_repos_scanned}</div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>累积扫描任务项</div>
             </div>
@@ -280,7 +280,7 @@ function AuditLogs() {
 
       {/* 过滤工具栏 */}
       <div style={{ background: '#ffffff', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyBetween: 'space-between', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
             {/* 触发方式 */}
             <select
@@ -391,9 +391,9 @@ function AuditLogs() {
                     <td style={{ padding: '0.75rem 1rem' }}>
                       <div style={{ fontWeight: 500, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         {item.trigger_type.startsWith('cron_auto') ? (
-                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#d1fae5', color: '#047857', display: 'inline-flex', alignItems: 'center', justifyCenter: 'center', fontSize: '0.7rem' }}>🤖</span>
+                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#d1fae5', color: '#047857', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>🤖</span>
                         ) : (
-                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#dbeafe', color: '#1d4ed8', display: 'inline-flex', alignItems: 'center', justifyCenter: 'center', fontSize: '0.7rem', fontWeight: 700 }}>
+                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#dbeafe', color: '#1d4ed8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700 }}>
                             {item.operator_name ? item.operator_name[0].toUpperCase() : 'U'}
                           </span>
                         )}
