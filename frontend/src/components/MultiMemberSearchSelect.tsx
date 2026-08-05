@@ -102,11 +102,9 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
     doSearch(query);
   };
 
-  const getUserKey = (user: User) => user.employee_id || (user.id ? user.id.toString() : '');
-
   const handleSelect = (user: User) => {
-    const userKey = getUserKey(user);
-    if (!userKey || value.includes(userKey)) return; // Already selected or empty
+    const userKey = user.id ? user.id.toString() : user.employee_id;
+    if (value.includes(userKey)) return; // Already selected
     if (value.length >= maxSelections) {
       alert(`最多只能选择 ${maxSelections} 名相关人员`);
       return;
@@ -118,7 +116,7 @@ export default function MultiMemberSearchSelect({ value = [], onChange, style, m
 
   const handleRemove = (userToRemove: User, e: React.MouseEvent) => {
     e.stopPropagation();
-    const userKey = getUserKey(userToRemove);
+    const userKey = userToRemove.id ? userToRemove.id.toString() : userToRemove.employee_id;
     const newValues = value.filter(id => id !== userKey && id !== userToRemove.employee_id && id !== userToRemove.id.toString());
     onChange(newValues);
   };
