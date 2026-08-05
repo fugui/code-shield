@@ -1248,7 +1248,7 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 
 		if len(relatedIDs) > 0 {
 			var users []models.User
-			models.DB.Where("employee_id IN ? OR unique_id IN ? OR email IN ?", relatedIDs, relatedIDs, relatedIDs).Find(&users)
+			models.DB.Where("employee_id IN ? OR email IN ?", relatedIDs, relatedIDs).Find(&users)
 			for _, u := range users {
 				if u.Email != "" && u.Email != repo.Owner.Email {
 					// Prevent duplicate CC entries
