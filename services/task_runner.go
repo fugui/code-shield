@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -1247,8 +1248,19 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 		}
 
 		if len(relatedIDs) > 0 {
+			var numericIDs []uint
+			for _, idStr := range relatedIDs {
+				if num, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64); err == nil && num > 0 {
+					numericIDs = append(numericIDs, uint(num))
+				}
+			}
+
 			var users []models.User
-			models.DB.Where("employee_id IN ? OR email IN ?", relatedIDs, relatedIDs).Find(&users)
+			if len(numericIDs) > 0 {
+				models.DB.Where("id IN ? OR employee_id IN ? OR email IN ?", numericIDs, relatedIDs, relatedIDs).Find(&users)
+			} else {
+				models.DB.Where("employee_id IN ? OR email IN ?", relatedIDs, relatedIDs).Find(&users)
+			}
 			for _, u := range users {
 				if u.Email != "" && u.Email != repo.Owner.Email {
 					// Prevent duplicate CC entries
