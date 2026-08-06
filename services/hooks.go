@@ -487,7 +487,7 @@ func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail
 		WorkDir:       ctx.codesPath,
 		PromptMsg:     prompt,
 		OutputPath:    outputPath,
-		TimeoutMin:    2,
+		TimeoutMin:    10,
 	}
 
 	log.Printf("[askLLMIfSameFinding] Invoking LLM to double-check finding similarity (Report ID: %d)...", ctx.report.ID)

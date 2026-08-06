@@ -294,25 +294,25 @@ type ScheduleConfig struct {
 
 // TaskTriggerLog 记录面向人类的操作审计触发日志
 type TaskTriggerLog struct {
-	ID            uint           `gorm:"primaryKey" json:"id"`
-	TriggerBatch  string         `gorm:"uniqueIndex;size:64;not null" json:"trigger_batch"` // 批次号 e.g. "TRG-20260731-XXXXXX"
-	TriggerType   string         `gorm:"size:30;not null;index" json:"trigger_type"`       // "manual_single", "manual_batch", "cron_auto", "cron_manual"
-	OperatorID    *uint          `gorm:"index" json:"operator_id"`                         // 操作人 ID (系统触发为 nil)
-	Operator      *User          `gorm:"foreignKey:OperatorID" json:"operator,omitempty"`   // 关联 User
-	OperatorName  string         `gorm:"size:100" json:"operator_name"`                     // 操作人姓名/Email 冗余快照
-	TaskTypeID    uint           `gorm:"index" json:"task_type_id"`
-	TaskType      TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	TargetMode    string         `gorm:"size:30" json:"target_mode"`                       // "single", "all", "service_group", "team", "missing_days", "specific"
-	TargetSummary string         `gorm:"size:255" json:"target_summary"`                    // 目标摘要：“代码仓 repo-a”, “过去 7 天未扫代码仓”
-	FilterParams  datatypes.JSON `json:"filter_params"`                                    // 筛选参数Json
-	ScheduleID    *uint          `gorm:"index" json:"schedule_id"`                         // 如果关联定时任务策略
-	Schedule      *ScheduleConfig`gorm:"foreignKey:ScheduleID" json:"schedule,omitempty"`
-	TotalRepos    int            `gorm:"default:0" json:"total_repos"`                     // 本次触发涉及的代码仓总数
-	SuccessCount  int            `gorm:"default:0" json:"success_count"`                   // 成功排队数
-	SkipCount     int            `gorm:"default:0" json:"skip_count"`                      // 跳过数
-	ClientIP      string         `gorm:"size:50" json:"client_ip"`                         // 操作客户端 IP
-	Remark        string         `gorm:"type:text" json:"remark"`                          // 审计备注
-	CreatedAt     time.Time      `gorm:"index" json:"created_at"`
+	ID            uint            `gorm:"primaryKey" json:"id"`
+	TriggerBatch  string          `gorm:"uniqueIndex;size:64;not null" json:"trigger_batch"` // 批次号 e.g. "TRG-20260731-XXXXXX"
+	TriggerType   string          `gorm:"size:30;not null;index" json:"trigger_type"`        // "manual_single", "manual_batch", "cron_auto", "cron_manual"
+	OperatorID    *uint           `gorm:"index" json:"operator_id"`                          // 操作人 ID (系统触发为 nil)
+	Operator      *User           `gorm:"foreignKey:OperatorID" json:"operator,omitempty"`   // 关联 User
+	OperatorName  string          `gorm:"size:100" json:"operator_name"`                     // 操作人姓名/Email 冗余快照
+	TaskTypeID    uint            `gorm:"index" json:"task_type_id"`
+	TaskType      TaskType        `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	TargetMode    string          `gorm:"size:30" json:"target_mode"`     // "single", "all", "service_group", "team", "missing_days", "specific"
+	TargetSummary string          `gorm:"size:255" json:"target_summary"` // 目标摘要：“代码仓 repo-a”, “过去 7 天未扫代码仓”
+	FilterParams  datatypes.JSON  `json:"filter_params"`                  // 筛选参数Json
+	ScheduleID    *uint           `gorm:"index" json:"schedule_id"`       // 如果关联定时任务策略
+	Schedule      *ScheduleConfig `gorm:"foreignKey:ScheduleID" json:"schedule,omitempty"`
+	TotalRepos    int             `gorm:"default:0" json:"total_repos"`   // 本次触发涉及的代码仓总数
+	SuccessCount  int             `gorm:"default:0" json:"success_count"` // 成功排队数
+	SkipCount     int             `gorm:"default:0" json:"skip_count"`    // 跳过数
+	ClientIP      string          `gorm:"size:50" json:"client_ip"`       // 操作客户端 IP
+	Remark        string          `gorm:"type:text" json:"remark"`        // 审计备注
+	CreatedAt     time.Time       `gorm:"index" json:"created_at"`
 }
 
 type TaskExecutionLog struct {
