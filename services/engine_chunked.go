@@ -33,12 +33,12 @@ type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// ── 引擎前处理：解析配置并扫描分片 ──
-	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 4}
+	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 6}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 4
+		cfg.Concurrency = 6
 	}
 
 	targetScope := "all"
@@ -535,12 +535,12 @@ func ResumeFailedChunks(reportID uint) error {
 	ctx.repo = report.Repo
 
 	// 2. 解析引擎配置
-	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 4}
+	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 6}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 4
+		cfg.Concurrency = 6
 	}
 
 	// 3. 构造上下文并准备路径
