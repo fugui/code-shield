@@ -718,15 +718,16 @@ export default function Workbench() {
 									</div>
 									<button
 										type="button"
-										style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.35rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-color)', cursor: 'pointer', flexShrink: 0 }}
-										title="复制 [文件名:行号] 到剪贴板"
+										style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', padding: 0, borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s ease-in-out' }}
+										title="复制文件与行号（如 file.cpp:39），方便在 VSCode 中按 Ctrl+P 快捷定位"
 										onClick={() => handleCopyLocation(selectedFinding.file_path, selectedFinding.line_number)}
+										onMouseEnter={e => { e.currentTarget.style.color = '#2563eb'; e.currentTarget.style.borderColor = 'rgba(37, 99, 235, 0.3)'; e.currentTarget.style.background = 'rgba(37, 99, 235, 0.08)'; }}
+										onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.background = 'var(--card-bg)'; }}
 									>
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 											<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
 											<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
 										</svg>
-										复制位置
 									</button>
 								</div>
 							</div>
