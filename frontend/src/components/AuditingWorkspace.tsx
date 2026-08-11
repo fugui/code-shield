@@ -508,21 +508,23 @@ export default function AuditingWorkspace({
         .workspace-copy-btn {
           display: inline-flex;
           align-items: center;
-          gap: 0.35rem;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          padding: 0;
           font-size: 0.8rem;
-          color: #475569;
+          color: #64748b;
           background: var(--bg-color);
-          padding: 0.5rem 0.75rem;
           border-radius: 4px;
           border: 1px solid var(--border-color);
           transition: all 0.2s ease-in-out;
           cursor: pointer;
         }
         .workspace-copy-btn:hover {
-          background: rgba(16, 185, 129, 0.05);
-          border-color: rgba(16, 185, 129, 0.3);
-          color: #059669;
-          box-shadow: 0 2px 6px rgba(16, 185, 129, 0.06);
+          background: rgba(37, 99, 235, 0.08);
+          border-color: rgba(37, 99, 235, 0.3);
+          color: #2563eb;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08);
         }
       `}</style>
       
@@ -900,14 +902,13 @@ export default function AuditingWorkspace({
                   <button
                     type="button"
                     className="workspace-copy-btn"
-                    title="复制 [文件名:行号] 到剪贴板"
+                    title="复制文件与行号（如 file.cpp:39），方便在 VSCode 中按 Ctrl+P 快捷定位"
                     onClick={() => handleCopyLocation(editingFinding.file_path, editingFinding.line_number)}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                     </svg>
-                    复制位置
                   </button>
                   {editingFinding.category && (
                     <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
