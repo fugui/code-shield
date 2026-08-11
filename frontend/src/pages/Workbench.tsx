@@ -86,6 +86,29 @@ const kanbanColumns = [
 export default function Workbench() {
 	const { showToast } = useToast();
 	const navigate = useNavigate();
+
+	const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {
+		if (!filePath) return;
+		const parts = filePath.split(/[/\\]/);
+		const fileName = parts[parts.length - 1] || filePath;
+		const copyText = lineNumber ? `${fileName}:${lineNumber}` : fileName;
+
+		navigator.clipboard.writeText(copyText).then(() => {
+			showToast(`已复制: ${copyText}`, 'success');
+		}).catch(() => {
+			const textArea = document.createElement('textarea');
+			textArea.value = copyText;
+			document.body.appendChild(textArea);
+			textArea.select();
+			try {
+				document.execCommand('copy');
+				showToast(`已复制: ${copyText}`, 'success');
+			} catch {
+				showToast('复制失败', 'error');
+			}
+			document.body.removeChild(textArea);
+		});
+	};
 	const [findings, setFindings] = useState<WorkbenchFinding[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -688,9 +711,23 @@ export default function Workbench() {
 								<h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-color)', textAlign: 'left', lineHeight: 1.4 }}>
 									{selectedFinding.title}
 								</h3>
-								<div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-color)', padding: '0.45rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-block', width: '100%', boxSizing: 'border-box', textAlign: 'left' }}>
-									📁 <strong>代码仓:</strong> {selectedFinding.repo_name}<br />
-									📄 <strong>文件位置:</strong> {selectedFinding.file_path}:{selectedFinding.line_number}
+								<div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-color)', padding: '0.45rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box', textAlign: 'left' }}>
+									<div>
+										📁 <strong>代码仓:</strong> {selectedFinding.repo_name}<br />
+										📄 <strong>文件位置:</strong> {selectedFinding.file_path}:{selectedFinding.line_number}
+									</div>
+									<button
+										type="button"
+										style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.35rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-color)', cursor: 'pointer', flexShrink: 0 }}
+										title="复制 [文件名:行号] 到剪贴板"
+										onClick={() => handleCopyLocation(selectedFinding.file_path, selectedFinding.line_number)}
+									>
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+											<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+											<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+										</svg>
+										复制位置
+									</button>
 								</div>
 							</div>
 
