@@ -101,6 +101,32 @@ const getRepoSourceUrl = (
 
 function PublicReportFindings() {
   const { reportId } = useParams<{ reportId: string }>();
+  const [copyToastText, setCopyToastText] = useState<string | null>(null);
+
+  const handleCopyLocation = (filePath: string, lineNumber?: string) => {
+    if (!filePath) return;
+    const parts = filePath.split(/[/\\]/);
+    const fileName = parts[parts.length - 1] || filePath;
+    const copyText = lineNumber ? `${fileName}:${lineNumber}` : fileName;
+
+    navigator.clipboard.writeText(copyText).then(() => {
+      setCopyToastText(copyText);
+      setTimeout(() => setCopyToastText(null), 2500);
+    }).catch(() => {
+      const textArea = document.createElement('textarea');
+      textArea.value = copyText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopyToastText(copyText);
+        setTimeout(() => setCopyToastText(null), 2500);
+      } catch {
+        // ignore
+      }
+      document.body.removeChild(textArea);
+    });
+  };
   const [report, setReport] = useState<ReportDetails | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,6 +279,27 @@ function PublicReportFindings() {
           border-color: rgba(37, 99, 235, 0.25);
           color: #2563eb;
           box-shadow: 0 2px 6px rgba(37, 99, 235, 0.06);
+        }
+        .copy-loc-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.78rem;
+          color: #475569;
+          font-family: inherit;
+          background: #f8fafc;
+          padding: 0.45rem 0.75rem;
+          border-radius: 6px;
+          border: 1px solid #e2e8f0;
+          transition: all 0.2s ease-in-out;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .copy-loc-btn:hover {
+          background: rgba(16, 185, 129, 0.05);
+          border-color: rgba(16, 185, 129, 0.3);
+          color: #059669;
+          box-shadow: 0 2px 6px rgba(16, 185, 129, 0.06);
         }
 
         /* High-quality print output configuration */
@@ -529,29 +576,44 @@ function PublicReportFindings() {
 
                 {/* Filepath and Line */}
                 {f.file_path && (
-                  report.repo?.url ? (
-                    <a
-                      href={getRepoSourceUrl(report.repo.url, report.repo.branch, f.file_path, f.line_number)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="location-link"
-                      title="点击跳转到代码仓查看源码"
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', width: '100%' }}>
+                    {report.repo?.url ? (
+                      <a
+                        href={getRepoSourceUrl(report.repo.url, report.repo.branch, f.file_path, f.line_number)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="location-link"
+                        style={{ flex: 1 }}
+                        title="点击跳转到代码仓查看源码"
+                      >
+                        <span>📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}</span>
+                        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', opacity: 0.8 }}>
+                          在代码仓中打开
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <line x1="10" y1="14" x2="21" y2="3"></line>
+                          </svg>
+                        </span>
+                      </a>
+                    ) : (
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', fontFamily: 'monospace', background: '#f8fafc', padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #f1f5f9', display: 'inline-block', flex: 1, boxSizing: 'border-box' }}>
+                        📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="copy-loc-btn"
+                      title="复制 [文件名:行号] 到剪贴板"
+                      onClick={() => handleCopyLocation(f.file_path, f.line_number)}
                     >
-                      <span>📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}</span>
-                      <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', opacity: 0.8 }}>
-                        在代码仓中打开
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                          <polyline points="15 3 21 3 21 9"></polyline>
-                          <line x1="10" y1="14" x2="21" y2="3"></line>
-                        </svg>
-                      </span>
-                    </a>
-                  ) : (
-                    <div style={{ fontSize: '0.8rem', color: '#64748b', fontFamily: 'monospace', background: '#f8fafc', padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid #f1f5f9', display: 'inline-block', width: '100%', boxSizing: 'border-box' }}>
-                      📄 <strong>位置：</strong>{f.file_path}{f.line_number ? `:${f.line_number}` : ''}
-                    </div>
-                  )
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                      复制位置
+                    </button>
+                  </div>
                 )}
 
                 {/* Detail */}
@@ -610,6 +672,11 @@ function PublicReportFindings() {
         </footer>
 
       </div>
+      {copyToastText && (
+        <div style={{ position: 'fixed', bottom: '2rem', right: '2rem', background: '#059669', color: 'white', padding: '0.6rem 1.2rem', borderRadius: '6px', fontSize: '0.85rem', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 9999 }}>
+          已复制到剪贴板: {copyToastText}
+        </div>
+      )}
     </div>
   );
 }
