@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gorm.io/datatypes"
 )
 
 // ErrSkipped is returned when a task is skipped due to precondition (e.g., no recent commits).
@@ -327,7 +329,7 @@ func RecoverPendingTasks(action string) {
 			"ai_summary":       "",
 			"report_path":      "",
 			"score":            0,
-			"metrics":          []byte("null"),
+			"metrics":          datatypes.JSON("null"),
 		})
 		models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
 			"status":        models.StatusPending,
