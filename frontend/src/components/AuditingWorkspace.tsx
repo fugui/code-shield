@@ -98,6 +98,29 @@ export default function AuditingWorkspace({
 }: AuditingWorkspaceProps) {
   const { showToast } = useToast();
 
+  const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {
+    if (!filePath) return;
+    const parts = filePath.split(/[/\\]/);
+    const fileName = parts[parts.length - 1] || filePath;
+    const copyText = lineNumber ? `${fileName}:${lineNumber}` : fileName;
+
+    navigator.clipboard.writeText(copyText).then(() => {
+      showToast(`已复制: ${copyText}`, 'success');
+    }).catch(() => {
+      const textArea = document.createElement('textarea');
+      textArea.value = copyText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast(`已复制: ${copyText}`, 'success');
+      } catch {
+        showToast('复制失败', 'error');
+      }
+      document.body.removeChild(textArea);
+    });
+  };
+
   // Search & Filter States
   const [wsSeverity, setWsSeverity] = useState('');
   const [wsStatus, setWsStatus] = useState('');
@@ -482,6 +505,25 @@ export default function AuditingWorkspace({
           color: #2563eb;
           box-shadow: 0 2px 6px rgba(37, 99, 235, 0.06);
         }
+        .workspace-copy-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.8rem;
+          color: #475569;
+          background: var(--bg-color);
+          padding: 0.5rem 0.75rem;
+          border-radius: 4px;
+          border: 1px solid var(--border-color);
+          transition: all 0.2s ease-in-out;
+          cursor: pointer;
+        }
+        .workspace-copy-btn:hover {
+          background: rgba(16, 185, 129, 0.05);
+          border-color: rgba(16, 185, 129, 0.3);
+          color: #059669;
+          box-shadow: 0 2px 6px rgba(16, 185, 129, 0.06);
+        }
       `}</style>
       
       {/* Workspace Header */}
@@ -854,6 +896,19 @@ export default function AuditingWorkspace({
                       📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
                     </div>
                   )}
+
+                  <button
+                    type="button"
+                    className="workspace-copy-btn"
+                    title="复制 [文件名:行号] 到剪贴板"
+                    onClick={() => handleCopyLocation(editingFinding.file_path, editingFinding.line_number)}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    复制位置
+                  </button>
                   {editingFinding.category && (
                     <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
                       🔖 <strong>归属类别:</strong> {editingFinding.category}
