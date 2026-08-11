@@ -87,11 +87,16 @@ export default function Workbench() {
 	const { showToast } = useToast();
 	const navigate = useNavigate();
 
-	const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {
-		if (!filePath) return;
+	const getLocationText = (filePath: string, lineNumber?: string | number) => {
+		if (!filePath) return '';
 		const parts = filePath.split(/[/\\]/);
 		const fileName = parts[parts.length - 1] || filePath;
-		const copyText = lineNumber ? `${fileName}:${lineNumber}` : fileName;
+		return lineNumber ? `${fileName}:${lineNumber}` : fileName;
+	};
+
+	const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {
+		if (!filePath) return;
+		const copyText = getLocationText(filePath, lineNumber);
 
 		navigator.clipboard.writeText(copyText).then(() => {
 			showToast(`已复制: ${copyText}`, 'success');
@@ -719,7 +724,7 @@ export default function Workbench() {
 									<button
 										type="button"
 										style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', padding: 0, borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s ease-in-out' }}
-										title="复制文件与行号（如 file.cpp:39），方便在 VSCode 中按 Ctrl+P 快捷定位"
+										title={`复制 ${getLocationText(selectedFinding.file_path, selectedFinding.line_number)} （可用于 VSCode Ctrl+P 快捷定位）`}
 										onClick={() => handleCopyLocation(selectedFinding.file_path, selectedFinding.line_number)}
 										onMouseEnter={e => { e.currentTarget.style.color = '#2563eb'; e.currentTarget.style.borderColor = 'rgba(37, 99, 235, 0.3)'; e.currentTarget.style.background = 'rgba(37, 99, 235, 0.08)'; }}
 										onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.background = 'var(--card-bg)'; }}

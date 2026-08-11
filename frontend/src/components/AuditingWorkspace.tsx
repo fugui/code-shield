@@ -98,11 +98,16 @@ export default function AuditingWorkspace({
 }: AuditingWorkspaceProps) {
   const { showToast } = useToast();
 
-  const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {
-    if (!filePath) return;
+  const getLocationText = (filePath: string, lineNumber?: string | number) => {
+    if (!filePath) return '';
     const parts = filePath.split(/[/\\]/);
     const fileName = parts[parts.length - 1] || filePath;
-    const copyText = lineNumber ? `${fileName}:${lineNumber}` : fileName;
+    return lineNumber ? `${fileName}:${lineNumber}` : fileName;
+  };
+
+  const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {
+    if (!filePath) return;
+    const copyText = getLocationText(filePath, lineNumber);
 
     navigator.clipboard.writeText(copyText).then(() => {
       showToast(`已复制: ${copyText}`, 'success');
@@ -902,7 +907,7 @@ export default function AuditingWorkspace({
                   <button
                     type="button"
                     className="workspace-copy-btn"
-                    title="复制文件与行号（如 file.cpp:39），方便在 VSCode 中按 Ctrl+P 快捷定位"
+                    title={`复制 ${getLocationText(editingFinding.file_path, editingFinding.line_number)} （可用于 VSCode Ctrl+P 快捷定位）`}
                     onClick={() => handleCopyLocation(editingFinding.file_path, editingFinding.line_number)}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

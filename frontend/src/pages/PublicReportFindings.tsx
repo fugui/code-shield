@@ -103,11 +103,16 @@ function PublicReportFindings() {
   const { reportId } = useParams<{ reportId: string }>();
   const [copyToastText, setCopyToastText] = useState<string | null>(null);
 
-  const handleCopyLocation = (filePath: string, lineNumber?: string) => {
-    if (!filePath) return;
+  const getLocationText = (filePath: string, lineNumber?: string) => {
+    if (!filePath) return '';
     const parts = filePath.split(/[/\\]/);
     const fileName = parts[parts.length - 1] || filePath;
-    const copyText = lineNumber ? `${fileName}:${lineNumber}` : fileName;
+    return lineNumber ? `${fileName}:${lineNumber}` : fileName;
+  };
+
+  const handleCopyLocation = (filePath: string, lineNumber?: string) => {
+    if (!filePath) return;
+    const copyText = getLocationText(filePath, lineNumber);
 
     navigator.clipboard.writeText(copyText).then(() => {
       setCopyToastText(copyText);
@@ -604,7 +609,7 @@ function PublicReportFindings() {
                     <button
                       type="button"
                       className="copy-loc-btn"
-                      title="复制文件与行号（如 file.cpp:39），方便在 VSCode 中按 Ctrl+P 快捷定位"
+                      title={`复制 ${getLocationText(f.file_path, f.line_number)} （可用于 VSCode Ctrl+P 快捷定位）`}
                       onClick={() => handleCopyLocation(f.file_path, f.line_number)}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
