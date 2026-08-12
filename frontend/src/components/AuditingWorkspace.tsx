@@ -163,6 +163,12 @@ export default function AuditingWorkspace({
   }, [isOpen]);
 
   useEffect(() => {
+    if (currentUser?.id && editingFinding && !workflowAssignee && !editingFinding.assignee_id) {
+      setWorkflowAssignee(currentUser.id);
+    }
+  }, [currentUser, editingFinding, workflowAssignee]);
+
+  useEffect(() => {
     if (isOpen && repoId) {
       const params = new URLSearchParams({
         repo_id: repoId.toString(),
@@ -342,7 +348,7 @@ export default function AuditingWorkspace({
   const startWorkflow = (finding: Finding) => {
     setEditingFinding(finding);
     setWorkflowStatus(finding.status || 'open');
-    setWorkflowAssignee(finding.assignee_id || '');
+    setWorkflowAssignee(finding.assignee_id || currentUser?.id || '');
     setWorkflowComment('');
   };
 

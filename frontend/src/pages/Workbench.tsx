@@ -23,6 +23,7 @@ interface WorkbenchFinding {
 	suggestion: string;
 	status: string;
 	status_log: string | null;
+	assignee_id?: number | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -244,8 +245,11 @@ export default function Workbench() {
 		setEditFeedback('');
 		fetch(`/api/me`)
 			.then(res => res.json())
-			.then(myInfo => { setEditAssignee(myInfo.id || ''); })
-			.catch(() => setEditAssignee(''));
+			.then(myInfo => {
+				setMyInfo(myInfo);
+				setEditAssignee(finding.assignee_id || myInfo.id || '');
+			})
+			.catch(() => setEditAssignee(finding.assignee_id || ''));
 	};
 
 	const getSeverityStyle = (severity: string) =>
