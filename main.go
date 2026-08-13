@@ -87,8 +87,6 @@ func main() {
 	{
 		auth.POST("/login", handlers.Login)
 		auth.GET("/auth/config", handlers.GetAuthConfig)
-		auth.GET("/public/tasks/:id", handlers.GetPublicTaskDetails)
-		auth.GET("/public/tasks/:id/findings", handlers.GetPublicAnalysisFindings)
 	}
 
 	// Register API routes (protected)

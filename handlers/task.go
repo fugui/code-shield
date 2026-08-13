@@ -899,31 +899,7 @@ func ResumeTask(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已入队，等待排队执行"})
 }
 
-// GetPublicTaskDetails returns a single task report without auth
-func GetPublicTaskDetails(c *gin.Context) {
-	id := c.Param("id")
-	var report models.TaskReport
-	if err := models.DB.Preload("Repo").Preload("TaskType").First(&report, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
-		return
-	}
-	c.JSON(http.StatusOK, report)
-}
 
-// GetPublicAnalysisFindings returns structured analysis findings for a task report without auth
-func GetPublicAnalysisFindings(c *gin.Context) {
-	id := c.Param("id")
-	findings, err := getFindingsForReport(id)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load findings: " + err.Error()})
-		}
-		return
-	}
-	c.JSON(http.StatusOK, findings)
-}
 
 // TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days
 func TriggerMissingTasks(c *gin.Context) {

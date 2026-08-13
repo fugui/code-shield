@@ -143,14 +143,14 @@ function PublicReportFindings() {
       setLoading(true);
       setError(null);
       try {
-        const reportRes = await fetch(`/api/public/tasks/${reportId}`);
+        const reportRes = await fetch(`/api/tasks/${reportId}`);
         if (!reportRes.ok) {
           throw new Error('未找到该报告，或无访问权限');
         }
         const reportData = await reportRes.json();
         setReport(reportData);
 
-        const findingsRes = await fetch(`/api/public/tasks/${reportId}/findings`);
+        const findingsRes = await fetch(`/api/tasks/${reportId}/findings`);
         if (findingsRes.ok) {
           const findingsData: Finding[] = await findingsRes.json();
           setFindings(findingsData);
