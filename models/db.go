@@ -106,7 +106,7 @@ func InitDB() {
 
 func seedDatabase() {
 	var count int64
-	DB.Model(&User{}).Count(&count)
+	DB.Model(&User{}).Where("email = ?", "admin@code-shield.com").Count(&count)
 	if count == 0 {
 		hashed, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 		admin := User{
