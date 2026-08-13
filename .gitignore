@@ -7,6 +7,9 @@ node_modules/
 dist/
 build/
 frontend/dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Logs
 logs/
