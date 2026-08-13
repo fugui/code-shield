@@ -906,22 +906,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
             共 {totalItems} 条执行记录，当前第 {page} / {totalPages} 页
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-            {/* 首页 */}
-            <button
-              disabled={page === 1}
-              onClick={() => updateParams({ page: 1 })}
-              style={{
-                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
-                borderRadius: '4px', cursor: page === 1 ? 'not-allowed' : 'pointer',
-                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: page === 1 ? 0.5 : 1
-              }}
-              onMouseEnter={e => { if (page !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              首页
-            </button>
-
             {/* 上一页 */}
             <button
               disabled={page === 1}
@@ -984,22 +968,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
               下一页
-            </button>
-
-            {/* 末页 */}
-            <button
-              disabled={page === totalPages || totalPages === 0}
-              onClick={() => updateParams({ page: totalPages })}
-              style={{
-                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
-                borderRadius: '4px', cursor: (page === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer',
-                color: (page === totalPages || totalPages === 0) ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (page === totalPages || totalPages === 0) ? 0.5 : 1
-              }}
-              onMouseEnter={e => { if (page !== totalPages && totalPages > 0) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              末页
             </button>
 
             {/* Page size selector */}
