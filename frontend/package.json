@@ -17,7 +17,8 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.22.3",
     "react-syntax-highlighter": "^16.1.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "@code/common": "file:../../code-common/frontend"
   },
   "devDependencies": {
     "@originjs/vite-plugin-federation": "^1.4.1",

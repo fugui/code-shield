@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Pagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import ReportSidebar from '../components/ReportSidebar';
 import { sshToHttps } from '../utils/urlUtils';
@@ -885,117 +886,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       </div>
 
       {/* Pagination Controls */}
-      {logs.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginTop: '1rem', padding: '0.5rem 1rem', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-          <div style={{ color: '#64748b', fontSize: '0.875rem' }}>
-            共 {totalItems} 条执行记录，当前第 {page} / {totalPages} 页
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-            {/* 首页 */}
-            <button
-              disabled={page === 1}
-              onClick={() => updateParams({ page: 1 })}
-              style={{
-                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
-                borderRadius: '4px', cursor: page === 1 ? 'not-allowed' : 'pointer',
-                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: page === 1 ? 0.5 : 1
-              }}
-              onMouseEnter={e => { if (page !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              首页
-            </button>
-            {/* 上一页 */}
-            <button
-              disabled={page === 1}
-              onClick={() => updateParams({ page: Math.max(page - 1, 1) })}
-              style={{
-                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
-                borderRadius: '4px', cursor: page === 1 ? 'not-allowed' : 'pointer',
-                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: page === 1 ? 0.5 : 1
-              }}
-              onMouseEnter={e => { if (page !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              上一页
-            </button>
-            
-            {/* Page numbers */}
-            {getPageNumbers().map(pageNum => {
-              const isCurrent = page === pageNum;
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => updateParams({ page: pageNum })}
-                  style={{
-                    minWidth: '28px', height: '28px', padding: '0 0.3rem',
-                    border: '1px solid',
-                    borderColor: isCurrent ? 'var(--primary-color)' : 'var(--border-color)',
-                    background: isCurrent ? 'var(--primary-color)' : 'transparent',
-                    color: isCurrent ? 'white' : 'var(--text-color)',
-                    borderRadius: '4px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: isCurrent ? 600 : 400,
-                    transition: 'all 0.2s', whiteSpace: 'nowrap'
-                  }}
-                  onMouseEnter={e => { if (!isCurrent) e.currentTarget.style.background = 'rgba(37,99,235,0.04)'; }}
-                  onMouseLeave={e => { if (!isCurrent) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
-
-            {/* 下一页 */}
-            <button
-              disabled={page === totalPages || totalPages === 0}
-              onClick={() => updateParams({ page: Math.min(page + 1, totalPages) })}
-              style={{
-                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
-                borderRadius: '4px', cursor: (page === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer',
-                color: (page === totalPages || totalPages === 0) ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (page === totalPages || totalPages === 0) ? 0.5 : 1
-              }}
-              onMouseEnter={e => { if (page !== totalPages && totalPages > 0) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              下一页
-            </button>
-
-            {/* 末页 */}
-            <button
-              disabled={page === totalPages || totalPages === 0}
-              onClick={() => updateParams({ page: totalPages })}
-              style={{
-                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
-                borderRadius: '4px', cursor: (page === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer',
-                color: (page === totalPages || totalPages === 0) ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
-                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (page === totalPages || totalPages === 0) ? 0.5 : 1
-              }}
-              onMouseEnter={e => { if (page !== totalPages && totalPages > 0) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              末页
-            </button>
-
-            {/* Page size selector */}
-            <select
-              value={pageSize}
-              onChange={e => updateParams({ pageSize: Number(e.target.value), page: 1 })}
-              style={{
-                padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)',
-                fontSize: '0.825rem', outline: 'none', background: 'transparent', color: 'var(--text-color)', marginLeft: '0.5rem',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="15">15 条/页</option>
-              <option value="25">25 条/页</option>
-              <option value="50">50 条/页</option>
-              <option value="100">100 条/页</option>
-            </select>
-          </div>
-        </div>
-      )}
+      {logs.length > 0 && <Pagination totalItems={totalItems} />}
 
       <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
     </div>
