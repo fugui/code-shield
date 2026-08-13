@@ -20,8 +20,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
   const statusGroup = searchParams.get('status_group') || searchParams.get('statusGroup') || 'all';
 
-  const [jumpPageInput, setJumpPageInput] = useState<string>('');
-
   const [logs, setLogs] = useState<any[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -127,15 +125,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       console.error('Failed to fetch execution logs:', err);
     }
   }, [page, pageSize, statusGroup, updateParams]);
-
-  const handleJumpPage = () => {
-    const target = parseInt(jumpPageInput, 10);
-    if (!isNaN(target)) {
-      const validPage = Math.max(1, Math.min(target, totalPages || 1));
-      updateParams({ page: validPage });
-      setJumpPageInput('');
-    }
-  };
 
   const getPageNumbers = () => {
     const maxVisible = 5;
@@ -988,54 +977,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               <option value="50">50 条/页</option>
               <option value="100">100 条/页</option>
             </select>
-
-            {/* Quick jump */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: '0.5rem' }}>
-              <span style={{ fontSize: '0.825rem', color: '#64748b' }}>跳至</span>
-              <input
-                type="number"
-                min={1}
-                max={totalPages || 1}
-                value={jumpPageInput}
-                onChange={e => setJumpPageInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    handleJumpPage();
-                  }
-                }}
-                style={{
-                  width: '48px',
-                  padding: '0.25rem 0.35rem',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '0.825rem',
-                  outline: 'none',
-                  textAlign: 'center',
-                  background: 'transparent',
-                  color: 'var(--text-color)'
-                }}
-                placeholder="页"
-              />
-              <span style={{ fontSize: '0.825rem', color: '#64748b' }}>页</span>
-              <button
-                onClick={handleJumpPage}
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  border: '1px solid var(--border-color)',
-                  background: 'transparent',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '0.825rem',
-                  color: 'var(--text-color)',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.04)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                确定
-              </button>
-            </div>
           </div>
         </div>
       )}
