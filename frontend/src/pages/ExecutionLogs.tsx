@@ -962,6 +962,22 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               下一页
             </button>
 
+            {/* 末页 */}
+            <button
+              disabled={page === totalPages || totalPages === 0}
+              onClick={() => updateParams({ page: totalPages })}
+              style={{
+                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
+                borderRadius: '4px', cursor: (page === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer',
+                color: (page === totalPages || totalPages === 0) ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
+                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (page === totalPages || totalPages === 0) ? 0.5 : 1
+              }}
+              onMouseEnter={e => { if (page !== totalPages && totalPages > 0) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              末页
+            </button>
+
             {/* Page size selector */}
             <select
               value={pageSize}
