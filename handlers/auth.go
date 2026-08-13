@@ -1,41 +1,19 @@
 package handlers
 
 import (
+	commonAuth "code-common/backend/auth"
 	"code-shield/models"
-	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
-type PortalClaims struct {
-	UserID   uint     `json:"user_id"`
-	Username string   `json:"username"`
-	Email    string   `json:"email"`
-	Name     string   `json:"name"`
-	Roles    []string `json:"roles"`
-	jwt.RegisteredClaims
-}
+type PortalClaims = commonAuth.PortalClaims
 
 func parseToken(tokenString string) (*PortalClaims, error) {
-	secret := []byte(models.AppConfig.Auth.JWTSecret)
-	claims := &PortalClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return secret, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if !token.Valid {
-		return nil, fmt.Errorf("invalid token")
-	}
-	return claims, nil
+	return commonAuth.ParseToken(tokenString, models.AppConfig.Auth.JWTSecret)
 }
 
 // AuthMiddleware to extract and verify user token issued by code-bench
