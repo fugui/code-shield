@@ -1,7 +1,7 @@
 package models
 
 import (
-	"encoding/json"
+	commonModels "code-common/backend/models"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,71 +9,10 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
-	"gorm.io/gorm"
 )
 
-type User struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`                         // 系统内部自增唯一ID
-	UniqueID     *string        `gorm:"uniqueIndex" json:"unique_id,omitempty"`       // SSO 平台唯一不变ID
-	EmployeeID   string         `gorm:"index;default:''" json:"employee_id"`          // 工号
-	EmployeeType string         `gorm:"default:''" json:"employee_type"`              // 员工类型
-	Email        string         `gorm:"uniqueIndex;not null;default:''" json:"email"` // 登录邮箱
-	Username     string         `gorm:"index;default:''" json:"username"`             // 用户名
-	Name         string         `gorm:"not null;default:''" json:"name"`              // 姓名
-	Password     string         `gorm:"not null" json:"-"`                            // 密码哈希
-	RegMethod    string         `gorm:"default:'local'" json:"reg_method"`            // "local", "sso", "imported"
-	IsActive     bool           `gorm:"default:true" json:"is_active"`                // 是否允许登录
-	IsAdmin      bool           `gorm:"-" json:"is_admin"`                            // 虚拟计算字段
-	Roles        datatypes.JSON `gorm:"type:text" json:"roles"`                       // 系统角色列表 e.g. ["shield_admin"]
-	LastLogin    *time.Time     `json:"last_login"`
-	LastIP       string         `gorm:"default:''" json:"last_ip"` // 最后登录IP
-	DepartmentID *uint          `json:"department_id"`             // 关联部门ID
-	Department   *Department    `gorm:"foreignKey:DepartmentID" json:"department,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
-}
-
-func (u *User) GetRoles() []string {
-	var roles []string
-	if len(u.Roles) > 0 {
-		_ = json.Unmarshal(u.Roles, &roles)
-	}
-	return roles
-}
-
-func (u *User) AfterFind(tx *gorm.DB) (err error) {
-	u.IsAdmin = u.IsSuperAdmin()
-	return
-}
-
-func (u *User) HasRole(targetRole string) bool {
-	roles := u.GetRoles()
-	for _, r := range roles {
-		if r == "super_admin" || r == targetRole {
-			return true
-		}
-	}
-	return false
-}
-
-func (u *User) IsSuperAdmin() bool {
-	roles := u.GetRoles()
-	for _, r := range roles {
-		if r == "super_admin" {
-			return true
-		}
-	}
-	return false
-}
-
-type Department struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"uniqueIndex;not null" json:"name"`
-	LeaderID  *uint     `json:"leader_id"` // 关联 User.ID (允许为 NULL)
-	Leader    *User     `gorm:"foreignKey:LeaderID" json:"leader,omitempty"`
-	UserCount int64     `gorm:"-" json:"user_count"` // 虚拟字段：部门下人数
-	RepoCount int64     `gorm:"-" json:"repo_count"` // 虚拟字段：部门下代码仓数
-	CreatedAt time.Time `json:"created_at"`
-}
+type User = commonModels.User
+type Department = commonModels.Department
 
 type Repository struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`

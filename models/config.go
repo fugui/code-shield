@@ -1,9 +1,9 @@
 package models
 
 import (
+	commonModels "code-common/backend/models"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,107 +13,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type FieldMappingConfig struct {
-	Username     string `yaml:"username"`      // IdP 用户名字段，默认 "preferred_username"
-	Email        string `yaml:"email"`         // IdP 邮箱字段，默认 "email"
-	Name         string `yaml:"name"`          // IdP 姓名字段，默认 "name"
-	EmployeeID   string `yaml:"employee_id"`   // IdP 工号字段，默认 "employee_id"
-	UniqueID     string `yaml:"unique_id"`     // IdP 唯一ID字段，默认 "unique_id"
-	EmployeeType string `yaml:"employee_type"` // IdP 员工类型字段，默认 "employee_type"
-}
-
-type OAuth2Config struct {
-	Enabled             bool               `yaml:"enabled"`               // 是否启用 OAuth2 SSO
-	ClientID            string             `yaml:"client_id"`             // OAuth2 Client ID
-	ClientSecret        string             `yaml:"client_secret"`         // OAuth2 Client Secret
-	AuthURL             string             `yaml:"auth_url"`              // Authorization Endpoint URL
-	TokenURL            string             `yaml:"token_url"`             // Token Endpoint URL
-	UserInfoURL         string             `yaml:"userinfo_url"`          // UserInfo Endpoint URL
-	RedirectURL         string             `yaml:"redirect_url"`          // 回调地址 (如 https://shield.company.com/api/oauth2/callback)
-	Scopes              []string           `yaml:"scopes"`                // 请求的 Scopes，默认 ["openid", "profile", "email"]
-	AdminList           []string           `yaml:"admin_list"`            // 自动提权为管理员的邮箱/用户名列表
-	AllowedEmailDomains []string           `yaml:"allowed_email_domains"` // 允许登录的邮箱后缀白名单，留空表示不限制
-	FieldMapping        FieldMappingConfig `yaml:"field_mapping"`         // 用户属性字段映射
-	DeptAPIURL          string             `yaml:"dept_api_url"`          // 从 SSO 获取部门信息的外部 API 地址
-}
+type FieldMappingConfig = commonModels.FieldMappingConfig
+type OAuth2Config = commonModels.OAuth2Config
+type DatabaseConfig = commonModels.DatabaseConfig
 
 type ModelConfig struct {
 	OpenCode   string `yaml:"opencode"`   // OpenCode 引擎对应的具体模型名
 	Claude     string `yaml:"claude"`     // Claude 引擎对应的具体模型名
 	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
-}
-
-type DatabaseConfig struct {
-	Host         string `yaml:"host"`
-	Port         int    `yaml:"port"`
-	User         string `yaml:"user"`
-	Password     string `yaml:"password"`
-	DBName       string `yaml:"dbname"`
-	SSLMode      string `yaml:"sslmode"`
-	MaxOpenConns int    `yaml:"max_open_conns"`
-	MaxIdleConns int    `yaml:"max_idle_conns"`
-	DSN          string `yaml:"dsn"`
-}
-
-func (d *DatabaseConfig) GetDSN() string {
-	if envDSN := os.Getenv("DB_DSN"); envDSN != "" {
-		return envDSN
-	}
-	if d.DSN != "" {
-		return d.DSN
-	}
-
-	host := os.Getenv("DB_HOST")
-	if host == "" {
-		host = d.Host
-	}
-	if host == "" {
-		host = "127.0.0.1"
-	}
-
-	portStr := os.Getenv("DB_PORT")
-	port := 0
-	if portStr != "" {
-		fmt.Sscanf(portStr, "%d", &port)
-	}
-	if port <= 0 {
-		port = d.Port
-	}
-	if port <= 0 {
-		port = 5432
-	}
-
-	user := os.Getenv("DB_USER")
-	if user == "" {
-		user = d.User
-	}
-	if user == "" {
-		user = "code_shield"
-	}
-
-	password := os.Getenv("DB_PASSWORD")
-	if password == "" {
-		password = d.Password
-	}
-
-	dbname := os.Getenv("DB_NAME")
-	if dbname == "" {
-		dbname = d.DBName
-	}
-	if dbname == "" {
-		dbname = "code_shield"
-	}
-
-	sslmode := os.Getenv("DB_SSLMODE")
-	if sslmode == "" {
-		sslmode = d.SSLMode
-	}
-	if sslmode == "" {
-		sslmode = "disable"
-	}
-
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
 }
 
 type Config struct {
