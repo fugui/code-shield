@@ -138,23 +138,19 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   };
 
   const getPageNumbers = () => {
-    if (totalPages <= 7) {
+    const maxVisible = 5;
+    if (totalPages <= maxVisible) {
       return Array.from({ length: totalPages }, (_, i) => i + 1);
     }
-    const pages: (number | string)[] = [];
-    pages.push(1);
-    if (page > 4) {
-      pages.push('left-ellipsis');
+    let start = Math.max(1, page - 2);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
     }
-    const start = Math.max(2, page - 2);
-    const end = Math.min(totalPages - 1, page + 2);
+    const pages: number[] = [];
     for (let i = start; i <= end; i++) {
       pages.push(i);
     }
-    if (page < totalPages - 3) {
-      pages.push('right-ellipsis');
-    }
-    pages.push(totalPages);
     return pages;
   };
 
@@ -906,6 +902,21 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
             共 {totalItems} 条执行记录，当前第 {page} / {totalPages} 页
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+            {/* 首页 */}
+            <button
+              disabled={page === 1}
+              onClick={() => updateParams({ page: 1 })}
+              style={{
+                padding: '0.3rem 0.6rem', border: '1px solid var(--border-color)', background: 'transparent',
+                borderRadius: '4px', cursor: page === 1 ? 'not-allowed' : 'pointer',
+                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)', fontSize: '0.825rem',
+                transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: page === 1 ? 0.5 : 1
+              }}
+              onMouseEnter={e => { if (page !== 1) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              首页
+            </button>
             {/* 上一页 */}
             <button
               disabled={page === 1}
@@ -922,16 +933,8 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               上一页
             </button>
             
-            {/* Page numbers with Ellipsis */}
-            {getPageNumbers().map((item, idx) => {
-              if (typeof item === 'string') {
-                return (
-                  <span key={`${item}-${idx}`} style={{ padding: '0 0.25rem', color: '#94a3b8', fontSize: '0.825rem', userSelect: 'none' }}>
-                    ...
-                  </span>
-                );
-              }
-              const pageNum = item;
+            {/* Page numbers */}
+            {getPageNumbers().map(pageNum => {
               const isCurrent = page === pageNum;
               return (
                 <button
