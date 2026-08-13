@@ -17,10 +17,8 @@ export function apiUrl(path: string): string {
   return BASE_PATH + path;
 }
 
-/**
- * Key used for storing the authentication token in localStorage.
- */
-export const AUTH_TOKEN_KEY = 'code_shield_token';
+import { AUTH_TOKEN_KEY } from '@code/common';
+export { AUTH_TOKEN_KEY };
 
 /**
  * Helper to compute absolute navigation paths that dynamically prefix BASE_PATH
