@@ -15,8 +15,8 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   const pageParam = parseInt(searchParams.get('page') || '1', 10);
   const page = isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
 
-  const pageSizeParam = parseInt(searchParams.get('pageSize') || '15', 10);
-  const pageSize = isNaN(pageSizeParam) || pageSizeParam < 1 ? 15 : pageSizeParam;
+  const pageSizeParam = parseInt(searchParams.get('pageSize') || '25', 10);
+  const pageSize = isNaN(pageSizeParam) || pageSizeParam < 1 ? 25 : pageSizeParam;
 
   const statusGroup = searchParams.get('status_group') || searchParams.get('statusGroup') || 'all';
 
@@ -973,7 +973,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               }}
             >
               <option value="15">15 条/页</option>
-              <option value="30">30 条/页</option>
+              <option value="25">25 条/页</option>
               <option value="50">50 条/页</option>
               <option value="100">100 条/页</option>
             </select>
