@@ -1,33 +1,37 @@
 # 码盾 · Code-Shield 🛡️
 
-**码盾**（Code-Shield）是一套 AI 驱动的代码质量自动看护系统，专为提升代码质量和安全性而设计。系统通过集成高级 LLM CLI 工具（如 Claude 和 OpenCode）对代码仓库进行深度分析，重点检测多线程安全、内存泄漏和第三方库漏洞等关键问题，并自动生成检视报告、进行问题追踪和通知推送。
+**码盾**（Code-Shield）是一套由 AI 驱动的企业级代码质量与安全自动化看护系统。系统基于微前端架构设计，无缝嵌入 `code-bench` 开发者综合工作台。通过集成大语言模型（LLM）执行器（支持 **Claude CLI** 与 **OpenCode CLI**），码盾能够对多语言代码仓库进行多维度深度扫描分析，重点拦截多线程安全、内存泄漏、浮点精度失真、Coredump 风险及第三方库漏洞等关键缺陷，并自动生成结构化检视报告、建立缺陷追踪并触发多渠道通知。
+
+---
 
 ## 🌟 核心特性
 
 ### 🤖 强大的 AI 驱动代码检视
-- **灵活的 AI 引擎支持**：支持配置不同的底层 AI 执行器（当前支持 **Claude CLI** 和 **OpenCode CLI**）。
-  - **OpenCode**：支持全局 Agent (`~/.config/opencode/agents/`) 持久化配置、工具调用权限控制。
-- **自定义任务类型**：支持通过 Web UI 动态管理不同的检视任务类型，自由配置阶段提示词（Analysis / Synthesis）、运行时参数（如 `SkipTests`）和执行引擎。
-- **动态解析行号**：支持识别 LLM 吐出的多种行号格式（如单行 `100`，行范围 `100-125`，离散行 `41,42`）。
+- **双引擎 CLI 支持**：原生适配 **Claude CLI** 与 **OpenCode CLI**，支持模型配置热更新。
+  - **OpenCode**：支持全局 Agent (`~/.config/opencode/agents/`) 配置文件生命周期自动同步与工具调用权限控制。
+- **自定义任务类型**：支持动态创建和管理多套检视策略，灵活配置 Analysis（切片分析）与 Synthesis（汇总阶段）提示词模板。
+- **动态解析与定位**：智能识别 LLM 输出的单行、连续行范围及离散行号，支持在工作台一键复制精确文件名与行号。
 
-### ⚙️ 多层级执行引擎适配
-为了适应不同体量的代码仓，内置了两种执行引擎（可在任务类型中配置）：
-- **单引擎 (single)**：将整个代码仓作为整体提交给 AI 分析，适合小型项目。
-- **分片引擎 (chunked)**：按目录深度自动分片，多并发（默认 5）向 AI 提交，最后综合汇总。适合大型单体项目，前端支持 **实时展示分片处理进度**（如 `分析中 (12/89)`）。
+### ⚙️ 多层级执行引擎与调度架构
+- **单引擎 (single)**：适用于小型代码仓，将代码整体提交给 AI 进行单次上下文分析。
+- **分片引擎 (chunked)**：适用于大型单体项目，按目录树深度自动分片，多协程并发（默认 5）向 AI 提交，最后自动汇总。前端实时渲染分片进度（如 `分析中 (12/89)`）。
+- **持久化任务队列 (DB-backed Queue)**：彻底由内存队列升级为基于 PostgreSQL 的数据库持久化拉取与抢占模型，支持 `max_queue_size` 排队容量管控，服务重启任务不丢失。
+- **分片失败恢复机制 (Chunk Recovery)**：支持对单次扫描中偶发失败的分片进行局部精确补扫恢复，在执行日志中高优标记并由调度队列原子抢占运行。
+- **工作时间自动限流 (Work Hours Throttle)**：支持配置工作日及工作时间段内的并发比例（如白天限流 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速扫描，兼顾生产负载与扫描吞吐。
+- **多 LLM 负载均衡映射**：支持配置多 LLM 服务器端点与并发上限，按模型类型精确分流。
 
-### 📊 全方位项目与数据管理
-- **系统数据看板**：可视化展示近期代码问题走势、底层模型请求次数、平均延迟及耗时数据（支持动态多选模型筛选）。
-- **关键问题 (Issues) 追踪**：将高优的安全问题拦截并建立 Issue，支持按团队/部门/负责人的组合查询，跟踪处理状态。
-- **灵活的权限控制**：系统账号管理支持分配不同权限，支持批量管理团队、仓库与人员信息。
+### 📊 全方位项目与缺陷管理
+- **系统数据看板**：可视化展示近期缺陷分布趋势、底层模型请求次数、平均延迟及耗时数据。
+- **关键问题 (Issues) 追踪**：将高优安全隐患与缺陷自动提升为 Issue 跟踪闭环，默认指派人为当前处理人，支持按团队、部门、严重级别多维检索。
+- **规范化分页交互**：全量接入 `@code/common` 标准分页体系（URL 双向绑定、5 页滑动窗口、15/25/50/100 阶梯选项）。
+- **报告一键导出**：支持专项分析报告导出为企业级排版的 Excel/CSV 文件，自适应中文字符列宽。
 
-### ⏰ 自动化与动态调度
-- **定时调度**：支持 Cron 表达式配置检视计划。
-- **多维度触发**：支持全局/分组/团队/单仓触发，支持在调度配置中 **覆盖任务运行参数**（RunParams）。
-- **高并发控制**：基于 `worker_count` 全局工作池控制最大并行任务数，保护系统资源。
+### ⏰ 自动化调度与操作审计
+- **定时调度**：支持 Cron 表达式配置日常巡检计划，支持运行时参数覆盖（如 `SkipTests` 跳过测试代码）。
+- **触发日志与审计 (Audit Logs)**：全面记录所有手动与定时触发动作（操作人、触发类型、目标摘要、客户端 IP），仅超级管理员（`super_admin`）可查看与管理。
 
 ### 📧 即时反馈与通知
-- **自动邮件**：支持通过独有的 `notifier` 组件（基于 Win32 GUI + Outlook COM）将精美的报告发送到负责人邮箱。
-- **智能投递**：支持基于检视风险评分（Score）的阈值触发自动告警。
+- **邮件微服务联动**：无缝对接 `code-notifier` 组件（基于 Windows GUI + Outlook COM），将精美的 Markdown 报告转化为 HTML 正文与 PDF 附件自动投递。
 
 ---
 
@@ -35,227 +39,200 @@
 
 ```text
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   前端 (React)   │────▶│  shield-server  │────▶│  CLI (Claude/   │
+│   前端 (React)   │────▶│  code-shield    │────▶│  CLI (Claude/   │
 │   (Vite/AntD)   │◄────│    (Go/Gin)     │◄────│   OpenCode)     │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                  │
-                                 ▼
-                          ┌─────────────────┐
-                          │    notifier     │
-                          │  (Go / Win32)   │
-                          │   Outlook COM   │
-                          └─────────────────┘
+                 ┌───────────────┴───────────────┐
+                 ▼                               ▼
+      ┌────────────────────┐          ┌────────────────────┐
+      │  code-notifier     │          │  PostgreSQL 共享库  │
+      │  (Go / Win32 GUI)  │          │  (code-common 模型) │
+      └────────────────────┘          └────────────────────┘
 ```
 
 | 组件 | 技术栈 | 默认端口 | 说明 |
-|------|--------|------|------|
-| **shield-server** | Go 1.21+, Gin, GORM, PostgreSQL | `8080` | 核心主服务，提供 API 接口及任务调度管线 |
-| **notifier** | Go 1.21+, Winigo, Outlook COM | `8081` | 独立的邮件投递微服务（仅限 Windows 运行） |
+| :--- | :--- | :--- | :--- |
+| **code-shield** | Go 1.25+, Gin, GORM, PostgreSQL | `8080` | 核心服务，负责 API 接口、持久化队列与扫描调度 |
+| **frontend** | React 18, Vite 5, TS, AntD 5, @code/common | `5173` | Web 控制台，支持 Module Federation 嵌入 `code-bench` |
+| **notifier** | Go, Win32 GUI, Outlook COM | `8081` | 独立的邮件投递微服务（Windows 环境） |
 
 ---
 
-## 🚀 快速开始
+## ⚙️ 系统配置指南 (config.yaml)
 
-### 运行环境
-- **主服务**：Linux / macOS / Windows, Go 1.21+, PostgreSQL 12+, Node.js 18+（用于前端构建）。
-- **通知服务**：需 Windows 系统并安装 Microsoft Outlook。
-- **AI 依赖**：主机环境中必须可用 `claude` 或 `opencode` 命令行工具。
+```yaml
+# ── HTTP 服务 ──
+server:
+  port: ":8080"
+  worker_count: 5                     # 全局任务并发数，默认 5
+  max_queue_size: 2000                # 任务排队最大上限，默认 2000，-1 表示不限制
+  gin_log: false
 
-### 安装与启动
+# ── 数据存储与数据库 ──
+storage:
+  root: "."                           # 数据落地根目录，下设 codes/ 与 reports/
 
-#### 1. 克隆项目
-```bash
-git clone https://github.com/fugui/code-shield.git
-cd code-shield
+database:
+  driver: "postgres"
+  host: "127.0.0.1"
+  port: 5432
+  user: "postgres"
+  password: "YOUR_POSTGRES_PASSWORD"
+  dbname: "code_shield"               # 与 code-bench / code-pipeline 等共享同一数据库
+  sslmode: "disable"
+  timezone: "Asia/Shanghai"
+  max_open_conns: 50
+  max_idle_conns: 10
+
+# ── AI 引擎与限流调度 ──
+ai:
+  backend: "claude"                   # CLI 后端：claude 或 opencode
+  output_format: "text"               # 输出格式：text 或 json
+
+  # 工作时间自动限流配置 (可选)
+  work_hours_throttle:
+    enabled: true                     # 是否启用工作时间自动限流
+    workdays: [1, 2, 3, 4, 5]         # 生效星期: 1=周一 ~ 5=周五
+    start_time: "09:00"               # 开始限流时刻 (HH:MM)
+    end_time: "22:00"                 # 结束限流时刻 (HH:MM)
+    scale: 0.10                       # 工作时间内并发比例 (0.10 代表 10%，0.0 代表完全暂停)
+
+  # 多 LLM 服务器并发配置 (可选)
+  # models:
+  #   - opencode: "models/glm5.1"
+  #     claude: "glm5.1"
+  #     concurrent: 5
+  #   - opencode: "models/qwen3.5"
+  #     concurrent: 2
+
+# ── 通知服务 ──
+notification:
+  webhook: "http://192.168.56.18:8081/api/notify/email"
+
+# ── 认证配置 (接入 code-common) ──
+auth:
+  jwt_secret: "YOUR_SHARED_JWT_SECRET_KEY"  # 必须与 code-bench 保持一致
+  password_login_enabled: true
+  admin_list:
+    - "admin@code-shield.com"
 ```
 
-#### 2. 安装依赖并构建
+---
+
+## 🛠️ 快速开始
+
+### 1. 构建与编译
 ```bash
-# 编译并构建整个系统（一键完成前端构建与后端编译）
+# 一键完成前端构建打包与后端 Go 编译
 make build
 ```
 
-#### 3. 配置系统
-修改 `config.yaml`（配置 PostgreSQL 数据库）：
-```yaml
-server:
-  port: ":8080"
-  worker_count: 5              # 全局任务池并发度
-storage:
-  root: "/path/to/data"        # 数据落地根目录（代码克隆与结果存储）
-database:
-  host: "127.0.0.1"            # PostgreSQL 地址
-  port: 5432
-  user: "code_shield"
-  password: "code_shield_password"
-  dbname: "code_shield"
-  sslmode: "disable"
-ai:
-  backend: "opencode"          # AI 后端："claude" 或 "opencode"
-notification:
-  webhook: "http://127.0.0.1:8081/api/notify/email"
-```
-
-#### 4. 启动服务
+### 2. 运行服务
 ```bash
+# 启动码盾核心服务
 make run
 ```
-浏览器访问 `http://localhost:8080`。  
-默认管理员账号：`admin@code-shield.com` / `admin123`
+默认监听 `:8080`，管理员初始账号：`admin@code-shield.com` / `admin123`。
+
+### 3. 前端独立开发
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
 ## 🌐 子路径（Sub-path）部署
 
-当系统需要运行在非根域名的子路径下（例如 `http://www.cndev.net/shield/`）时，需要对前端进行基准路径（Base Path）打包，并配合反向代理（如 Nginx）进行请求转发。
-
-系统已原生支持子路径配置，具体构建与部署步骤如下：
-
-### 1. 前端子路径打包
-前端使用 Vite 进行构建，支持通过环境变量 `VITE_BASE_PATH` 注入子路径。
-
-在构建系统时，在命令前加上环境变量：
+系统原生支持子路径打包（例如嵌入网关 `/shield/`）：
 ```bash
-# 在根目录使用 Make 一键构建（注入子路径环境变量）
+# 注入子路径环境变量构建前端
 VITE_BASE_PATH=/shield/ make build
-
-# 或者手动进入前端目录进行构建
-cd frontend
-VITE_BASE_PATH=/shield/ npm run build
 ```
 
-> [!NOTE]
-> - 注入的 `VITE_BASE_PATH` 必须以斜杠 `/` 开头和结尾（例如 `/shield/`）。
-> - 这一步会使前端的静态资源引用路径（如 `/shield/assets/...`）以及 React Router 的 `basename` 均自动适配为该子路径。
-
-### 2. Nginx 反向代理配置
-在 Nginx 中配置反向代理，将子路径流量正确分发。静态文件可由 Nginx 直接高效托管，API 请求则转发给后端的 Go 服务。
-
-示例如下：
-
+Nginx 反向代理配置示例：
 ```nginx
 server {
     listen 80;
-    server_name www.cndev.net;
+    server_name 192.168.56.18;
 
-    # 1. 托管前端静态资源
     location /shield/ {
-        # 指向打包生成的 dist 目录绝对路径
         alias /path/to/code-shield/frontend/dist/;
         index index.html;
         try_files $uri $uri/ /shield/index.html;
     }
 
-    # 2. 转发 API 请求至 Go 后端服务 (Gin)
     location /shield/api/ {
-        # 注意：末尾的斜杠 '/' 非常重要，Nginx 会自动在转发时剥离掉 '/shield/api/' 部分并映射到 '/api/'
-        # 从而使后端 Gin 服务可以直接在常规根路径上处理 '/api/...' 请求，无需修改后端代码
         proxy_pass http://127.0.0.1:8080/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-### 3. 启动后端服务
-后端服务无需做任何特殊修改，按照常规配置启动即可：
-```bash
-make run
-```
-后端服务默认监听 `:8080`，Nginx 会将 `http://www.cndev.net/shield/api/` 的请求平滑转发至 `http://127.0.0.1:8080/api/`。
-
 ---
 
-## 📖 核心使用指南
-
-### 1. 配置任务类型 (Task Types)
-管理员可以在 "任务类型管理" 中创建全新的检视任务：
-- **Prompt 维护**：在线编辑 Analysis（切片分析）与 Synthesis（汇总阶段）的提示词。如果是 OpenCode 后端，系统会自动将提示词同步至全局 `~/.config/opencode/agents/`。
-- **引擎选择**：指定 `chunked` 等引擎，并提供 JSON 格式配置（如 `{"max_files": 50, "concurrency": 5}`）控制切片粒度。
-
-### 2. 调度配置 (Schedules)
-- **参数覆盖**：在创建调度时，可以勾选 `SkipTests` 从而覆盖默认行为，跳过测试代码的分析以节省 Token。
-- **避免冲突**：系统内置 409 防并发检测，同一代码仓库如果处于 `pending` / `running` 状态，不会被重复拉起。
-
-### 3. 查看与追踪
-- **实时进度**：大型代码仓进入分析阶段后，前端将展示具体的切片进度 `分析中 (12/89)`。
-- **问题列表**：所有高价值（严重、阻塞等）的检视结果被提取至「问题列表」集中追踪。
-- **统计图表**：访问数据大盘跟踪 API 耗时、成功率、团队代码安全健康度等指标。
-
-### 4. 触发日志与操作审计
-- **触发日志（Audit Logs）**：所有任务触发行为（手动个仓/批量、定时触发等）均会被自动记录至 `TaskTriggerLog` 表，包含操作人、触发类型、目标仓库摘要与客户端 IP。
-- **权限控制**：触发日志 TAB 仅对超级管理员（`super_admin`）可见；一键清除历史日志功能同样仅 `super_admin` 可操作。
-- **多维筛选**：支持按触发类型、操作人、任务类型、时间范围、关键词等多维过滤查询审计日志。
-
----
-
-## 🛠️ 目录结构
+## 📁 目录结构
 
 ```text
 code-shield/
 ├── config.yaml             # 系统配置文件
-├── main.go                 # 程序入口
-├── models/                 # 数据库模型与全局配置解析
-├── handlers/               # HTTP API 接口路由与处理逻辑
-│   ├── audit_log.go        # 触发日志与操作审计 API
-│   ├── task.go             # 任务管理接口
-│   ├── task_type.go        # 任务类型管理接口
-│   ├── schedule.go         # 调度管理接口
-│   ├── repo.go             # 代码仓管理接口
-│   ├── campaign.go         # 专项分析接口
-│   ├── issue.go            # 问题列表接口
+├── main.go                 # 程序入口与集中式路由配置
+├── models/                 # 数据模型（引用 code-common/backend）
+│   ├── config.go           # 本地配置解析
+│   ├── db.go               # GORM v2 数据库连接初始化
+│   └── models.go           # Task / Schedule / Issue / AuditLog 等模型
+├── handlers/               # HTTP API 控制层
+│   ├── auth.go             # 鉴权与当前用户信息
+│   ├── audit_log.go        # 触发日志与审计接口
+│   ├── task.go             # 扫描任务创建、取消、重试、恢复
+│   ├── task_type.go        # 任务类型与提示词管理
+│   ├── schedule.go         # 定时调度管理
+│   ├── repo.go             # 代码仓管理
+│   ├── issue.go            # 缺陷与问题追踪
 │   └── excel_exporter.go   # Excel 导出控制器
-├── services/               # 核心业务组件
-│   ├── task_runner.go      # 任务生命周期状态机
-│   ├── engine*.go          # Single / Chunked 执行引擎实现
-│   ├── opencode_cli.go     # OpenCode AI 后端适配器
-│   ├── claude_cli.go       # Claude AI 后端适配器
-│   └── agent_sync.go       # OpenCode Agent 配置文件生命周期同步服务
-├── cron_jobs/              # 定时调度逻辑
-├── frontend/               # React 前端源码
-├── templates/              # CSV 数据导入模板
-└── Makefile                # 一键构建与启动脚本
+├── services/               # 核心业务组件与引擎
+│   ├── queue.go            # 基于 DB 的持久化抢占式任务队列
+│   ├── dispatcher.go       # 并发流控与工作时间限流分发器
+│   ├── task_runner.go      # 任务生命周期执行状态机
+│   ├── engine_single.go    # 单体分析执行引擎
+│   ├── engine_chunked.go   # 自动切片并发分析执行引擎
+│   ├── opencode_cli.go     # OpenCode CLI 驱动适配器
+│   ├── claude_cli.go       # Claude CLI 驱动适配器
+│   └── agent_sync.go       # OpenCode Agent 配置同步服务
+├── cron_jobs/              # 定时任务调度器
+├── frontend/               # React 前端工程 (接入 @code/common)
+└── Makefile                # 自动化编译与运行脚本
 ```
 
 ---
 
-## ❓ 常见排障
+## 🏷️ 版本历史
 
-**Q: 执行状态一直卡在 "分析中"，且控制台看到 `max_tokens must be at least 1`？**
-> 检查系统是否传递了负数的 tokens 值。当前网关拦截了负数，如果是下游 LLM 模型配额问题，请通过日志确认。
+### v1.5.0 (2026-08-14)
+- **数据库持久化任务队列 (DB Persistent Queue)**：将扫描任务队列全面升级为基于 PostgreSQL 数据库持久化拉取与原子抢占模型，新增 `max_queue_size` 限额保护，杜绝重启任务丢失。
+- **分片失败恢复与日志标记 (Failed Chunk Recovery)**：支持对偶发失败的分片任务发起精确恢复，在执行日志中高优标记并通过队列原子抢占调度。
+- **工作时间自动限流 (Work Hours Throttle)**：支持在配置的工作时间段内自动降低并发占用比例，非工作时间自动恢复 100% 满速扫描。
+- **AI 扫描并发流控死锁修复**：彻底修复并发流控到期死锁缺陷，引入定时唤醒与持久化状态。
+- **全平台公共库接入**：全面接入 `code-common/backend` 数据模型与鉴权中间件，前端统一采用 `@code/common` 的 `Pagination` 与 `ErrorBoundary`。
+- **交互与体验优化**：在审计工作区、个人工作台与公开报告页面新增一键复制精确文件名与行号功能（Tooltip 动态呈现），缺陷分析指派默认处理人设定为当前登录用户。
 
-**Q: OpenCode 引擎报错 `Command Execution Failed`，且未生成有效报告？**
-> 系统开启了 `--dangerously-skip-permissions`，请检查当前宿主机上的 OpenCode CLI 版本，确保符合配置要求。同时，请确认 `~/.config/opencode/agents/` 的写入权限，因为任务类型更新会自动同步至此目录。
-
-**Q: 如何更改全局允许并发执行的最大任务数？**
-> 请修改 `config.yaml` 中的 `server.worker_count`，默认为 5。此修改需重启服务生效。
-
-## 🏷️ 版本历史 (Release History)
+### v1.4.0 (2026-08-08)
+- **公开接口安全收紧**：收紧任务与漏洞查询公开接口，强制要求 JWT / SSO 登录认证。
+- **多模型并发负载映射**：支持在 `config.yaml` 中配置多 LLM 服务器端点与差异化并发额度。
+- **管理员种子账号初始化优化**：优化默认 admin 账号初始化逻辑，精确匹配邮箱并赋予 `super_admin` 角色与 `IsAdmin` 标记。
 
 ### v1.3.0 (2026-07-31)
-- **触发日志与操作审计（Audit Logs）**：新增任务触发历史日志功能，所有手动与定时触发事件均过 `TaskTriggerLog` 模型进行结构化审计记录，包含操作人、触发类型、目标摘要与 IP。
-- **TAB 重命名与权限收紧**：将审计功能 TAB 标题重命名为“触发日志”并放置在最末位；仅超级管理员（`super_admin`）可见及操作此内容。
-- **一键清除历史日志**：新增清除全部触发日志按钮，仅 `super_admin` 可操作，防止误操作导致审计数据丢失。
-- **Synthesis 状态同步修复**：修复报告汇总阶段（Synthesis）任务状态无法正确同步到前端的问题，现已确保汇总阶段完成后平台数据一致。
-- **专项分析导出性能优化**：修复专项分析导出 Excel 时列宽计算性能差导致的 502 超时错误，如今导出性能大幅提升。
-- **扫描任务管理修复**：修复新增策略侧边栏无法弹出、批量删除排队任务后系统卡死等多个稳定性问题。
+- **触发日志与操作审计 (Audit Logs)**：新增任务触发历史日志功能，所有手动与定时触发事件均通过 `TaskTriggerLog` 模型进行结构化审计记录。
+- **权限控制收紧**：将触发日志仅对超级管理员（`super_admin`）开放，并提供一键清除历史日志功能。
+- **专项分析导出性能优化**：优化 Excel 导出列宽计算性能，彻底解决大批量数据导出 502 超时问题。
 
 ### v1.2.0 (2026-07-05)
-- **报告导出增强**：支持专项分析漏洞报告导出 Excel (CSV) 格式，修复了导出 Excel 时特定字段类型不匹配导致的 JSON 解析失败问题。
-- **提示词优化**：在多线程创建审计提示词中，优先推荐使用平台内置的调度组与定时器以规范并发使用。
-- **权限控制收紧**：限制代码实时看护功能仅系统管理员可见，提升了平台数据与功能的整体安全性。
-- **文档结构优化**：删除了已废弃的旧 `shield-server` 目录前缀，并在 README 中更新了真实的项目结构目录与指令路径。
+- **专项分析漏洞报告导出**：支持漏洞报告导出为 Excel / CSV 格式。
+- **提示词规范化**：多线程审计提示词优化，推荐平台内置调度组。
 
 ### v1.1.0 (2026-05-31)
-- **报告概览全面重构（报告入口）**：重塑 `/shield/reports` 报告概览页面为真正“以报告为入口”的架构，不再受限于代码仓维度，支持最新时间倒序展示。
-- **报告 ID 单体快速交互**：表格首列新增「报告 ID」，支持直接点击 ID 快速滑出详细报告抽屉，极大地简化了用户获取具体审计报告的步骤。
-- **高精确缺陷数量统计**：后端在任务完成时直接基于问题严重性分级（阻塞、严重、主要、提示、建议、高风险、中风险、低风险）统计缺陷数并写入数据库；前端配合指标 JSON 实现高保真容错渲染，消除了正则解析 AI 报告的误差。
-- **微前端极简级联检索**：提供了极简化高集成的筛选控制面板，支持一键重置，并且在 `code-bench` 宿主中完美支持动态折叠/展现二级分组菜单及 Admin 权限守卫。
-- **测试任务增强 (Go + C/C++)**：在 `ut-effectiveness` 和 `ut-quality` 任务中增加了对 GO 语言 (`.go` 文件) 的完整支持，并升级了 [engine_chunked.go](file:///home/fugui/codes/code-shield/services/engine_chunked.go) 的 `isTestFile` 过滤算法，自动过滤业务代码，确保 UT 任务精确只扫测试文件。
-- **底层架构鲁棒性**：修复了 GORM v2 中由 `Select("task_reports.*")` 引发的数据库分页 COUNT 语法错误与 Builder 状态污染问题，保证海量数据分页稳定流畅。
-
----
-
-*Code-Shield - 让代码更安全、更可靠 🛡️*
+- **以报告为入口的全新概览**：重塑报告列表页面，支持报告 ID 抽屉快速滑出详情与精确缺陷统计。
