@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // CampaignRepoSummary defines the structure of repository campaign statistics
@@ -304,7 +305,7 @@ func GetCampaignFindings[T any]() gin.HandlerFunc {
 		}
 
 		var total int64
-		query.Count(&total)
+		query.Session(&gorm.Session{}).Count(&total)
 
 		var findings []T
 		offset := (page - 1) * pageSize

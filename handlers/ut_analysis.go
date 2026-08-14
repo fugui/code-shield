@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // UTRepoSummary defines the structure of repository statistics
@@ -255,7 +256,7 @@ func GetUTFindings(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	var findings []models.TestCaseFinding
 	offset := (page - 1) * pageSize

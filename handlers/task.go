@@ -684,7 +684,7 @@ func GetTaskOverview(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	// Subquery: latest task report for each repo (optionally filtered by task_type_id)
 	subQuery := models.DB.Model(&models.TaskReport{}).Select("MAX(id)").Group("repo_id")
@@ -898,8 +898,6 @@ func ResumeTask(c *gin.Context) {
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已入队，等待排队执行"})
 }
-
-
 
 // TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days
 func TriggerMissingTasks(c *gin.Context) {

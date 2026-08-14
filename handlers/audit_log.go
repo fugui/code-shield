@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // GetAuditLogs returns a paginated list of task trigger audit logs
 func GetAuditLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "25"))
 	triggerType := c.Query("trigger_type")
 	operator := c.Query("operator")
 	taskTypeID := c.Query("task_type_id")
@@ -24,7 +25,7 @@ func GetAuditLogs(c *gin.Context) {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
-		pageSize = 15
+		pageSize = 25
 	}
 
 	query := models.DB.Model(&models.TaskTriggerLog{})
@@ -64,7 +65,7 @@ func GetAuditLogs(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	var items []models.TaskTriggerLog
 	offset := (page - 1) * pageSize
