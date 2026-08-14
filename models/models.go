@@ -212,8 +212,10 @@ type KeyIssue struct {
 }
 
 type SystemConfig struct {
-	ID         uint `gorm:"primaryKey" json:"id"` // Always 1
-	AutoNotify bool `gorm:"default:false" json:"auto_notify"`
+	ID               uint       `gorm:"primaryKey" json:"id"` // Always 1
+	AutoNotify       bool       `gorm:"default:false" json:"auto_notify"`
+	ConcurrencyScale float64    `gorm:"default:1.0" json:"concurrency_scale"`
+	ScaleExpiresAt   *time.Time `json:"scale_expires_at"`
 }
 
 type ScheduleConfig struct {
