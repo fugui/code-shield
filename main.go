@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	commonAuth "code-common/backend/auth"
 	"code-shield/cron_jobs"
 	"code-shield/handlers"
 	"code-shield/models"
@@ -48,6 +49,11 @@ func main() {
 
 	// Initialize database
 	models.InitDB()
+
+	// 确保至少存在默认管理员账号（用于独立部署模式）
+	if err := commonAuth.EnsureSeedAdmin(models.DB, "shield_admin"); err != nil {
+		log.Printf("[Server] Warning: Failed to ensure seed admin: %v", err)
+	}
 
 	// 初始化多 LLM 调度分配器
 	services.InitModelDispatcher()
@@ -87,6 +93,8 @@ func main() {
 	{
 		auth.POST("/login", handlers.Login)
 		auth.GET("/auth/config", handlers.GetAuthConfig)
+		auth.GET("/oauth2/authorize", handlers.StartOAuth2Flow)
+		auth.GET("/oauth2/callback", handlers.OAuth2Callback)
 	}
 
 	// Register API routes (protected)

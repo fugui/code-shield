@@ -19,6 +19,7 @@ import Workbench from './pages/Workbench';
 
 import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
+import { UnifiedLogin } from '@code/common';
 
 // Setup global fetch interceptor to inject JWT token and prepend BASE_PATH
 const originalFetch = window.fetch;
@@ -499,7 +500,23 @@ function AppContent() {
       <ToastProvider>
         <MainLayout>
           <Routes>
-            <Route path="/login" element={<Navigate to={appNavigatePath("/")} replace />} />
+            <Route
+              path="/login"
+              element={
+                localStorage.getItem(AUTH_TOKEN_KEY) ? (
+                  <Navigate to={appNavigatePath("/")} replace />
+                ) : (
+                  <UnifiedLogin
+                    systemName="Code-Shield 代码卫士"
+                    systemSubtitle="企业级代码质量与漏洞扫描平台"
+                    systemDesc="集成多维度大模型代码分析、专项缺陷攻关与自动化质量防护体系"
+                    onLoginSuccess={() => {
+                      window.location.href = appNavigatePath('/');
+                    }}
+                  />
+                )
+              }
+            />
 
             <Route path="/" element={<Navigate to={appNavigatePath("/reports")} replace />} />
 

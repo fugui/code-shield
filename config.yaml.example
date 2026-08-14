@@ -57,7 +57,30 @@ ai:
 notification:
   webhook: "http://127.0.0.1:8081/api/notify/email"  # 分析完毕后发送报告卡片通知的回调地址
 
-# ── 认证 ──
+# ── 认证与单点登录配置 ──
 auth:
-  jwt_secret: ""                     # JWT 签名密钥（用于校验由 code-bench 签发的 Token，需保持一致；留空则启动时随机生成临时密钥）
+  standalone_mode: false             # 是否以独立系统模式运行（false: 微前端模式，依赖主门户；true: 独立部署运行）
+  jwt_secret: ""                     # JWT 签名密钥（用于校验由 code-bench 签发或本系统签发的 Token；留空则启动时随机生成临时密钥）
+  password_login_enabled: true       # 独立模式下是否启用本地账号密码登录
+  oauth2:                            # 独立模式下的企业 OAuth2/OIDC 单点登录配置
+    enabled: false                   # 是否启用独立 SSO
+    client_id: ""                    # Client ID
+    client_secret: ""                # Client Secret
+    auth_url: ""                     # Authorization Endpoint
+    token_url: ""                    # Token Endpoint
+    userinfo_url: ""                 # UserInfo Endpoint
+    redirect_url: ""                 # 回调地址，如 http://192.168.56.18:8080/api/oauth2/callback
+    scopes: ["openid", "profile", "email"]
+    admin_list:                      # 默认设为管理员的邮箱列表
+      - "admin@code-shield.com"
+    allowed_email_domains:           # 允许通过 SSO 登录的邮箱后缀白名单，留空表示不限制
+      - "@yourcompany.com"
+    field_mapping:
+      username: "preferred_username"
+      email: "email"
+      name: "name"
+      employee_id: "employee_id"
+      unique_id: "unique_id"
+      employee_type: "employee_type"
+
 
