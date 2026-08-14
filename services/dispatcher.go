@@ -32,7 +32,7 @@ func (r *ModelResource) ModelName(backend string) string {
 // ThrottleInfo 封装当前流控全景状态信息
 type ThrottleInfo struct {
 	EffectiveScale  float64                        `json:"effective_scale"`   // 最终生效比例 (0.0 ~ 3.0)
-	ThrottleMode    string                         `json:"throttle_mode"`    // "work_hours", "manual", "normal"
+	ThrottleMode    string                         `json:"throttle_mode"`     // "work_hours", "manual", "normal"
 	ManualScale     float64                        `json:"manual_scale"`      // 手动设置的比例
 	ScaleExpiresAt  *time.Time                     `json:"scale_expires_at"`  // 手动过期时间（有手动且有持续时间时）
 	IsManual        bool                           `json:"is_manual"`         // 是否正处于手动覆盖中

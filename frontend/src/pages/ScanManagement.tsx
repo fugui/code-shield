@@ -127,14 +127,6 @@ function ScanManagement() {
     return true;
   });
 
-  useEffect(() => {
-    setSearchParams(prev => {
-      const p = new URLSearchParams(prev);
-      p.set('page', '1');
-      return p;
-    });
-  }, [filterTeam, filterSearch, setSearchParams]);
-
   const totalPages = Math.ceil(filteredRepos.length / pageSize) || 1;
   const activePage = currentPage > totalPages ? totalPages : currentPage;
   const paginatedRepos = filteredRepos.slice((activePage - 1) * pageSize, activePage * pageSize);
@@ -397,11 +389,35 @@ function ScanManagement() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-              <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}>
+              <select
+                value={filterTeam}
+                onChange={e => {
+                  setFilterTeam(e.target.value);
+                  setSearchParams(prev => {
+                    const p = new URLSearchParams(prev);
+                    p.delete('page');
+                    return p;
+                  });
+                }}
+                style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}
+              >
                 <option value="">全部部门</option>
                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <input type="text" placeholder="搜索代码仓名称..." value={filterSearch} onChange={e => setFilterSearch(e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', minWidth: '200px' }} />
+              <input
+                type="text"
+                placeholder="搜索代码仓名称..."
+                value={filterSearch}
+                onChange={e => {
+                  setFilterSearch(e.target.value);
+                  setSearchParams(prev => {
+                    const p = new URLSearchParams(prev);
+                    p.delete('page');
+                    return p;
+                  });
+                }}
+                style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', minWidth: '200px' }}
+              />
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', position: 'relative' }}>
               <div style={{ position: 'relative' }}>

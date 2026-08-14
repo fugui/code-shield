@@ -905,7 +905,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       </div>
 
       {/* Pagination Controls */}
-      {logs.length > 0 && <Pagination totalItems={totalItems} />}
+      {totalItems > 0 && <Pagination totalItems={totalItems} />}
 
       <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
     </div>

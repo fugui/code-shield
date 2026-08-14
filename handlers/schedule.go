@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func GetSchedules(c *gin.Context) {
@@ -132,12 +133,12 @@ type ExecutionReportBrief struct {
 
 func GetExecutionLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "25"))
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
-		pageSize = 15
+		pageSize = 25
 	}
 
 	var logs []models.TaskExecutionLog
@@ -167,7 +168,7 @@ func GetExecutionLogs(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	offset := (page - 1) * pageSize
 	query.Order("status_priority ASC, id DESC").Offset(offset).Limit(pageSize).Find(&logs)

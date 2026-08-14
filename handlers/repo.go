@@ -18,11 +18,12 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 func GetRepos(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "15"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "25"))
 	deptID := c.Query("department_id")
 	if deptID == "" {
 		deptID = c.Query("team_id") // fallback
@@ -54,7 +55,7 @@ func GetRepos(c *gin.Context) {
 	}
 
 	var total int64
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	var repos []models.Repository
 	offset := (page - 1) * pageSize
