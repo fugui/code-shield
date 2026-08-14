@@ -145,9 +145,46 @@ func EnqueueResumeTask(report models.TaskReport) error {
 		}
 	}
 
-	// 更新状态为 queued，表示排队等待执行
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusQueued)
+	// 将关联的执行日志置为 pending 并标记为恢复任务，供 Worker 原子抢占
+	var execLog models.TaskExecutionLog
+	err := models.DB.Where("task_report_id = ?", report.ID).First(&execLog).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// 容错：执行日志丢失时补建一条恢复日志，保证队列链路完整
+		execLog = models.TaskExecutionLog{
+			RepoID:         report.RepoID,
+			TaskReportID:   &report.ID,
+			TaskTypeID:     report.TaskTypeID,
+			TriggerType:    "resume",
+			Status:         models.StatusPending,
+			StatusPriority: models.GetStatusPriority(models.StatusPending),
+			IsResume:       true,
+			StartTime:      time.Now(),
+		}
+		if err := models.DB.Create(&execLog).Error; err != nil {
+			return fmt.Errorf("创建恢复任务执行日志失败: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("查询恢复任务执行日志失败: %w", err)
+	} else {
+		// 复用原执行日志，重置为 pending 并标记恢复
+		if err := models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
+			"status":          models.StatusPending,
+			"status_priority": models.GetStatusPriority(models.StatusPending),
+			"error_message":   "",
+			"end_time":        nil,
+			"is_resume":       true,
+		}).Error; err != nil {
+			return fmt.Errorf("重置恢复任务执行日志失败: %w", err)
+		}
+	}
+
+	// 更新报告状态为 queued，表示排队等待执行
+	if err := models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusQueued).Error; err != nil {
+		return fmt.Errorf("更新任务报告状态失败: %w", err)
+	}
+
 	NotifyWorker()
+	log.Printf("[WorkerPool] Enqueued RESUME task for ReportID %d (LogID: %d)\n", report.ID, execLog.ID)
 	return nil
 }
 
@@ -204,7 +241,12 @@ func fetchNextPendingTask() (*Task, bool) {
 		_ = json.Unmarshal(execLog.Schedule.RunParams, &runParams)
 	}
 
-	task := &Task{
+	return taskFromExecLog(&execLog, report, runParams), true
+}
+
+// taskFromExecLog 根据执行日志构造 Worker 任务（IsResume 从日志标记恢复）
+func taskFromExecLog(execLog *models.TaskExecutionLog, report models.TaskReport, runParams models.RunParams) *Task {
+	return &Task{
 		RepoID:     execLog.RepoID,
 		ReportID:   report.ID,
 		RepoURL:    execLog.Repo.URL,
@@ -212,8 +254,8 @@ func fetchNextPendingTask() (*Task, bool) {
 		AutoNotify: execLog.Schedule != nil && execLog.Schedule.AutoNotify,
 		LogID:      execLog.ID,
 		RunParams:  runParams,
+		IsResume:   execLog.IsResume,
 	}
-	return task, true
 }
 
 func worker(id int) {
@@ -382,9 +424,10 @@ func RecoverPendingTasks(action string) {
 			"metrics":          datatypes.JSON("null"),
 		})
 		models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
-			"status":        models.StatusPending,
-			"error_message": "",
-			"end_time":      nil,
+			"status":          models.StatusPending,
+			"status_priority": models.GetStatusPriority(models.StatusPending),
+			"error_message":   "",
+			"end_time":        nil,
 		})
 
 		recovered++
