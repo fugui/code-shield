@@ -59,6 +59,7 @@ type Config struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
 	} `yaml:"notification"`
 	Auth struct {
+		StandaloneMode       bool         `yaml:"standalone_mode"`        // 是否以独立系统模式运行（默认 false 为微前端模式）
 		JWTSecret            string       `yaml:"jwt_secret"`             // JWT 签名密钥（替代硬编码，留空则启动时随机生成临时密钥）
 		PasswordLoginEnabled bool         `yaml:"password_login_enabled"` // 是否启用密码登录，默认 false
 		OAuth2               OAuth2Config `yaml:"oauth2"`
