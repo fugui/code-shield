@@ -272,6 +272,7 @@ type TaskExecutionLog struct {
 	TriggerType    string          `gorm:"not null" json:"trigger_type"`                                  // "cron", "manual", "webhook"
 	Status         string          `gorm:"default:pending;index" json:"status"`                           // "pending", "running", "success", "failed", "skipped"
 	StatusPriority int             `gorm:"default:2;index:idx_status_priority_id" json:"status_priority"` // 1: running/analyzing, 2: pending, 3: completed/failed, 4: other
+	IsResume       bool            `gorm:"default:false" json:"is_resume"`                                // 是否为分片失败恢复任务（worker 走 ResumeFailedChunks）
 	ErrorMessage   string          `json:"error_message"`
 	StartTime      time.Time       `json:"start_time"`
 	EndTime        *time.Time      `json:"end_time"`

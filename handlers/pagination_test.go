@@ -23,7 +23,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dsn,
 		PreferSimpleProtocol: true,
-	}), &gorm.Config{})
+	}), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
 	if err != nil {
 		t.Skipf("Skipping DB test: PostgreSQL not available (%v)", err)
 		return nil
@@ -38,14 +38,16 @@ func TestGetExecutionLogsPagination(t *testing.T) {
 	}
 	models.DB = db
 
-	_ = db.AutoMigrate(
+	for _, model := range []interface{}{
 		&models.Department{},
 		&models.User{},
 		&models.Repository{},
 		&models.TaskType{},
 		&models.TaskReport{},
 		&models.TaskExecutionLog{},
-	)
+	} {
+		_ = db.AutoMigrate(model)
+	}
 
 	// Create test repo and test task type
 	repo := models.Repository{Name: "test-pagination-repo", URL: "http://example.com/pagination-test.git"}
