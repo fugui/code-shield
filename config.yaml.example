@@ -33,6 +33,15 @@ ai:
   # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false。开启后会在报告同级目录下生成 .debug.log 文件方便定位
   # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json），默认 text
 
+  # ── 工作时间自动限流配置 (可选) ──
+  # 开启后，系统将在指定的工作日与时间段内自动降低并发（如 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速。
+  # work_hours_throttle:
+  #   enabled: true                 # 是否启用工作时间自动限流，默认 false
+  #   workdays: [1, 2, 3, 4, 5]     # 生效星期: 1=周一, 2=周二, 3=周三, 4=周四, 5=周五, 6=周六, 7=周日
+  #   start_time: "09:00"           # 开始限流时刻 (HH:MM)
+  #   end_time: "22:00"             # 结束限流时刻 (HH:MM)
+  #   scale: 0.10                   # 工作时间内的并发比例 (0.10 代表 10%，0.0 代表完全暂停)
+
   # ── 多 LLM 服务器并发配置 (可选) ──
   # 启用多 LLM 服务器配置时，全局任务并发数限制会被本配置的并发总和自动拓展，
   # 每次 AI 扫描时根据后端类型自动映射对应的模型名称，精准控制每台服务器的并发负载。

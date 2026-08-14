@@ -380,7 +380,10 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     return <span className={`badge ${s.cls}`}>{s.label}</span>;
   };
 
-  const isThrottleActive = !!(sysConfig && sysConfig.concurrency_scale !== 1.0 && sysConfig.scale_expires_at && new Date(sysConfig.scale_expires_at).getTime() > Date.now());
+  const isThrottleActive = !!(sysConfig && sysConfig.concurrency_scale !== 1.0);
+  const throttleMode = sysConfig?.throttle_mode || (isThrottleActive ? 'manual' : 'normal');
+  const isWorkHours = !!sysConfig?.is_work_hours;
+  const workHoursCfg = sysConfig?.work_hours_config;
 
   return (
     <div>
@@ -422,25 +425,41 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
               <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>AI 扫描并发流控</h4>
-              {isThrottleActive ? (
+              {throttleMode === 'work_hours' ? (
                 sysConfig.concurrency_scale === 0 ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>临时暂停中</span>
-                ) : sysConfig.concurrency_scale < 1 ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>限速中 {sysConfig.concurrency_scale * 100}%</span>
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>工作时间暂停中</span>
                 ) : (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#d1fae5', color: '#059669', fontWeight: 600 }}>加速中 {sysConfig.concurrency_scale * 100}%</span>
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>工作时间限速中 {Math.round(sysConfig.concurrency_scale * 100)}%</span>
+                )
+              ) : throttleMode === 'manual' ? (
+                sysConfig.concurrency_scale === 0 ? (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>临时暂停中 (手动)</span>
+                ) : sysConfig.concurrency_scale < 1 ? (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>手动限速中 {Math.round(sysConfig.concurrency_scale * 100)}%</span>
+                ) : (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#d1fae5', color: '#059669', fontWeight: 600 }}>手动加速中 {Math.round(sysConfig.concurrency_scale * 100)}%</span>
                 )
               ) : (
-                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>正常速度运行</span>
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>正常速度运行 (100%)</span>
               )}
             </div>
             <p style={{ margin: 0, fontSize: '0.825rem', color: '#64748b', lineHeight: '1.3' }}>
-              {isThrottleActive ? (
+              {throttleMode === 'work_hours' ? (
                 <>
-                  当前并发已被临时调整为配置限额的 <strong>{sysConfig.concurrency_scale * 100}%</strong>，预计于 <strong>{new Date(sysConfig.scale_expires_at).toLocaleTimeString()}</strong> 自动恢复。
+                  当前处于工作时间窗口（{workHoursCfg?.start_time || '09:00'} ~ {workHoursCfg?.end_time || '22:00'}），已自动限制并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>，夜间将自动恢复满速。
                 </>
+              ) : throttleMode === 'manual' ? (
+                sysConfig.scale_expires_at ? (
+                  <>
+                    管理员临时调整并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>，预计于 <strong>{new Date(sysConfig.scale_expires_at).toLocaleTimeString()}</strong> 自动恢复计划模式。
+                  </>
+                ) : (
+                  <>
+                    管理员手动常驻调整并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>。
+                  </>
+                )
               ) : (
-                '使用系统配置文件中预设的并发配额处理扫描任务。'
+                '非工作时间/夜间满速运行，使用系统配置文件中预设的并发配额处理扫描任务。'
               )}
             </p>
           </div>
