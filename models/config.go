@@ -23,6 +23,14 @@ type ModelConfig struct {
 	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
 }
 
+type WorkHoursThrottleConfig struct {
+	Enabled   bool    `yaml:"enabled" json:"enabled"`
+	Workdays  []int   `yaml:"workdays" json:"workdays"`     // 生效星期: 1=周一, 2=周二, ..., 5=周五, 6=周六, 7=周日 (0也代表周日)
+	StartTime string  `yaml:"start_time" json:"start_time"` // 工作时间开始，如 "09:00"
+	EndTime   string  `yaml:"end_time" json:"end_time"`     // 工作时间结束，如 "22:00"
+	Scale     float64 `yaml:"scale" json:"scale"`           // 工作时间内的并发比例 (0.0~1.0, 如 0.1 代表 10%)
+}
+
 type Config struct {
 	Server struct {
 		Port              string        `yaml:"port"`
@@ -40,10 +48,11 @@ type Config struct {
 	} `yaml:"storage"`
 	Database DatabaseConfig `yaml:"database"`
 	AI       struct {
-		Backend      string        `yaml:"backend"`       // CLI 后端：claude 或 opencode，默认 claude
-		DebugLogs    bool          `yaml:"debug_logs"`    // 是否输出 AI 引擎底层的 debug 级别日志
-		OutputFormat string        `yaml:"output_format"` // 输出格式：text 或 json，默认 text
-		Models       []ModelConfig `yaml:"models"`        // 多 LLM 服务器并发配置
+		Backend           string                  `yaml:"backend"`             // CLI 后端：claude 或 opencode，默认 claude
+		DebugLogs         bool                    `yaml:"debug_logs"`          // 是否输出 AI 引擎底层的 debug 级别日志
+		OutputFormat      string                  `yaml:"output_format"`       // 输出格式：text 或 json，默认 text
+		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"` // 工作时间自动限流配置
+		Models            []ModelConfig           `yaml:"models"`              // 多 LLM 服务器并发配置
 	} `yaml:"ai"`
 	Notification struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
@@ -97,6 +106,28 @@ func LoadConfig(filename string) error {
 			AppConfig.Server.ExternalURL = "http://127.0.0.1:8080"
 		}
 	}
+	// 校验工作时间限流配置
+	if AppConfig.AI.WorkHoursThrottle.Enabled {
+		wt := &AppConfig.AI.WorkHoursThrottle
+		if len(wt.Workdays) == 0 {
+			wt.Workdays = []int{1, 2, 3, 4, 5}
+		}
+		if wt.StartTime == "" {
+			wt.StartTime = "09:00"
+		}
+		if wt.EndTime == "" {
+			wt.EndTime = "22:00"
+		}
+		if wt.Scale < 0 {
+			wt.Scale = 0
+		}
+		if wt.Scale > 1.0 {
+			wt.Scale = 1.0
+		}
+		log.Printf("[Config] Work hours auto-throttle enabled: workdays=%v, %s-%s, scale=%.2f\n",
+			wt.Workdays, wt.StartTime, wt.EndTime, wt.Scale)
+	}
+
 	// 校验并补充 Models 默认并发数，并计算所有模型并发之和
 	sumConcurrent := 0
 	for i := range AppConfig.AI.Models {

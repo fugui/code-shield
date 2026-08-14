@@ -24,17 +24,18 @@ func GetConfig(c *gin.Context) {
 	var config models.SystemConfig
 	models.DB.First(&config, 1)
 
-	scale, expiresAt := services.Dispatcher.GetScaleAndExpiration()
-	var expiresPtr *time.Time
-	if !expiresAt.IsZero() {
-		expiresPtr = &expiresAt
-	}
+	info := services.Dispatcher.GetThrottleInfo()
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":                config.ID,
 		"auto_notify":       config.AutoNotify,
-		"concurrency_scale": scale,
-		"scale_expires_at":  expiresPtr,
+		"concurrency_scale": info.EffectiveScale,
+		"throttle_mode":     info.ThrottleMode,
+		"scale_expires_at":  info.ScaleExpiresAt,
+		"manual_scale":      info.ManualScale,
+		"is_manual":         info.IsManual,
+		"is_work_hours":     info.IsWorkHours,
+		"work_hours_config": info.WorkHoursConfig,
 	})
 }
 
@@ -67,16 +68,17 @@ func UpdateConfig(c *gin.Context) {
 		services.Dispatcher.SetScale(*req.ConcurrencyScale, dur)
 	}
 
-	scale, expiresAt := services.Dispatcher.GetScaleAndExpiration()
-	var expiresPtr *time.Time
-	if !expiresAt.IsZero() {
-		expiresPtr = &expiresAt
-	}
+	info := services.Dispatcher.GetThrottleInfo()
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":                config.ID,
 		"auto_notify":       config.AutoNotify,
-		"concurrency_scale": scale,
-		"scale_expires_at":  expiresPtr,
+		"concurrency_scale": info.EffectiveScale,
+		"throttle_mode":     info.ThrottleMode,
+		"scale_expires_at":  info.ScaleExpiresAt,
+		"manual_scale":      info.ManualScale,
+		"is_manual":         info.IsManual,
+		"is_work_hours":     info.IsWorkHours,
+		"work_hours_config": info.WorkHoursConfig,
 	})
 }
