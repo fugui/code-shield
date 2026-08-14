@@ -183,6 +183,7 @@ type TestCaseFinding struct {
 const (
 	StatusPending        = "pending"
 	StatusQueued         = "queued"
+	StatusRunning        = "running"
 	StatusCloning        = "cloning"
 	StatusPreProcessing  = "pre_processing"
 	StatusAnalyzing      = "analyzing"
