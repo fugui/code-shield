@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrSkipped is returned when a task is skipped due to precondition (e.g., no recent commits).
@@ -28,11 +30,20 @@ type Task struct {
 	IsResume   bool             // true 时 worker 调用 ResumeFailedChunks 而非 RunTaskSync
 }
 
-var TaskQueue = make(chan Task, 500)
+// workerNotifyChan 用于在新任务入队时即时唤醒空闲 Worker
+var workerNotifyChan = make(chan struct{}, 1)
+
+// NotifyWorker 发送唤醒信号
+func NotifyWorker() {
+	select {
+	case workerNotifyChan <- struct{}{}:
+	default:
+	}
+}
 
 // StartWorkerPool starts the background workers
 func StartWorkerPool(workers int) {
-	log.Printf("[WorkerPool] Starting %d background workers\n", workers)
+	log.Printf("[WorkerPool] Starting %d background workers (DB-backed persistent queue)\n", workers)
 	for i := 1; i <= workers; i++ {
 		go worker(i)
 	}
@@ -57,7 +68,7 @@ func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint
 		return false
 	}
 
-	// 2. 检查任务报告：是否有尚未完成的报告（channel 中的幽灵任务可能已删除 log 但 report 仍在排队）
+	// 2. 检查任务报告：是否有尚未完成的报告
 	var reportCount int64
 	models.DB.Model(&models.TaskReport{}).
 		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
@@ -66,6 +77,19 @@ func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint
 	if reportCount > 0 {
 		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active task report.\n", repoID, taskTypeID)
 		return false
+	}
+
+	// 3. 检查队列最大排队上限 (MaxQueueSize，-1 表示不限)
+	if models.AppConfig.Server.MaxQueueSize > 0 {
+		var pendingCount int64
+		models.DB.Model(&models.TaskExecutionLog{}).
+			Where("status = ?", models.StatusPending).
+			Count(&pendingCount)
+		if int(pendingCount) >= models.AppConfig.Server.MaxQueueSize {
+			log.Printf("[WorkerPool] Enqueue rejected: current pending tasks (%d) reached max_queue_size (%d)\n",
+				pendingCount, models.AppConfig.Server.MaxQueueSize)
+			return false
+		}
 	}
 
 	// 1. Create a pending execution log
@@ -99,84 +123,113 @@ func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint
 		return false
 	}
 
-	task := Task{
-		RepoID:     repoID,
-		ReportID:   report.ID,
-		RepoURL:    repoURL,
-		TaskTypeID: taskTypeID,
-		AutoNotify: autoNotify,
-		LogID:      execLog.ID,
-		RunParams:  runParams,
-	}
-
 	// Link the execution log to its task report
 	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Update("task_report_id", report.ID)
 
-	select {
-	case TaskQueue <- task:
-		log.Printf("[WorkerPool] Enqueued Repo %d (TaskType %d). Queue size: %d\n", repoID, taskTypeID, len(TaskQueue))
-		return true
-	default:
-		log.Printf("[WorkerPool] Queue is full! Dropping task for Repo %d\n", repoID)
-		UpdateTaskExecutionLog(execLog.ID, models.StatusFailed, "Queue is full")
-		return false
-	}
+	// 触发 Worker 唤醒
+	NotifyWorker()
+	log.Printf("[WorkerPool] Enqueued Repo %d (TaskType %d, LogID: %d) successfully into database queue.\n",
+		repoID, taskTypeID, execLog.ID)
+	return true
 }
 
 // EnqueueResumeTask 将恢复任务放入队列排队执行，而非直接执行。
 func EnqueueResumeTask(report models.TaskReport) error {
+	if models.AppConfig.Server.MaxQueueSize > 0 {
+		var pendingCount int64
+		models.DB.Model(&models.TaskExecutionLog{}).
+			Where("status = ?", models.StatusPending).
+			Count(&pendingCount)
+		if int(pendingCount) >= models.AppConfig.Server.MaxQueueSize {
+			return fmt.Errorf("当前排队任务数已达系统上限 (%d)，无法入队", models.AppConfig.Server.MaxQueueSize)
+		}
+	}
+
 	// 更新状态为 queued，表示排队等待执行
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusQueued)
+	NotifyWorker()
+	return nil
+}
 
-	task := Task{
-		RepoID:   report.RepoID,
-		ReportID: report.ID,
-		IsResume: true,
+// fetchNextPendingTask 从数据库中原子抢占并拉取一条 Pending 状态的任务
+func fetchNextPendingTask() (*Task, bool) {
+	if models.DB == nil {
+		return nil, false
 	}
 
-	select {
-	case TaskQueue <- task:
-		log.Printf("[WorkerPool] Enqueued RESUME task for ReportID %d. Queue size: %d\n", report.ID, len(TaskQueue))
+	var execLog models.TaskExecutionLog
+	var found bool
+
+	// 使用数据库事务原子抢占最早的一条 pending 任务
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		// 查找最早创建的 pending 记录，使用 FOR UPDATE SKIP LOCKED 确保并发安全
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Preload("Repo").
+			Preload("Schedule").
+			Where("status = ?", models.StatusPending).
+			Order("id ASC")
+
+		if err := query.First(&execLog).Error; err != nil {
+			return err
+		}
+
+		// 抢占成功，原子更新状态为 running
+		now := time.Now()
+		if err := tx.Model(&models.TaskExecutionLog{}).
+			Where("id = ?", execLog.ID).
+			Updates(map[string]interface{}{
+				"status":          models.StatusRunning,
+				"status_priority": models.GetStatusPriority(models.StatusRunning),
+				"start_time":      now,
+			}).Error; err != nil {
+			return err
+		}
+
+		found = true
 		return nil
-	default:
-		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusFailed)
-		return fmt.Errorf("队列已满，无法入队")
+	})
+
+	if err != nil || !found {
+		return nil, false
 	}
+
+	// 反查关联的 TaskReport
+	var report models.TaskReport
+	if execLog.TaskReportID != nil {
+		models.DB.First(&report, *execLog.TaskReportID)
+	}
+
+	var runParams models.RunParams
+	if execLog.Schedule != nil && len(execLog.Schedule.RunParams) > 0 {
+		_ = json.Unmarshal(execLog.Schedule.RunParams, &runParams)
+	}
+
+	task := &Task{
+		RepoID:     execLog.RepoID,
+		ReportID:   report.ID,
+		RepoURL:    execLog.Repo.URL,
+		TaskTypeID: execLog.TaskTypeID,
+		AutoNotify: execLog.Schedule != nil && execLog.Schedule.AutoNotify,
+		LogID:      execLog.ID,
+		RunParams:  runParams,
+	}
+	return task, true
 }
 
 func worker(id int) {
-	for task := range TaskQueue {
-		// 校验任务是否已被清理/取消（例如被 ClearInvalidReports 删除）。
-		// 批量删除场景下，channel 中可能积压大量已被删除的“幽灵任务”，
-		// 跳过时加 10ms 延迟防止高速空转导致 DB 查询风暴。
-		if task.LogID > 0 {
-			var count int64
-			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Count(&count)
-			if count == 0 {
-				log.Printf("[Worker %d] TaskExecutionLog %d not found (likely cleared/cancelled). Skipping task.\n", id, task.LogID)
-				time.Sleep(10 * time.Millisecond)
-				continue
+	for {
+		task, found := fetchNextPendingTask()
+		if !found {
+			// 当前无任务，等待新任务通知信号，或每 2 秒自愈轮询
+			select {
+			case <-workerNotifyChan:
+			case <-time.After(2 * time.Second):
 			}
-		} else {
-			var count int64
-			models.DB.Model(&models.TaskReport{}).Where("id = ?", task.ReportID).Count(&count)
-			if count == 0 {
-				log.Printf("[Worker %d] TaskReport %d not found (likely cleared/cancelled). Skipping task.\n", id, task.ReportID)
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
+			continue
 		}
 
-		if task.IsResume {
-			log.Printf("[Worker %d] Picked up RESUME task for ReportID %d (Repo %d)\n", id, task.ReportID, task.RepoID)
-		} else {
-			log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d)\n", id, task.RepoID, task.TaskTypeID, task.LogID)
-		}
-
-		// Update status to running (initial phase)
-		if task.LogID > 0 {
-			UpdateTaskExecutionLog(task.LogID, "running", "")
-		}
+		log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d, ReportID: %d)\n",
+			id, task.RepoID, task.TaskTypeID, task.LogID, task.ReportID)
 
 		var err error
 		if task.IsResume {
@@ -240,7 +293,7 @@ func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 }
 
 // RecoverPendingTasks 在进程启动时调用，扫描数据库中未完成的任务，并根据指定行为进行恢复、忽略或删除。
-// action: "recover" (重新入队), "ignore" (忽略), "delete" (从 DB 中彻底物理删除)
+// action: "recover" (恢复), "ignore" (忽略), "delete" (从 DB 中彻底物理删除)
 func RecoverPendingTasks(action string) {
 	if action == "ignore" {
 		log.Println("[Recovery] Startup stale task action is set to 'ignore'. Skipping stale task processing.")
@@ -291,7 +344,6 @@ func RecoverPendingTasks(action string) {
 
 	// 默认恢复 (recover)
 	recovered := 0
-	skipped := 0
 	for _, report := range staleReports {
 		// 2. 反查对应的执行日志
 		var execLog models.TaskExecutionLog
@@ -309,17 +361,15 @@ func RecoverPendingTasks(action string) {
 			}
 			if err := models.DB.Create(&execLog).Error; err != nil {
 				log.Printf("[Recovery] Failed to create fallback TaskExecutionLog for Report %d: %v\n", report.ID, err)
-				skipped++
 				continue
 			}
 		}
 
 		// 3. 清理已执行到一半（非排队、非就绪）任务的物理磁盘报告文件
 		if report.Status != models.StatusQueued && report.Status != models.StatusPending {
-			// 清除物理磁盘上的临时文件、分片目录和报告
 			CleanReportFiles(report.TaskType.Name, report.ID)
 		}
-		// 4. 重置 Report 和 Log 的状态，完全清理脏数据和指标信息以确保统计正确
+		// 4. 重置 Report 和 Log 的状态为 pending / queued
 		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
 			"status":           models.StatusQueued,
 			"clone_status":     models.StatusPending,
@@ -337,38 +387,12 @@ func RecoverPendingTasks(action string) {
 			"end_time":      nil,
 		})
 
-		// 5. 从 ScheduleConfig 中恢复 RunParams（若有）
-		var runParams models.RunParams
-		if execLog.Schedule != nil && len(execLog.Schedule.RunParams) > 0 {
-			if err := json.Unmarshal(execLog.Schedule.RunParams, &runParams); err != nil {
-				log.Printf("[Recovery] ReportID %d: failed to unmarshal RunParams: %v, using defaults.\n", report.ID, err)
-			}
-		}
-
-		task := Task{
-			RepoID:     report.RepoID,
-			ReportID:   report.ID,
-			RepoURL:    report.Repo.URL,
-			TaskTypeID: report.TaskTypeID,
-			AutoNotify: execLog.Schedule != nil && execLog.Schedule.AutoNotify,
-			LogID:      execLog.ID,
-			RunParams:  runParams,
-		}
-
-		// 6. 重新入队
-		select {
-		case TaskQueue <- task:
-			log.Printf("[Recovery] Re-queued ReportID %d (Repo: %s, TaskType: %s, LogID: %d).\n",
-				report.ID, report.Repo.URL, report.TaskType.Name, execLog.ID)
-			recovered++
-		default:
-			log.Printf("[Recovery] Queue is full! Could not re-queue ReportID %d.\n", report.ID)
-			UpdateTaskExecutionLog(execLog.ID, models.StatusFailed, "进程恢复时队列已满，无法重新入队")
-			skipped++
-		}
+		recovered++
 	}
 
-	log.Printf("[Recovery] Done: %d task(s) recovered, %d skipped.\n", recovered, skipped)
+	// 唤醒 WorkerPool 开始处理
+	NotifyWorker()
+	log.Printf("[Recovery] Done: %d task(s) restored to pending state in database.\n", recovered)
 }
 
 // CleanReportFiles 递归遍历指定任务目录，物理删除属于特定 reportID 的所有报告、总结、临时输入及分片目录。

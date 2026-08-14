@@ -41,6 +41,7 @@ type Config struct {
 		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 60s
 		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
 		WorkerCount       int           `yaml:"worker_count"`        // 全局任务并发数，默认 5
+		MaxQueueSize      int           `yaml:"max_queue_size"`      // 任务排队最大上限，默认 2000，-1 表示不限制
 		ExternalURL       string        `yaml:"external_url"`        // 外部访问基准 URL，用于通知和邮件跳转，如 http://127.0.0.1:8080
 	} `yaml:"server"`
 	Storage struct {
@@ -155,6 +156,14 @@ func LoadConfig(filename string) error {
 		}
 	} else {
 		log.Printf("[Config] Using explicitly configured worker_count: %d\n", AppConfig.Server.WorkerCount)
+	}
+	if AppConfig.Server.MaxQueueSize == 0 {
+		AppConfig.Server.MaxQueueSize = 2000
+	}
+	if AppConfig.Server.MaxQueueSize > 0 {
+		log.Printf("[Config] Max pending queue size limit set to %d\n", AppConfig.Server.MaxQueueSize)
+	} else {
+		log.Println("[Config] Max pending queue size limit is disabled (unlimited).")
 	}
 	if AppConfig.Server.ReadTimeout == 0 {
 		AppConfig.Server.ReadTimeout = 15 * time.Second
