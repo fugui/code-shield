@@ -282,12 +282,12 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
         </div>
 
         {/* Content Body */}
-        <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, backgroundColor: activeTab === 'diagnostic' ? '#f8fafc' : '#ffffff' }}>
+        <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, backgroundColor: activeTab === 'diagnostic' ? 'var(--bg-color)' : 'var(--card-bg, #ffffff)' }}>
           
           {activeTab === 'report' ? (
             /* Tab 1: Markdown Report */
             loading ? (
-              <div style={{ textAlign: 'center', marginTop: '3rem', color: '#64748b' }}>
+              <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--text-secondary, #64748b)' }}>
                 <span className="report-sidebar-spinner" /> 正在渲染 Markdown...
               </div>
             ) : (
@@ -322,11 +322,11 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
           ) : (
             /* Tab 2: Diagnostic & Trace Logs */
             loadingSummary ? (
-              <div style={{ textAlign: 'center', marginTop: '3rem', color: '#64748b' }}>
+              <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--text-secondary, #64748b)' }}>
                 <span className="report-sidebar-spinner" /> 正在获取执行轨迹数据...
               </div>
             ) : summaryError ? (
-              <div style={{ padding: '2rem', textAlign: 'center', background: '#fff', borderRadius: '8px', border: '1px solid #fee2e2', color: '#b91c1c' }}>
+              <div style={{ padding: '2rem', textAlign: 'center', background: 'var(--card-bg, #fff)', borderRadius: '8px', border: '1px solid #fee2e2', color: '#b91c1c' }}>
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginBottom: '0.5rem' }}>
                   <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
@@ -366,7 +366,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
                 </div>
 
                 {/* 2. Visual Pipeline Timeline */}
-                <h4 style={{ margin: '0 0 0.75rem 0', color: '#334155', fontSize: '0.9rem' }}>🏃 执行阶段时序流</h4>
+                <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-color, #334155)', fontSize: '0.9rem' }}>🏃 执行阶段时序流</h4>
                 <div className="diag-pipeline">
                   <div className={`pipeline-step success`}>
                     <div className="pipeline-dot success">✓</div>
@@ -403,12 +403,12 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
 
                 {/* 3. Chunk details browser */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0 0.75rem 0' }}>
-                  <h4 style={{ margin: 0, color: '#334155', fontSize: '0.9rem' }}>📦 静态扫描分片详情 ({summary.analysis?.chunks?.length ?? 0} 个)</h4>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>模式: {summary.engine_mode === 'chunked' ? '分片扫描 (Chunked)' : '单次扫描 (Single)'}</span>
+                  <h4 style={{ margin: 0, color: 'var(--text-color, #334155)', fontSize: '0.9rem' }}>📦 静态扫描分片详情 ({summary.analysis?.chunks?.length ?? 0} 个)</h4>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>模式: {summary.engine_mode === 'chunked' ? '分片扫描 (Chunked)' : '单次扫描 (Single)'}</span>
                 </div>
 
                 {(!summary.analysis?.chunks || summary.analysis.chunks.length === 0) ? (
-                  <div style={{ padding: '2rem', textAlign: 'center', background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.875rem' }}>
+                  <div style={{ padding: '2rem', textAlign: 'center', background: 'var(--card-bg, #fff)', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)', fontSize: '0.875rem' }}>
                     该任务未使用分片分析引擎运行。
                   </div>
                 ) : (
@@ -436,23 +436,23 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
                         </div>
                         {expanded && (
                           <div className="chunk-body">
-                            <div style={{ fontWeight: 600, color: '#475569', marginBottom: '0.25rem', fontSize: '0.75rem' }}>📂 处理的文件列表 ({chunk.files?.length ?? 0}):</div>
+                            <div style={{ fontWeight: 600, color: 'var(--text-color, #475569)', marginBottom: '0.25rem', fontSize: '0.75rem' }}>📂 处理的文件列表 ({chunk.files?.length ?? 0}):</div>
                             <ul className="chunk-files-list">
                               {chunk.files && chunk.files.length > 0 ? (
                                 chunk.files.map((file: string, idx: number) => (
                                   <li key={idx} className="chunk-file-item">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#94a3b8' }}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary, #94a3b8)' }}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
                                     {file}
                                   </li>
                                 ))
                               ) : (
-                                <li style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic' }}>无文件</li>
+                                <li style={{ color: 'var(--text-secondary, #94a3b8)', fontSize: '0.75rem', fontStyle: 'italic' }}>无文件</li>
                               )}
                             </ul>
                             
                             {isFailed && chunk.error_message && (
                               <div style={{ marginTop: '0.75rem' }}>
-                                <div style={{ fontWeight: 600, color: '#b91c1c', marginBottom: '0.25rem', fontSize: '0.75rem' }}>🚨 报错信息诊断:</div>
+                                <div style={{ fontWeight: 600, color: '#ef4444', marginBottom: '0.25rem', fontSize: '0.75rem' }}>🚨 报错信息诊断:</div>
                                 <div className="chunk-error-msg">
                                   <button className="copy-btn" onClick={(e) => { e.stopPropagation(); handleCopyToClipboard(chunk.error_message); }}>
                                     复制日志
@@ -469,7 +469,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
                 )}
               </div>
             ) : (
-              <div style={{ padding: '2rem', textAlign: 'center', background: '#fff', borderRadius: '8px', color: '#64748b', fontSize: '0.875rem' }}>
+              <div style={{ padding: '2rem', textAlign: 'center', background: 'var(--card-bg, #fff)', borderRadius: '8px', color: 'var(--text-secondary, #64748b)', fontSize: '0.875rem' }}>
                 暂无诊断信息。
               </div>
             )
@@ -488,57 +488,57 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
         
         /* Premium Tab Styles */
         .diag-tabs { display: flex; border-bottom: 1px solid var(--border-color); background: var(--bg-color); padding: 0 1.5rem; }
-        .diag-tab-btn { background: transparent; border: none; padding: 0.75rem 1.25rem; font-size: 0.875rem; font-weight: 500; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s ease; outline: none; margin-bottom: -1px; }
+        .diag-tab-btn { background: transparent; border: none; padding: 0.75rem 1.25rem; font-size: 0.875rem; font-weight: 500; color: var(--text-secondary, #64748b); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s ease; outline: none; margin-bottom: -1px; }
         .diag-tab-btn:hover { color: var(--primary-color); }
         .diag-tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); font-weight: 600; }
         
         /* KPI Cards Styles */
         .kpi-container { display: flex; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-        .kpi-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 120px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03); transition: all 0.2s ease; }
-        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border-color: #cbd5e1; }
-        .kpi-label { font-size: 0.7rem; color: #64748b; font-weight: 500; display: flex; align-items: center; gap: 0.25rem; }
-        .kpi-val { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
+        .kpi-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 120px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03); transition: all 0.2s ease; }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border-color: var(--primary-color, #cbd5e1); }
+        .kpi-label { font-size: 0.7rem; color: var(--text-secondary, #64748b); font-weight: 500; display: flex; align-items: center; gap: 0.25rem; }
+        .kpi-val { font-size: 1.1rem; font-weight: 700; color: var(--text-color, #0f172a); }
         
         /* Workflow Timeline Styles */
-        .diag-pipeline { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 1.5rem; padding: 1rem 0.5rem; background: #fff; border-radius: 8px; border: 1px solid #e2e8f0; }
+        .diag-pipeline { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 1.5rem; padding: 1rem 0.5rem; background: var(--card-bg, #fff); border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); }
         .pipeline-step { display: flex; flex-direction: column; align-items: center; flex: 1; position: relative; min-width: 70px; }
-        .pipeline-step:not(:last-child)::after { content: ''; position: absolute; top: 12px; left: calc(50% + 15px); width: calc(100% - 30px); height: 2px; background: #e2e8f0; z-index: 1; }
+        .pipeline-step:not(:last-child)::after { content: ''; position: absolute; top: 12px; left: calc(50% + 15px); width: calc(100% - 30px); height: 2px; background: var(--border-color, #e2e8f0); z-index: 1; }
         .pipeline-step.success:not(:last-child)::after { background: #10b981; }
-        .pipeline-dot { width: 24px; height: 24px; border-radius: 50%; background: #e2e8f0; color: #64748b; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; z-index: 2; border: 2px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
+        .pipeline-dot { width: 24px; height: 24px; border-radius: 50%; background: var(--bg-color, #e2e8f0); color: var(--text-secondary, #64748b); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; z-index: 2; border: 2px solid var(--card-bg, #fff); box-shadow: 0 0 0 1px var(--border-color, #cbd5e1); }
         .pipeline-dot.success { background: #d1fae5; color: #065f46; box-shadow: 0 0 0 1px #10b981; }
         .pipeline-dot.failed { background: #fee2e2; color: #991b1b; box-shadow: 0 0 0 1px #ef4444; }
         .pipeline-dot.active { background: #fef3c7; color: #92400e; box-shadow: 0 0 0 1px #f59e0b; animation: pipeline-pulse 1.5s infinite; }
-        .pipeline-label { font-size: 0.7rem; font-weight: 600; margin-top: 0.4rem; color: #334155; text-align: center; }
-        .pipeline-sub { font-size: 0.6rem; color: #64748b; margin-top: 0.05rem; }
+        .pipeline-label { font-size: 0.7rem; font-weight: 600; margin-top: 0.4rem; color: var(--text-color, #334155); text-align: center; }
+        .pipeline-sub { font-size: 0.6rem; color: var(--text-secondary, #64748b); margin-top: 0.05rem; }
         @keyframes pipeline-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
         
         /* Chunk Cards Styles */
-        .chunk-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 0.6rem; overflow: hidden; transition: all 0.2s ease; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02); }
-        .chunk-card:hover { border-color: #cbd5e1; box-shadow: 0 3px 6px -1px rgba(0,0,0,0.05); }
+        .chunk-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; margin-bottom: 0.6rem; overflow: hidden; transition: all 0.2s ease; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02); }
+        .chunk-card:hover { border-color: var(--primary-color, #cbd5e1); box-shadow: 0 3px 6px -1px rgba(0,0,0,0.05); }
         .chunk-card.failed { border-left: 3px solid #ef4444; }
         .chunk-card.success { border-left: 3px solid #10b981; }
-        .chunk-header { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.85rem; cursor: pointer; user-select: none; background: #fff; }
-        .chunk-header:hover { background: #f8fafc; }
+        .chunk-header { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.85rem; cursor: pointer; user-select: none; background: var(--card-bg, #fff); }
+        .chunk-header:hover { background: var(--bg-color, #f8fafc); }
         .chunk-title { font-size: 0.8rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 0.4rem; }
-        .chunk-meta { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; color: #64748b; }
-        .chunk-body { padding: 0.85rem; background: #f8fafc; border-top: 1px solid #f1f5f9; font-size: 0.775rem; }
+        .chunk-meta { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; color: var(--text-secondary, #64748b); }
+        .chunk-body { padding: 0.85rem; background: var(--bg-color, #f8fafc); border-top: 1px solid var(--border-color, #f1f5f9); font-size: 0.775rem; }
         .chunk-files-list { list-style: none; padding: 0; margin: 0; }
-        .chunk-file-item { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0; color: #475569; font-family: monospace; font-size: 0.7rem; word-break: break-all; }
+        .chunk-file-item { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0; color: var(--text-color, #475569); font-family: monospace; font-size: 0.7rem; word-break: break-all; }
         .chunk-error-msg { background: #0f172a; color: #f87171; font-family: monospace; font-size: 0.7rem; padding: 0.6rem 0.85rem; border-radius: 6px; margin-top: 0.4rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; position: relative; }
         .copy-btn { position: absolute; top: 0.4rem; right: 0.4rem; background: rgba(255,255,255,0.1); border: none; color: #fff; padding: 0.15rem 0.35rem; border-radius: 4px; font-size: 0.6rem; cursor: pointer; transition: all 0.2s; }
         .copy-btn:hover { background: rgba(255,255,255,0.25); }
 
-        .markdown-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; color: #24292f; }
+        .markdown-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; color: var(--text-color, #24292f); }
         .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; }
-        .markdown-body h2 { border-bottom: 1px solid #d0d7de; padding-bottom: .3em; }
-        .markdown-body blockquote { padding: 0 1em; color: #57606a; border-left: .25em solid #d0d7de; margin: 0 0 16px 0; }
-        .markdown-body pre { padding: 16px; overflow: auto; font-size: 85%; line-height: 1.45; background-color: #f6f8fa; border-radius: 6px; }
+        .markdown-body h2 { border-bottom: 1px solid var(--border-color, #d0d7de); padding-bottom: .3em; }
+        .markdown-body blockquote { padding: 0 1em; color: var(--text-secondary, #57606a); border-left: .25em solid var(--border-color, #d0d7de); margin: 0 0 16px 0; }
+        .markdown-body pre { padding: 16px; overflow: auto; font-size: 85%; line-height: 1.45; background-color: var(--bg-color, #f6f8fa); border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; }
         .markdown-body code { padding: .2em .4em; margin: 0; font-size: 85%; background-color: rgba(175, 184, 193, 0.2); border-radius: 6px; }
         .markdown-body pre > code { padding: 0; margin: 0; font-size: 100%; background-color: transparent; border: 0; }
         .markdown-body ul, .markdown-body ol { margin-top: 0; margin-bottom: 16px; padding-left: 2em; }
         .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
-        .markdown-body th, .markdown-body td { border: 1px solid #d0d7de; padding: 6px 13px; }
-        .markdown-body th { background-color: #f6f8fa; font-weight: 600; }
+        .markdown-body th, .markdown-body td { border: 1px solid var(--border-color, #d0d7de); padding: 6px 13px; }
+        .markdown-body th { background-color: var(--bg-color, #f6f8fa); font-weight: 600; color: var(--text-color); }
       `}</style>
     </>
   );

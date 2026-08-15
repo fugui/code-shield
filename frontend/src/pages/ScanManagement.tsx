@@ -438,14 +438,14 @@ function ScanManagement() {
                 {openBatchMenu && selectedRepoIds.length > 0 && (
                   <>
                     <div onClick={() => setOpenBatchMenu(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} />
-                    <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: '4px', background: 'white', border: '1px solid var(--border-color)', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', zIndex: 100, minWidth: '160px', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: '4px', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color)', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, minWidth: '160px', overflow: 'hidden' }}>
                       {taskTypes.map(tt => (
                         <div
                           key={tt.id}
                           onClick={() => handleBatchTrigger(tt.id)}
-                          style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.825rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)' }}
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
+                          style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.825rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)' }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-color)'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                           {tt.display_name}
