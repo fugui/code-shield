@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Pagination } from '@code/common';
+import { Pagination, usePagination } from '@code/common';
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
@@ -41,9 +41,7 @@ function ScanManagement() {
   const [currentMarkdown, setCurrentMarkdown] = useState('');
   const [loadingMarkdown, setLoadingMarkdown] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const currentPage = parseInt(searchParams.get('page') || '1', 10) || 1;
-  const pageSize = parseInt(searchParams.get('pageSize') || '25', 10) || 25;
+  const { page: currentPage, pageSize, setPage } = usePagination({ defaultPageSize: 25 });
 
   // --- Schedule State ---
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -393,11 +391,7 @@ function ScanManagement() {
                 value={filterTeam}
                 onChange={e => {
                   setFilterTeam(e.target.value);
-                  setSearchParams(prev => {
-                    const p = new URLSearchParams(prev);
-                    p.delete('page');
-                    return p;
-                  });
+                  setPage(1);
                 }}
                 style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none' }}
               >
@@ -410,11 +404,7 @@ function ScanManagement() {
                 value={filterSearch}
                 onChange={e => {
                   setFilterSearch(e.target.value);
-                  setSearchParams(prev => {
-                    const p = new URLSearchParams(prev);
-                    p.delete('page');
-                    return p;
-                  });
+                  setPage(1);
                 }}
                 style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', outline: 'none', minWidth: '200px' }}
               />

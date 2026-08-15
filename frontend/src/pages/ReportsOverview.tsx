@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 import ReportSidebar from '../components/ReportSidebar';
@@ -16,14 +17,14 @@ function ReportsOverview() {
   const filterOwner = searchParams.get('owner') || '';
   const filterTaskType = searchParams.get('tt') || '';
   const filterSearch = searchParams.get('search') || '';
-  const page = parseInt(searchParams.get('page') || '1', 10) || 1;
+
+  const { page, pageSize, setPage } = usePagination({ defaultPageSize: 25 });
 
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const [subsystems, setSubsystems] = useState<string[]>([]);
 
-  const [pageSize, setPageSize] = useState<number>(25);
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
 
@@ -101,18 +102,6 @@ function ReportsOverview() {
         next.delete(paramKey);
       }
       next.delete('page'); // reset page to 1
-      return next;
-    }, { replace: true });
-  };
-
-  const setPage = (p: number) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      if (p <= 1) {
-        next.delete('page');
-      } else {
-        next.set('page', p.toString());
-      }
       return next;
     }, { replace: true });
   };
@@ -539,59 +528,8 @@ function ReportsOverview() {
       </div>
 
       {/* Pagination */}
-      {totalPages > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem', background: 'var(--card-bg)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-          <span style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>
-            共 {totalItems} 条记录，当前第 {page} / {totalPages} 页
-          </span>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button 
-              className="btn" 
-              disabled={page === 1} 
-              onClick={() => setPage(page - 1)} 
-              style={{ 
-                background: page === 1 ? 'var(--bg-color)' : 'var(--card-bg)', 
-                color: page === 1 ? '#94a3b8' : 'var(--text-color)', 
-                border: '1px solid var(--border-color)',
-                opacity: page === 1 ? 0.5 : 1,
-                cursor: page === 1 ? 'not-allowed' : 'pointer'
-              }}
-            >
-              上一页
-            </button>
-            <button 
-              className="btn" 
-              disabled={page >= totalPages} 
-              onClick={() => setPage(page + 1)} 
-              style={{ 
-                background: page >= totalPages ? 'var(--bg-color)' : 'var(--card-bg)', 
-                color: page >= totalPages ? '#94a3b8' : 'var(--text-color)', 
-                border: '1px solid var(--border-color)',
-                opacity: page >= totalPages ? 0.5 : 1,
-                cursor: page >= totalPages ? 'not-allowed' : 'pointer'
-              }}
-            >
-              下一页
-            </button>
-            <select
-              value={pageSize}
-              onChange={e => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              style={{
-                padding: '0.25rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)',
-                fontSize: '0.825rem', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', marginLeft: '0.5rem',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="15">15 条/页</option>
-              <option value="25">25 条/页</option>
-              <option value="50">50 条/页</option>
-              <option value="100">100 条/页</option>
-            </select>
-          </div>
-        </div>
+      {totalItems > 0 && (
+        <Pagination totalItems={totalItems} />
       )}
 
       {/* Sidebar detail viewer */}
