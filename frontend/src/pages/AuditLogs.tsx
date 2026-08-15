@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 
 interface AuditLogItem {
@@ -66,13 +68,22 @@ function AuditLogs() {
   const [loading, setLoading] = useState<boolean>(true);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
 
-  // Filtering & Pagination State
-  const [triggerType, setTriggerType] = useState<string>('');
-  const [selectedTaskTypeId, setSelectedTaskTypeId] = useState<string>('');
-  const [search, setSearch] = useState<string>('');
-  const [page, setPage] = useState<number>(1);
-  const [pageSize] = useState<number>(15);
+  // Filtering & Pagination State via URL Search Params
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { page, pageSize, updateParams } = usePagination({
+    defaultPageSize: 25,
+  });
+
+  const triggerType = searchParams.get('trigger_type') || '';
+  const selectedTaskTypeId = searchParams.get('task_type_id') || '';
+  const searchParam = searchParams.get('search') || '';
+  const [searchInput, setSearchInput] = useState<string>(searchParam);
   const [total, setTotal] = useState<number>(0);
+
+  // Synchronize local search input when URL changes
+  useEffect(() => {
+    setSearchInput(searchParam);
+  }, [searchParam]);
 
   // Drawer Detail State
   const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
@@ -92,7 +103,7 @@ function AuditLogs() {
         setIsSuperAdmin(isSuper);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch current user:', err);
     }
   };
 
@@ -101,7 +112,7 @@ function AuditLogs() {
       const res = await fetch('/api/audit-logs/stats');
       if (res.ok) setStats(await res.json());
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch audit stats:', err);
     }
   };
 
@@ -110,11 +121,11 @@ function AuditLogs() {
       const res = await fetch('/api/task-types');
       if (res.ok) setTaskTypes(await res.json());
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch task types:', err);
     }
   };
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -122,7 +133,7 @@ function AuditLogs() {
       params.append('pageSize', String(pageSize));
       if (triggerType) params.append('trigger_type', triggerType);
       if (selectedTaskTypeId) params.append('task_type_id', selectedTaskTypeId);
-      if (search) params.append('search', search);
+      if (searchParam) params.append('search', searchParam);
 
       const res = await fetch(`/api/audit-logs?${params.toString()}`);
       if (res.ok) {
@@ -131,12 +142,12 @@ function AuditLogs() {
         setTotal(data.total || 0);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch audit logs:', err);
       showToast('获取操作审计日志失败', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, triggerType, selectedTaskTypeId, searchParam, showToast]);
 
   useEffect(() => {
     fetchStats();
@@ -146,7 +157,7 @@ function AuditLogs() {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, triggerType, selectedTaskTypeId, search]);
+  }, [fetchLogs]);
 
   const handleOpenDetail = async (item: AuditLogItem) => {
     setSelectedLog(item);
@@ -159,11 +170,28 @@ function AuditLogs() {
         setDetailExecLogs(data.execution_logs || []);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch log details:', err);
       showToast('加载关联任务明细失败', 'error');
     } finally {
       setLoadingDetail(false);
     }
+  };
+
+  const handleSearchSubmit = () => {
+    const trimmed = searchInput.trim();
+    updateParams({ search: trimmed, page: 1 });
+  };
+
+  const handleResetFilters = () => {
+    setSearchInput('');
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('trigger_type');
+      next.delete('task_type_id');
+      next.delete('search');
+      next.delete('page');
+      return next;
+    });
   };
 
   const renderTriggerTypeBadge = (type: string) => {
@@ -234,8 +262,6 @@ function AuditLogs() {
     }
   };
 
-  const totalPages = Math.ceil(total / pageSize) || 1;
-
   const handleClearLogs = async () => {
     if (!window.confirm('确认清除历史触发日志吗？此操作不可恢复。')) return;
     try {
@@ -260,11 +286,11 @@ function AuditLogs() {
         <div className="audit-stats-grid">
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>今日触发批次</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', marginTop: '0.2rem' }}>{stats.today_batches}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>历史总计 {stats.total_batches} 次下发</div>
+              <div className="audit-card-title">今日触发批次</div>
+              <div className="audit-card-number" style={{ color: 'var(--text-color)' }}>{stats.today_batches}</div>
+              <div className="audit-card-sub">历史总计 {stats.total_batches} 次下发</div>
             </div>
-            <div className="audit-card-icon" style={{ background: '#eff6ff', color: '#2563eb' }}>
+            <div className="audit-card-icon" style={{ background: 'rgba(37, 99, 235, 0.12)', color: 'var(--primary-color, #2563eb)' }}>
               <svg style={{ width: '22px', height: '22px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
@@ -273,11 +299,11 @@ function AuditLogs() {
 
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>手动操作 (单仓/批量)</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>{stats.manual_count}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>人类主动交互下发</div>
+              <div className="audit-card-title">手动操作 (单仓/批量)</div>
+              <div className="audit-card-number" style={{ color: '#8b5cf6' }}>{stats.manual_count}</div>
+              <div className="audit-card-sub">人类主动交互下发</div>
             </div>
-            <div className="audit-card-icon" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+            <div className="audit-card-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6' }}>
               <svg style={{ width: '22px', height: '22px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
@@ -286,11 +312,11 @@ function AuditLogs() {
 
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>定时任务触发</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#059669', marginTop: '0.2rem' }}>{stats.cron_count}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>自动 Cron 策略下发</div>
+              <div className="audit-card-title">定时任务触发</div>
+              <div className="audit-card-number" style={{ color: '#10b981' }}>{stats.cron_count}</div>
+              <div className="audit-card-sub">自动 Cron 策略下发</div>
             </div>
-            <div className="audit-card-icon" style={{ background: '#ecfdf5', color: '#059669' }}>
+            <div className="audit-card-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
               <svg style={{ width: '22px', height: '22px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -299,13 +325,13 @@ function AuditLogs() {
 
           <div className="audit-card">
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>触发累积覆盖仓库</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#d97706', marginTop: '0.2rem' }}>{stats.total_repos_scanned}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>累积扫描任务项</div>
+              <div className="audit-card-title">触发累积覆盖仓库</div>
+              <div className="audit-card-number" style={{ color: '#f59e0b' }}>{stats.total_repos_scanned}</div>
+              <div className="audit-card-sub">累积扫描任务项</div>
             </div>
-            <div className="audit-card-icon" style={{ background: '#fffbeb', color: '#d97706' }}>
+            <div className="audit-card-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
               <svg style={{ width: '22px', height: '22px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2" />
               </svg>
             </div>
           </div>
@@ -313,14 +339,23 @@ function AuditLogs() {
       )}
 
       {/* 过滤工具栏 */}
-      <div style={{ background: '#ffffff', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div style={{ background: 'var(--card-bg, #ffffff)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
             {/* 触发方式 */}
             <select
               value={triggerType}
-              onChange={(e) => { setTriggerType(e.target.value); setPage(1); }}
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '6px', outline: 'none', background: '#fff' }}
+              onChange={(e) => updateParams({ trigger_type: e.target.value, page: 1 })}
+              style={{
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.875rem',
+                border: '1px solid var(--border-color, #cbd5e1)',
+                borderRadius: '6px',
+                outline: 'none',
+                background: 'var(--bg-color, #ffffff)',
+                color: 'var(--text-color, #334155)',
+                cursor: 'pointer'
+              }}
             >
               <option value="">全部触发方式</option>
               <option value="manual">手动触发 (全部)</option>
@@ -334,8 +369,17 @@ function AuditLogs() {
             {/* 任务类型 */}
             <select
               value={selectedTaskTypeId}
-              onChange={(e) => { setSelectedTaskTypeId(e.target.value); setPage(1); }}
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '6px', outline: 'none', background: '#fff' }}
+              onChange={(e) => updateParams({ task_type_id: e.target.value, page: 1 })}
+              style={{
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.875rem',
+                border: '1px solid var(--border-color, #cbd5e1)',
+                borderRadius: '6px',
+                outline: 'none',
+                background: 'var(--bg-color, #ffffff)',
+                color: 'var(--text-color, #334155)',
+                cursor: 'pointer'
+              }}
             >
               <option value="">全部任务类型</option>
               {taskTypes.map((tt) => (
@@ -348,19 +392,38 @@ function AuditLogs() {
               <input
                 type="text"
                 placeholder="搜索批次号 / 操作人 / 摘要..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && fetchLogs()}
-                style={{ padding: '0.45rem 0.75rem 0.45rem 2rem', fontSize: '0.875rem', border: '1px solid var(--border-color, #cbd5e1)', borderRadius: '6px', outline: 'none', width: '240px' }}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
+                style={{
+                  padding: '0.45rem 0.75rem 0.45rem 2rem',
+                  fontSize: '0.875rem',
+                  border: '1px solid var(--border-color, #cbd5e1)',
+                  borderRadius: '6px',
+                  outline: 'none',
+                  width: '240px',
+                  background: 'var(--bg-color, #ffffff)',
+                  color: 'var(--text-color, #334155)'
+                }}
               />
-              <svg style={{ width: '14px', height: '14px', position: 'absolute', left: '0.6rem', color: '#94a3b8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg style={{ width: '14px', height: '14px', position: 'absolute', left: '0.6rem', color: 'var(--text-secondary, #94a3b8)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
 
             <button
-              onClick={() => { setTriggerType(''); setSelectedTaskTypeId(''); setSearch(''); setPage(1); }}
-              style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 500 }}
+              onClick={handleResetFilters}
+              style={{
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.875rem',
+                border: '1px solid var(--border-color, #cbd5e1)',
+                borderRadius: '6px',
+                background: 'var(--bg-color, #f8fafc)',
+                color: 'var(--text-color, #475569)',
+                cursor: 'pointer',
+                fontWeight: 500,
+                transition: 'all 0.2s'
+              }}
             >
               重置筛选
             </button>
@@ -370,7 +433,20 @@ function AuditLogs() {
             {isSuperAdmin && (
               <button
                 onClick={handleClearLogs}
-                style={{ padding: '0.45rem 0.75rem', fontSize: '0.875rem', fontWeight: 500, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                style={{
+                  padding: '0.45rem 0.75rem',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  color: 'var(--danger-color, #ef4444)',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  transition: 'all 0.2s'
+                }}
               >
                 <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -381,7 +457,20 @@ function AuditLogs() {
 
             <button
               onClick={fetchLogs}
-              style={{ padding: '0.45rem 0.9rem', fontSize: '0.875rem', fontWeight: 500, color: '#fff', background: 'var(--primary-color, #2563eb)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              style={{
+                padding: '0.45rem 0.9rem',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: '#fff',
+                background: 'var(--primary-color, #2563eb)',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.2s'
+              }}
             >
               <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -393,11 +482,11 @@ function AuditLogs() {
       </div>
 
       {/* 审计日志主表格 */}
-      <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card-bg, #ffffff)', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '0.75rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+              <tr style={{ background: 'var(--bg-color, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #64748b)', textTransform: 'uppercase' }}>
                 <th style={{ padding: '0.75rem 1rem' }}>触发批次 & 时间</th>
                 <th style={{ padding: '0.75rem 1rem' }}>触发方式</th>
                 <th style={{ padding: '0.75rem 1rem' }}>操作人 / 来源</th>
@@ -411,7 +500,7 @@ function AuditLogs() {
             <tbody style={{ fontSize: '0.875rem' }}>
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary, #94a3b8)' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span className="spinner-mini" style={{ width: '16px', height: '16px' }} />
                       正在加载触发日志...
@@ -420,16 +509,16 @@ function AuditLogs() {
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary, #94a3b8)' }}>
                     暂无符合要求的触发日志
                   </td>
                 </tr>
               ) : (
                 logs.map((item) => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <tr key={item.id} className="audit-table-row" style={{ borderBottom: '1px solid var(--border-color, #f1f5f9)' }}>
                     <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0f172a', fontSize: '0.8rem' }}>{item.trigger_batch}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+                      <div style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-color, #0f172a)', fontSize: '0.8rem' }}>{item.trigger_batch}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #94a3b8)', marginTop: '0.15rem' }}>
                         {new Date(item.created_at).toLocaleString('zh-CN')}
                       </div>
                     </td>
@@ -437,45 +526,55 @@ function AuditLogs() {
                       {renderTriggerTypeBadge(item.trigger_type)}
                     </td>
                     <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ fontWeight: 500, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <div style={{ fontWeight: 500, color: 'var(--text-color, #334155)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         {item.trigger_type.startsWith('cron_auto') ? (
-                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#d1fae5', color: '#047857', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>🤖</span>
+                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>🤖</span>
                         ) : (
-                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#dbeafe', color: '#1d4ed8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700 }}>
+                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(37, 99, 235, 0.15)', color: 'var(--primary-color, #1d4ed8)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700 }}>
                             {item.operator_name ? item.operator_name[0].toUpperCase() : 'U'}
                           </span>
                         )}
                         <span>{item.operator_name || '未知操作人'}</span>
                       </div>
                       {item.client_ip && (
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace', marginTop: '0.1rem' }}>IP: {item.client_ip}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #94a3b8)', fontFamily: 'monospace', marginTop: '0.1rem' }}>IP: {item.client_ip}</div>
                       )}
                     </td>
                     <td style={{ padding: '0.75rem 1rem' }}>
-                      <span style={{ fontWeight: 500, color: '#334155' }}>
+                      <span style={{ fontWeight: 500, color: 'var(--text-color, #334155)' }}>
                         {item.task_type?.display_name || `ID: ${item.task_type_id}`}
                       </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.target_summary}>
-                      <span style={{ color: '#475569' }}>{item.target_summary}</span>
+                      <span style={{ color: 'var(--text-color, #475569)' }}>{item.target_summary}</span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                      <span style={{ padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: '#f1f5f9', color: '#334155' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: 'var(--bg-color, #f1f5f9)', color: 'var(--text-color, #334155)', border: '1px solid var(--border-color, #e2e8f0)' }}>
                         {item.total_repos} 个仓库
                       </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem' }}>
-                        <span style={{ color: '#059669', fontWeight: 500 }}>成功 {item.success_count}</span>
+                        <span style={{ color: 'var(--success-color, #10b981)', fontWeight: 500 }}>成功 {item.success_count}</span>
                         {item.skip_count > 0 && (
-                          <span style={{ color: '#94a3b8' }}>| 跳过 {item.skip_count}</span>
+                          <span style={{ color: 'var(--text-secondary, #94a3b8)' }}>| 跳过 {item.skip_count}</span>
                         )}
                       </div>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                       <button
                         onClick={() => handleOpenDetail(item)}
-                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', fontWeight: 500, color: 'var(--primary-color, #2563eb)', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer' }}
+                        style={{
+                          padding: '0.35rem 0.65rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          color: 'var(--primary-color, #2563eb)',
+                          background: 'rgba(37, 99, 235, 0.1)',
+                          border: '1px solid rgba(37, 99, 235, 0.25)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
                       >
                         查看涉及仓库 &rarr;
                       </button>
@@ -487,114 +586,95 @@ function AuditLogs() {
           </table>
         </div>
 
-        {/* 分页 */}
+        {/* 标准规范分页器 */}
         {total > 0 && (
-          <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-              显示第 {(page - 1) * pageSize + 1} 至 {Math.min(page * pageSize, total)} 条，共 {total} 条
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#fff', cursor: page <= 1 ? 'not-allowed' : 'pointer', opacity: page <= 1 ? 0.5 : 1 }}
-              >
-                上一页
-              </button>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>{page} / {totalPages}</span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#fff', cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.5 : 1 }}
-              >
-                下一页
-              </button>
-            </div>
+          <div style={{ padding: '0.5rem 1rem', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+            <Pagination totalItems={total} />
           </div>
         )}
       </div>
 
       {/* 批次明细抽屉 Modal / Drawer */}
       {drawerOpen && selectedLog && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)', display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ width: '100%', maxWidth: '720px', background: '#ffffff', height: '100%', boxShadow: '-4px 0 24px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ width: '100%', maxWidth: '720px', background: 'var(--card-bg, #ffffff)', height: '100%', borderLeft: '1px solid var(--border-color, #e2e8f0)', boxShadow: '-4px 0 24px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column' }}>
             {/* Drawer Header */}
-            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card-bg, #ffffff)' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>触发批次明细与受影响代码仓</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-color, #0f172a)' }}>触发批次明细与受影响代码仓</h3>
                   {renderTriggerTypeBadge(selectedLog.trigger_type)}
                 </div>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
+                <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', fontFamily: 'monospace' }}>
                   批次号: {selectedLog.trigger_batch} | 时间: {new Date(selectedLog.created_at).toLocaleString('zh-CN')}
                 </p>
               </div>
               <button
                 onClick={() => setDrawerOpen(false)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#64748b', padding: '0.25rem 0.5rem', borderRadius: '4px' }}
+                style={{ background: 'transparent', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-secondary, #64748b)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}
               >
                 ✕
               </button>
             </div>
 
             {/* Info Summary */}
-            <div style={{ padding: '1rem 1.25rem', background: '#f0f9ff', borderBottom: '1px solid #e0f2fe', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.875rem' }}>
+            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-color, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.875rem' }}>
               <div>
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>操作人 / 客户端 IP:</span>
-                <p style={{ margin: '0.1rem 0 0 0', fontWeight: 600, color: '#0f172a' }}>{selectedLog.operator_name} ({selectedLog.client_ip || '内部/System'})</p>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>操作人 / 客户端 IP:</span>
+                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 600, color: 'var(--text-color, #0f172a)' }}>{selectedLog.operator_name} ({selectedLog.client_ip || '内部/System'})</p>
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>任务类型:</span>
-                <p style={{ margin: '0.1rem 0 0 0', fontWeight: 600, color: '#0f172a' }}>{selectedLog.task_type?.display_name}</p>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>任务类型:</span>
+                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 600, color: 'var(--text-color, #0f172a)' }}>{selectedLog.task_type?.display_name || `ID: ${selectedLog.task_type_id}`}</p>
               </div>
               <div style={{ gridColumn: 'span 2' }}>
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>触发目标与筛选摘要:</span>
-                <p style={{ margin: '0.1rem 0 0 0', fontWeight: 500, color: '#334155' }}>{selectedLog.target_summary}</p>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>触发目标与筛选摘要:</span>
+                <p style={{ margin: '0.15rem 0 0 0', fontWeight: 500, color: 'var(--text-color, #334155)' }}>{selectedLog.target_summary}</p>
               </div>
             </div>
 
             {/* Sub-tasks list */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: 700, color: '#0f172a' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-color, #0f172a)' }}>
                 <span>下发的仓库任务列表 ({detailExecLogs.length} 个)</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 400, color: '#64748b' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary, #64748b)' }}>
                   成功排队: {selectedLog.success_count} / 跳过: {selectedLog.skip_count}
                 </span>
               </div>
 
               {loadingDetail ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>正在获取关联仓库任务...</div>
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #94a3b8)' }}>正在获取关联仓库任务...</div>
               ) : detailExecLogs.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #94a3b8)', border: '1px dashed var(--border-color, #cbd5e1)', borderRadius: '8px', background: 'var(--bg-color)' }}>
                   未查到由该批次直接创建的仓库子任务日志（可能任务被直接跳过或被用户手工清除）
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                   {detailExecLogs.map((logItem) => (
-                    <div key={logItem.id} style={{ padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div key={logItem.id} style={{ padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', background: 'var(--card-bg, #ffffff)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{logItem.repo?.name || `Repo #${logItem.repo_id}`}</span>
+                          <span style={{ fontWeight: 700, color: 'var(--text-color, #0f172a)', fontSize: '0.9rem' }}>{logItem.repo?.name || `Repo #${logItem.repo_id}`}</span>
                           {logItem.repo?.branch && (
-                            <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', background: '#f1f5f9', color: '#475569', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                            <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', background: 'var(--bg-color, #f1f5f9)', color: 'var(--text-secondary, #475569)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--border-color, #e2e8f0)' }}>
                               {logItem.repo.branch}
                             </span>
                           )}
                           {renderExecStatusBadge(logItem.status)}
                         </div>
                         {logItem.repo?.url && (
-                          <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>{logItem.repo.url}</p>
+                          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary, #94a3b8)', fontFamily: 'monospace' }}>{logItem.repo.url}</p>
                         )}
                         {logItem.error_message && (
-                          <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.75rem', color: '#dc2626', background: '#fef2f2', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>{logItem.error_message}</p>
+                          <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.75rem', color: 'var(--danger-color, #ef4444)', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>{logItem.error_message}</p>
                         )}
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         {logItem.task_report && (
-                          <div style={{ textAlign: 'center', padding: '0.2rem 0.5rem', background: '#f8fafc', borderRadius: '6px' }}>
-                            <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>得分</div>
-                            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#2563eb' }}>{logItem.task_report.score}</div>
+                          <div style={{ textAlign: 'center', padding: '0.2rem 0.5rem', background: 'var(--bg-color, #f8fafc)', borderRadius: '6px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #94a3b8)' }}>得分</div>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary-color, #2563eb)' }}>{logItem.task_report.score}</div>
                           </div>
                         )}
                         {logItem.task_report_id && (
@@ -602,7 +682,7 @@ function AuditLogs() {
                             href={`/reports?report_id=${logItem.task_report_id}`}
                             target="_blank"
                             rel="noreferrer"
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', fontWeight: 500, color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', textDecoration: 'none', background: '#eff6ff' }}
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', fontWeight: 500, color: 'var(--primary-color, #2563eb)', border: '1px solid rgba(37, 99, 235, 0.25)', borderRadius: '6px', textDecoration: 'none', background: 'rgba(37, 99, 235, 0.1)' }}
                           >
                             查看报告 &rarr;
                           </a>
@@ -625,7 +705,7 @@ function AuditLogs() {
           gap: 1rem;
         }
         .audit-card {
-          background: #ffffff;
+          background: var(--card-bg, #ffffff);
           padding: 1.25rem;
           border-radius: 12px;
           border: 1px solid var(--border-color, #e2e8f0);
@@ -633,6 +713,29 @@ function AuditLogs() {
           display: flex;
           align-items: center;
           justify-content: space-between;
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .audit-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .audit-card-title {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-secondary, #64748b);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .audit-card-number {
+          font-size: 1.6rem;
+          font-weight: 800;
+          margin-top: 0.2rem;
+          line-height: 1.2;
+        }
+        .audit-card-sub {
+          font-size: 0.75rem;
+          color: var(--text-secondary, #94a3b8);
+          margin-top: 0.2rem;
         }
         .audit-card-icon {
           width: 44px;
@@ -649,6 +752,9 @@ function AuditLogs() {
           max-width: 22px !important;
           max-height: 22px !important;
         }
+        .audit-table-row:hover {
+          background: rgba(37, 99, 235, 0.03);
+        }
         .audit-badge {
           display: inline-flex;
           align-items: center;
@@ -658,6 +764,7 @@ function AuditLogs() {
           font-size: 0.75rem;
           font-weight: 500;
           line-height: 1.2;
+          white-space: nowrap;
         }
         .audit-badge svg {
           width: 13px !important;
@@ -666,11 +773,31 @@ function AuditLogs() {
           max-height: 13px !important;
           flex-shrink: 0;
         }
-        .audit-badge-blue { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-        .audit-badge-purple { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
-        .audit-badge-green { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-        .audit-badge-amber { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-        .audit-badge-gray { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+        .audit-badge-blue {
+          background: rgba(37, 99, 235, 0.12);
+          color: var(--primary-color, #3b82f6);
+          border: 1px solid rgba(37, 99, 235, 0.28);
+        }
+        .audit-badge-purple {
+          background: rgba(139, 92, 246, 0.12);
+          color: #a78bfa;
+          border: 1px solid rgba(139, 92, 246, 0.28);
+        }
+        .audit-badge-green {
+          background: rgba(16, 185, 129, 0.12);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.28);
+        }
+        .audit-badge-amber {
+          background: rgba(245, 158, 11, 0.12);
+          color: #f59e0b;
+          border: 1px solid rgba(245, 158, 11, 0.28);
+        }
+        .audit-badge-gray {
+          background: var(--bg-color, rgba(148, 163, 184, 0.12));
+          color: var(--text-secondary, #94a3b8);
+          border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25));
+        }
 
         .status-pill {
           display: inline-block;
@@ -678,13 +805,38 @@ function AuditLogs() {
           border-radius: 4px;
           font-size: 0.75rem;
           font-weight: 500;
+          white-space: nowrap;
         }
-        .status-pill-success { background: #d1fae5; color: #065f46; }
-        .status-pill-danger { background: #fee2e2; color: #991b1b; }
-        .status-pill-primary { background: #dbeafe; color: #1e40af; }
-        .status-pill-purple { background: #f3e8ff; color: #6b21a8; }
-        .status-pill-warning { background: #fef3c7; color: #92400e; }
-        .status-pill-gray { background: #f1f5f9; color: #475569; }
+        .status-pill-success {
+          background: rgba(16, 185, 129, 0.15);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+        .status-pill-danger {
+          background: rgba(239, 68, 68, 0.15);
+          color: #ef4444;
+          border: 1px solid rgba(239, 68, 68, 0.25);
+        }
+        .status-pill-primary {
+          background: rgba(59, 130, 246, 0.15);
+          color: #3b82f6;
+          border: 1px solid rgba(59, 130, 246, 0.25);
+        }
+        .status-pill-purple {
+          background: rgba(168, 85, 247, 0.15);
+          color: #a855f7;
+          border: 1px solid rgba(168, 85, 247, 0.25);
+        }
+        .status-pill-warning {
+          background: rgba(245, 158, 11, 0.15);
+          color: #f59e0b;
+          border: 1px solid rgba(245, 158, 11, 0.25);
+        }
+        .status-pill-gray {
+          background: var(--bg-color, #f1f5f9);
+          color: var(--text-secondary, #94a3b8);
+          border: 1px solid var(--border-color, #e2e8f0);
+        }
       `}</style>
     </div>
   );
