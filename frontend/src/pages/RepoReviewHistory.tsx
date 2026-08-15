@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import ReportSidebar from '../components/ReportSidebar';
 import { appNavigatePath } from '../config';
@@ -14,8 +15,7 @@ function RepoReviewHistory() {
 
   const [reviews, setReviews] = useState<any[]>([]);
   const [repoName, setRepoName] = useState<string>('');
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(15);
+  const { page, pageSize } = usePagination({ defaultPageSize: 15 });
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
@@ -319,42 +319,8 @@ function RepoReviewHistory() {
       </div>
 
       {/* Pagination */}
-      {totalPages > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '0.5rem', background: 'var(--card-bg)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-          <span style={{ fontSize: '0.875rem', color: 'var(--text-color)' }}>
-            共 {totalItems} 条记录，当前第 {page} / {totalPages} 页
-          </span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              className="btn"
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
-              style={{
-                background: page === 1 ? 'var(--bg-color)' : 'var(--card-bg)',
-                color: page === 1 ? 'var(--text-secondary)' : 'var(--text-color)',
-                border: '1px solid var(--border-color)',
-                opacity: page === 1 ? 0.5 : 1,
-                cursor: page === 1 ? 'not-allowed' : 'pointer'
-              }}
-            >
-              上一页
-            </button>
-            <button
-              className="btn"
-              disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
-              style={{
-                background: page >= totalPages ? 'var(--bg-color)' : 'var(--card-bg)',
-                color: page >= totalPages ? 'var(--text-secondary)' : 'var(--text-color)',
-                border: '1px solid var(--border-color)',
-                opacity: page >= totalPages ? 0.5 : 1,
-                cursor: page >= totalPages ? 'not-allowed' : 'pointer'
-              }}
-            >
-              下一页
-            </button>
-          </div>
-        </div>
+      {totalItems > 0 && (
+        <Pagination totalItems={totalItems} defaultPageSize={15} />
       )}
 
       <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />

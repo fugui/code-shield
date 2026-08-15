@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Pagination } from '@code/common';
 import { apiUrl } from '../config';
 import { useToast } from './Toast';
 import MemberSearchSelect from './MemberSearchSelect';
@@ -135,6 +136,7 @@ export default function AuditingWorkspace({
   // Data States
   const [workspaceFindings, setWorkspaceFindings] = useState<Finding[]>([]);
   const [workspacePage, setWorkspacePage] = useState(1);
+  const [workspaceTotal, setWorkspaceTotal] = useState(0);
   const [workspaceTotalPages, setWorkspaceTotalPages] = useState(1);
   const [severityStats, setSeverityStats] = useState<Record<string, number>>({});
   const [statusStats, setStatusStats] = useState<Record<string, number>>({});
@@ -316,8 +318,10 @@ export default function AuditingWorkspace({
       .then(res => res.json())
       .then(data => {
         if (data) {
-          setWorkspaceFindings(data.findings || data.items || []);
+          const list = data.findings || data.items || [];
+          setWorkspaceFindings(list);
           setWorkspaceTotalPages(data.totalPages || 1);
+          setWorkspaceTotal(data.total !== undefined ? data.total : (data.totalPages ? data.totalPages * 10 : list.length));
           if (data.severityStats) setSeverityStats(data.severityStats);
           if (data.statusStats) setStatusStats(data.statusStats);
         }
@@ -849,27 +853,18 @@ export default function AuditingWorkspace({
           </div>
 
           {/* Workspace Paginated Footer */}
-          {workspaceTotalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.01)' }}>
-              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>第 {workspacePage} / {workspaceTotalPages} 页</span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button 
-                  className="btn btn-outline" 
-                  style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
-                  disabled={workspacePage === 1}
-                  onClick={() => handleWorkspacePageChange(workspacePage - 1)}
-                >
-                  上一页
-                </button>
-                <button 
-                  className="btn btn-outline" 
-                  style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
-                  disabled={workspacePage >= workspaceTotalPages}
-                  onClick={() => handleWorkspacePageChange(workspacePage + 1)}
-                >
-                  下一页
-                </button>
-              </div>
+          {workspaceTotal > 0 && (
+            <div style={{ padding: '0 0.5rem 0.5rem 0.5rem', borderTop: '1px solid var(--border-color)' }}>
+              <Pagination
+                totalItems={workspaceTotal}
+                page={workspacePage}
+                pageSize={10}
+                pageSizeOptions={[10, 20, 50]}
+                onPageChange={(p) => {
+                  setWorkspacePage(p);
+                  fetchWorkspaceFindings(repoId, p, wsSeverity, wsStatus, wsCategory, wsKeyword);
+                }}
+              />
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Pagination } from '@code/common';
+import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import ReportSidebar from '../components/ReportSidebar';
 import { sshToHttps } from '../utils/urlUtils';
@@ -10,14 +10,8 @@ interface ExecutionLogsProps {
 }
 
 function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // 从 URL search params 中读取分页与状态参数
-  const pageParam = parseInt(searchParams.get('page') || '1', 10);
-  const page = isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
-
-  const pageSizeParam = parseInt(searchParams.get('pageSize') || '25', 10);
-  const pageSize = isNaN(pageSizeParam) || pageSizeParam < 1 ? 25 : pageSizeParam;
+  const [searchParams] = useSearchParams();
+  const { page, pageSize, updateParams } = usePagination({ defaultPageSize: 25 });
 
   const statusGroup = searchParams.get('status_group') || searchParams.get('statusGroup') || 'all';
 
@@ -31,25 +25,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
   const [totalItems, setTotalItems] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
-
-  const updateParams = useCallback((newParams: Record<string, string | number>) => {
-    setSearchParams(prev => {
-      const updated = new URLSearchParams(prev);
-      Object.entries(newParams).forEach(([key, val]) => {
-        if (val === undefined || val === null || val === '') {
-          updated.delete(key);
-        } else if (key === 'status_group' && val === 'all') {
-          updated.delete('status_group');
-          updated.delete('statusGroup');
-        } else if (key === 'page' && Number(val) <= 1) {
-          updated.delete('page');
-        } else {
-          updated.set(key, val.toString());
-        }
-      });
-      return updated;
-    });
-  }, [setSearchParams]);
 
   // AI 并发流控状态
   const [isAdmin, setIsAdmin] = useState(false);
