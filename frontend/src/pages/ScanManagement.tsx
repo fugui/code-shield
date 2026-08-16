@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Pagination, usePagination, useConfirm } from '@code/common';
+import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common';
+
 
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
@@ -513,8 +514,15 @@ function ScanManagement() {
               </thead>
               <tbody>
                 {paginatedRepos.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无代码仓数据</td></tr>
+                  <EmptyState
+                    inTable
+                    colSpan={8}
+                    type="data"
+                    title="暂无代码仓数据"
+                    description="请确认筛选条件是否过于严格，或前往主门户录入相关代码仓。"
+                  />
                 ) : paginatedRepos.map(r => {
+
                   const statusInfo = getRepoStatus(r.id);
                   const canCancel = statusInfo.isRunning || statusInfo.isPending;
                   return (
@@ -791,10 +799,21 @@ function ScanManagement() {
               </thead>
               <tbody>
                 {schedules.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '2rem 0', textAlign: 'center', color: '#64748b' }}>暂无可用的定时任务策略，点击右上方新增。</td>
-                  </tr>
+                  <EmptyState
+                    inTable
+                    colSpan={6}
+                    type="data"
+                    title="暂无可用的定时任务策略"
+                    description="配置定时任务策略后，系统将自动按时拉取最新代码并触发代码检视与分析任务。"
+                    action={
+                      <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }} style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}>
+                        新建定时策略
+                      </button>
+                    }
+
+                  />
                 ) : (
+
                   schedules.map(sched => (
                     <tr key={sched.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '1rem', fontWeight: 500 }}>{sched.name}</td>
