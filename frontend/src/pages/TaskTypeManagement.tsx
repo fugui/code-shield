@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useConfirm, Modal, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import { PlayCircle, Code2, Settings, Trash2 } from 'lucide-react';
+
 
 type FileTab = 'analysis_prompt' | 'synthesis_prompt' | 'precondition';
 
@@ -205,8 +206,20 @@ function TaskTypeManagement() {
           </thead>
           <tbody>
             {taskTypes.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>暂无任务类型</td></tr>
+              <EmptyState
+                inTable
+                colSpan={8}
+                type="data"
+                title="暂无任务类型"
+                description="任务类型定义了扫描与分析规则的执行引擎、AI 后端与处理流程。"
+                action={
+                  <button className="btn" onClick={() => { resetForm(); setShowForm(true); }} style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}>
+                    新建任务类型
+                  </button>
+                }
+              />
             ) : taskTypes.map(tt => (
+
               <tr key={tt.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <td style={{ padding: '1rem', fontWeight: 500 }}>
                   {tt.display_name}
@@ -264,166 +277,163 @@ function TaskTypeManagement() {
       </div>
 
       {/* Config Modal */}
-      {showForm && createPortal(
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="card" style={{ width: '560px', maxHeight: '80vh', overflowY: 'auto', maxWidth: '95%' }}>
-            <h3 style={{ margin: '0 0 1.5rem 0' }}>{editingId ? '编辑任务类型' : '新建任务类型'}</h3>
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>标识名称（英文）</label>
-                  <input required style={fieldStyle} value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="如: security_scan" disabled={!!editingId} />
-                </div>
-                <div>
-                  <label style={labelStyle}>显示名称</label>
-                  <input required style={fieldStyle} value={form.display_name} onChange={e => setForm({...form, display_name: e.target.value})} placeholder="如: 安全漏洞扫描" />
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>描述</label>
-                <textarea style={{...fieldStyle, minHeight: '60px', resize: 'vertical'}} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="任务说明..." />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>执行模式</label>
-                  <select style={fieldStyle} value={form.engine_mode} onChange={e => setForm({...form, engine_mode: e.target.value})}>
-                    <option value="single">单引擎 (single)</option>
-                    <option value="chunked">分片引擎 (chunked)</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <label style={labelStyle}>引擎配置 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(JSON，可选)</span></label>
-                  <textarea
-                    style={{...fieldStyle, minHeight: '60px', resize: 'vertical', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '0.8rem'}}
-                    value={form.engine_config}
-                    onChange={e => setForm({...form, engine_config: e.target.value})}
-                    placeholder={'{\n  "max_files": 50,\n  "depth": 1\n}'}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，定时策略可覆盖)</span></label>
-                  <select style={fieldStyle} value={form.ai_backend} onChange={e => setForm({...form, ai_backend: e.target.value})}>
-                    <option value="">跟随全局配置</option>
-                    <option value="claude">Claude</option>
-                    <option value="opencode">OpenCode</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>处理范围 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，可被覆盖)</span></label>
-                  <select style={fieldStyle} value={form.target_scope} onChange={e => setForm({...form, target_scope: e.target.value})}>
-                    <option value="all">全部代码 (源码与测试)</option>
-                    <option value="business">仅业务代码 (跳过测试)</option>
-                    <option value="test">仅测试代码</option>
-                  </select>
-                </div>
-              </div>
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>
-                  💡 提示词和脚本文件位于 <code style={{ background: '#dcfce7', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>tasks/{(form.name || '<标识名>').replace(/_/g, '-')}/</code> 目录下{editingId ? '，可通过「编辑脚本」修改内容' : '，创建后可通过「编辑脚本」修改内容'}。
-                </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>执行超时（分钟）</label>
-                  <input type="number" style={fieldStyle} value={form.timeout} onChange={e => setForm({...form, timeout: parseInt(e.target.value) || 60})} />
-                </div>
-                <div>
-                  <label style={labelStyle}>通知阈值（风险评分≥此值才通知）</label>
-                  <input type="number" style={fieldStyle} value={form.notify_threshold} onChange={e => setForm({...form, notify_threshold: parseInt(e.target.value) || 0})} />
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>通知抄送 <span style={{ fontWeight: 400, color: '#94a3b8' }}>（任务完成后额外抄送的邮箱）</span></label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', minHeight: '38px', alignItems: 'center' }}>
-                  {form.notify_cc.map(email => (
-                    <span key={email} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(37,99,235,0.08)', color: 'var(--primary-color)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>
-                      {email}
-                      <span onClick={() => handleRemoveCc(email)} style={{ cursor: 'pointer', color: '#94a3b8', fontWeight: 700, fontSize: '0.9rem', lineHeight: 1 }}>×</span>
-                    </span>
-                  ))}
-                  <input
-                    type="email"
-                    value={ccInput}
-                    onChange={e => setCcInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCc(); } }}
-                    placeholder={form.notify_cc.length === 0 ? '输入邮箱后按回车添加' : '继续添加...'}
-                    style={{ border: 'none', outline: 'none', flex: 1, minWidth: '150px', fontSize: '0.85rem', padding: '0.2rem' }}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} style={{ padding: '0.6rem 1.5rem', border: '1px solid var(--border-color)', background: 'transparent', borderRadius: '6px', cursor: 'pointer' }}>取消</button>
-                <button type="submit" className="btn" style={{ padding: '0.6rem 1.5rem' }}>{editingId ? '保存修改' : '创建'}</button>
-              </div>
-            </form>
+      <Modal
+        open={showForm}
+        onClose={() => { setShowForm(false); resetForm(); }}
+        title={editingId ? '编辑任务类型' : '新建任务类型'}
+        width="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
+            <button type="button" onClick={() => { setShowForm(false); resetForm(); }} style={{ padding: '0.5rem 1.25rem', border: '1px solid var(--border-color)', background: 'transparent', borderRadius: '6px', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
+            <button type="button" onClick={handleSubmit} className="btn" style={{ padding: '0.5rem 1.25rem' }}>{editingId ? '保存修改' : '创建'}</button>
           </div>
-        </div>, document.body
-      )}
-
-      {/* File Editor Modal */}
-      {showFileEditor && createPortal(
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="card" style={{ width: '800px', maxWidth: '95vw', height: '75vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-            {/* Header */}
-            <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>
-                编辑脚本 — {fileEditorTaskName}
-              </h3>
-              <button onClick={() => setShowFileEditor(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.25rem', borderRadius: '4px', color: '#64748b', fontSize: '1.2rem', lineHeight: 1 }}>✕</button>
+        }
+      >
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>标识名称（英文）</label>
+              <input required style={fieldStyle} value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="如: security_scan" disabled={!!editingId} />
             </div>
-
-            {/* Tabs */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
-              {(['analysis_prompt', 'synthesis_prompt', 'precondition'] as FileTab[]).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveFileTab(tab)}
-                  style={{
-                    padding: '0.6rem 1.2rem', border: 'none', background: 'transparent', cursor: 'pointer',
-                    fontWeight: activeFileTab === tab ? 600 : 400, fontSize: '0.85rem',
-                    color: activeFileTab === tab ? 'var(--primary-color)' : '#64748b',
-                    borderBottom: activeFileTab === tab ? '2px solid var(--primary-color)' : '2px solid transparent',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  {fileTabLabels[tab]}
-                  {fileDirty[tab] && <span style={{ marginLeft: '0.3rem', color: '#f59e0b', fontSize: '0.7rem' }}>●</span>}
-                </button>
-              ))}
+            <div>
+              <label style={labelStyle}>显示名称</label>
+              <input required style={fieldStyle} value={form.display_name} onChange={e => setForm({...form, display_name: e.target.value})} placeholder="如: 安全漏洞扫描" />
             </div>
-
-            {/* Editor */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          </div>
+          <div>
+            <label style={labelStyle}>描述</label>
+            <textarea style={{...fieldStyle, minHeight: '60px', resize: 'vertical'}} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="任务说明..." />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>执行模式</label>
+              <select style={fieldStyle} value={form.engine_mode} onChange={e => setForm({...form, engine_mode: e.target.value})}>
+                <option value="single">单引擎 (single)</option>
+                <option value="chunked">分片引擎 (chunked)</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <label style={labelStyle}>引擎配置 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(JSON，可选)</span></label>
               <textarea
-                value={fileContents[activeFileTab]}
-                onChange={e => updateFileContent(activeFileTab, e.target.value)}
-                spellCheck={false}
-                style={{
-                  flex: 1, width: '100%', padding: '1rem 1.5rem', border: 'none', outline: 'none', resize: 'none',
-                  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace", fontSize: '0.85rem', lineHeight: '1.6',
-                  background: '#1e293b', color: '#e2e8f0', boxSizing: 'border-box'
-                }}
-                placeholder={activeFileTab === 'analysis_prompt' || activeFileTab === 'synthesis_prompt' ? '在此编写 AI 任务提示词（Markdown 格式）...' : '在此编写 Bash 脚本...'}
+                style={{...fieldStyle, minHeight: '60px', resize: 'vertical', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '0.8rem'}}
+                value={form.engine_config}
+                onChange={e => setForm({...form, engine_config: e.target.value})}
+                placeholder={'{\n  "max_files": 50,\n  "depth": 1\n}'}
               />
             </div>
-
-            {/* Footer */}
-            <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--bg-color)' }}>
-              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                {activeFileTab === 'analysis_prompt' ? '分析阶段提示词 · AI 输出 JSON' : activeFileTab === 'synthesis_prompt' ? '综合报告提示词 · AI 输出 Markdown' : 'Bash 脚本 · 前置: exit 0=继续, 1=跳过, 2=失败'}
-              </span>
-              <button
-                className="btn"
-                onClick={() => handleFileSave(activeFileTab)}
-                disabled={fileSaving || !fileDirty[activeFileTab]}
-                style={{ padding: '0.4rem 1.2rem', fontSize: '0.85rem', opacity: fileDirty[activeFileTab] ? 1 : 0.5 }}
-              >
-                {fileSaving ? '保存中...' : '保存'}
-              </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，定时策略可覆盖)</span></label>
+              <select style={fieldStyle} value={form.ai_backend} onChange={e => setForm({...form, ai_backend: e.target.value})}>
+                <option value="">跟随全局配置</option>
+                <option value="claude">Claude</option>
+                <option value="opencode">OpenCode</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>处理范围 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，可被覆盖)</span></label>
+              <select style={fieldStyle} value={form.target_scope} onChange={e => setForm({...form, target_scope: e.target.value})}>
+                <option value="all">全部代码 (源码与测试)</option>
+                <option value="business">仅业务代码 (跳过测试)</option>
+                <option value="test">仅测试代码</option>
+              </select>
             </div>
           </div>
-        </div>, document.body
-      )}
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>
+              💡 提示词和脚本文件位于 <code style={{ background: '#dcfce7', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>tasks/{(form.name || '<标识名>').replace(/_/g, '-')}/</code> 目录下{editingId ? '，可通过「编辑脚本」修改内容' : '，创建后可通过「编辑脚本」修改内容'}。
+            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={labelStyle}>执行超时（分钟）</label>
+              <input type="number" style={fieldStyle} value={form.timeout} onChange={e => setForm({...form, timeout: parseInt(e.target.value) || 60})} />
+            </div>
+            <div>
+              <label style={labelStyle}>通知阈值（风险评分≥此值才通知）</label>
+              <input type="number" style={fieldStyle} value={form.notify_threshold} onChange={e => setForm({...form, notify_threshold: parseInt(e.target.value) || 0})} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>通知抄送 <span style={{ fontWeight: 400, color: '#94a3b8' }}>（任务完成后额外抄送的邮箱）</span></label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', minHeight: '38px', alignItems: 'center' }}>
+              {form.notify_cc.map(email => (
+                <span key={email} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(37,99,235,0.08)', color: 'var(--primary-color)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>
+                  {email}
+                  <span onClick={() => handleRemoveCc(email)} style={{ cursor: 'pointer', color: '#94a3b8', fontWeight: 700, fontSize: '0.9rem', lineHeight: 1 }}>×</span>
+                </span>
+              ))}
+              <input
+                type="email"
+                value={ccInput}
+                onChange={e => setCcInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCc(); } }}
+                placeholder={form.notify_cc.length === 0 ? '输入邮箱后按回车添加' : '继续添加...'}
+                style={{ border: 'none', outline: 'none', flex: 1, minWidth: '150px', fontSize: '0.85rem', padding: '0.2rem' }}
+              />
+            </div>
+          </div>
+        </form>
+      </Modal>
+
+      {/* File Editor Modal */}
+      <Modal
+        open={showFileEditor}
+        onClose={() => setShowFileEditor(false)}
+        title={`编辑脚本 — ${fileEditorTaskName}`}
+        width="lg"
+        bodyStyle={{ padding: 0, gap: 0, height: '65vh', display: 'flex', flexDirection: 'column' }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+              {activeFileTab === 'analysis_prompt' ? '分析阶段提示词 · AI 输出 JSON' : activeFileTab === 'synthesis_prompt' ? '综合报告提示词 · AI 输出 Markdown' : 'Bash 脚本 · 前置: exit 0=继续, 1=跳过, 2=失败'}
+            </span>
+            <button
+              className="btn"
+              onClick={() => handleFileSave(activeFileTab)}
+              disabled={fileSaving || !fileDirty[activeFileTab]}
+              style={{ padding: '0.4rem 1.2rem', fontSize: '0.85rem', opacity: fileDirty[activeFileTab] ? 1 : 0.5 }}
+            >
+              {fileSaving ? '保存中...' : '保存'}
+            </button>
+          </div>
+        }
+      >
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', flexShrink: 0, background: 'var(--bg-color)' }}>
+          {(['analysis_prompt', 'synthesis_prompt', 'precondition'] as FileTab[]).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveFileTab(tab)}
+              style={{
+                padding: '0.75rem 1.25rem', border: 'none', background: 'transparent', cursor: 'pointer',
+                fontWeight: activeFileTab === tab ? 600 : 400, fontSize: '0.85rem',
+                color: activeFileTab === tab ? 'var(--primary-color)' : '#64748b',
+                borderBottom: activeFileTab === tab ? '2px solid var(--primary-color)' : '2px solid transparent',
+                transition: 'all 0.15s'
+              }}
+            >
+              {fileTabLabels[tab]}
+              {fileDirty[tab] && <span style={{ marginLeft: '0.3rem', color: '#f59e0b', fontSize: '0.7rem' }}>●</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Editor */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <textarea
+            value={fileContents[activeFileTab]}
+            onChange={e => updateFileContent(activeFileTab, e.target.value)}
+            spellCheck={false}
+            style={{
+              flex: 1, width: '100%', padding: '1.25rem', border: 'none', outline: 'none', resize: 'none',
+              fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace", fontSize: '0.85rem', lineHeight: '1.6',
+              background: '#1e293b', color: '#e2e8f0', boxSizing: 'border-box'
+            }}
+            placeholder={activeFileTab === 'analysis_prompt' || activeFileTab === 'synthesis_prompt' ? '在此编写 AI 任务提示词（Markdown 格式）...' : '在此编写 Bash 脚本...'}
+          />
+        </div>
+      </Modal>
+
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Pagination, usePagination, useConfirm } from '@code/common';
+import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common';
+
 
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
@@ -340,8 +341,15 @@ function ReportsOverview() {
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>暂无任务报告数据</td></tr>
+              <EmptyState
+                inTable
+                colSpan={8}
+                type="search"
+                title="暂无任务报告数据"
+                description="未检索到符合当前筛选条件的任务报告，请尝试调整筛选范围或触发新的扫描任务。"
+              />
             ) : items.map((item, idx) => (
+
               <tr key={item.id || idx}>
                 <td>
                   {item.status === 'success' ? (
