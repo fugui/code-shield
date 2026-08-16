@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import ReactDOM from 'react-dom';
+import React, { useState, useEffect } from 'react';
+import { Drawer } from '@code/common';
+
 
 interface ScheduleSidebarProps {
   isOpen: boolean;
@@ -114,59 +115,37 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
     } else {
       setForm({ name: '', cron_expr: '0 2 * * *', task_type_id: taskTypes.length > 0 ? taskTypes[0].id : 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true, run_params: {} });
     }
-  }, [editingSchedule, isOpen]);
-
-  const handleClose = useCallback(() => {
-    setClosing(true);
-    setTimeout(() => {
-      setClosing(false);
-      onClose();
-    }, 250);
-  }, [onClose]);
+  }, [editingSchedule, isOpen, taskTypes]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(form);
   };
 
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, handleClose]);
-
-  if (!isOpen) return null;
-
   const isEditing = !!editingSchedule;
   const activeCronPreset = CRON_PRESETS.find(p => p.value === form.cron_expr);
 
-  const sidebarContent = (
-    <div className="shield-app">
-      {/* Overlay */}
-      <div
-        className={`sidebar-overlay${closing ? ' closing' : ''}`}
-        onClick={handleClose}
-      />
+  const footerButtons = (
+    <div style={{ display: 'flex', gap: '0.75rem' }}>
+      <button type="button" className="sidebar-btn-cancel" onClick={onClose}>取消</button>
+      <button type="button" className="sidebar-btn-submit" onClick={handleSubmit}>{isEditing ? '保存修改' : '创建策略'}</button>
+    </div>
+  );
 
-      {/* Sidebar Panel */}
-      <div className={`sidebar-panel${closing ? ' closing' : ''}`}>
-        {/* Header */}
-        <div className="sidebar-header">
-          <h3>{isEditing ? '编辑定时策略' : '新增定时策略'}</h3>
-          <button className="sidebar-close-btn" onClick={handleClose} type="button">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+  return (
+    <Drawer
+      open={isOpen}
+      onClose={onClose}
+      title={isEditing ? '编辑定时策略' : '新增定时策略'}
+      width="800px"
+      footer={footerButtons}
+      className="shield-app"
+      bodyStyle={{ padding: 0 }}
+    >
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        <div className="sidebar-body">
+          {/* Section 1: Basic Info */}
 
-        {/* Body */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-          <div className="sidebar-body">
-
-            {/* Section 1: Basic Info */}
             <div className="sidebar-section">
               <div className="sidebar-section-title">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -405,17 +384,11 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>支持选择全部、仅业务或仅测试代码（目前仅分片引擎生效）</div>
               </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="sidebar-footer">
-            <button type="button" className="sidebar-btn-cancel" onClick={handleClose}>取消</button>
-            <button type="submit" className="sidebar-btn-submit">{isEditing ? '保存修改' : '创建策略'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      </form>
+    </Drawer>
   );
-
-  return ReactDOM.createPortal(sidebarContent, document.body);
 }
+
+

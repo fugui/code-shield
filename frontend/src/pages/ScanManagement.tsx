@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Pagination, usePagination } from '@code/common';
+import { Pagination, usePagination, useConfirm } from '@code/common';
+
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
@@ -13,6 +14,7 @@ type ScanTab = 'trigger' | 'schedules' | 'logs' | 'audit';
 
 function ScanManagement() {
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const { tab } = useParams<{ tab: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<ScanTab>((tab as ScanTab) || 'logs');
@@ -161,7 +163,14 @@ function ScanManagement() {
   };
 
   const handleClearInvalidReports = async () => {
-    if (!window.confirm('确认清除所有"排队中"和"失败"的无效任务及报告吗？进行中的任务将不受影响。')) return;
+    const ok = await confirm({
+      title: '清除无效任务与报告？',
+      content: '确认清除所有"排队中"和"失败"的无效任务及报告吗？进行中的任务将不受影响。',
+      type: 'warning',
+      confirmText: '确认清除',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch('/api/tasks/invalid-reports', { method: 'DELETE' });
       if (res.ok) {
@@ -175,6 +184,7 @@ function ScanManagement() {
       showToast('请求失败，请检查网络连接', 'error');
     }
   };
+
 
   // --- Schedule handlers ---
   const handleSaveSchedule = async (form: ScheduleFormData) => {
@@ -198,12 +208,20 @@ function ScanManagement() {
   };
 
   const handleDeleteSchedule = async (id: number) => {
-    if (!window.confirm('确认删除该定时策略吗？')) return;
+    const ok = await confirm({
+      title: '确认删除定时策略？',
+      content: '删除后此定时任务将不再自动触发扫描。',
+      type: 'danger',
+      confirmText: '确认删除',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
       if (res.ok) fetchSchedules();
     } catch (err) { console.error(err); }
   };
+
 
   const toggleScheduleStatus = async (sched: any) => {
     try {
