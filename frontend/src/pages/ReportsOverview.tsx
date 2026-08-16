@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Pagination, usePagination } from '@code/common';
+import { Pagination, usePagination, useConfirm } from '@code/common';
+
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 import ReportSidebar from '../components/ReportSidebar';
@@ -8,6 +9,7 @@ import { appNavigatePath } from '../config';
 
 function ReportsOverview() {
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -159,9 +161,14 @@ function ReportsOverview() {
   };
 
   const handleDeleteReport = async (reportId: number) => {
-    if (!window.confirm("您确定要彻底永久删除该报告及其全部物理文件与指标数据吗？此操作无法恢复！")) {
-      return;
-    }
+    const ok = await confirm({
+      title: '永久删除此分析报告？',
+      content: '您确定要彻底永久删除该报告及其全部物理文件与指标数据吗？此操作无法恢复！',
+      type: 'danger',
+      confirmText: '彻底删除',
+    });
+    if (!ok) return;
+
     try {
       const res = await fetch(`/api/tasks/${reportId}`, { method: 'DELETE' });
       if (res.ok) {
@@ -176,6 +183,7 @@ function ReportsOverview() {
       showToast('网络异常，删除失败', 'error');
     }
   };
+
 
   const getOverviewText = (item: any) => {
     if (item.status !== 'success') return '';

@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { BASE_PATH } from '../config';
+import { Drawer } from '@code/common';
+
 
 // 仅注册报告中常用的语言，避免打包全部 ~290 种语言定义
 import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
@@ -177,109 +179,114 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
 
   const showActions = !loading && !!markdown;
 
+  const headerActions = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {showActions && (
+        <>
+          <button
+            onClick={handlePrint}
+            style={{ background: 'transparent', border: '1px solid var(--primary-color)', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            title={'打印或保存为 PDF（在打印对话框中选择"另存为 PDF"）'}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+            </svg>
+            打印 / PDF
+          </button>
+          <button
+            onClick={handleDownloadMd}
+            style={{ background: 'transparent', border: '1px solid #64748b', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#64748b', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            title="下载原始 Markdown 文件"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            下载 MD
+          </button>
+          {reportId && (
+            <button
+              onClick={handleDownloadJson}
+              style={{ background: 'transparent', border: '1px solid #0284c7', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#0284c7', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              title="下载全部问题记录 (JSON)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
+              </svg>
+              下载 JSON
+            </button>
+          )}
+          {reportId && (
+            <button
+              onClick={handleDownloadExcel}
+              style={{ background: 'transparent', border: '1px solid #16a34a', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#16a34a', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              title="下载全部问题记录 (Excel)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              下载 Excel
+            </button>
+          )}
+          {reportId && (
+            <button
+              onClick={handleOpenPublicDetails}
+              style={{ 
+                background: 'var(--primary-color)', 
+                border: 'none', 
+                cursor: 'pointer', 
+                padding: '0.3rem 0.8rem', 
+                borderRadius: '4px', 
+                color: 'white', 
+                fontSize: '0.825rem', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.35rem',
+                fontWeight: 600,
+                boxShadow: '0 2px 4px rgba(37,99,235,0.1)'
+              }}
+              title="在新窗口查看全部问题详情及打印导出排版"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+              查看详情
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <>
-      {/* Sidebar Drawer */}
-      <div className="report-sidebar-drawer" style={{ position: 'fixed', top: 0, right: open ? 0 : '-50vw', width: '50vw', height: '100vh', background: 'var(--bg-color)', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', transition: 'right 0.3s ease-in-out', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
-        
-        {/* Header with Tab Navigation */}
-        <div style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
-          <div className="report-sidebar-header" style={{ padding: '1.25rem 1.5rem 0.75rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-color)' }}>任务报告详情</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {showActions && (
-                <>
-                  <button
-                    onClick={handlePrint}
-                    style={{ background: 'transparent', border: '1px solid var(--primary-color)', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: 'var(--primary-color)', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                    title={'打印或保存为 PDF（在打印对话框中选择"另存为 PDF"）'}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
-                    </svg>
-                    打印 / PDF
-                  </button>
-                  <button
-                    onClick={handleDownloadMd}
-                    style={{ background: 'transparent', border: '1px solid #64748b', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#64748b', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                    title="下载原始 Markdown 文件"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                    </svg>
-                    下载 MD
-                  </button>
-                  {reportId && (
-                    <button
-                      onClick={handleDownloadJson}
-                      style={{ background: 'transparent', border: '1px solid #0284c7', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#0284c7', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                      title="下载全部问题记录 (JSON)"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
-                      </svg>
-                      下载 JSON
-                    </button>
-                  )}
-                  {reportId && (
-                    <button
-                      onClick={handleDownloadExcel}
-                      style={{ background: 'transparent', border: '1px solid #16a34a', cursor: 'pointer', padding: '0.3rem 0.7rem', borderRadius: '4px', color: '#16a34a', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                      title="下载全部问题记录 (Excel)"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                      </svg>
-                      下载 Excel
-                    </button>
-                  )}
-                  {reportId && (
-                    <button
-                      onClick={handleOpenPublicDetails}
-                      style={{ 
-                        background: 'var(--primary-color)', 
-                        border: 'none', 
-                        cursor: 'pointer', 
-                        padding: '0.3rem 0.8rem', 
-                        borderRadius: '4px', 
-                        color: 'white', 
-                        fontSize: '0.825rem', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '0.35rem',
-                        fontWeight: 600,
-                        boxShadow: '0 2px 4px rgba(37,99,235,0.1)'
-                      }}
-                      title="在新窗口查看全部问题详情及打印导出排版"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                        <polyline points="15 3 21 3 21 9"></polyline>
-                        <line x1="10" y1="14" x2="21" y2="3"></line>
-                      </svg>
-                      查看详情
-                    </button>
-                  )}
-                </>
-              )}
-              <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.5rem', color: 'var(--text-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}>&times;</button>
-            </div>
-          </div>
+      <Drawer
+        open={open}
+        onClose={onClose}
+        title="任务报告详情"
+        width="min(960px, 92vw)"
+        extra={headerActions}
+        bodyStyle={{ padding: 0 }}
+        className="shield-app"
+      >
 
-          {/* Navigation Tabs */}
-          <div className="diag-tabs">
-            <button className={`diag-tab-btn ${activeTab === 'report' ? 'active' : ''}`} onClick={() => setActiveTab('report')}>
-              📑 审计报告正文
-            </button>
-            <button className={`diag-tab-btn ${activeTab === 'diagnostic' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostic')}>
-              🔬 运行轨迹与诊断
-            </button>
-          </div>
+      <div style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
+        {/* Navigation Tabs */}
+        <div className="diag-tabs">
+          <button className={`diag-tab-btn ${activeTab === 'report' ? 'active' : ''}`} onClick={() => setActiveTab('report')}>
+            📑 审计报告正文
+          </button>
+          <button className={`diag-tab-btn ${activeTab === 'diagnostic' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostic')}>
+            🔬 运行轨迹与诊断
+          </button>
         </div>
+      </div>
+
 
         {/* Content Body */}
         <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, backgroundColor: activeTab === 'diagnostic' ? 'var(--bg-color)' : 'var(--card-bg, #ffffff)' }}>
@@ -475,12 +482,10 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
             )
           )}
         </div>
-      </div>
+      </Drawer>
 
-      {/* Backdrop */}
-      {open && (
-        <div className="report-sidebar-backdrop" onClick={onClose} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999 }} />
-      )}
+
+
 
       <style>{`
         .report-sidebar-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(100, 116, 139, 0.3); border-radius: 50%; border-top-color: var(--primary-color); animation: report-sidebar-spin 1s ease-in-out infinite; vertical-align: middle; margin-right: 5px; }

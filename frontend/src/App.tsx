@@ -19,7 +19,8 @@ import Workbench from './pages/Workbench';
 
 import { menuGroups } from './menu';
 import { ToastProvider, useToast } from './components/Toast';
-import { UnifiedLogin } from '@code/common';
+import { UnifiedLogin, ConfirmProvider } from '@code/common';
+
 
 // Setup global fetch interceptor to inject JWT token and prepend BASE_PATH
 const originalFetch = window.fetch;
@@ -496,8 +497,9 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   return (
-    <div className="shield-app">
-      <ToastProvider>
+    <ConfirmProvider>
+      <div className="shield-app">
+        <ToastProvider>
         <MainLayout>
           <Routes>
             <Route
@@ -558,6 +560,7 @@ function AppContent() {
         </MainLayout>
       </ToastProvider>
     </div>
+    </ConfirmProvider>
   );
 }
 
