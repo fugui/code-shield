@@ -1,19 +1,16 @@
 package models
 
 import (
+	"code-common/backend/gormdb"
 	"encoding/json"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/datatypes"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
@@ -21,53 +18,11 @@ var DB *gorm.DB
 func InitDB() {
 	var err error
 
-	// Open or create slow_sql.log file to write SQL warning/slow logs
-	logFile, err := os.OpenFile("slow_sql.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	var logWriter io.Writer = os.Stdout
-	if err == nil {
-		logWriter = io.MultiWriter(os.Stdout, logFile)
-	} else {
-		log.Printf("Warning: failed to open slow_sql.log for writing: %v", err)
-	}
-
-	newLogger := logger.New(
-		log.New(logWriter, "\r\n", log.LstdFlags),
-		logger.Config{
-			SlowThreshold:             time.Second,
-			LogLevel:                  logger.Warn,
-			IgnoreRecordNotFoundError: true,  // 忽略 record not found 报错日志
-			Colorful:                  false, // Disable colorful console escape codes for log file readability
-		},
-	)
-
-	dsn := AppConfig.Database.GetDSN()
-	log.Printf("[DB] Connecting to PostgreSQL database...")
-
-	DB, err = gorm.Open(postgres.New(postgres.Config{
-		DSN:                  dsn,
-		PreferSimpleProtocol: true,
-	}), &gorm.Config{
-		Logger:                                   newLogger,
-		DisableForeignKeyConstraintWhenMigrating: true,
+	DB, err = gormdb.Connect(AppConfig.Database, gormdb.Options{
+		ServiceName: "Shield-DB",
 	})
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
-	}
-
-	sqlDB, err := DB.DB()
-	if err == nil {
-		maxOpen := AppConfig.Database.MaxOpenConns
-		if maxOpen <= 0 {
-			maxOpen = 50
-		}
-		maxIdle := AppConfig.Database.MaxIdleConns
-		if maxIdle <= 0 {
-			maxIdle = 10
-		}
-		sqlDB.SetMaxOpenConns(maxOpen)
-		sqlDB.SetMaxIdleConns(maxIdle)
-		sqlDB.SetConnMaxLifetime(time.Hour)
-		log.Printf("[DB] PostgreSQL connection pool initialized (MaxOpen: %d, MaxIdle: %d)", maxOpen, maxIdle)
 	}
 
 	log.Println("[DB] AutoMigrating database schema...")
