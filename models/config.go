@@ -1,9 +1,8 @@
 package models
 
 import (
+	"code-common/backend/configutil"
 	commonModels "code-common/backend/models"
-	"crypto/rand"
-	"encoding/hex"
 	"log"
 	"os"
 	"path/filepath"
@@ -166,21 +165,25 @@ func LoadConfig(filename string) error {
 	} else {
 		log.Println("[Config] Max pending queue size limit is disabled (unlimited).")
 	}
-	if AppConfig.Server.ReadTimeout == 0 {
-		AppConfig.Server.ReadTimeout = 15 * time.Second
+	// Server timeout defaults
+	serverCfg := configutil.ServerConfig{
+		Port:              AppConfig.Server.Port,
+		GinLog:            AppConfig.Server.GinLog,
+		ReadTimeout:       AppConfig.Server.ReadTimeout,
+		ReadHeaderTimeout: AppConfig.Server.ReadHeaderTimeout,
+		WriteTimeout:      AppConfig.Server.WriteTimeout,
+		IdleTimeout:       AppConfig.Server.IdleTimeout,
+		MaxHeaderBytes:    AppConfig.Server.MaxHeaderBytes,
+		ExternalURL:       AppConfig.Server.ExternalURL,
 	}
-	if AppConfig.Server.ReadHeaderTimeout == 0 {
-		AppConfig.Server.ReadHeaderTimeout = 10 * time.Second
-	}
-	if AppConfig.Server.WriteTimeout == 0 {
-		AppConfig.Server.WriteTimeout = 60 * time.Second
-	}
-	if AppConfig.Server.IdleTimeout == 0 {
-		AppConfig.Server.IdleTimeout = 60 * time.Second
-	}
-	if AppConfig.Server.MaxHeaderBytes == 0 {
-		AppConfig.Server.MaxHeaderBytes = 1 << 20 // 1MB
-	}
+	configutil.ApplyServerDefaults(&serverCfg, ":8080")
+	AppConfig.Server.Port = serverCfg.Port
+	AppConfig.Server.ExternalURL = serverCfg.ExternalURL
+	AppConfig.Server.ReadTimeout = serverCfg.ReadTimeout
+	AppConfig.Server.ReadHeaderTimeout = serverCfg.ReadHeaderTimeout
+	AppConfig.Server.WriteTimeout = serverCfg.WriteTimeout
+	AppConfig.Server.IdleTimeout = serverCfg.IdleTimeout
+	AppConfig.Server.MaxHeaderBytes = serverCfg.MaxHeaderBytes
 
 	// Convert root to absolute path
 	absRoot, err := filepath.Abs(AppConfig.Storage.Root)
@@ -189,15 +192,7 @@ func LoadConfig(filename string) error {
 	}
 
 	// Auth defaults
-	if AppConfig.Auth.JWTSecret == "" {
-		// Generate ephemeral random secret. Instance-isolated, sessions lost on restart.
-		randomBytes := make([]byte, 32)
-		if _, err := rand.Read(randomBytes); err != nil {
-			log.Fatalf("Failed to generate random JWT secret: %v", err)
-		}
-		AppConfig.Auth.JWTSecret = hex.EncodeToString(randomBytes)
-		log.Println("[Auth] WARNING: jwt_secret not configured. Using ephemeral random secret. Sessions will be lost on restart. Set auth.jwt_secret in config.yaml for production use.")
-	}
+	configutil.EnsureJWTSecret(&AppConfig.Auth.JWTSecret, "Shield-Auth")
 	// If neither OAuth2 nor password login is explicitly enabled, enable password login as fallback
 	if !AppConfig.Auth.OAuth2.Enabled && !AppConfig.Auth.PasswordLoginEnabled {
 		AppConfig.Auth.PasswordLoginEnabled = true

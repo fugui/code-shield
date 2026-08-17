@@ -1,25 +1,5 @@
-export interface SubMenuItem {
-  id?: string;
-  path: string;
-  label: string;
-  headerTitle?: string;
-  icon?: string;
-  adminOnly?: boolean;
-  hidden?: boolean;
-}
-
-export interface MenuGroup {
-  groupKey?: string;
-  title: string;
-  adminOnly?: boolean;
-  items: SubMenuItem[];
-}
-
-export interface ModuleMenuConfig {
-  moduleKey: string;
-  moduleName: string;
-  groups: MenuGroup[];
-}
+import type { SubMenuItem, MenuGroup, ModuleMenuConfig } from '@code/common';
+export type { SubMenuItem, MenuGroup, ModuleMenuConfig };
 
 export const shieldMenuConfig: ModuleMenuConfig = {
   moduleKey: 'shield',
