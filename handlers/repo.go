@@ -310,7 +310,7 @@ func ImportRepos(c *gin.Context) {
 		branch := getField("分支")
 		departmentName := getField("部门名称")
 
-		if repoName == "" || repoURL == "" || departmentName == "" {
+		if repoName == "" || repoURL == "" {
 			continue
 		}
 		if branch == "" {
@@ -347,21 +347,32 @@ func ImportRepos(c *gin.Context) {
 			}
 		}
 
-		// Find or create Department
+		// Resolve department: fallback to owner's department if CSV department does not exist, do not auto create
 		var dept models.Department
-		if err := models.DB.Where("name = ?", departmentName).First(&dept).Error; err != nil {
-			var leaderID *uint
-			if ownerResolved {
-				leaderID = &user.ID
+		deptFound := false
+		if departmentName != "" {
+			if err := models.DB.Where("name = ?", departmentName).First(&dept).Error; err == nil {
+				deptFound = true
+			} else {
+				log.Printf("Line %d: Department %q not found in system, falling back to owner %s's department", lineNum+2, departmentName, ownerName)
 			}
-			dept = models.Department{
-				Name:     departmentName,
-				LeaderID: leaderID,
+		}
+
+		if !deptFound {
+			if user.DepartmentID != nil {
+				if err := models.DB.Where("id = ?", *user.DepartmentID).First(&dept).Error; err == nil {
+					deptFound = true
+				} else {
+					log.Printf("Line %d: Failed to find department by owner's department_id %d: %v", lineNum+2, *user.DepartmentID, err)
+				}
+			} else {
+				log.Printf("Line %d: Owner %s has no department associated and CSV department %q not found", lineNum+2, ownerName, departmentName)
 			}
-			if err := models.DB.Create(&dept).Error; err != nil {
-				log.Printf("Line %d: Failed to create department %s: %v", lineNum+2, departmentName, err)
-				continue
-			}
+		}
+
+		if !deptFound {
+			log.Printf("Line %d: No valid department could be resolved for repo %s, row skipped", lineNum+2, repoName)
+			continue
 		}
 
 		// Insert or update Repository
