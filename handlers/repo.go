@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"regexp"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -20,6 +22,26 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+var validBranchRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-\./]+$`)
+
+// isValidBranchName 校验 Git 分支名是否合法（不允许包含中文、空格及非法特殊字符）
+func isValidBranchName(branch string) bool {
+	branch = strings.TrimSpace(branch)
+	if branch == "" || len(branch) > 255 {
+		return false
+	}
+	if !validBranchRegex.MatchString(branch) {
+		return false
+	}
+	if strings.HasPrefix(branch, "/") || strings.HasSuffix(branch, "/") ||
+		strings.HasPrefix(branch, ".") || strings.HasSuffix(branch, ".") ||
+		strings.Contains(branch, "..") || strings.Contains(branch, "//") ||
+		strings.Contains(branch, "@{") {
+		return false
+	}
+	return true
+}
 
 func GetRepos(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -104,6 +126,13 @@ func CreateRepo(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	repo.Branch = strings.TrimSpace(repo.Branch)
+	if repo.Branch == "" {
+		repo.Branch = "master"
+	} else if !isValidBranchName(repo.Branch) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("分支名称 '%s' 不合法，不允许包含中文或特殊字符，仅支持英文字母、数字、点(.)、下划线(_)及横线(-)", repo.Branch)})
+		return
+	}
 	if err := models.DB.Create(&repo).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -155,7 +184,12 @@ func UpdateRepo(c *gin.Context) {
 		updates["owner_id"] = *input.OwnerID
 	}
 	if input.Branch != nil {
-		updates["branch"] = *input.Branch
+		branch := strings.TrimSpace(*input.Branch)
+		if branch == "" || !isValidBranchName(branch) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("分支名称 '%s' 不合法，不允许包含中文或特殊字符，仅支持英文字母、数字、点(.)、下划线(_)及横线(-)", *input.Branch)})
+			return
+		}
+		updates["branch"] = branch
 	}
 	if input.DepartmentID != nil {
 		updates["department_id"] = *input.DepartmentID
@@ -313,7 +347,8 @@ func ImportRepos(c *gin.Context) {
 		if repoName == "" || repoURL == "" {
 			continue
 		}
-		if branch == "" {
+		branch = strings.TrimSpace(branch)
+		if branch == "" || !isValidBranchName(branch) {
 			branch = "master"
 		}
 
