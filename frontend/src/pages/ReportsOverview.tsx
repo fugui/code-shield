@@ -6,7 +6,7 @@ import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common'
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 import ReportSidebar from '../components/ReportSidebar';
-import { appNavigatePath } from '../config';
+import { appNavigatePath, apiUrl } from '../config';
 
 function ReportsOverview() {
   const { showToast } = useToast();
@@ -38,20 +38,21 @@ function ReportsOverview() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    fetch('/api/departments')
-      .then(res => res.json())
+    fetch(apiUrl('/api/departments'))
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
-        const list = Array.isArray(data) ? data : (data.items || []);
+        const list = Array.isArray(data) ? data : (data?.items || []);
         setTeams(list);
       })
       .catch(console.error);
-    fetch('/api/task-types?active_only=true')
-      .then(res => res.json())
+    fetch(apiUrl('/api/task-types?active_only=true'))
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
-        setTaskTypes(data || []);
+        const list = Array.isArray(data) ? data : (data?.items || []);
+        setTaskTypes(list);
       })
       .catch(console.error);
-    fetch('/api/me')
+    fetch(apiUrl('/api/me'))
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data) {
@@ -59,10 +60,11 @@ function ReportsOverview() {
           setIsAdmin(isShieldAdmin);
         }
       })
-    fetch('/api/repos?pageSize=1000')
-      .then(res => res.json())
+      .catch(() => {});
+    fetch(apiUrl('/api/repos?pageSize=1000'))
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
-        const list = data.items || data || [];
+        const list = Array.isArray(data) ? data : (data?.items || []);
         const groups = Array.from(new Set(list.map((r: any) => r.service_group).filter(Boolean))) as string[];
         groups.sort((a, b) => a.localeCompare(b));
         setSubsystems(groups);
@@ -82,12 +84,18 @@ function ReportsOverview() {
     if (filterTaskType) params.append('task_type_id', filterTaskType);
     if (filterSearch) params.append('search', filterSearch);
 
-    fetch(`/api/tasks?${params.toString()}`)
-      .then(res => res.json())
+    fetch(apiUrl(`/api/tasks?${params.toString()}`))
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
-        setItems(data.items || []);
-        setTotalItems(data.total || 0);
-        setTotalPages(data.totalPages || 0);
+        if (data) {
+          setItems(Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []));
+          setTotalItems(data.total || 0);
+          setTotalPages(data.totalPages || 0);
+        } else {
+          setItems([]);
+          setTotalItems(0);
+          setTotalPages(0);
+        }
       })
       .catch(console.error);
   }, [page, pageSize, filterTeam, filterServiceGroup, filterOwner, filterTaskType, filterSearch]);
@@ -115,12 +123,12 @@ function ReportsOverview() {
     setCurrentMarkdown('');
     setCurrentReportId(reportId);
     try {
-      const res = await fetch(`/api/tasks/${reportId}/report`);
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}/report`));
       if (res.ok) {
         const text = await res.text();
         setCurrentMarkdown(text);
       } else {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
         setCurrentMarkdown(`### 获取报告数据失败\n\n原因: ${errData.error || 'Server error'}`);
       }
     } catch (err) {
@@ -132,11 +140,11 @@ function ReportsOverview() {
 
   const handleNotify = async (reportId: number) => {
     try {
-      const res = await fetch(`/api/tasks/${reportId}/notify`, { method: 'POST' });
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}/notify`), { method: 'POST' });
       if (res.ok) {
         showToast('通知已成功发送！', 'success');
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showToast(`发送通知失败: ${data.error || '未知错误'}`, 'error');
       }
     } catch (err) {
@@ -147,12 +155,12 @@ function ReportsOverview() {
 
   const handleResume = async (reportId: number) => {
     try {
-      const res = await fetch(`/api/tasks/${reportId}/resume`, { method: 'POST' });
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}/resume`), { method: 'POST' });
       if (res.ok) {
         showToast('恢复任务已入队，等待排队执行', 'success');
         fetchOverview();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showToast(`恢复失败: ${data.error || '未知错误'}`, 'error');
       }
     } catch (err) {
@@ -171,12 +179,12 @@ function ReportsOverview() {
     if (!ok) return;
 
     try {
-      const res = await fetch(`/api/tasks/${reportId}`, { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}`), { method: 'DELETE' });
       if (res.ok) {
         showToast('报告已成功彻底删除！', 'success');
         fetchOverview();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         showToast(`删除失败: ${data.error || '未知错误'}`, 'error');
       }
     } catch (err) {

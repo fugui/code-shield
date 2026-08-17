@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { ghcolors } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { BASE_PATH } from '../config';
+import { BASE_PATH, apiUrl } from '../config';
 import { Drawer } from '@code/common';
 
 
@@ -61,7 +61,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
       setSummary(null);
       setSummaryError(null);
       setExpandedChunks({});
-      fetch(`/api/tasks/${reportId}/summary`)
+      fetch(apiUrl(`/api/tasks/${reportId}/summary`))
         .then(res => {
           if (!res.ok) throw new Error('未发现详细诊断数据（分片任务才会生成完整的 Summary 日志）');
           return res.json();
@@ -128,7 +128,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
   const handleDownloadJson = async () => {
     if (!reportId) return;
     try {
-      const res = await fetch(`/api/tasks/${reportId}/synthesis`);
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}/synthesis`));
       if (!res.ok) {
         alert('无法获取问题记录文件，请确认该文件是否存在。');
         return;
@@ -149,7 +149,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
   const handleDownloadExcel = async () => {
     if (!reportId) return;
     try {
-      const res = await fetch(`/api/tasks/${reportId}/synthesis/csv`);
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}/synthesis/csv`));
       if (!res.ok) {
         alert('无法获取问题记录文件，请确认该文件是否存在。');
         return;
