@@ -33,6 +33,7 @@ type WorkHoursThrottleConfig struct {
 type Config struct {
 	Server struct {
 		Port              string        `yaml:"port"`
+		DataDir           string        `yaml:"data_dir"`            // 运行时数据目录，下设 codes/ 和 reports/（默认 ./data）
 		GinLog            bool          `yaml:"gin_log"`             // 是否打印 GIN 请求日志，默认 false
 		ReadTimeout       time.Duration `yaml:"read_timeout"`        // 读取请求超时，默认 15s
 		ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"` // 读取 header 超时，默认 10s
@@ -44,7 +45,7 @@ type Config struct {
 		ExternalURL       string        `yaml:"external_url"`        // 外部访问基准 URL，用于通知和邮件跳转，如 http://127.0.0.1:8080
 	} `yaml:"server"`
 	Storage struct {
-		Root string `yaml:"root"` // 数据根目录，下设 codes/ 和 reports/
+		Root string `yaml:"root"` // 兼容旧版配置（已弃用，建议配置 server.data_dir）
 	} `yaml:"storage"`
 	Database DatabaseConfig `yaml:"database"`
 	AI       struct {
@@ -67,7 +68,59 @@ type Config struct {
 
 var AppConfig Config
 
-// GetAbsPath returns the absolute path relative to the storage root if the path is relative.
+// GetAppBaseDir 获取应用程序基准目录（用于定位 tasks/ 等内置资产模版）
+// 依次查找：
+// 1. 可执行文件所在目录（若包含 tasks/）
+// 2. 当前工作目录（若包含 tasks/，如 go run / go test 环境）
+// 3. 上级工作目录（兼容子包单测环境）
+// 4. 兜底返回可执行文件目录或当前目录
+func GetAppBaseDir() string {
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		if fi, err := os.Stat(filepath.Join(exeDir, "tasks")); err == nil && fi.IsDir() {
+			return exeDir
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		if fi, err := os.Stat(filepath.Join(wd, "tasks")); err == nil && fi.IsDir() {
+			return wd
+		}
+		parentDir := filepath.Dir(wd)
+		if fi, err := os.Stat(filepath.Join(parentDir, "tasks")); err == nil && fi.IsDir() {
+			return parentDir
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Dir(exe)
+	}
+	return "."
+}
+
+// GetDataDir 获取运行时数据根目录（用于存放 codes/ 缓存和 reports/ 分析报告）
+func (c *Config) GetDataDir() string {
+	if c.Server.DataDir != "" {
+		return c.Server.DataDir
+	}
+	if c.Storage.Root != "" {
+		return c.Storage.Root
+	}
+	return "./data"
+}
+
+// GetTaskAbsPath 返回 tasks 目录下模版或脚本的绝对路径（始终基于程序基准目录）
+func (c *Config) GetTaskAbsPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(GetAppBaseDir(), path)
+}
+
+// GetAbsPath 综合路径解析：
+// - 如果路径属于 tasks/ 目录，自动使用应用程序基准目录解析；
+// - 其他相对路径默认基于数据根目录 GetDataDir() 解析。
 func (c *Config) GetAbsPath(path string) string {
 	if path == "" {
 		return ""
@@ -75,7 +128,11 @@ func (c *Config) GetAbsPath(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(c.Storage.Root, path)
+	cleanPath := filepath.Clean(path)
+	if strings.HasPrefix(cleanPath, "tasks") || cleanPath == "tasks" {
+		return c.GetTaskAbsPath(path)
+	}
+	return filepath.Join(c.GetDataDir(), path)
 }
 
 // LoadConfig reads the configuration from the specified YAML file
@@ -84,32 +141,43 @@ func LoadConfig(filename string) error {
 	if err != nil {
 		return err
 	}
-	if err := yaml.Unmarshal(data, &AppConfig); err != nil {
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
-	// Default values
-	if AppConfig.Storage.Root == "" {
-		AppConfig.Storage.Root = "."
+	// Default data directory
+	if cfg.Server.DataDir == "" {
+		if cfg.Storage.Root != "" {
+			cfg.Server.DataDir = cfg.Storage.Root
+		} else {
+			cfg.Server.DataDir = "./data"
+		}
 	}
-	if AppConfig.AI.Backend == "" {
-		AppConfig.AI.Backend = "claude"
+	absDataDir, err := filepath.Abs(cfg.Server.DataDir)
+	if err == nil {
+		cfg.Server.DataDir = absDataDir
 	}
-	if AppConfig.AI.OutputFormat == "" {
-		AppConfig.AI.OutputFormat = "text"
+	cfg.Storage.Root = cfg.Server.DataDir
+
+	if cfg.AI.Backend == "" {
+		cfg.AI.Backend = "claude"
+	}
+	if cfg.AI.OutputFormat == "" {
+		cfg.AI.OutputFormat = "text"
 	}
 
 	// Server timeout defaults
-	if AppConfig.Server.ExternalURL == "" {
-		port := AppConfig.Server.Port
+	if cfg.Server.ExternalURL == "" {
+		port := cfg.Server.Port
 		if strings.HasPrefix(port, ":") {
-			AppConfig.Server.ExternalURL = "http://127.0.0.1" + port
+			cfg.Server.ExternalURL = "http://127.0.0.1" + port
 		} else {
-			AppConfig.Server.ExternalURL = "http://127.0.0.1:8080"
+			cfg.Server.ExternalURL = "http://127.0.0.1:8080"
 		}
 	}
 	// 校验工作时间限流配置
-	if AppConfig.AI.WorkHoursThrottle.Enabled {
-		wt := &AppConfig.AI.WorkHoursThrottle
+	if cfg.AI.WorkHoursThrottle.Enabled {
+		wt := &cfg.AI.WorkHoursThrottle
 		if len(wt.Workdays) == 0 {
 			wt.Workdays = []int{1, 2, 3, 4, 5}
 		}
@@ -131,17 +199,17 @@ func LoadConfig(filename string) error {
 
 	// 校验并补充 Models 默认并发数，并计算所有模型并发之和
 	sumConcurrent := 0
-	for i := range AppConfig.AI.Models {
-		if AppConfig.AI.Models[i].Concurrent <= 0 {
-			AppConfig.AI.Models[i].Concurrent = 1
+	for i := range cfg.AI.Models {
+		if cfg.AI.Models[i].Concurrent <= 0 {
+			cfg.AI.Models[i].Concurrent = 1
 		}
-		sumConcurrent += AppConfig.AI.Models[i].Concurrent
+		sumConcurrent += cfg.AI.Models[i].Concurrent
 	}
 
 	// 确定全局任务并发数（WorkerCount）
 	// 如果用户在 config.yaml 中配置了 worker_count 且其值 > 0，则直接使用它；
 	// 否则，根据大模型节点的并发限制动态计算折中任务并发，防止多任务交替争夺槽位引起效率损耗。
-	if AppConfig.Server.WorkerCount <= 0 {
+	if cfg.Server.WorkerCount <= 0 {
 		if sumConcurrent > 0 {
 			// 因为 chunked 任务每个会并发 4 个请求，若直接将 WorkerCount 设为 sumConcurrent 会引发交替抢槽导致的“磨洋工”。
 			// 采用 (sumConcurrent + 1) / 2 作为折中，既能给单个分片任务留有合理的子并发，又不会造成严重的槽位争夺。
@@ -149,83 +217,84 @@ func LoadConfig(filename string) error {
 			if calculated < 1 {
 				calculated = 1
 			}
-			AppConfig.Server.WorkerCount = calculated
+			cfg.Server.WorkerCount = calculated
 			log.Printf("[Config] Dynamic worker_count set to %d (calculated from sum of LLM concurrencies %d to prevent chunk interleaving)\n", calculated, sumConcurrent)
 		} else {
-			AppConfig.Server.WorkerCount = 5 // 默认兜底值
+			cfg.Server.WorkerCount = 5 // 默认兜底值
 		}
 	} else {
-		log.Printf("[Config] Using explicitly configured worker_count: %d\n", AppConfig.Server.WorkerCount)
+		log.Printf("[Config] Using explicitly configured worker_count: %d\n", cfg.Server.WorkerCount)
 	}
-	if AppConfig.Server.MaxQueueSize == 0 {
-		AppConfig.Server.MaxQueueSize = 2000
+	if cfg.Server.MaxQueueSize == 0 {
+		cfg.Server.MaxQueueSize = 2000
 	}
-	if AppConfig.Server.MaxQueueSize > 0 {
-		log.Printf("[Config] Max pending queue size limit set to %d\n", AppConfig.Server.MaxQueueSize)
+	if cfg.Server.MaxQueueSize > 0 {
+		log.Printf("[Config] Max pending queue size limit set to %d\n", cfg.Server.MaxQueueSize)
 	} else {
 		log.Println("[Config] Max pending queue size limit is disabled (unlimited).")
 	}
 	// Server timeout defaults
 	serverCfg := configutil.ServerConfig{
-		Port:              AppConfig.Server.Port,
-		GinLog:            AppConfig.Server.GinLog,
-		ReadTimeout:       AppConfig.Server.ReadTimeout,
-		ReadHeaderTimeout: AppConfig.Server.ReadHeaderTimeout,
-		WriteTimeout:      AppConfig.Server.WriteTimeout,
-		IdleTimeout:       AppConfig.Server.IdleTimeout,
-		MaxHeaderBytes:    AppConfig.Server.MaxHeaderBytes,
-		ExternalURL:       AppConfig.Server.ExternalURL,
+		Port:              cfg.Server.Port,
+		GinLog:            cfg.Server.GinLog,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
+		ExternalURL:       cfg.Server.ExternalURL,
 	}
 	configutil.ApplyServerDefaults(&serverCfg, ":8080")
-	AppConfig.Server.Port = serverCfg.Port
-	AppConfig.Server.ExternalURL = serverCfg.ExternalURL
-	AppConfig.Server.ReadTimeout = serverCfg.ReadTimeout
-	AppConfig.Server.ReadHeaderTimeout = serverCfg.ReadHeaderTimeout
-	AppConfig.Server.WriteTimeout = serverCfg.WriteTimeout
-	AppConfig.Server.IdleTimeout = serverCfg.IdleTimeout
-	AppConfig.Server.MaxHeaderBytes = serverCfg.MaxHeaderBytes
+	cfg.Server.Port = serverCfg.Port
+	cfg.Server.ExternalURL = serverCfg.ExternalURL
+	cfg.Server.ReadTimeout = serverCfg.ReadTimeout
+	cfg.Server.ReadHeaderTimeout = serverCfg.ReadHeaderTimeout
+	cfg.Server.WriteTimeout = serverCfg.WriteTimeout
+	cfg.Server.IdleTimeout = serverCfg.IdleTimeout
+	cfg.Server.MaxHeaderBytes = serverCfg.MaxHeaderBytes
 
 	// Convert root to absolute path
-	absRoot, err := filepath.Abs(AppConfig.Storage.Root)
+	absRoot, err := filepath.Abs(cfg.Storage.Root)
 	if err == nil {
-		AppConfig.Storage.Root = absRoot
+		cfg.Storage.Root = absRoot
 	}
 
 	// Auth defaults
-	configutil.EnsureJWTSecret(&AppConfig.Auth.JWTSecret, "Shield-Auth")
+	configutil.EnsureJWTSecret(&cfg.Auth.JWTSecret, "Shield-Auth")
 	// If neither OAuth2 nor password login is explicitly enabled, enable password login as fallback
-	if !AppConfig.Auth.OAuth2.Enabled && !AppConfig.Auth.PasswordLoginEnabled {
-		AppConfig.Auth.PasswordLoginEnabled = true
+	if !cfg.Auth.OAuth2.Enabled && !cfg.Auth.PasswordLoginEnabled {
+		cfg.Auth.PasswordLoginEnabled = true
 	}
 	// OAuth2 defaults
-	if AppConfig.Auth.OAuth2.Enabled {
-		if len(AppConfig.Auth.OAuth2.Scopes) == 0 {
-			AppConfig.Auth.OAuth2.Scopes = []string{"openid", "profile", "email"}
+	if cfg.Auth.OAuth2.Enabled {
+		if len(cfg.Auth.OAuth2.Scopes) == 0 {
+			cfg.Auth.OAuth2.Scopes = []string{"openid", "profile", "email"}
 		}
-		if AppConfig.Auth.OAuth2.FieldMapping.Username == "" {
-			AppConfig.Auth.OAuth2.FieldMapping.Username = "preferred_username"
+		if cfg.Auth.OAuth2.FieldMapping.Username == "" {
+			cfg.Auth.OAuth2.FieldMapping.Username = "preferred_username"
 		}
-		if AppConfig.Auth.OAuth2.FieldMapping.Email == "" {
-			AppConfig.Auth.OAuth2.FieldMapping.Email = "email"
+		if cfg.Auth.OAuth2.FieldMapping.Email == "" {
+			cfg.Auth.OAuth2.FieldMapping.Email = "email"
 		}
-		if AppConfig.Auth.OAuth2.FieldMapping.Name == "" {
-			AppConfig.Auth.OAuth2.FieldMapping.Name = "name"
+		if cfg.Auth.OAuth2.FieldMapping.Name == "" {
+			cfg.Auth.OAuth2.FieldMapping.Name = "name"
 		}
-		if AppConfig.Auth.OAuth2.FieldMapping.EmployeeID == "" {
-			AppConfig.Auth.OAuth2.FieldMapping.EmployeeID = "employee_id"
+		if cfg.Auth.OAuth2.FieldMapping.EmployeeID == "" {
+			cfg.Auth.OAuth2.FieldMapping.EmployeeID = "employee_id"
 		}
-		if AppConfig.Auth.OAuth2.FieldMapping.UniqueID == "" {
-			AppConfig.Auth.OAuth2.FieldMapping.UniqueID = "unique_id"
+		if cfg.Auth.OAuth2.FieldMapping.UniqueID == "" {
+			cfg.Auth.OAuth2.FieldMapping.UniqueID = "unique_id"
 		}
-		if AppConfig.Auth.OAuth2.FieldMapping.EmployeeType == "" {
-			AppConfig.Auth.OAuth2.FieldMapping.EmployeeType = "employee_type"
+		if cfg.Auth.OAuth2.FieldMapping.EmployeeType == "" {
+			cfg.Auth.OAuth2.FieldMapping.EmployeeType = "employee_type"
 		}
 		// Default redirect URL based on external URL
-		if AppConfig.Auth.OAuth2.RedirectURL == "" {
-			AppConfig.Auth.OAuth2.RedirectURL = strings.TrimRight(AppConfig.Server.ExternalURL, "/") + "/api/oauth2/callback"
-			log.Printf("[Auth] OAuth2 redirect_url auto-derived: %s", AppConfig.Auth.OAuth2.RedirectURL)
+		if cfg.Auth.OAuth2.RedirectURL == "" {
+			cfg.Auth.OAuth2.RedirectURL = strings.TrimRight(cfg.Server.ExternalURL, "/") + "/api/oauth2/callback"
+			log.Printf("[Auth] OAuth2 redirect_url auto-derived: %s", cfg.Auth.OAuth2.RedirectURL)
 		}
 	}
 
+	AppConfig = cfg
 	return nil
 }

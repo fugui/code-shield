@@ -274,7 +274,7 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	}
 
 	rawPath := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
-	ctx.codesPath = filepath.Join(models.AppConfig.Storage.Root, "codes", rawPath)
+	ctx.codesPath = filepath.Join(models.AppConfig.GetDataDir(), "codes", rawPath)
 
 	if err := os.MkdirAll(filepath.Dir(ctx.codesPath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -347,7 +347,7 @@ func (ctx *taskContext) prepareOutputPaths() {
 	if !ctx.report.CreatedAt.IsZero() {
 		currentDate = ctx.report.CreatedAt.Format("2006-01-02")
 	}
-	reportsDir := filepath.Join(models.AppConfig.Storage.Root, "reports", ctx.taskType.Name, currentDate)
+	reportsDir := filepath.Join(models.AppConfig.GetDataDir(), "reports", ctx.taskType.Name, currentDate)
 	os.MkdirAll(reportsDir, 0755)
 
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
@@ -1133,7 +1133,7 @@ func (ctx *taskContext) finalize(result TaskResult) error {
 	metricsJSON, _ := json.Marshal(result.Metrics)
 
 	relReportPath := ctx.reportPath
-	if rel, err := filepath.Rel(models.AppConfig.Storage.Root, ctx.reportPath); err == nil {
+	if rel, err := filepath.Rel(models.AppConfig.GetDataDir(), ctx.reportPath); err == nil {
 		relReportPath = rel
 	}
 
@@ -1181,7 +1181,7 @@ func (ctx *taskContext) markFailed(errMsg string) {
 	}
 	if ctx.reportPath != "" {
 		relPath := ctx.reportPath
-		if rel, err := filepath.Rel(models.AppConfig.Storage.Root, ctx.reportPath); err == nil {
+		if rel, err := filepath.Rel(models.AppConfig.GetDataDir(), ctx.reportPath); err == nil {
 			relPath = rel
 		}
 		updates["report_path"] = relPath

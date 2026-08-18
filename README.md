@@ -62,18 +62,15 @@
 ## ⚙️ 系统配置指南 (config.yaml)
 
 ```yaml
-# ── HTTP 服务 ──
+# ── HTTP 与基础服务 ──
 server:
   port: ":8080"
+  data_dir: "./data"                  # 运行时数据目录，自动存放 codes/ 缓存与 reports/ 报告
   worker_count: 5                     # 全局任务并发数，默认 5
   max_queue_size: 2000                # 任务排队最大上限，默认 2000，-1 表示不限制
   gin_log: false
 
-# ── 数据存储与数据库 ──
-storage:
-  root: "."                           # 数据落地根目录，下设 codes/ 与 reports/
-
-database:
+# ── 数据库 ──
   driver: "postgres"
   host: "127.0.0.1"
   port: 5432

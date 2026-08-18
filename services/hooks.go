@@ -475,7 +475,7 @@ func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail
   "is_same": true
 }`, oldPath, oldLine, oldTitle, oldDetail, oldSnippet, newPath, newLine, newTitle, newDetail, newSnippet, "```json", "```")
 
-	tmpDir := filepath.Join(models.AppConfig.Storage.Root, "tmp")
+	tmpDir := filepath.Join(models.AppConfig.GetDataDir(), "tmp")
 	_ = os.MkdirAll(tmpDir, 0755)
 	outputPath := filepath.Join(tmpDir, fmt.Sprintf("finding_match_%d.json", time.Now().UnixNano()))
 	defer func() {
