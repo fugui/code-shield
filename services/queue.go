@@ -440,7 +440,7 @@ func RecoverPendingTasks(action string) {
 
 // CleanReportFiles 递归遍历指定任务目录，物理删除属于特定 reportID 的所有报告、总结、临时输入及分片目录。
 func CleanReportFiles(taskTypeName string, reportID uint) {
-	reportsBaseDir := filepath.Join(models.AppConfig.Storage.Root, "reports", taskTypeName)
+	reportsBaseDir := filepath.Join(models.AppConfig.GetDataDir(), "reports", taskTypeName)
 	if _, err := os.Stat(reportsBaseDir); os.IsNotExist(err) {
 		return
 	}

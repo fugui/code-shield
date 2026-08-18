@@ -114,7 +114,7 @@ type TaskReport struct {
 	CreatedAt       time.Time      `gorm:"index" json:"created_at"`
 }
 
-// GetAbsReportPath 返回报告文件的绝对路径（如果存储的是相对路径，则使用 storage.root 拼接）
+// GetAbsReportPath 返回报告文件的绝对路径（如果存储的是相对路径，则使用 server.data_dir / storage.root 拼接）
 func (r *TaskReport) GetAbsReportPath() string {
 	if r.ReportPath == "" {
 		return ""
@@ -124,17 +124,17 @@ func (r *TaskReport) GetAbsReportPath() string {
 		if _, err := os.Stat(r.ReportPath); err == nil {
 			return r.ReportPath
 		}
-		// 2. 否则，如果路径中包含 "reports/"，截取相对路径并与当前 AppConfig.Storage.Root 拼接做兼容性容错
+		// 2. 否则，如果路径中包含 "reports/"，截取相对路径并与当前 AppConfig.GetDataDir() 拼接做兼容性容错
 		if idx := strings.Index(r.ReportPath, "reports/"); idx != -1 {
 			relPath := r.ReportPath[idx:]
-			absPath := filepath.Join(AppConfig.Storage.Root, relPath)
+			absPath := filepath.Join(AppConfig.GetDataDir(), relPath)
 			if _, err := os.Stat(absPath); err == nil {
 				return absPath
 			}
 		}
 		return r.ReportPath
 	}
-	return filepath.Join(AppConfig.Storage.Root, r.ReportPath)
+	return filepath.Join(AppConfig.GetDataDir(), r.ReportPath)
 }
 
 // AnalysisFinding 记录 AI 分析阶段输出的结构化问题

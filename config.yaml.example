@@ -3,9 +3,10 @@
 # 使用方法：复制本文件为 config.yaml，并根据实际情况修改配置值
 # ============================================================
 
-# ── HTTP 服务 ──
+# ── HTTP 与基础服务 ──
 server:
   port: ":8080"                  # 服务监听端口
+  data_dir: "./data"             # 运行时数据根目录，自动存放 codes/ 缓存和 reports/ 报告（建议配置为绝对路径；tasks/ 模版随程序目录走，无需放入数据盘）
   # external_url: "http://127.0.0.1:8080"  # 外部访问基准 URL（邮件等通知链接跳转，缺省默认为本地端口地址）
   # worker_count: 5              # 全局任务并发数，默认 5
   # max_queue_size: 2000         # 任务排队最大上限，默认 2000，-1 表示不限制
@@ -14,11 +15,7 @@ server:
   # write_timeout: 15s           # 写入响应超时时间，默认 15s
   # idle_timeout: 60s            # keep-alive 空闲连接超时时间，默认 60s
 
-# ── 数据存储与数据库 ──
-storage:
-  root: "."  # 数据根目录，下设 codes/ 和 reports/ 子目录（建议配置为绝对路径）
-
-database:
+# ── 数据库 ──
   host: "127.0.0.1"              # PostgreSQL 数据库主机地址
   port: 5432                     # PostgreSQL 端口
   user: "code_shield"            # 数据库用户名
