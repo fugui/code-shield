@@ -102,7 +102,13 @@ func main() {
 
 			// Register API routes (protected)
 			api := r.Group("/api")
-			api.Use(handlers.AuthMiddleware())
+			api.Use(commonAuth.AuthMiddleware(commonAuth.AuthConfig{
+				JWTSecretGetter: func() string { return models.AppConfig.Auth.JWTSecret },
+				DB:              models.DB,
+				MergeDBRoles:    true,
+				OnUserNotFound:  handlers.ProvisionShieldUser,
+				OnUserSynced:    handlers.SyncShieldUser,
+			}))
 			{
 				api.GET("/me", handlers.GetMe)
 				api.GET("/me/findings", handlers.GetMyFindings)
@@ -176,7 +182,7 @@ func main() {
 
 				// Admin only routes
 				admin := api.Group("/")
-				admin.Use(handlers.AdminMiddleware())
+				admin.Use(commonAuth.RequireAdmin(commonAuth.RoleShieldAdmin))
 				{
 					admin.DELETE("/audit-logs", handlers.ClearAuditLogs)
 					admin.POST("/task-types", handlers.CreateTaskType)

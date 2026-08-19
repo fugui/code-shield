@@ -330,8 +330,10 @@ func UpdateUTFinding(c *gin.Context) {
 
 	userName := "system"
 	if u, exists := c.Get("user"); exists {
-		if usr, ok := u.(*models.User); ok {
+		if usr, ok := u.(models.User); ok {
 			userName = usr.Name
+		} else if usrPtr, ok := u.(*models.User); ok && usrPtr != nil {
+			userName = usrPtr.Name
 		}
 	}
 
