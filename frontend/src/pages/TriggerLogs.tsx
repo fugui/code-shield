@@ -94,6 +94,11 @@ function TriggerLogs() {
   // User Role State
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
 
+  // 清理模态框状态
+  const [cleanDays, setCleanDays] = useState<number>(30);
+  const [cleaning, setCleaning] = useState<boolean>(false);
+  const [cleanModalOpen, setCleanModalOpen] = useState<boolean>(false);
+
   const fetchCurrentUser = async () => {
     try {
       const res = await fetch('/api/me');
@@ -262,20 +267,28 @@ function TriggerLogs() {
     }
   };
 
-  const handleClearLogs = async () => {
-    if (!window.confirm('确认清除历史触发日志吗？此操作不可恢复。')) return;
+  const handleExecuteClean = async () => {
+    if (cleanDays <= 0) {
+      showToast('保留天数必须大于 0', 'warning');
+      return;
+    }
+    setCleaning(true);
     try {
-      const res = await fetch('/api/trigger-logs', { method: 'DELETE' });
+      const res = await fetch(`/api/trigger-logs?days=${cleanDays}`, { method: 'DELETE' });
       if (res.ok) {
         const data = await res.json();
         showToast(data.message || '历史触发日志已成功清除', 'success');
+        setCleanModalOpen(false);
         fetchLogs();
         fetchStats();
       } else {
-        showToast('清除日志失败', 'error');
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || '清除日志失败', 'error');
       }
     } catch {
       showToast('网络请求失败', 'error');
+    } finally {
+      setCleaning(false);
     }
   };
 
@@ -432,7 +445,7 @@ function TriggerLogs() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {isSuperAdmin && (
               <button
-                onClick={handleClearLogs}
+                onClick={() => setCleanModalOpen(true)}
                 style={{
                   padding: '0.45rem 0.75rem',
                   fontSize: '0.875rem',
@@ -692,6 +705,101 @@ function TriggerLogs() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 触发日志清理确认模态框 */}
+      {cleanModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--card-bg, #ffffff)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              borderRadius: '12px',
+              padding: '1.75rem',
+              width: '420px',
+              maxWidth: '90vw',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-color)' }}>
+              清理历史触发日志
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+              清理将永久物理删除指定天数之前的扫描任务触发记录。该项操作将被记录在全局操作审计中。
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-color)', marginBottom: '0.5rem' }}>
+                保留最近天数：
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="number"
+                  min="1"
+                  max="3650"
+                  value={cleanDays}
+                  onChange={(e) => setCleanDays(Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{
+                    flex: 1,
+                    padding: '0.6rem 0.8rem',
+                    border: '1px solid var(--border-color, #cbd5e1)',
+                    borderRadius: '6px',
+                    background: 'var(--bg-color, #f8fafc)',
+                    color: 'var(--text-color)',
+                    fontSize: '0.9rem',
+                  }}
+                />
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>天以前的记录将被删除</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setCleanModalOpen(false)}
+                disabled={cleaning}
+                style={{
+                  padding: '0.55rem 1.1rem',
+                  border: '1px solid var(--border-color, #cbd5e1)',
+                  borderRadius: '6px',
+                  background: 'transparent',
+                  color: 'var(--text-color)',
+                  cursor: 'pointer',
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteClean}
+                disabled={cleaning}
+                style={{
+                  padding: '0.55rem 1.1rem',
+                  border: 'none',
+                  borderRadius: '6px',
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  cursor: cleaning ? 'not-allowed' : 'pointer',
+                  opacity: cleaning ? 0.7 : 1,
+                }}
+              >
+                {cleaning ? '正在清理...' : '确认执行清理'}
+              </button>
             </div>
           </div>
         </div>

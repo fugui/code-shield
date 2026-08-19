@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	commonAudit "code-common/backend/audit"
+	commonModels "code-common/backend/models"
 	"code-shield/cron_jobs"
 	"code-shield/models"
 	"code-shield/services"
@@ -46,6 +48,11 @@ func CreateSchedule(c *gin.Context) {
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "schedule", "create", commonModels.AuditLevelP1,
+		fmt.Sprintf("创建了巡检调度策略: %s (Cron: %s)", req.Name, req.CronExpr),
+		"schedule", fmt.Sprintf("%d", req.ID), req.Name,
+		nil, req)
+
 	// Sync cron jobs
 	cron_jobs.SyncSchedules()
 
@@ -66,6 +73,8 @@ func UpdateSchedule(c *gin.Context) {
 		return
 	}
 
+	oldSchedule := schedule
+
 	// Update fields
 	schedule.Name = req.Name
 	schedule.CronExpr = req.CronExpr
@@ -81,6 +90,11 @@ func UpdateSchedule(c *gin.Context) {
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "schedule", "update", commonModels.AuditLevelP1,
+		fmt.Sprintf("修改了巡检调度策略: %s (Cron: %s)", schedule.Name, schedule.CronExpr),
+		"schedule", fmt.Sprintf("%d", schedule.ID), schedule.Name,
+		oldSchedule, schedule)
+
 	// Sync cron jobs
 	cron_jobs.SyncSchedules()
 
@@ -90,10 +104,21 @@ func UpdateSchedule(c *gin.Context) {
 func DeleteSchedule(c *gin.Context) {
 	id := c.Param("id")
 
-	if err := models.DB.Delete(&models.ScheduleConfig{}, id).Error; err != nil {
+	var schedule models.ScheduleConfig
+	if err := models.DB.First(&schedule, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Schedule not found"})
+		return
+	}
+
+	if err := models.DB.Delete(&schedule).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete schedule"})
 		return
 	}
+
+	commonAudit.SetAuditContext(c, "schedule", "delete", commonModels.AuditLevelP1,
+		fmt.Sprintf("删除了巡检调度策略: %s (ID: %s)", schedule.Name, id),
+		"schedule", id, schedule.Name,
+		schedule, nil)
 
 	// Sync cron jobs
 	cron_jobs.SyncSchedules()
@@ -230,6 +255,11 @@ func ClearCompletedExecutionLogs(c *gin.Context) {
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "schedule", "clear_logs", commonModels.AuditLevelP1,
+		fmt.Sprintf("管理员清理了已完成的任务执行日志，共删除 %d 条", result.RowsAffected),
+		"execution_log", "status=completed", "已完成执行记录清理",
+		nil, map[string]interface{}{"deleted_count": result.RowsAffected})
+
 	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
 }
 
@@ -269,13 +299,15 @@ func DeletePendingExecution(c *gin.Context) {
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "schedule", "delete_execution", commonModels.AuditLevelP1,
+		fmt.Sprintf("终止并删除了排队/运行中的执行任务 (ID: %s)", id),
+		"execution_log", id, fmt.Sprintf("执行记录-%s", id),
+		execLog, nil)
+
 	c.JSON(http.StatusOK, gin.H{"message": "已成功停止并删除该任务"})
 }
 
 // BatchDeletePendingExecutions 批量删除多条排队或运行中的执行记录。
-// 请求体: {"ids": [1, 2, 3]}
-// 相比逐条调用 DELETE /api/executions/:id，此接口在单次请求中完成全部操作，
-// 显著减少前端并发 HTTP 请求数量和后端 DB 事务压力。
 func BatchDeletePendingExecutions(c *gin.Context) {
 	var req struct {
 		IDs []uint `json:"ids" binding:"required"`
@@ -327,6 +359,11 @@ func BatchDeletePendingExecutions(c *gin.Context) {
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "schedule", "batch_delete_executions", commonModels.AuditLevelP1,
+		fmt.Sprintf("批量停止并删除了 %d 条执行记录", len(deletableLogIDs)),
+		"execution_log", fmt.Sprintf("count=%d", len(deletableLogIDs)), "批量执行记录删除",
+		deletableLogIDs, nil)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("已成功删除 %d 条执行记录", len(deletableLogIDs)),
 		"deleted": len(deletableLogIDs),
@@ -369,6 +406,11 @@ func TriggerSchedule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "触发策略失败: " + err.Error()})
 		return
 	}
+
+	commonAudit.SetAuditContext(c, "schedule", "trigger", commonModels.AuditLevelP1,
+		fmt.Sprintf("管理员手动触发了巡检调度策略: %s (ID: %d)", schedule.Name, schedule.ID),
+		"schedule", fmt.Sprintf("%d", schedule.ID), schedule.Name,
+		nil, schedule)
 
 	c.JSON(http.StatusOK, gin.H{"message": "触发成功加入队列"})
 }

@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	commonAudit "code-common/backend/audit"
+	commonModels "code-common/backend/models"
 	"code-shield/models"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"reflect"
@@ -389,6 +392,8 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 			return
 		}
 
+		oldFinding := finding
+
 		// Read existing status log
 		var statusLog []map[string]interface{}
 		logBytesVal := getFieldValue(&finding, "StatusLog")
@@ -466,6 +471,16 @@ func UpdateCampaignFinding[T any]() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update finding"})
 			return
 		}
+
+		// 注入全局操作审计打点 (P1 级缺陷人工核销)
+		summaryText := fmt.Sprintf("人工核销了专项缺陷 #%d (状态更新为: %s)", id, input.Status)
+		if input.Feedback != "" {
+			summaryText += fmt.Sprintf(", 处置意见: %s", input.Feedback)
+		}
+		commonAudit.SetAuditContext(c, "campaign", "audit_finding", commonModels.AuditLevelP1,
+			summaryText,
+			"campaign_finding", fmt.Sprintf("%d", id), fmt.Sprintf("缺陷-%d", id),
+			oldFinding, finding)
 
 		// Preload assignee for response
 		models.DB.Preload("Assignee").First(&finding, id)

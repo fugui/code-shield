@@ -1081,5 +1081,10 @@ func DeleteTaskReport(c *gin.Context) {
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "scan", "delete_report", models.AuditLevelP1,
+		fmt.Sprintf("删除了扫描任务报告 (报告 ID: %d, 任务类型: %s, 得分: %d)", report.ID, report.TaskType.DisplayName, report.Score),
+		"task_report", fmt.Sprintf("%d", report.ID), fmt.Sprintf("报告-%d", report.ID),
+		report, nil)
+
 	c.JSON(http.StatusOK, gin.H{"message": "报告及关联文件已成功删除"})
 }
