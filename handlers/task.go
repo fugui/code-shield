@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	commonAudit "code-common/backend/audit"
 	"code-shield/models"
 	"code-shield/services"
 	"encoding/csv"
@@ -615,6 +616,11 @@ func TriggerTask(c *gin.Context) {
 
 	services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 
+	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
+		fmt.Sprintf("触发单仓扫描 [%s] 代码仓: %s", taskType.DisplayName, repo.Name),
+		"task_trigger_log", fmt.Sprintf("%d", triggerLog.ID), triggerLog.TriggerBatch,
+		nil, triggerLog)
+
 	c.JSON(http.StatusAccepted, gin.H{"message": taskType.DisplayName + " 任务已下发"})
 }
 
@@ -1008,6 +1014,11 @@ func TriggerMissingTasks(c *gin.Context) {
 			"skip_count":    skipCount,
 		})
 	}
+
+	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
+		fmt.Sprintf("触发漏扫补扫 [%s] 覆盖 %d 仓 (成功 %d, 跳过 %d)", taskType.DisplayName, len(missingRepos), successCount, skipCount),
+		"task_trigger_log", fmt.Sprintf("%d", triggerLog.ID), triggerLog.TriggerBatch,
+		nil, triggerLog)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务 (成功排队 %d, 跳过 %d)", len(missingRepos), taskType.DisplayName, successCount, skipCount),

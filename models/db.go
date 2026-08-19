@@ -47,6 +47,7 @@ func InitDB() {
 		&UnorderedCollectionFinding{},
 		&DeepReviewFinding{},
 		&AnalysisFinding{},
+		&SysAuditLog{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)

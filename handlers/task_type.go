@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	commonAudit "code-common/backend/audit"
 	"code-shield/models"
 	"code-shield/services"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -128,6 +130,11 @@ exit 0
 	// 同步 opencode agent 文件
 	services.SyncTaskTypeAgents(req)
 
+	commonAudit.SetAuditContext(c, "task_type", "create", models.AuditLevelP0,
+		fmt.Sprintf("创建了任务类型: %s (%s)", req.DisplayName, req.Name),
+		"task_type", fmt.Sprintf("%d", req.ID), req.DisplayName,
+		nil, req)
+
 	c.JSON(http.StatusCreated, req)
 }
 
@@ -139,6 +146,8 @@ func UpdateTaskType(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found"})
 		return
 	}
+
+	oldTaskType := taskType
 
 	var req struct {
 		DisplayName     *string          `json:"display_name"`
@@ -206,6 +215,11 @@ func UpdateTaskType(c *gin.Context) {
 	metaBytes, _ := json.MarshalIndent(taskType, "", "  ")
 	os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
 
+	commonAudit.SetAuditContext(c, "task_type", "update", models.AuditLevelP0,
+		fmt.Sprintf("修改了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),
+		"task_type", fmt.Sprintf("%d", taskType.ID), taskType.DisplayName,
+		oldTaskType, taskType)
+
 	c.JSON(http.StatusOK, taskType)
 }
 
@@ -229,6 +243,11 @@ func DeleteTaskType(c *gin.Context) {
 
 	// 清理关联的 opencode agent 文件
 	services.RemoveTaskTypeAgents(taskType)
+
+	commonAudit.SetAuditContext(c, "task_type", "delete", models.AuditLevelP0,
+		fmt.Sprintf("删除了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),
+		"task_type", fmt.Sprintf("%d", taskType.ID), taskType.DisplayName,
+		taskType, nil)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Task type deleted"})
 }
@@ -294,6 +313,8 @@ func UpdateTaskTypeFile(c *gin.Context) {
 	}
 
 	absPath := models.AppConfig.GetAbsPath(filePath)
+	oldContentBytes, _ := os.ReadFile(absPath)
+	oldContent := string(oldContentBytes)
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
@@ -316,6 +337,12 @@ func UpdateTaskTypeFile(c *gin.Context) {
 		services.SyncTaskTypeAgents(taskType)
 	}
 
+	commonAudit.SetAuditContext(c, "task_type", "update_file", models.AuditLevelP0,
+		fmt.Sprintf("更新了任务类型 [%s] 的提示词文件: %s", taskType.DisplayName, fileType),
+		"task_type", fmt.Sprintf("%d", taskType.ID), taskType.DisplayName,
+		map[string]string{"file_type": fileType, "content": oldContent},
+		map[string]string{"file_type": fileType, "content": req.Content})
+
 	c.JSON(http.StatusOK, gin.H{"message": "文件已保存"})
 }
 
@@ -334,11 +361,38 @@ func TriggerAllReposForTaskType(c *gin.Context) {
 		return
 	}
 
+	opID, opName, clientIP := getOperatorInfo(c)
+	batchNo := fmt.Sprintf("TRG-%s-ALL", time.Now().Format("20060102150405"))
+
+	triggerLog := models.TaskTriggerLog{
+		TriggerBatch:  batchNo,
+		TriggerType:   "manual_batch",
+		OperatorID:    opID,
+		OperatorName:  opName,
+		TaskTypeID:    taskType.ID,
+		TargetMode:    "all",
+		TargetSummary: fmt.Sprintf("全部代码仓 (共 %d 个)", len(repos)),
+		TotalRepos:    len(repos),
+		ClientIP:      clientIP,
+		CreatedAt:     time.Now(),
+	}
+	models.DB.Create(&triggerLog)
+
+	var tLogID *uint
+	if triggerLog.ID > 0 {
+		tLogID = &triggerLog.ID
+	}
+
 	count := 0
 	for _, repo := range repos {
-		services.EnqueueTask(nil, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+		services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 		count++
 	}
+
+	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
+		fmt.Sprintf("触发了任务类型 [%s] 全仓扫描 (覆盖 %d 仓)", taskType.DisplayName, count),
+		"task_trigger_log", fmt.Sprintf("%d", triggerLog.ID), triggerLog.TriggerBatch,
+		nil, triggerLog)
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"message": fmt.Sprintf("已成功触发 %d 个代码仓的 %s 任务", count, taskType.DisplayName),
