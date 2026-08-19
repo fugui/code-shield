@@ -1,10 +1,14 @@
 package handlers
 
 import (
-	"code-shield/models"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
+
+	commonAudit "code-common/backend/audit"
+	commonModels "code-common/backend/models"
+	"code-shield/models"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -132,22 +136,29 @@ func GetTriggerLogStats(c *gin.Context) {
 
 // ClearTriggerLogs allows deleting historical trigger logs
 func ClearTriggerLogs(c *gin.Context) {
-	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
-
-	query := models.DB.Model(&models.TaskTriggerLog{})
-	if days > 0 {
-		cutoffTime := time.Now().AddDate(0, 0, -days)
-		query = query.Where("created_at < ?", cutoffTime)
+	daysStr := c.Query("days")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "必须指定保留天数 days (且 days > 0)"})
+		return
 	}
 
-	result := query.Delete(&models.TaskTriggerLog{})
+	cutoffTime := time.Now().AddDate(0, 0, -days)
+
+	result := models.DB.Model(&models.TaskTriggerLog{}).Where("created_at < ?", cutoffTime).Delete(&models.TaskTriggerLog{})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear trigger logs: " + result.Error.Error()})
 		return
 	}
 
+	commonAudit.SetAuditContext(c, "scan", "clear_logs", commonModels.AuditLevelP1,
+		fmt.Sprintf("管理员清理了 %d 天前 (%s 之前) 的历史触发日志，共删除 %d 条", days, cutoffTime.Format("2006-01-02"), result.RowsAffected),
+		"task_trigger_log", fmt.Sprintf("days=%d", days), fmt.Sprintf("%d天前日志清理", days),
+		map[string]interface{}{"cutoff_time": cutoffTime.Format("2006-01-02 15:04:05"), "days": days},
+		map[string]interface{}{"deleted_count": result.RowsAffected})
+
 	c.JSON(http.StatusOK, gin.H{
 		"deleted": result.RowsAffected,
-		"message": "触发日志清除成功",
+		"message": fmt.Sprintf("成功清理 %d 天前的历史触发日志，共删除 %d 条", days, result.RowsAffected),
 	})
 }
