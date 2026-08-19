@@ -27,151 +27,80 @@ func parseToken(tokenString string) (*PortalClaims, error) {
 	return commonAuth.ParseToken(tokenString, models.AppConfig.Auth.JWTSecret)
 }
 
-func AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tokenString := commonAuth.ExtractToken(c)
-		if tokenString == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header or token missing"})
-			c.Abort()
-			return
-		}
-
-		claims, err := parseToken(tokenString)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token signature"})
-			c.Abort()
-			return
-		}
-
-		var user models.User
-		if err := models.DB.First(&user, claims.UserID).Error; err != nil {
-			// Auto-register shadow user in Code Shield DB to keep IDs aligned
-			email := claims.Email
-			if email == "" {
-				email = claims.Username
-			}
-
-			var existingUser models.User
-			if errEmail := models.DB.Where("email = ?", email).First(&existingUser).Error; errEmail == nil {
-				// 账号 ID 未对齐，进行主键对齐和关联关系级联更新
-				oldID := existingUser.ID
-				newID := claims.UserID
-				errTx := models.DB.Transaction(func(tx *gorm.DB) error {
-					if err := tx.Exec("UPDATE users SET id = ?, reg_method = 'sso', is_active = 1 WHERE id = ?", newID, oldID).Error; err != nil {
-						return err
-					}
-					tx.Exec("UPDATE departments SET leader_id = ? WHERE leader_id = ?", newID, oldID)
-					tx.Exec("UPDATE repositories SET owner_id = ? WHERE owner_id = ?", newID, oldID)
-					tx.Exec("UPDATE test_case_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-					tx.Exec("UPDATE coredump_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-					tx.Exec("UPDATE float_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-					tx.Exec("UPDATE thread_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-					tx.Exec("UPDATE cjson_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-					tx.Exec("UPDATE key_issues SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-					return nil
-				})
-				if errTx != nil {
-					log.Printf("[Auth] Failed to align user ID from %d to %d for email %s: %v", oldID, newID, email, errTx)
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "SSO user ID alignment failed"})
-					c.Abort()
-					return
-				}
-				log.Printf("[Auth] Aligned user ID from %d to %d for email %s and updated relations", oldID, newID, email)
-				user = existingUser
-				user.ID = newID
-				user.RegMethod = "sso"
-				user.IsActive = true
-			} else {
-				name := claims.Name
-				if name == "" {
-					name = email
-				}
-				user = models.User{
-					ID:        claims.UserID,
-					Email:     email,
-					Name:      name,
-					IsActive:  true,
-					RegMethod: "sso",
-					Password:  "$2a$10$SSO_USER_NO_PASSWORD_LOGIN",
-				}
-				if err := models.DB.Create(&user).Error; err != nil {
-					log.Printf("[Auth] Failed to auto-provision user ID %d: %v", claims.UserID, err)
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "SSO user auto-provisioning failed"})
-					c.Abort()
-					return
-				}
-				log.Printf("[Auth] Auto-provisioned shadow user ID %d (%s)", user.ID, user.Email)
-			}
-		} else {
-			// Update admin status or name from token if changed
-			updates := map[string]interface{}{}
-			if claims.Name != "" && claims.Name != user.Name {
-				updates["name"] = claims.Name
-				user.Name = claims.Name
-			}
-			if user.RegMethod == "imported" {
-				updates["reg_method"] = "sso"
-				user.RegMethod = "sso"
-			}
-			if !user.IsActive {
-				updates["is_active"] = true
-				user.IsActive = true
-			}
-			if len(updates) > 0 {
-				models.DB.Model(&user).Updates(updates)
-			}
-		}
-
-		effectiveRoles := claims.Roles
-		dbRoles := user.GetRoles()
-		if len(dbRoles) > 0 {
-			effectiveRoles = dbRoles
-		}
-
-		c.Set("userID", user.ID)
-		c.Set("username", user.Email)
-		c.Set("email", user.Email)
-		c.Set("roles", effectiveRoles)
-		c.Next()
+// ProvisionShieldUser SSO 用户自动注册与 ID 对齐（供 commonAuth.AuthMiddleware 回调）
+func ProvisionShieldUser(c *gin.Context, claims *commonAuth.PortalClaims, db *gorm.DB) (*models.User, error) {
+	email := claims.Email
+	if email == "" {
+		email = claims.Username
 	}
+
+	var existingUser models.User
+	if errEmail := db.Where("email = ?", email).First(&existingUser).Error; errEmail == nil {
+		// 账号 ID 未对齐，进行主键对齐和关联关系级联更新
+		oldID := existingUser.ID
+		newID := claims.UserID
+		errTx := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("UPDATE users SET id = ?, reg_method = 'sso', is_active = 1 WHERE id = ?", newID, oldID).Error; err != nil {
+				return err
+			}
+			tx.Exec("UPDATE departments SET leader_id = ? WHERE leader_id = ?", newID, oldID)
+			tx.Exec("UPDATE repositories SET owner_id = ? WHERE owner_id = ?", newID, oldID)
+			tx.Exec("UPDATE test_case_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			tx.Exec("UPDATE coredump_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			tx.Exec("UPDATE float_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			tx.Exec("UPDATE thread_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			tx.Exec("UPDATE cjson_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			tx.Exec("UPDATE key_issues SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			return nil
+		})
+		if errTx != nil {
+			log.Printf("[Auth] Failed to align user ID from %d to %d for email %s: %v", oldID, newID, email, errTx)
+			return nil, errTx
+		}
+		log.Printf("[Auth] Aligned user ID from %d to %d for email %s and updated relations", oldID, newID, email)
+		existingUser.ID = newID
+		existingUser.RegMethod = "sso"
+		existingUser.IsActive = true
+		return &existingUser, nil
+	}
+
+	name := claims.Name
+	if name == "" {
+		name = email
+	}
+	newUser := models.User{
+		ID:        claims.UserID,
+		Email:     email,
+		Name:      name,
+		IsActive:  true,
+		RegMethod: "sso",
+		Password:  "$2a$10$SSO_USER_NO_PASSWORD_LOGIN",
+	}
+	if err := db.Create(&newUser).Error; err != nil {
+		log.Printf("[Auth] Failed to auto-provision user ID %d: %v", claims.UserID, err)
+		return nil, err
+	}
+	log.Printf("[Auth] Auto-provisioned shadow user ID %d (%s)", newUser.ID, newUser.Email)
+	return &newUser, nil
 }
 
-func AdminMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, exists := c.Get("userID")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			c.Abort()
-			return
-		}
-
-		var user models.User
-		if err := models.DB.First(&user, userID).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
-			c.Abort()
-			return
-		}
-
-		rolesVal, rolesExists := c.Get("roles")
-		hasRole := false
-		if rolesExists {
-			if roles, ok := rolesVal.([]string); ok {
-				for _, r := range roles {
-					if r == "super_admin" || r == "shield_admin" {
-						hasRole = true
-						break
-					}
-				}
-			}
-		}
-
-		if !user.HasRole("shield_admin") && !hasRole {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Admin privileges required"})
-			c.Abort()
-			return
-		}
-
-		c.Next()
+// SyncShieldUser 用户已存在时从 JWT claims 同步更新字段
+func SyncShieldUser(c *gin.Context, claims *commonAuth.PortalClaims, user *models.User, db *gorm.DB) {
+	updates := map[string]interface{}{}
+	if claims.Name != "" && claims.Name != user.Name {
+		updates["name"] = claims.Name
+		user.Name = claims.Name
+	}
+	if user.RegMethod == "imported" {
+		updates["reg_method"] = "sso"
+		user.RegMethod = "sso"
+	}
+	if !user.IsActive {
+		updates["is_active"] = true
+		user.IsActive = true
+	}
+	if len(updates) > 0 {
+		db.Model(user).Updates(updates)
 	}
 }
 
