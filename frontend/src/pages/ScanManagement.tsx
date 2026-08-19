@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
 import ReportSidebar from '../components/ReportSidebar';
 import ExecutionLogs from './ExecutionLogs';
-import AuditLogs from './AuditLogs';
+import TriggerLogs from './TriggerLogs';
 import { sshToHttps } from '../utils/urlUtils';
 
 type ScanTab = 'trigger' | 'schedules' | 'logs' | 'audit';
@@ -400,7 +400,7 @@ function ScanManagement() {
         <button onClick={() => handleTabChange('audit')} style={tabStyle('audit')}>触发日志</button>
       </div>
 
-      {activeTab === 'audit' && <AuditLogs />}
+      {activeTab === 'audit' && <TriggerLogs />}
 
       {activeTab === 'trigger' && (
         <div>

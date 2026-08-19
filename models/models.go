@@ -13,6 +13,14 @@ import (
 
 type User = commonModels.User
 type Department = commonModels.Department
+type SysAuditLog = commonModels.SysAuditLog
+type AuditLevel = commonModels.AuditLevel
+
+const (
+	AuditLevelP0 = commonModels.AuditLevelP0
+	AuditLevelP1 = commonModels.AuditLevelP1
+	AuditLevelP2 = commonModels.AuditLevelP2
+)
 
 type Repository struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`

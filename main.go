@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 
+	commonAudit "code-common/backend/audit"
 	commonAuth "code-common/backend/auth"
 	commonServer "code-common/backend/server"
 	"code-shield/cron_jobs"
@@ -44,6 +45,9 @@ func main() {
 
 	// Initialize database
 	models.InitDB()
+
+	// 初始化系统全局操作审计引擎
+	commonAudit.Init(models.DB)
 
 	// 确保至少存在默认管理员账号（用于独立部署模式）
 	if err := commonAuth.EnsureSeedAdmin(models.DB, "shield_admin"); err != nil {
@@ -86,9 +90,14 @@ func main() {
 		IdleTimeout:       models.AppConfig.Server.IdleTimeout,
 		MaxHeaderBytes:    models.AppConfig.Server.MaxHeaderBytes,
 		FrontendFS:        &frontendFS,
+		CustomMiddlewares: []gin.HandlerFunc{
+			commonAudit.Middleware("shield"),
+		},
 		OnShutdown: func(ctx context.Context) {
 			// Cancel all running tasks to terminate AI processes
 			services.CancelAllRunningTasks()
+			// 优雅关闭审计落库引擎
+			_ = commonAudit.Close(ctx)
 		},
 		RegisterRoutes: func(r *gin.Engine) {
 			// Register Auth routes (unprotected)
@@ -176,15 +185,16 @@ func main() {
 				api.DELETE("/executions/batch", handlers.BatchDeletePendingExecutions)
 				api.DELETE("/executions/:id", handlers.DeletePendingExecution)
 
-				api.GET("/audit-logs", handlers.GetAuditLogs)
-				api.GET("/audit-logs/stats", handlers.GetAuditLogStats)
-				api.GET("/audit-logs/:id", handlers.GetAuditLogDetail)
+				// Trigger logs (扫描批次触发日志，原 audit-logs)
+				api.GET("/trigger-logs", handlers.GetTriggerLogs)
+				api.GET("/trigger-logs/stats", handlers.GetTriggerLogStats)
+				api.GET("/trigger-logs/:id", handlers.GetTriggerLogDetail)
 
 				// Admin only routes
 				admin := api.Group("/")
 				admin.Use(commonAuth.RequireAdmin(commonAuth.RoleShieldAdmin))
 				{
-					admin.DELETE("/audit-logs", handlers.ClearAuditLogs)
+					admin.DELETE("/trigger-logs", handlers.ClearTriggerLogs)
 					admin.POST("/task-types", handlers.CreateTaskType)
 					admin.PATCH("/task-types/:id", handlers.UpdateTaskType)
 					admin.DELETE("/task-types/:id", handlers.DeleteTaskType)

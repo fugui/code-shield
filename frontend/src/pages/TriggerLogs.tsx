@@ -61,7 +61,7 @@ interface AuditStats {
   total_repos_scanned: number;
 }
 
-function AuditLogs() {
+function TriggerLogs() {
   const { showToast } = useToast();
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [stats, setStats] = useState<AuditStats | null>(null);
@@ -109,7 +109,7 @@ function AuditLogs() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/audit-logs/stats');
+      const res = await fetch('/api/trigger-logs/stats');
       if (res.ok) setStats(await res.json());
     } catch (err) {
       console.error('Failed to fetch audit stats:', err);
@@ -135,7 +135,7 @@ function AuditLogs() {
       if (selectedTaskTypeId) params.append('task_type_id', selectedTaskTypeId);
       if (searchParam) params.append('search', searchParam);
 
-      const res = await fetch(`/api/audit-logs?${params.toString()}`);
+      const res = await fetch(`/api/trigger-logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setLogs(data.items || []);
@@ -164,7 +164,7 @@ function AuditLogs() {
     setDrawerOpen(true);
     setLoadingDetail(true);
     try {
-      const res = await fetch(`/api/audit-logs/${item.id}`);
+      const res = await fetch(`/api/trigger-logs/${item.id}`);
       if (res.ok) {
         const data = await res.json();
         setDetailExecLogs(data.execution_logs || []);
@@ -265,7 +265,7 @@ function AuditLogs() {
   const handleClearLogs = async () => {
     if (!window.confirm('确认清除历史触发日志吗？此操作不可恢复。')) return;
     try {
-      const res = await fetch('/api/audit-logs', { method: 'DELETE' });
+      const res = await fetch('/api/trigger-logs', { method: 'DELETE' });
       if (res.ok) {
         const data = await res.json();
         showToast(data.message || '历史触发日志已成功清除', 'success');
@@ -842,4 +842,4 @@ function AuditLogs() {
   );
 }
 
-export default AuditLogs;
+export default TriggerLogs;

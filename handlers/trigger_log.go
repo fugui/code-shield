@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetAuditLogs returns a paginated list of task trigger audit logs
-func GetAuditLogs(c *gin.Context) {
+// GetTriggerLogs returns a paginated list of task trigger logs
+func GetTriggerLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "25"))
 	triggerType := c.Query("trigger_type")
@@ -83,12 +83,12 @@ func GetAuditLogs(c *gin.Context) {
 	})
 }
 
-// GetAuditLogDetail returns a single audit log with linked task execution logs
-func GetAuditLogDetail(c *gin.Context) {
+// GetTriggerLogDetail returns a single trigger log with linked task execution logs
+func GetTriggerLogDetail(c *gin.Context) {
 	id := c.Param("id")
 	var triggerLog models.TaskTriggerLog
 	if err := models.DB.Preload("Operator").Preload("TaskType").Preload("Schedule").First(&triggerLog, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Trigger audit log not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Trigger log not found"})
 		return
 	}
 
@@ -103,8 +103,8 @@ func GetAuditLogDetail(c *gin.Context) {
 	})
 }
 
-// GetAuditLogStats returns dashboard statistics for trigger audit logs
-func GetAuditLogStats(c *gin.Context) {
+// GetTriggerLogStats returns dashboard statistics for trigger logs
+func GetTriggerLogStats(c *gin.Context) {
 	var totalBatches int64
 	var todayBatches int64
 	var manualCount int64
@@ -130,8 +130,8 @@ func GetAuditLogStats(c *gin.Context) {
 	})
 }
 
-// ClearAuditLogs allows deleting historical trigger audit logs
-func ClearAuditLogs(c *gin.Context) {
+// ClearTriggerLogs allows deleting historical trigger logs
+func ClearTriggerLogs(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
 
 	query := models.DB.Model(&models.TaskTriggerLog{})
@@ -142,12 +142,12 @@ func ClearAuditLogs(c *gin.Context) {
 
 	result := query.Delete(&models.TaskTriggerLog{})
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear audit logs: " + result.Error.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear trigger logs: " + result.Error.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"deleted": result.RowsAffected,
-		"message": "日志清除成功",
+		"message": "触发日志清除成功",
 	})
 }

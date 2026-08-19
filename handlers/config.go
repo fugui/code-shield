@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	commonAudit "code-common/backend/audit"
 	"code-shield/models"
 	"code-shield/services"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -55,6 +57,11 @@ func UpdateConfig(c *gin.Context) {
 	var config models.SystemConfig
 	models.DB.First(&config, 1)
 
+	oldBefore := map[string]interface{}{
+		"auto_notify":       config.AutoNotify,
+		"concurrency_scale": services.Dispatcher.GetThrottleInfo().EffectiveScale,
+	}
+
 	if req.AutoNotify != nil {
 		config.AutoNotify = *req.AutoNotify
 		models.DB.Save(&config)
@@ -69,6 +76,16 @@ func UpdateConfig(c *gin.Context) {
 	}
 
 	info := services.Dispatcher.GetThrottleInfo()
+
+	newAfter := map[string]interface{}{
+		"auto_notify":       config.AutoNotify,
+		"concurrency_scale": info.EffectiveScale,
+	}
+
+	commonAudit.SetAuditContext(c, "config", "update", models.AuditLevelP1,
+		fmt.Sprintf("修改了系统限流/通知配置 (限流倍率: %.2f)", info.EffectiveScale),
+		"system_config", "1", "全局扫描限流配置",
+		oldBefore, newAfter)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":                config.ID,
