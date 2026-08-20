@@ -380,8 +380,10 @@ function TaskTypeManagement() {
         open={showFileEditor}
         onClose={() => setShowFileEditor(false)}
         title={`编辑脚本 — ${fileEditorTaskName}`}
-        width="lg"
-        bodyStyle={{ padding: 0, gap: 0, height: '65vh', display: 'flex', flexDirection: 'column' }}
+        width="xl"
+        height="75vh"
+        minHeight={550}
+        bodyStyle={{ padding: 0, gap: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
@@ -419,13 +421,13 @@ function TaskTypeManagement() {
         </div>
 
         {/* Editor */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <textarea
             value={fileContents[activeFileTab]}
             onChange={e => updateFileContent(activeFileTab, e.target.value)}
             spellCheck={false}
             style={{
-              flex: 1, width: '100%', padding: '1.25rem', border: 'none', outline: 'none', resize: 'none',
+              flex: 1, width: '100%', height: '100%', minHeight: '350px', padding: '1.25rem', border: 'none', outline: 'none', resize: 'none',
               fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace", fontSize: '0.85rem', lineHeight: '1.6',
               background: '#1e293b', color: '#e2e8f0', boxSizing: 'border-box'
             }}
