@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useConfirm, Modal, EmptyState } from '@code/common';
+import { useConfirm, Modal, Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import { PlayCircle, Code2, Settings, Trash2 } from 'lucide-react';
 
@@ -375,14 +375,13 @@ function TaskTypeManagement() {
         </form>
       </Modal>
 
-      {/* File Editor Modal */}
-      <Modal
+      {/* File Editor Drawer */}
+      <Drawer
         open={showFileEditor}
         onClose={() => setShowFileEditor(false)}
         title={`编辑脚本 — ${fileEditorTaskName}`}
-        width="xl"
-        height="75vh"
-        minHeight={550}
+        subtitle="配置 AI 任务提示词（分析/综合阶段）与前置 Bash 检查脚本"
+        width="min(1000px, 92vw)"
         bodyStyle={{ padding: 0, gap: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
@@ -427,14 +426,14 @@ function TaskTypeManagement() {
             onChange={e => updateFileContent(activeFileTab, e.target.value)}
             spellCheck={false}
             style={{
-              flex: 1, width: '100%', height: '100%', minHeight: '350px', padding: '1.25rem', border: 'none', outline: 'none', resize: 'none',
+              flex: 1, width: '100%', height: '100%', padding: '1.25rem', border: 'none', outline: 'none', resize: 'none',
               fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace", fontSize: '0.85rem', lineHeight: '1.6',
               background: '#1e293b', color: '#e2e8f0', boxSizing: 'border-box'
             }}
             placeholder={activeFileTab === 'analysis_prompt' || activeFileTab === 'synthesis_prompt' ? '在此编写 AI 任务提示词（Markdown 格式）...' : '在此编写 Bash 脚本...'}
           />
         </div>
-      </Modal>
+      </Drawer>
 
     </div>
   );
