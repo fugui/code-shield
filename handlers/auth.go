@@ -1,13 +1,17 @@
 package handlers
 
 import (
-	commonAuth "code-common/backend/auth"
-	"code-shield/models"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	commonAudit "code-common/backend/audit"
+	commonAuth "code-common/backend/auth"
+	commonModels "code-common/backend/models"
+	"code-shield/models"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -176,6 +180,14 @@ func UpdatePassword(c *gin.Context) {
 		return
 	}
 
+	displayName := user.Name
+	if displayName == "" {
+		displayName = user.Email
+	}
+	commonAudit.SetAuditContext(c, "auth", "update_password", commonModels.AuditLevelP1,
+		fmt.Sprintf("用户 [%s] 修改个人密码成功", displayName),
+		"user", fmt.Sprintf("%d", user.ID), displayName, nil, nil)
+
 	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
 }
 
@@ -214,17 +226,26 @@ func Login(c *gin.Context) {
 	}
 
 	var user models.User
-	if err := models.DB.Where("LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)", loginIdentifier, loginIdentifier).First(&user).Error; err != nil {
+	if err := models.DB.Preload("Department").Where("LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)", loginIdentifier, loginIdentifier).First(&user).Error; err != nil {
+		commonAudit.SetAuditContext(c, "auth", "login", commonModels.AuditLevelP2,
+			fmt.Sprintf("用户登录失败: 尝试账号 [%s], 用户不存在", loginIdentifier),
+			"user", "", loginIdentifier, nil, nil)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
 
 	if !user.IsActive {
+		commonAudit.SetAuditContext(c, "auth", "login", commonModels.AuditLevelP2,
+			fmt.Sprintf("用户登录失败: 尝试账号 [%s], 账号已被禁用", loginIdentifier),
+			"user", fmt.Sprintf("%d", user.ID), user.Name, nil, nil)
 		c.JSON(http.StatusForbidden, gin.H{"error": "账号已被禁用"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		commonAudit.SetAuditContext(c, "auth", "login", commonModels.AuditLevelP2,
+			fmt.Sprintf("用户登录失败: 尝试账号 [%s], 密码错误", loginIdentifier),
+			"user", fmt.Sprintf("%d", user.ID), user.Name, nil, nil)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
@@ -250,6 +271,30 @@ func Login(c *gin.Context) {
 		"last_login": now,
 		"last_ip":    clientIP,
 	})
+
+	deptName := ""
+	if user.Department != nil {
+		deptName = user.Department.Name
+	}
+	displayName := user.Name
+	if displayName == "" {
+		displayName = user.Email
+	}
+
+	commonAuth.SetUserContext(c, &commonAuth.UserContext{
+		UserID:         user.ID,
+		Username:       user.Email,
+		Name:           user.Name,
+		Email:          user.Email,
+		EmployeeID:     user.EmployeeID,
+		Roles:          user.GetRoles(),
+		DepartmentID:   user.DepartmentID,
+		DepartmentName: deptName,
+	})
+
+	commonAudit.SetAuditContext(c, "auth", "login", commonModels.AuditLevelP2,
+		fmt.Sprintf("用户 [%s] 登录系统成功 (IP: %s)", displayName, clientIP),
+		"user", fmt.Sprintf("%d", user.ID), displayName, nil, nil)
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
@@ -427,10 +472,35 @@ func OAuth2Callback(c *gin.Context) {
 	}
 
 	now := time.Now()
+	clientIP := c.ClientIP()
 	models.DB.Model(&user).Updates(map[string]interface{}{
 		"last_login": now,
-		"last_ip":    c.ClientIP(),
+		"last_ip":    clientIP,
 	})
+
+	deptName := ""
+	if user.Department != nil {
+		deptName = user.Department.Name
+	}
+	displayName := user.Name
+	if displayName == "" {
+		displayName = user.Email
+	}
+
+	commonAuth.SetUserContext(c, &commonAuth.UserContext{
+		UserID:         user.ID,
+		Username:       user.Email,
+		Name:           user.Name,
+		Email:          user.Email,
+		EmployeeID:     user.EmployeeID,
+		Roles:          user.GetRoles(),
+		DepartmentID:   user.DepartmentID,
+		DepartmentName: deptName,
+	})
+
+	commonAudit.SetAuditContext(c, "auth", "sso_login", commonModels.AuditLevelP2,
+		fmt.Sprintf("用户 [%s] SSO单点登录系统成功 (IP: %s)", displayName, clientIP),
+		"user", fmt.Sprintf("%d", user.ID), displayName, nil, nil)
 
 	tokenString, err := commonAuth.GenerateToken(
 		user.ID,
