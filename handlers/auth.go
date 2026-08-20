@@ -250,11 +250,12 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token, err := commonAuth.GenerateToken(
+	token, err := commonAuth.GenerateTokenWithEmployeeID(
 		user.ID,
 		user.Email,
 		user.Email,
 		user.Name,
+		user.EmployeeID,
 		user.IsSuperAdmin(),
 		user.GetRoles(),
 		models.AppConfig.Auth.JWTSecret,
@@ -502,11 +503,12 @@ func OAuth2Callback(c *gin.Context) {
 		fmt.Sprintf("用户 [%s] SSO单点登录系统成功 (IP: %s)", displayName, clientIP),
 		"user", fmt.Sprintf("%d", user.ID), displayName, nil, nil)
 
-	tokenString, err := commonAuth.GenerateToken(
+	tokenString, err := commonAuth.GenerateTokenWithEmployeeID(
 		user.ID,
 		user.Email,
 		user.Email,
 		user.Name,
+		user.EmployeeID,
 		user.IsSuperAdmin(),
 		user.GetRoles(),
 		models.AppConfig.Auth.JWTSecret,
