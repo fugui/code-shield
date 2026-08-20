@@ -905,11 +905,11 @@ func ResumeTask(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已入队，等待排队执行"})
 }
 
-// TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days
+// TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days (or all repositories when days <= 0)
 func TriggerMissingTasks(c *gin.Context) {
 	var req struct {
 		TaskTypeID   uint   `json:"task_type_id" binding:"required"`
-		Days         int    `json:"days" binding:"required,min=1"`
+		Days         int    `json:"days"`
 		ServiceGroup string `json:"service_group"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -934,38 +934,59 @@ func TriggerMissingTasks(c *gin.Context) {
 		return
 	}
 
-	// 2. Query repo IDs that have scan reports of this task type in the last N days
-	var scannedRepoIDs []uint
-	timeLimit := time.Now().AddDate(0, 0, -req.Days)
-	if err := models.DB.Model(&models.TaskReport{}).
-		Where("task_type_id = ? AND created_at >= ?", req.TaskTypeID, timeLimit).
-		Pluck("repo_id", &scannedRepoIDs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务报告失败: " + err.Error()})
-		return
-	}
+	var targetRepos []models.Repository
+	if req.Days <= 0 {
+		// 全量扫描：不限时间范围，覆盖所有匹配的活跃仓库
+		targetRepos = repos
+	} else {
+		// 2. Query repo IDs that have scan reports of this task type in the last N days
+		var scannedRepoIDs []uint
+		timeLimit := time.Now().AddDate(0, 0, -req.Days)
+		if err := models.DB.Model(&models.TaskReport{}).
+			Where("task_type_id = ? AND created_at >= ?", req.TaskTypeID, timeLimit).
+			Pluck("repo_id", &scannedRepoIDs).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务报告失败: " + err.Error()})
+			return
+		}
 
-	// 3. Filter repos to only those that have not been checked in the last N days
-	scannedMap := make(map[uint]bool)
-	for _, rid := range scannedRepoIDs {
-		scannedMap[rid] = true
-	}
+		// 3. Filter repos to only those that have not been checked in the last N days
+		scannedMap := make(map[uint]bool)
+		for _, rid := range scannedRepoIDs {
+			scannedMap[rid] = true
+		}
 
-	var missingRepos []models.Repository
-	for _, r := range repos {
-		if !scannedMap[r.ID] {
-			missingRepos = append(missingRepos, r)
+		for _, r := range repos {
+			if !scannedMap[r.ID] {
+				targetRepos = append(targetRepos, r)
+			}
 		}
 	}
 
-	if len(missingRepos) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("所有代码仓在过去 %d 天内均已完成 [%s] 扫描任务，无需补扫", req.Days, taskType.DisplayName)})
+	if len(targetRepos) == 0 {
+		if req.Days <= 0 {
+			c.JSON(http.StatusOK, gin.H{"message": "未找到匹配的活跃代码仓，无需扫描"})
+		} else {
+			c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("所有代码仓在过去 %d 天内均已完成 [%s] 扫描任务，无需补扫", req.Days, taskType.DisplayName)})
+		}
 		return
 	}
 
 	opID, opName, clientIP := getOperatorInfo(c)
-	batchNo := fmt.Sprintf("TRG-%s-MISSING", time.Now().Format("20060102150405"))
+	batchSuffix := "MISSING"
+	if req.Days <= 0 {
+		batchSuffix = "ALL"
+	}
+	batchNo := fmt.Sprintf("TRG-%s-%s", time.Now().Format("20060102150405"), batchSuffix)
 
-	targetSummary := fmt.Sprintf("快速补扫: 过去 %d 天未扫代码仓 (共 %d 个)", req.Days, len(missingRepos))
+	var targetSummary string
+	var targetMode string
+	if req.Days <= 0 {
+		targetMode = "all"
+		targetSummary = fmt.Sprintf("全量扫描: 全部活跃代码仓 (共 %d 个)", len(targetRepos))
+	} else {
+		targetMode = "missing_days"
+		targetSummary = fmt.Sprintf("快速补扫: 过去 %d 天未扫代码仓 (共 %d 个)", req.Days, len(targetRepos))
+	}
 	if req.ServiceGroup != "" {
 		targetSummary += fmt.Sprintf(" [服务组件: %s]", req.ServiceGroup)
 	}
@@ -981,10 +1002,10 @@ func TriggerMissingTasks(c *gin.Context) {
 		OperatorID:    opID,
 		OperatorName:  opName,
 		TaskTypeID:    taskType.ID,
-		TargetMode:    "missing_days",
+		TargetMode:    targetMode,
 		TargetSummary: targetSummary,
 		FilterParams:  filterParamsBytes,
-		TotalRepos:    len(missingRepos),
+		TotalRepos:    len(targetRepos),
 		ClientIP:      clientIP,
 		CreatedAt:     time.Now(),
 	}
@@ -998,8 +1019,8 @@ func TriggerMissingTasks(c *gin.Context) {
 	successCount := 0
 	skipCount := 0
 
-	// 4. Enqueue tasks for each missing repo
-	for _, repo := range missingRepos {
+	// 4. Enqueue tasks for each target repo
+	for _, repo := range targetRepos {
 		ok := services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
 		if ok {
 			successCount++
@@ -1015,13 +1036,17 @@ func TriggerMissingTasks(c *gin.Context) {
 		})
 	}
 
+	actionDesc := "补扫"
+	if req.Days <= 0 {
+		actionDesc = "全量扫描"
+	}
 	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
-		fmt.Sprintf("触发漏扫补扫 [%s] 覆盖 %d 仓 (成功 %d, 跳过 %d)", taskType.DisplayName, len(missingRepos), successCount, skipCount),
+		fmt.Sprintf("触发%s [%s] 覆盖 %d 仓 (成功 %d, 跳过 %d)", actionDesc, taskType.DisplayName, len(targetRepos), successCount, skipCount),
 		"task_trigger_log", fmt.Sprintf("%d", triggerLog.ID), triggerLog.TriggerBatch,
 		nil, triggerLog)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] 补扫任务 (成功排队 %d, 跳过 %d)", len(missingRepos), taskType.DisplayName, successCount, skipCount),
+		"message": fmt.Sprintf("成功为 %d 个代码仓触发 [%s] %s任务 (成功排队 %d, 跳过 %d)", len(targetRepos), taskType.DisplayName, actionDesc, successCount, skipCount),
 	})
 }
 

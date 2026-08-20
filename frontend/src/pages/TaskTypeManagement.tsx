@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useConfirm, Modal, Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
-import { PlayCircle, Code2, Settings, Trash2 } from 'lucide-react';
+import { Code2, Settings, Trash2 } from 'lucide-react';
 
 
 type FileTab = 'analysis_prompt' | 'synthesis_prompt' | 'precondition';
@@ -126,18 +126,6 @@ function TaskTypeManagement() {
     fetchTaskTypes();
   };
 
-  const handleTriggerAll = async (tt: any) => {
-    if (!window.confirm(`确认要立即对全体代码仓下发执行【${tt.display_name}】扫描任务吗？\n警告：如果你有很多仓库，这可能非常耗时并触发大量资源占用。`)) return;
-    const res = await fetch(`/api/task-types/${tt.id}/trigger-all`, { method: 'POST' });
-    if (res.ok) {
-      const d = await res.json();
-      showToast(d.message || '全仓扫描已下发', 'success');
-    } else {
-      const d = await res.json();
-      showToast(d.error || '触发失败', 'error');
-    }
-  };
-
   // File editor functions
   const openFileEditor = async (tt: any) => {
     setFileEditorTaskId(tt.id);
@@ -254,9 +242,6 @@ function TaskTypeManagement() {
                 </td>
                 <td style={{ padding: '1rem', textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                    <span title="全仓扫描" onClick={() => handleTriggerAll(tt)} style={{ cursor: 'pointer', display: 'flex' }}>
-                      <PlayCircle size={18} color="var(--primary-color)" />
-                    </span>
                     <span title="编辑脚本" onClick={() => openFileEditor(tt)} style={{ cursor: 'pointer', display: 'flex' }}>
                       <Code2 size={18} color="#10b981" />
                     </span>

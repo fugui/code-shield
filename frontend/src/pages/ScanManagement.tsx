@@ -51,7 +51,7 @@ function ScanManagement() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
   const [gapTaskTypeId, setGapTaskTypeId] = useState<string>('');
-  const [gapDays, setGapDays] = useState<number>(7);
+  const [gapDays, setGapDays] = useState<number>(0);
   const [gapServiceGroup, setGapServiceGroup] = useState<string>('');
 
   const subsystems = React.useMemo(() => {
@@ -251,7 +251,7 @@ function ScanManagement() {
   const handleTriggerGapScan = async () => {
     if (!gapTaskTypeId) return;
     try {
-      showToast('正在分析漏扫代码仓，并触发补扫任务...', 'info');
+      showToast(gapDays === 0 ? '正在为目标代码仓触发全量扫描任务...' : '正在分析漏扫代码仓，并触发补扫任务...', 'info');
       const res = await fetch('/api/tasks/trigger-missing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -263,13 +263,13 @@ function ScanManagement() {
       });
       const data = await res.json();
       if (res.ok) {
-        showToast(data.message || '补扫任务已成功触发', 'success');
+        showToast(data.message || (gapDays === 0 ? '全量扫描任务已成功触发' : '补扫任务已成功触发'), 'success');
       } else {
-        showToast('触发补扫失败: ' + data.error, 'error');
+        showToast((gapDays === 0 ? '触发全量扫描失败: ' : '触发补扫失败: ') + data.error, 'error');
       }
     } catch (err) {
       console.error(err);
-      showToast('网络请求异常，触发补扫失败', 'error');
+      showToast('网络请求异常，触发扫描失败', 'error');
     }
   };
 
@@ -695,7 +695,7 @@ function ScanManagement() {
 
           <div className="card" style={{ marginBottom: '2.5rem', background: 'linear-gradient(135deg, var(--card-bg) 0%, rgba(37, 99, 235, 0.02) 100%)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.5rem' }}>
             <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-              一键对过去指定时间内，<strong>未进行成功扫描</strong>的全部代码仓发起立即扫描任务，用于快速补充分析空白。
+              一键对全部代码仓或过去指定时间内<strong>未进行成功扫描</strong>的代码仓发起立即扫描任务，用于全量覆盖或快速补全分析空白。
             </p>
             <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div style={{ flex: '1', minWidth: '200px' }}>
@@ -719,6 +719,7 @@ function ScanManagement() {
                   onChange={e => setGapDays(Number(e.target.value))}
                   style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', fontSize: '0.875rem', height: '40px' }}
                 >
+                  <option value={0}>全量扫描 (不限时间)</option>
                   <option value={3}>过去 3 天内未扫描</option>
                   <option value={7}>过去 7 天内未扫描 (一周)</option>
                   <option value={14}>过去 14 天内未扫描 (两周)</option>
@@ -764,7 +765,7 @@ function ScanManagement() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
-                立即开始补扫
+                {gapDays === 0 ? '立即开始全量扫描' : '立即开始补扫'}
               </button>
             </div>
           </div>
