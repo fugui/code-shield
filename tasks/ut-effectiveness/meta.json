@@ -26,5 +26,8 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
+  "is_campaign": true,
+  "campaign_path": "ut",
+  "governance_mode": "entity_assessment",
   "is_active": true
 }

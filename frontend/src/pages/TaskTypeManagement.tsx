@@ -13,7 +13,8 @@ function TaskTypeManagement() {
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
     ai_backend: '', target_scope: 'business',
-    notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 60, is_active: true
+    notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 60, is_active: true,
+    is_campaign: false, campaign_path: '', governance_mode: 'defect_tracking', campaign_icon: '', campaign_config: ''
   });
   const [ccInput, setCcInput] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -35,7 +36,12 @@ function TaskTypeManagement() {
   useEffect(() => { fetchTaskTypes(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '', ai_backend: '', target_scope: 'business', notify_template: '', notify_threshold: 0, notify_cc: [], timeout: 60, is_active: true });
+    setForm({
+      name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
+      ai_backend: '', target_scope: 'business', notify_template: '', notify_threshold: 0,
+      notify_cc: [], timeout: 60, is_active: true,
+      is_campaign: false, campaign_path: '', governance_mode: 'defect_tracking', campaign_icon: '', campaign_config: ''
+    });
     setEditingId(null);
     setCcInput('');
   };
@@ -49,12 +55,21 @@ function TaskTypeManagement() {
     if (tt.engine_config) {
       configStr = typeof tt.engine_config === 'string' ? tt.engine_config : JSON.stringify(tt.engine_config, null, 2);
     }
+    let campConfigStr = '';
+    if (tt.campaign_config) {
+      campConfigStr = typeof tt.campaign_config === 'string' ? tt.campaign_config : JSON.stringify(tt.campaign_config, null, 2);
+    }
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
       ai_backend: tt.ai_backend || '', target_scope: tt.target_scope || 'business',
       notify_template: tt.notify_template || '',
-      notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 60, is_active: tt.is_active
+      notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 60, is_active: tt.is_active,
+      is_campaign: !!tt.is_campaign,
+      campaign_path: tt.campaign_path || '',
+      governance_mode: tt.governance_mode || 'defect_tracking',
+      campaign_icon: tt.campaign_icon || '',
+      campaign_config: campConfigStr
     });
     setCcInput('');
     setEditingId(tt.id);
@@ -89,6 +104,17 @@ function TaskTypeManagement() {
       }
     } else {
       (payload as any).engine_config = null;
+    }
+
+    if (payload.campaign_config) {
+      try {
+        (payload as any).campaign_config = JSON.parse(payload.campaign_config);
+      } catch (e) {
+        showToast('专项高级配置必须是有效的 JSON', 'error');
+        return;
+      }
+    } else {
+      (payload as any).campaign_config = null;
     }
 
     const res = await fetch(url, {
@@ -210,8 +236,23 @@ function TaskTypeManagement() {
 
               <tr key={tt.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <td style={{ padding: '1rem', fontWeight: 500 }}>
-                  {tt.display_name}
-                  {tt.is_builtin && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', background: '#dbeafe', color: '#2563eb', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>内置</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {tt.display_name}
+                    {tt.is_builtin && <span style={{ fontSize: '0.7rem', background: '#dbeafe', color: '#2563eb', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>内置</span>}
+                    {tt.is_campaign && (
+                      <span style={{
+                        fontSize: '0.7rem',
+                        background: tt.governance_mode === 'entity_assessment' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+                        color: tt.governance_mode === 'entity_assessment' ? '#059669' : '#4f46e5',
+                        border: `1px solid ${tt.governance_mode === 'entity_assessment' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '4px',
+                        fontWeight: 600
+                      }}>
+                        {tt.governance_mode === 'entity_assessment' ? '专项 · 实体评估' : '专项 · 缺陷攻关'}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td style={{ padding: '1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{tt.name}</td>
                 <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
@@ -289,6 +330,73 @@ function TaskTypeManagement() {
             <label style={labelStyle}>描述</label>
             <textarea style={{...fieldStyle, minHeight: '60px', resize: 'vertical'}} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="任务说明..." />
           </div>
+
+          {/* 专项分析元数据治理配置卡片 */}
+          <div style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-color)' }}>启用专项分析看板与闭环治理</span>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>开启后自动在侧边栏挂载专项菜单，启用通用归并引擎、部门排名与 30 天收敛趋势跟踪</p>
+              </div>
+              <div onClick={() => setForm({ ...form, is_campaign: !form.is_campaign })} style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                <div style={{ width: 38, height: 22, borderRadius: 11, background: form.is_campaign ? 'var(--primary-color)' : '#cbd5e1', position: 'relative', transition: '0.2s' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 9, background: 'white', position: 'absolute', top: 2, left: form.is_campaign ? 18 : 2, transition: '0.2s' }} />
+                </div>
+              </div>
+            </div>
+
+            {form.is_campaign && (
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div>
+                  <label style={labelStyle}>专项治理模式</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div
+                      onClick={() => setForm({ ...form, governance_mode: 'defect_tracking' })}
+                      style={{
+                        padding: '0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        border: `1.5px solid ${form.governance_mode === 'defect_tracking' ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                        background: form.governance_mode === 'defect_tracking' ? 'rgba(37,99,235,0.05)' : 'var(--card-bg)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'defect_tracking' ? 'var(--primary-color)' : 'var(--text-color)' }}>
+                        缺陷攻关模式 (defect_tracking)
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.2rem' }}>
+                        度量缺陷总数/待处理/修复率，适合浮点数、内存泄露、代码检视等缺陷发现
+                      </div>
+                    </div>
+                    <div
+                      onClick={() => setForm({ ...form, governance_mode: 'entity_assessment' })}
+                      style={{
+                        padding: '0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        border: `1.5px solid ${form.governance_mode === 'entity_assessment' ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                        background: form.governance_mode === 'entity_assessment' ? 'rgba(16,185,129,0.05)' : 'var(--card-bg)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'entity_assessment' ? '#059669' : 'var(--text-color)' }}>
+                        全量实体评估模式 (entity_assessment)
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.2rem' }}>
+                        度量实体总数/合格数/合格率，适合单元测试用例有效性等全量评级
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={labelStyle}>路由别名 (URL Path) <span style={{ fontWeight: 400, color: '#94a3b8' }}>(空则同标识名)</span></label>
+                    <input style={fieldStyle} value={form.campaign_path} onChange={e => setForm({ ...form, campaign_path: e.target.value.trim() })} placeholder="如: float, ut, coredump" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>专项图标类名/SVG <span style={{ fontWeight: 400, color: '#94a3b8' }}>(可选)</span></label>
+                    <input style={fieldStyle} value={form.campaign_icon} onChange={e => setForm({ ...form, campaign_icon: e.target.value })} placeholder="SVG path 或图标名称" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={labelStyle}>执行模式</label>

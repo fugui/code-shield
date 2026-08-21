@@ -3,6 +3,7 @@ package handlers
 import (
 	"code-shield/models"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,8 +11,9 @@ import (
 
 type WorkbenchFinding struct {
 	ID          uint        `json:"id"`
-	Type        string      `json:"type"`      // "ut", "coredump", "float", "thread", "cjson", "unordered-collection"
+	Type        string      `json:"type"`      // "ut", "coredump", "float", "thread", "cjson", "unordered-collection", "deep-review", etc.
 	TypeName    string      `json:"type_name"` // "测试用例有效性", "Coredump 风险", etc.
+	TaskTypeID  uint        `json:"task_type_id"`
 	RepoID      uint        `json:"repo_id"`
 	RepoName    string      `json:"repo_name"`
 	RepoURL     string      `json:"repo_url"`
@@ -25,10 +27,12 @@ type WorkbenchFinding struct {
 	Suggestion  string      `json:"suggestion"`
 	Status      string      `json:"status"`
 	StatusLog   interface{} `json:"status_log"`
+	Feedback    string      `json:"feedback"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
+// GetMyFindings 获取当前用户被指派的专项缺陷列表（统一查询 campaign_findings 表并支持分页）
 func GetMyFindings(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -37,97 +41,73 @@ func GetMyFindings(c *gin.Context) {
 	}
 
 	uid := userID.(uint)
-	list := []WorkbenchFinding{}
-
-	// 1. TestCaseFinding (ut)
-	var utFindings []models.TestCaseFinding
-	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&utFindings)
-	for _, f := range utFindings {
-		list = append(list, WorkbenchFinding{
-			ID:          f.ID,
-			Type:        "ut",
-			TypeName:    "测试用例有效性",
-			RepoID:      f.RepoID,
-			RepoName:    f.Repo.Name,
-			RepoURL:     f.Repo.URL,
-			FilePath:    f.FilePath,
-			LineNumber:  f.LineNumber,
-			Title:       f.TestCaseName,
-			Detail:      f.Detail,
-			Severity:    f.Severity,
-			Category:    f.Category,
-			CodeSnippet: f.CodeSnippet,
-			Suggestion:  f.Suggestion,
-			Status:      f.Status,
-			StatusLog:   f.StatusLog,
-			CreatedAt:   f.CreatedAt,
-			UpdatedAt:   f.UpdatedAt,
-		})
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "25"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 500 {
+		pageSize = 25
 	}
 
-	// 2. CoredumpFinding (coredump)
-	var coredumpFindings []models.CoredumpFinding
-	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&coredumpFindings)
-	for _, f := range coredumpFindings {
-		list = append(list, WorkbenchFinding{
-			ID:          f.ID,
-			Type:        "coredump",
-			TypeName:    "Coredump 风险",
-			RepoID:      f.RepoID,
-			RepoName:    f.Repo.Name,
-			RepoURL:     f.Repo.URL,
-			FilePath:    f.FilePath,
-			LineNumber:  f.LineNumber,
-			Title:       f.Title,
-			Detail:      f.Detail,
-			Severity:    f.Severity,
-			Category:    f.Category,
-			CodeSnippet: f.CodeSnippet,
-			Suggestion:  f.Suggestion,
-			Status:      f.Status,
-			StatusLog:   f.StatusLog,
-			CreatedAt:   f.CreatedAt,
-			UpdatedAt:   f.UpdatedAt,
-		})
+	campaignType := c.Query("type")
+	severity := c.Query("severity")
+	status := c.Query("status")
+	keyword := c.Query("keyword")
+
+	query := models.DB.Model(&models.CampaignFinding{}).
+		Preload("Repo").Preload("TaskType").
+		Where("assignee_id = ?", uid)
+
+	if campaignType != "" {
+		var tt models.TaskType
+		if err := models.DB.Where("name = ? OR campaign_path = ?", campaignType, campaignType).First(&tt).Error; err == nil {
+			query = query.Where("task_type_id = ?", tt.ID)
+		}
+	}
+	if severity != "" {
+		query = query.Where("severity = ?", severity)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
 	}
 
-	// 3. FloatFinding (float)
-	var floatFindings []models.FloatFinding
-	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&floatFindings)
-	for _, f := range floatFindings {
-		list = append(list, WorkbenchFinding{
-			ID:          f.ID,
-			Type:        "float",
-			TypeName:    "Python 浮点数比较",
-			RepoID:      f.RepoID,
-			RepoName:    f.Repo.Name,
-			RepoURL:     f.Repo.URL,
-			FilePath:    f.FilePath,
-			LineNumber:  f.LineNumber,
-			Title:       f.Title,
-			Detail:      f.Detail,
-			Severity:    f.Severity,
-			Category:    f.Category,
-			CodeSnippet: f.CodeSnippet,
-			Suggestion:  f.Suggestion,
-			Status:      f.Status,
-			StatusLog:   f.StatusLog,
-			CreatedAt:   f.CreatedAt,
-			UpdatedAt:   f.UpdatedAt,
-		})
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count findings"})
+		return
 	}
 
-	// 4. ThreadFinding (thread)
-	var threadFindings []models.ThreadFinding
-	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&threadFindings)
-	for _, f := range threadFindings {
-		list = append(list, WorkbenchFinding{
+	var dbFindings []models.CampaignFinding
+	if err := query.Order("id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&dbFindings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch findings"})
+		return
+	}
+
+	items := make([]WorkbenchFinding, 0, len(dbFindings))
+	for _, f := range dbFindings {
+		typeAlias := f.TaskType.CampaignPath
+		if typeAlias == "" {
+			typeAlias = f.TaskType.Name
+		}
+		repoName := ""
+		repoURL := ""
+		if f.Repo.Name != "" {
+			repoName = f.Repo.Name
+			repoURL = f.Repo.URL
+		}
+		items = append(items, WorkbenchFinding{
 			ID:          f.ID,
-			Type:        "thread",
-			TypeName:    "显式创建线程",
+			Type:        typeAlias,
+			TypeName:    f.TaskType.DisplayName,
+			TaskTypeID:  f.TaskTypeID,
 			RepoID:      f.RepoID,
-			RepoName:    f.Repo.Name,
-			RepoURL:     f.Repo.URL,
+			RepoName:    repoName,
+			RepoURL:     repoURL,
 			FilePath:    f.FilePath,
 			LineNumber:  f.LineNumber,
 			Title:       f.Title,
@@ -138,62 +118,16 @@ func GetMyFindings(c *gin.Context) {
 			Suggestion:  f.Suggestion,
 			Status:      f.Status,
 			StatusLog:   f.StatusLog,
+			Feedback:    f.Feedback,
 			CreatedAt:   f.CreatedAt,
 			UpdatedAt:   f.UpdatedAt,
 		})
 	}
 
-	// 5. CjsonFinding (cjson)
-	var cjsonFindings []models.CjsonFinding
-	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&cjsonFindings)
-	for _, f := range cjsonFindings {
-		list = append(list, WorkbenchFinding{
-			ID:          f.ID,
-			Type:        "cjson",
-			TypeName:    "cJSON 内存泄漏",
-			RepoID:      f.RepoID,
-			RepoName:    f.Repo.Name,
-			RepoURL:     f.Repo.URL,
-			FilePath:    f.FilePath,
-			LineNumber:  f.LineNumber,
-			Title:       f.Title,
-			Detail:      f.Detail,
-			Severity:    f.Severity,
-			Category:    f.Category,
-			CodeSnippet: f.CodeSnippet,
-			Suggestion:  f.Suggestion,
-			Status:      f.Status,
-			StatusLog:   f.StatusLog,
-			CreatedAt:   f.CreatedAt,
-			UpdatedAt:   f.UpdatedAt,
-		})
-	}
-
-	// 6. UnorderedCollectionFinding (unordered-collection)
-	var unorderedFindings []models.UnorderedCollectionFinding
-	models.DB.Preload("Repo").Where("assignee_id = ?", uid).Find(&unorderedFindings)
-	for _, f := range unorderedFindings {
-		list = append(list, WorkbenchFinding{
-			ID:          f.ID,
-			Type:        "unordered-collection",
-			TypeName:    "无序集合导出缺陷",
-			RepoID:      f.RepoID,
-			RepoName:    f.Repo.Name,
-			RepoURL:     f.Repo.URL,
-			FilePath:    f.FilePath,
-			LineNumber:  f.LineNumber,
-			Title:       f.Title,
-			Detail:      f.Detail,
-			Severity:    f.Severity,
-			Category:    f.Category,
-			CodeSnippet: f.CodeSnippet,
-			Suggestion:  f.Suggestion,
-			Status:      f.Status,
-			StatusLog:   f.StatusLog,
-			CreatedAt:   f.CreatedAt,
-			UpdatedAt:   f.UpdatedAt,
-		})
-	}
-
-	c.JSON(http.StatusOK, list)
+	c.JSON(http.StatusOK, gin.H{
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"items":     items,
+	})
 }

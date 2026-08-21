@@ -26,5 +26,8 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
+  "is_campaign": true,
+  "campaign_path": "cjson",
+  "governance_mode": "defect_tracking",
   "is_active": true
 }

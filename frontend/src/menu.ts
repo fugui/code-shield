@@ -1,10 +1,68 @@
 import type { SubMenuItem, MenuGroup, ModuleMenuConfig } from '@code/common';
 export type { SubMenuItem, MenuGroup, ModuleMenuConfig };
 
-export const shieldMenuConfig: ModuleMenuConfig = {
-  moduleKey: 'shield',
-  moduleName: '代码质量 (Code Shield)',
-  groups: [
+export interface TaskTypeMenuMeta {
+  id: number;
+  name: string;
+  display_name: string;
+  is_campaign: boolean;
+  campaign_path: string;
+  campaign_icon?: string;
+  is_active: boolean;
+}
+
+// 默认内置专项的图标映射（未指定 icon 时的优雅兜底）
+const DEFAULT_CAMPAIGN_ICONS: Record<string, string> = {
+  ut: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  ut_effectiveness: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  coredump: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
+  coredump_risk: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
+  float: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z',
+  float_comparison: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z',
+  thread: 'M13 10V3L4 14h7v7l9-11h-7z',
+  thread_create: 'M13 10V3L4 14h7v7l9-11h-7z',
+  cjson: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  cjson_scan: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  'unordered-collection': 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2',
+  unordered_collection: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2',
+  'deep-review': 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  deep_review: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
+};
+
+const DEFAULT_ICON = 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01';
+
+export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGroup[] => {
+  let campaignItems: SubMenuItem[] = [];
+
+  if (Array.isArray(taskTypes) && taskTypes.length > 0) {
+    campaignItems = taskTypes
+      .filter(tt => tt.is_campaign && tt.is_active !== false)
+      .map(tt => {
+        const pathKey = tt.campaign_path || tt.name;
+        const icon = tt.campaign_icon || DEFAULT_CAMPAIGN_ICONS[pathKey] || DEFAULT_CAMPAIGN_ICONS[tt.name] || DEFAULT_ICON;
+        return {
+          path: `/analysis/${pathKey}`,
+          label: tt.display_name,
+          headerTitle: `${tt.display_name}专项`,
+          icon
+        };
+      });
+  }
+
+  // 兜底静态内置项（未获取到动态列表时）
+  if (campaignItems.length === 0) {
+    campaignItems = [
+      { path: '/analysis/ut', label: '测试用例有效性', headerTitle: '测试有效性分析', icon: DEFAULT_CAMPAIGN_ICONS['ut'] },
+      { path: '/analysis/coredump', label: 'Coredump风险攻关', icon: DEFAULT_CAMPAIGN_ICONS['coredump'] },
+      { path: '/analysis/float', label: 'Python浮点数专项', icon: DEFAULT_CAMPAIGN_ICONS['float'] },
+      { path: '/analysis/thread', label: '显式创建线程专项', icon: DEFAULT_CAMPAIGN_ICONS['thread'] },
+      { path: '/analysis/cjson', label: 'cJSON 内存泄露专项', icon: DEFAULT_CAMPAIGN_ICONS['cjson'] },
+      { path: '/analysis/unordered-collection', label: '无序集合导出专项', icon: DEFAULT_CAMPAIGN_ICONS['unordered-collection'] },
+      { path: '/analysis/deep-review', label: '深度代码分析专项', icon: DEFAULT_CAMPAIGN_ICONS['deep-review'] },
+    ];
+  }
+
+  return [
     {
       title: '个人中心',
       items: [
@@ -19,15 +77,7 @@ export const shieldMenuConfig: ModuleMenuConfig = {
     },
     {
       title: '专项分析',
-      items: [
-        { path: '/analysis/ut', label: '测试用例有效性', headerTitle: '测试有效性分析', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
-        { path: '/analysis/coredump', label: 'Coredump风险攻关', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
-        { path: '/analysis/float', label: 'Python浮点数专项', icon: 'M16 8v8m-4-5v5m-4-2v2M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2z' },
-        { path: '/analysis/thread', label: '显式创建线程专项', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-        { path: '/analysis/cjson', label: 'cJSON 内存泄露专项', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-        { path: '/analysis/unordered-collection', label: '无序集合导出专项', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2' },
-        { path: '/analysis/deep-review', label: '深度代码分析专项', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-      ],
+      items: campaignItems,
     },
     {
       title: '管理中心',
@@ -37,11 +87,18 @@ export const shieldMenuConfig: ModuleMenuConfig = {
         { path: '/admin/task-types', label: '任务类型', headerTitle: '任务类型管理', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', adminOnly: true },
       ],
     },
-  ]
+  ];
+};
+
+export const shieldMenuConfig: ModuleMenuConfig = {
+  moduleKey: 'shield',
+  moduleName: '代码质量 (Code Shield)',
+  groups: buildDynamicMenuGroups()
 };
 
 export const menuGroups: MenuGroup[] = shieldMenuConfig.groups;
 export const menuItems: SubMenuItem[] = shieldMenuConfig.groups.flatMap(group => group.items);
 
 export default shieldMenuConfig;
+
 

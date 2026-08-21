@@ -74,7 +74,7 @@ interface AuditingWorkspaceProps {
   repoId: number;
   repoName: string;
   apiPrefix: string; // e.g., "/api/analysis/float", "/api/analysis/coredump", "/api/analysis/ut"
-  workspaceType: 'float' | 'coredump' | 'ut' | 'thread' | 'cjson' | 'deep-review' | 'unordered-collection';
+  workspaceType: string;
   onWorkflowSaved?: () => void;
 }
 

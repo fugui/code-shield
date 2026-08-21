@@ -14,5 +14,8 @@
   "notify_threshold": 20,
   "notify_cc": [],
   "timeout": 60,
+  "is_campaign": true,
+  "campaign_path": "deep-review",
+  "governance_mode": "defect_tracking",
   "is_active": true
 }

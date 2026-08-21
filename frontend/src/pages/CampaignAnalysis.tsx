@@ -47,14 +47,16 @@ const ChevronRightIcon = () => (
 );
 
 interface CampaignAnalysisProps {
-  campaign: 'coredump' | 'float' | 'thread' | 'cjson' | 'deep-review' | 'unordered-collection';
+  campaign: string;
   title: string;
   description: string;
   taskTypeName: string;
+  governanceMode?: 'defect_tracking' | 'entity_assessment';
 }
 
-export default function CampaignAnalysis({ campaign, title, description, taskTypeName }: CampaignAnalysisProps) {
+export default function CampaignAnalysis({ campaign, title, description, taskTypeName, governanceMode = 'defect_tracking' }: CampaignAnalysisProps) {
   const { showToast } = useToast();
+  const isEntityMode = governanceMode === 'entity_assessment';
   
   // Dashboard overall stats & states
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const [keyword, setKeyword] = useState('');
   
   // Sorting state
-  const [sortField, setSortField] = useState('total_issues');
+  const [sortField, setSortField] = useState(isEntityMode ? 'pass_rate' : 'total_issues');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   // Trend dimension
@@ -119,7 +121,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
     setExpandedDepts({});
     setDeptRepos({});
     setDeptReposLoading({});
-  }, [campaign]);
+    setSortField(isEntityMode ? 'pass_rate' : 'total_issues');
+  }, [campaign, isEntityMode]);
 
   // Initialize and load core resources
   useEffect(() => {
@@ -433,14 +436,19 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   };
 
   // KPIs Calculations
-  const totalIssuesCount = repos.reduce((acc, r) => acc + r.total_issues, 0);
+  const totalIssuesCount = repos.reduce((acc, r) => acc + (isEntityMode ? (r.total_entities || r.total_issues) : r.total_issues), 0);
   const totalOpenCount = repos.reduce((acc, r) => acc + r.open_issues, 0);
   const totalResolvedCount = repos.reduce((acc, r) => acc + r.resolved_issues, 0);
+  const totalPassCount = repos.reduce((acc, r) => acc + (r.pass_count || 0), 0);
   const totalScannedRepos = repos.filter(r => r.last_scan_time && r.last_scan_time !== '0001-01-01T00:00:00Z').length;
   
   const overallFixRate = (totalIssuesCount > 0)
     ? (totalResolvedCount / totalIssuesCount) * 100
     : 0;
+
+  const overallPassRate = (totalIssuesCount > 0)
+    ? (totalPassCount / totalIssuesCount) * 100
+    : (totalScannedRepos > 0 ? 100 : 0);
 
   const totalBlocking = repos.reduce((acc, r) => acc + r.blocking, 0);
   const totalCritical = repos.reduce((acc, r) => acc + r.critical, 0);
@@ -469,9 +477,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
             <PlayIcon />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>总追踪缺陷数</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{isEntityMode ? '评估实体/用例总数' : '总追踪缺陷数'}</div>
             <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{totalIssuesCount}</div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>已扫描 {totalScannedRepos} 个代码仓</div>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>已覆盖 {totalScannedRepos} 个代码仓</div>
           </div>
         </div>
 
@@ -480,9 +488,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
             <CheckCircleIcon />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>缺陷整改率</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#10b981' }}>{overallFixRate.toFixed(1)}%</div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>已解决与已验证占比</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{isEntityMode ? '用例综合合格率' : '缺陷整改率'}</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#10b981' }}>{(isEntityMode ? overallPassRate : overallFixRate).toFixed(1)}%</div>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{isEntityMode ? `合格数: ${totalPassCount} 个` : '已解决与已验证占比'}</div>
           </div>
         </div>
 
@@ -491,11 +499,11 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
             <ShieldAlertIcon />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>致命 / 严重缺陷</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{isEntityMode ? '高危/待改进用例' : '致命 / 严重缺陷'}</div>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#ef4444' }}>
               {totalBlocking} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: '#94a3b8' }}>/</span> {totalCritical}
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>高危隐患分布</div>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{isEntityMode ? '提前返回/空断言等' : '高危隐患分布'}</div>
           </div>
         </div>
 
@@ -504,9 +512,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
             <RefreshIcon />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>待流转缺陷</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#f97316' }}>{totalOpenCount}</div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>待研发确认与修复</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>{isEntityMode ? '达标/已闭环用例' : '待流转缺陷'}</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: isEntityMode ? '#10b981' : '#f97316' }}>{isEntityMode ? totalPassCount : totalOpenCount}</div>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{isEntityMode ? '状态已正常关闭' : '待研发确认与修复'}</div>
           </div>
         </div>
       </div>
@@ -515,13 +523,13 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
         <div style={{ display: 'flex', gap: '1.5rem' }}>
           <button 
-            onClick={() => { setActiveTab('repos'); setSortField('total_issues'); setSortOrder('desc'); }}
+            onClick={() => { setActiveTab('repos'); setSortField(isEntityMode ? 'pass_rate' : 'total_issues'); setSortOrder('desc'); }}
             style={{ padding: '0.75rem 0.25rem', border: 'none', background: 'transparent', borderBottom: activeTab === 'repos' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'repos' ? 'var(--primary-color)' : '#64748b', fontWeight: activeTab === 'repos' ? 600 : 500, cursor: 'pointer', fontSize: '0.9rem' }}
           >
             代码仓看板
           </button>
           <button 
-            onClick={() => { setActiveTab('depts'); setSortField('open_issues'); setSortOrder('desc'); }}
+            onClick={() => { setActiveTab('depts'); setSortField(isEntityMode ? 'pass_rate' : 'open_issues'); setSortOrder('desc'); }}
             style={{ padding: '0.75rem 0.25rem', border: 'none', background: 'transparent', borderBottom: activeTab === 'depts' ? '2px solid var(--primary-color)' : '2px solid transparent', color: activeTab === 'depts' ? 'var(--primary-color)' : '#64748b', fontWeight: activeTab === 'depts' ? 600 : 500, cursor: 'pointer', fontSize: '0.9rem' }}
           >
             部门排行榜
@@ -604,17 +612,25 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                     </th>
                     <th style={styles.tableHeader}>归属部门</th>
                     <th style={styles.tableHeader}>负责人</th>
-                    <th onClick={() => handleSort('total_issues')} style={styles.tableHeader}>
-                      跟踪缺陷数 {sortField === 'total_issues' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    <th onClick={() => handleSort(isEntityMode ? 'total_entities' : 'total_issues')} style={styles.tableHeader}>
+                      {isEntityMode ? '用例总数' : '跟踪缺陷数'} {(sortField === 'total_entities' || sortField === 'total_issues') && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
-                    <th onClick={() => handleSort('blocking')} style={styles.tableHeader}>
-                      致命 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th onClick={() => handleSort('critical')} style={styles.tableHeader}>
-                      严重 {sortField === 'critical' && (sortOrder === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th onClick={() => handleSort('fix_rate')} style={styles.tableHeader}>
-                      修复进度 {sortField === 'fix_rate' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    {isEntityMode ? (
+                      <th onClick={() => handleSort('pass_count')} style={styles.tableHeader}>
+                        合格数 {sortField === 'pass_count' && (sortOrder === 'asc' ? '↑' : '↓')}
+                      </th>
+                    ) : (
+                      <>
+                        <th onClick={() => handleSort('blocking')} style={styles.tableHeader}>
+                          致命 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th onClick={() => handleSort('critical')} style={styles.tableHeader}>
+                          严重 {sortField === 'critical' && (sortOrder === 'asc' ? '↑' : '↓')}
+                        </th>
+                      </>
+                    )}
+                    <th onClick={() => handleSort(isEntityMode ? 'pass_rate' : 'fix_rate')} style={styles.tableHeader}>
+                      {isEntityMode ? '合格率' : '修复进度'} {(sortField === 'pass_rate' || sortField === 'fix_rate') && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
                     <th onClick={() => handleSort('last_scan_time')} style={styles.tableHeader}>
                       最近扫描 {sortField === 'last_scan_time' && (sortOrder === 'asc' ? '↑' : '↓')}
@@ -630,7 +646,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                       </td>
                     </tr>
                   ) : (
-                    paginatedRepos.map((r, idx) => (
+                    paginatedRepos.map((r, idx) => {
+                      const rateVal = isEntityMode ? (r.pass_rate || 0) : (r.fix_rate || 0);
+                      return (
                       <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <td style={{ ...styles.tableCell, color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{startIndex + idx + 1}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 600 }}>
@@ -651,14 +669,20 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                         </td>
                         <td style={styles.tableCell}>{r.department || '-'}</td>
                         <td style={styles.tableCell}>{r.owner_name}</td>
-                        <td style={{ ...styles.tableCell, fontWeight: 500 }}>{r.total_issues}</td>
-                        <td style={{ ...styles.tableCell, color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
-                        <td style={{ ...styles.tableCell, color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                        <td style={{ ...styles.tableCell, fontWeight: 500 }}>{isEntityMode ? (r.total_entities || r.total_issues) : r.total_issues}</td>
+                        {isEntityMode ? (
+                          <td style={{ ...styles.tableCell, color: '#10b981', fontWeight: 600 }}>{r.pass_count || 0}</td>
+                        ) : (
+                          <>
+                            <td style={{ ...styles.tableCell, color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
+                            <td style={{ ...styles.tableCell, color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                          </>
+                        )}
                         <td style={styles.tableCell}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '110px' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: 600, width: '40px' }}>{r.fix_rate.toFixed(0)}%</span>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, width: '40px' }}>{rateVal.toFixed(0)}%</span>
                             <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: '#e2e8f0', overflow: 'hidden' }}>
-                              <div style={{ height: '100%', borderRadius: '3px', width: `${r.fix_rate}%`, background: r.fix_rate >= 85 ? '#10b981' : r.fix_rate >= 50 ? '#f59e0b' : '#ef4444' }} />
+                              <div style={{ height: '100%', borderRadius: '3px', width: `${rateVal}%`, background: rateVal >= 85 ? '#10b981' : rateVal >= 50 ? '#f59e0b' : '#ef4444' }} />
                             </div>
                           </div>
                         </td>
@@ -715,7 +739,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                           </div>
                         </td>
                       </tr>
-                    ))
+                    );})
                   )}
                 </tbody>
               </table>
@@ -738,13 +762,15 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                     <tr style={{ background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
                       <th onClick={() => handleSort('department')} style={styles.tableHeader}>部门 {sortField === 'department' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                       <th onClick={() => handleSort('scanned_repos')} style={styles.tableHeader}>覆盖代码仓 {sortField === 'scanned_repos' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th onClick={() => handleSort('total_issues')} style={styles.tableHeader}>总审计缺陷数 {sortField === 'total_issues' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th onClick={() => handleSort('open_issues')} style={styles.tableHeader}>未整改缺陷 {sortField === 'open_issues' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th onClick={() => handleSort('fix_rate')} style={styles.tableHeader}>缺陷整改率 {sortField === 'fix_rate' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => handleSort('total_issues')} style={styles.tableHeader}>{isEntityMode ? '总评估用例数' : '总审计缺陷数'} {sortField === 'total_issues' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => handleSort(isEntityMode ? 'pass_count' : 'open_issues')} style={styles.tableHeader}>{isEntityMode ? '合格用例数' : '未整改缺陷'} {(sortField === 'pass_count' || sortField === 'open_issues') && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => handleSort(isEntityMode ? 'pass_rate' : 'fix_rate')} style={styles.tableHeader}>{isEntityMode ? '用例合格率' : '缺陷整改率'} {(sortField === 'pass_rate' || sortField === 'fix_rate') && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {depts.map((d, index) => (
+                    {depts.map((d, index) => {
+                      const rateVal = isEntityMode ? (d.pass_rate || 0) : (d.fix_rate || 0);
+                      return (
                       <React.Fragment key={d.department}>
                         <tr 
                           onClick={() => toggleDeptExpand(d.department)}
@@ -763,10 +789,12 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                           </td>
                           <td style={styles.tableCell}>{d.scanned_repos}/{d.total_repos || 0}</td>
                           <td style={styles.tableCell}>{d.total_issues}</td>
-                          <td style={{ ...styles.tableCell, color: d.open_issues > 0 ? '#ef4444' : 'inherit', fontWeight: d.open_issues > 0 ? 600 : 'normal' }}>{d.open_issues}</td>
+                          <td style={{ ...styles.tableCell, color: isEntityMode ? '#10b981' : (d.open_issues > 0 ? '#ef4444' : 'inherit'), fontWeight: 600 }}>
+                            {isEntityMode ? (d.pass_count || 0) : d.open_issues}
+                          </td>
                           <td style={styles.tableCell}>
-                            <span style={{ fontWeight: 700, color: d.fix_rate >= 85 ? '#10b981' : d.fix_rate >= 50 ? '#f59e0b' : '#ef4444' }}>
-                              {d.fix_rate.toFixed(1)}%
+                            <span style={{ fontWeight: 700, color: rateVal >= 85 ? '#10b981' : rateVal >= 50 ? '#f59e0b' : '#ef4444' }}>
+                              {rateVal.toFixed(1)}%
                             </span>
                           </td>
                         </tr>
@@ -893,7 +921,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                           </tr>
                         )}
                       </React.Fragment>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

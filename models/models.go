@@ -2,6 +2,7 @@ package models
 
 import (
 	commonModels "code-common/backend/models"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type User = commonModels.User
@@ -20,6 +22,12 @@ const (
 	AuditLevelP0 = commonModels.AuditLevelP0
 	AuditLevelP1 = commonModels.AuditLevelP1
 	AuditLevelP2 = commonModels.AuditLevelP2
+)
+
+// ── GovernanceMode 枚举常量 ──
+const (
+	GovernanceModeDefectTracking   = "defect_tracking"   // 缺陷攻关模式
+	GovernanceModeEntityAssessment = "entity_assessment"  // 全量实体评估模式
 )
 
 type Repository struct {
@@ -62,9 +70,51 @@ type TaskType struct {
 	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"`      // score >= 此值才通知
 	NotifyCc        datatypes.JSON `json:"notify_cc"`                              // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
 	Timeout         int            `gorm:"default:30" json:"timeout"`              // AI 执行超时（分钟）
-	IsActive        bool           `gorm:"default:true" json:"is_active"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+
+	// ── 专项分析元数据扩展 ──
+	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`                   // 是否启用为专项分析
+	CampaignPath   string         `gorm:"size:100;default:''" json:"campaign_path"`                 // 路由别名 (空则默认同 Name)
+	GovernanceMode string         `gorm:"size:50;default:'defect_tracking'" json:"governance_mode"` // defect_tracking / entity_assessment
+	CampaignIcon   string         `gorm:"type:text" json:"campaign_icon"`                           // SVG 图标路径或图标类名
+	CampaignConfig datatypes.JSON `json:"campaign_config"`                                          // 高级配置，结构定义见 CampaignConfigSchema
+
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CampaignConfigSchema 高级专项配置 Schema
+type CampaignConfigSchema struct {
+	Version           int               `json:"version"`              // Schema 版本号，当前为 1
+	SeverityFilter    []string          `json:"severity_filter"`      // 需要展示的严重等级列表 (空=全部展示)
+	NotifyOnNewDefect bool              `json:"notify_on_new_defect"` // 新缺陷入库时是否触发通知
+	CustomLabels      map[string]string `json:"custom_labels"`        // 看板自定义标签 (如 {"metric": "合格率"})
+}
+
+// 模型写入校验 Hook
+func (t *TaskType) BeforeCreate(tx *gorm.DB) error { return t.validate() }
+func (t *TaskType) BeforeUpdate(tx *gorm.DB) error { return t.validate() }
+
+func (t *TaskType) validate() error {
+	if t.IsCampaign {
+		if t.GovernanceMode == "" {
+			t.GovernanceMode = GovernanceModeDefectTracking
+		}
+		switch t.GovernanceMode {
+		case GovernanceModeDefectTracking, GovernanceModeEntityAssessment:
+			// valid
+		default:
+			return fmt.Errorf("invalid governance_mode: %q, must be %q or %q",
+				t.GovernanceMode, GovernanceModeDefectTracking, GovernanceModeEntityAssessment)
+		}
+		if len(t.CampaignConfig) > 0 {
+			var cfg CampaignConfigSchema
+			if err := json.Unmarshal(t.CampaignConfig, &cfg); err != nil {
+				return fmt.Errorf("invalid campaign_config JSON: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // TaskDir 返回任务类型的文件目录（约定: tasks/<name-with-hyphens>/）
@@ -432,3 +482,33 @@ type DeepReviewFinding struct {
 	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
+
+// CampaignFinding 统一专项分析缺陷与实体评估记录模型（替代原 7 张独立分表）
+type CampaignFinding struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	TaskTypeID   uint           `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index;not null" json:"task_type_id"`
+	TaskType     TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	RepoID       uint           `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index;not null" json:"repo_id"`
+	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID uint           `gorm:"index" json:"task_report_id"`
+
+	// 缺陷/实体本身属性
+	FilePath    string `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:3;size:500;not null" json:"file_path"`
+	LineNumber  string `gorm:"size:255" json:"line_number"`
+	Title       string `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:4;size:500;not null" json:"title"` // 普通专项存缺陷标题，UT存测试用例名称
+	Detail      string `gorm:"type:text" json:"detail"`
+	Severity    string `gorm:"size:100;not null;index" json:"severity"` // 致命/严重/一般/建议/合格
+	Category    string `gorm:"size:255;index" json:"category"`
+	CodeSnippet string `gorm:"type:text" json:"code_snippet"`
+	Suggestion  string `gorm:"type:text" json:"suggestion"`
+
+	// 治理状态与审计跟踪
+	Status     string         `gorm:"default:'open';size:50;index" json:"status"` // open, analyzing, resolved, closed, invalid
+	AssigneeID *uint          `json:"assignee_id"`
+	Assignee   *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+	StatusLog  datatypes.JSON `json:"status_log"` // [{"status":"open","time":"...","user":"xxx","reason":"..."}]
+	Feedback   string         `gorm:"type:text" json:"feedback"`
+	CreatedAt  time.Time      `gorm:"index" json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+}
+

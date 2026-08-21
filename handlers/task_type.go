@@ -130,6 +130,9 @@ exit 0
 	// 同步 opencode agent 文件
 	services.SyncTaskTypeAgents(req)
 
+	// 主动失效专项分析内存缓存
+	InvalidateCampaignCache(req.CampaignPath, req.Name)
+
 	commonAudit.SetAuditContext(c, "task_type", "create", models.AuditLevelP0,
 		fmt.Sprintf("创建了任务类型: %s (%s)", req.DisplayName, req.Name),
 		"task_type", fmt.Sprintf("%d", req.ID), req.DisplayName,
@@ -161,6 +164,11 @@ func UpdateTaskType(c *gin.Context) {
 		NotifyCc        *json.RawMessage `json:"notify_cc"`
 		Timeout         *int             `json:"timeout"`
 		IsActive        *bool            `json:"is_active"`
+		IsCampaign      *bool            `json:"is_campaign"`
+		CampaignPath    *string          `json:"campaign_path"`
+		GovernanceMode  *string          `json:"governance_mode"`
+		CampaignIcon    *string          `json:"campaign_icon"`
+		CampaignConfig  *json.RawMessage `json:"campaign_config"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -201,13 +209,31 @@ func UpdateTaskType(c *gin.Context) {
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
 	}
+	if req.IsCampaign != nil {
+		updates["is_campaign"] = *req.IsCampaign
+	}
+	if req.CampaignPath != nil {
+		updates["campaign_path"] = *req.CampaignPath
+	}
+	if req.GovernanceMode != nil {
+		updates["governance_mode"] = *req.GovernanceMode
+	}
+	if req.CampaignIcon != nil {
+		updates["campaign_icon"] = *req.CampaignIcon
+	}
+	if req.CampaignConfig != nil {
+		updates["campaign_config"] = string(*req.CampaignConfig)
+	}
 
 	if err := models.DB.Model(&taskType).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task type"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task type: " + err.Error()})
 		return
 	}
 
 	models.DB.First(&taskType, id)
+
+	// 主动失效专项分析内存缓存
+	InvalidateCampaignCache(oldTaskType.CampaignPath, oldTaskType.Name, taskType.CampaignPath, taskType.Name)
 
 	// 将最新元数据重写回磁盘的 meta.json
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
@@ -236,6 +262,9 @@ func DeleteTaskType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task type"})
 		return
 	}
+
+	// 主动失效专项分析内存缓存
+	InvalidateCampaignCache(taskType.CampaignPath, taskType.Name)
 
 	// 物理删除磁盘文件夹，防止重启后再次被扫出装载
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
