@@ -165,13 +165,6 @@ function MainLayout({ children, taskTypes }: { children: React.ReactNode; taskTy
                   if (matched) {
                     return `${matched.display_name}专项`;
                   }
-                  if (subKey === 'ut') return '测试用例有效性分析';
-                  if (subKey === 'coredump') return 'Coredump风险攻关';
-                  if (subKey === 'float') return 'Python浮点数专项';
-                  if (subKey === 'thread') return '显式创建线程专项';
-                  if (subKey === 'cjson') return 'cJSON 内存泄露专项';
-                  if (subKey === 'unordered-collection') return '无序集合导出专项';
-                  if (subKey === 'deep-review') return '深度代码分析专项';
                   return '专项分析治理';
                 }
 

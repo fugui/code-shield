@@ -397,12 +397,12 @@ export default function Workbench() {
 						style={{ padding: '0.55rem 1.5rem 0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.875rem', cursor: 'pointer' }}
 					>
 						<option value="">全部专项类型</option>
-						<option value="ut">测试用例有效性</option>
-						<option value="coredump">Coredump 风险</option>
-						<option value="float">Python 浮点数比较</option>
-						<option value="thread">显式创建线程</option>
-						<option value="cjson">cJSON 内存泄漏</option>
-						<option value="unordered-collection">无序集合导出缺陷</option>
+						{Array.from(new Set(findings.map(f => JSON.stringify({ type: f.type, type_name: f.type_name }))))
+							.map(str => JSON.parse(str))
+							.filter(t => t.type)
+							.map(t => (
+								<option key={t.type} value={t.type}>{t.type_name || t.type}</option>
+							))}
 					</select>
 				</div>
 				<div>
