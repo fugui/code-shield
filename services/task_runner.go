@@ -266,7 +266,7 @@ func execCommandWithProcessGroup(ctx context.Context, dir string, name string, a
 	}
 }
 
-// prepareAndSync handles URL parsing and git operations
+// prepareAndSync handles URL parsing and git operations, including branch checkout
 func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	u, err := url.Parse(repoURL)
 	if err != nil {
@@ -282,14 +282,65 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 
 	updateTaskStatus(ctx.report.ID, models.StatusCloning)
 
+	branch := strings.TrimSpace(ctx.repo.Branch)
+	if branch == "" {
+		branch = "master"
+	}
+
 	var output []byte
 	var gitErr error
 	if stat, errStat := os.Stat(filepath.Join(ctx.codesPath, ".git")); errStat == nil && stat.IsDir() {
-		log.Printf("[TaskRunner] Running git pull in %s\n", ctx.codesPath)
-		output, _, gitErr = execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "pull")
+		log.Printf("[TaskRunner] Updating existing repository in %s for branch %s\n", ctx.codesPath, branch)
+		// 1. 检查是否存在 remote origin，若存在则拉取所有远程分支更新
+		remotesOut, _, _ := execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "remote")
+		hasOrigin := strings.Contains(string(remotesOut), "origin")
+
+		if hasOrigin {
+			if out, _, err := execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "fetch", "--all", "--prune"); err != nil {
+				output = out
+				gitErr = err
+			}
+		}
+
+		// 2. 切换到目标分支
+		if gitErr == nil {
+			if out, _, err := execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "checkout", "-f", branch); err != nil {
+				// 若本地分支尚不存在，尝试基于 origin 分支创建并切换
+				if hasOrigin {
+					if out2, _, err2 := execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "checkout", "-B", branch, "origin/"+branch); err2 != nil {
+						output = out2
+						gitErr = err2
+					}
+				} else {
+					output = out
+					gitErr = err
+				}
+			}
+		}
+
+		// 3. 拉取目标分支的最新代码
+		if gitErr == nil && hasOrigin {
+			out, _, err := execCommandWithProcessGroup(ctx.ctx, ctx.codesPath, "git", "-C", ctx.codesPath, "pull", "origin", branch)
+			if err != nil {
+				output = out
+				gitErr = err
+			}
+		}
 	} else {
-		log.Printf("[TaskRunner] Running git clone %s %s\n", repoURL, ctx.codesPath)
-		output, _, gitErr = execCommandWithProcessGroup(ctx.ctx, "", "git", "clone", repoURL, ctx.codesPath)
+		log.Printf("[TaskRunner] Running git clone (branch: %s) %s %s\n", branch, repoURL, ctx.codesPath)
+		// 尝试优先克隆指定分支
+		output, _, gitErr = execCommandWithProcessGroup(ctx.ctx, "", "git", "clone", "-b", branch, repoURL, ctx.codesPath)
+		if gitErr != nil {
+			// 若默认分支配置为 master 但远程实际只有 main 或其它默认分支，尝试普通 clone 兜底
+			if branch == "master" {
+				log.Printf("[TaskRunner] Clone with -b %s failed, trying fallback standard clone %s\n", branch, repoURL)
+				outputFallback, _, fallbackErr := execCommandWithProcessGroup(ctx.ctx, "", "git", "clone", repoURL, ctx.codesPath)
+				if fallbackErr == nil {
+					gitErr = nil
+					output = outputFallback
+				}
+			}
+		}
 	}
 
 	if gitErr != nil {

@@ -49,14 +49,28 @@ func TestGetExecutionLogsPagination(t *testing.T) {
 		_ = db.AutoMigrate(model)
 	}
 
+	// Create test department and owner to satisfy foreign key constraints
+	dept := models.Department{Name: "test-pag-dept-" + time.Now().Format("150405.000000")}
+	_ = db.Create(&dept).Error
+	defer db.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-pag-user-" + time.Now().Format("150405.000000"), Email: "pag@test.com"}
+	_ = db.Create(&user).Error
+	defer db.Delete(&models.User{}, user.ID)
+
 	// Create test repo and test task type
-	repo := models.Repository{Name: "test-pagination-repo", URL: "http://example.com/pagination-test.git"}
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-pagination-repo-" + time.Now().Format("150405.000000"),
+		URL:          "http://example.com/pagination-test.git",
+	}
 	if err := db.Create(&repo).Error; err != nil {
 		t.Fatalf("Failed to create test repo: %v", err)
 	}
 	defer db.Delete(&models.Repository{}, repo.ID)
 
-	taskType := models.TaskType{Name: "test-pagination-type", DisplayName: "测试分页扫描"}
+	taskType := models.TaskType{Name: "test-pag-type-" + time.Now().Format("150405.000000"), DisplayName: "测试分页扫描"}
 	if err := db.Create(&taskType).Error; err != nil {
 		t.Fatalf("Failed to create test task type: %v", err)
 	}
