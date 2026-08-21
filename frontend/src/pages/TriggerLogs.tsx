@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Pagination, usePagination } from '@code/common';
+import { Pagination, usePagination, Drawer, Modal } from '@code/common';
 import { useToast } from '../components/Toast';
 
 interface AuditLogItem {
@@ -607,31 +607,23 @@ function TriggerLogs() {
         )}
       </div>
 
-      {/* 批次明细抽屉 Modal / Drawer */}
-      {drawerOpen && selectedLog && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ width: '100%', maxWidth: '720px', background: 'var(--card-bg, #ffffff)', height: '100%', borderLeft: '1px solid var(--border-color, #e2e8f0)', boxShadow: '-4px 0 24px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column' }}>
-            {/* Drawer Header */}
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color, #e2e8f0)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--card-bg, #ffffff)' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-color, #0f172a)' }}>触发批次明细与受影响代码仓</h3>
-                  {renderTriggerTypeBadge(selectedLog.trigger_type)}
-                </div>
-                <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', fontFamily: 'monospace' }}>
-                  批次号: {selectedLog.trigger_batch} | 时间: {new Date(selectedLog.created_at).toLocaleString('zh-CN')}
-                </p>
-              </div>
-              <button
-                onClick={() => setDrawerOpen(false)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-secondary, #64748b)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}
-              >
-                ✕
-              </button>
-            </div>
-
+      {/* 批次明细抽屉 Drawer */}
+      <Drawer
+        open={drawerOpen && !!selectedLog}
+        onClose={() => setDrawerOpen(false)}
+        width="lg"
+        title={selectedLog ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span>触发批次明细与受影响代码仓</span>
+            {renderTriggerTypeBadge(selectedLog.trigger_type)}
+          </div>
+        ) : undefined}
+        subtitle={selectedLog ? `批次号: ${selectedLog.trigger_batch} | 时间: ${new Date(selectedLog.created_at).toLocaleString('zh-CN')}` : undefined}
+      >
+        {selectedLog && (
+          <>
             {/* Info Summary */}
-            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-color, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.875rem' }}>
+            <div style={{ padding: '1rem 1.25rem', background: 'var(--bg-color, #f8fafc)', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.875rem' }}>
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>操作人 / 客户端 IP:</span>
                 <p style={{ margin: '0.15rem 0 0 0', fontWeight: 600, color: 'var(--text-color, #0f172a)' }}>{selectedLog.operator_name} ({selectedLog.client_ip || '内部/System'})</p>
@@ -647,7 +639,7 @@ function TriggerLogs() {
             </div>
 
             {/* Sub-tasks list */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-color, #0f172a)' }}>
                 <span>下发的仓库任务列表 ({detailExecLogs.length} 个)</span>
                 <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary, #64748b)' }}>
@@ -706,104 +698,82 @@ function TriggerLogs() {
                 </div>
               )}
             </div>
+          </>
+        )}
+      </Drawer>
+
+      {/* 触发日志清理确认模态框 Modal */}
+      <Modal
+        open={cleanModalOpen}
+        onClose={() => setCleanModalOpen(false)}
+        title="清理历史触发日志"
+        width="sm"
+        footer={(
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button
+              type="button"
+              onClick={() => setCleanModalOpen(false)}
+              disabled={cleaning}
+              style={{
+                padding: '0.55rem 1.1rem',
+                border: '1px solid var(--border-color, #cbd5e1)',
+                borderRadius: '6px',
+                background: 'transparent',
+                color: 'var(--text-color)',
+                cursor: 'pointer',
+              }}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleExecuteClean}
+              disabled={cleaning}
+              style={{
+                padding: '0.55rem 1.1rem',
+                border: 'none',
+                borderRadius: '6px',
+                background: '#ef4444',
+                color: '#ffffff',
+                fontWeight: 600,
+                cursor: cleaning ? 'not-allowed' : 'pointer',
+                opacity: cleaning ? 0.7 : 1,
+              }}
+            >
+              {cleaning ? '正在清理...' : '确认执行清理'}
+            </button>
+          </div>
+        )}
+      >
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
+          清理将永久物理删除指定天数之前的扫描任务触发记录。该项操作将被记录在全局操作审计中。
+        </p>
+
+        <div>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-color)', marginBottom: '0.5rem' }}>
+            保留最近天数：
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input
+              type="number"
+              min="1"
+              max="3650"
+              value={cleanDays}
+              onChange={(e) => setCleanDays(Math.max(1, parseInt(e.target.value) || 1))}
+              style={{
+                flex: 1,
+                padding: '0.6rem 0.8rem',
+                border: '1px solid var(--border-color, #cbd5e1)',
+                borderRadius: '6px',
+                background: 'var(--bg-color, #f8fafc)',
+                color: 'var(--text-color)',
+                fontSize: '0.9rem',
+              }}
+            />
+            <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>天以前的记录将被删除</span>
           </div>
         </div>
-      )}
-
-      {/* 触发日志清理确认模态框 */}
-      {cleanModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              background: 'var(--card-bg, #ffffff)',
-              border: '1px solid var(--border-color, #e2e8f0)',
-              borderRadius: '12px',
-              padding: '1.75rem',
-              width: '420px',
-              maxWidth: '90vw',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-color)' }}>
-              清理历史触发日志
-            </h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '1.25rem' }}>
-              清理将永久物理删除指定天数之前的扫描任务触发记录。该项操作将被记录在全局操作审计中。
-            </p>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-color)', marginBottom: '0.5rem' }}>
-                保留最近天数：
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="number"
-                  min="1"
-                  max="3650"
-                  value={cleanDays}
-                  onChange={(e) => setCleanDays(Math.max(1, parseInt(e.target.value) || 1))}
-                  style={{
-                    flex: 1,
-                    padding: '0.6rem 0.8rem',
-                    border: '1px solid var(--border-color, #cbd5e1)',
-                    borderRadius: '6px',
-                    background: 'var(--bg-color, #f8fafc)',
-                    color: 'var(--text-color)',
-                    fontSize: '0.9rem',
-                  }}
-                />
-                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>天以前的记录将被删除</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                type="button"
-                onClick={() => setCleanModalOpen(false)}
-                disabled={cleaning}
-                style={{
-                  padding: '0.55rem 1.1rem',
-                  border: '1px solid var(--border-color, #cbd5e1)',
-                  borderRadius: '6px',
-                  background: 'transparent',
-                  color: 'var(--text-color)',
-                  cursor: 'pointer',
-                }}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteClean}
-                disabled={cleaning}
-                style={{
-                  padding: '0.55rem 1.1rem',
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: '#ef4444',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  cursor: cleaning ? 'not-allowed' : 'pointer',
-                  opacity: cleaning ? 0.7 : 1,
-                }}
-              >
-                {cleaning ? '正在清理...' : '确认执行清理'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Audit Logs Specific Styles */}
       <style>{`
