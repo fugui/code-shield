@@ -1178,3 +1178,112 @@ func TestCampaignHooks(t *testing.T) {
 		t.Errorf("expected obsolete finding to be logically resolved, got '%s'", fObsAfter.Status)
 	}
 }
+
+func TestPrepareAndSync_BranchSwitching(t *testing.T) {
+	// 1. 初始化临时目录与远程 Git 仓库
+	tempBase, err := os.MkdirTemp("", "test-prepare-sync-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempBase)
+
+	remoteRepoDir := filepath.Join(tempBase, "remote-repo")
+	if err := os.MkdirAll(remoteRepoDir, 0755); err != nil {
+		t.Fatalf("failed to create remote dir: %v", err)
+	}
+
+	exec.Command("git", "-C", remoteRepoDir, "init").Run()
+	exec.Command("git", "-C", remoteRepoDir, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", remoteRepoDir, "config", "user.email", "test@test.com").Run()
+
+	// 在 master 分支提交文件
+	os.WriteFile(filepath.Join(remoteRepoDir, "master.txt"), []byte("master content"), 0644)
+	exec.Command("git", "-C", remoteRepoDir, "add", ".").Run()
+	exec.Command("git", "-C", remoteRepoDir, "commit", "-m", "init master").Run()
+
+	// 创建并切换到 feature-branch 分支，提交 feature 文件
+	exec.Command("git", "-C", remoteRepoDir, "checkout", "-b", "feature-branch").Run()
+	os.WriteFile(filepath.Join(remoteRepoDir, "feature.txt"), []byte("feature content"), 0644)
+	exec.Command("git", "-C", remoteRepoDir, "add", ".").Run()
+	exec.Command("git", "-C", remoteRepoDir, "commit", "-m", "feature commit").Run()
+
+	// 切换回 master 分支
+	exec.Command("git", "-C", remoteRepoDir, "checkout", "master").Run()
+
+	// 2. 初始化测试数据库和配置
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
+	}
+	models.DB = testDB
+	_ = models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+
+	models.AppConfig.Storage.Root = filepath.Join(tempBase, "storage")
+	_ = os.MkdirAll(models.AppConfig.GetDataDir(), 0755)
+
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "test-dept-" + ts}
+	testDB.Create(&dept)
+	user := models.User{Username: "test-user-" + ts, Email: "test@test.com"}
+	testDB.Create(&user)
+
+	taskType := models.TaskType{
+		Name:        "test-type-" + ts,
+		DisplayName: "测试类型",
+	}
+	testDB.Create(&taskType)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-branch-repo-" + ts,
+		URL:          "file://" + remoteRepoDir,
+		Branch:       "feature-branch",
+	}
+	testDB.Create(&repo)
+
+	report := models.TaskReport{
+		RepoID:     repo.ID,
+		TaskTypeID: taskType.ID,
+		Status:     "pending",
+	}
+	testDB.Create(&report)
+
+	taskCtx := &taskContext{
+		ctx:      context.Background(),
+		repo:     repo,
+		report:   report,
+		taskType: taskType,
+	}
+
+	// 3. 首次同步：应当直接克隆并切换到 feature-branch
+	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+		t.Fatalf("prepareAndSync failed on feature-branch: %v", err)
+	}
+
+	// 验证 feature.txt 存在
+	if _, err := os.Stat(filepath.Join(taskCtx.codesPath, "feature.txt")); os.IsNotExist(err) {
+		t.Errorf("expected feature.txt to exist in checked out feature-branch")
+	}
+
+	// 4. 第二次同步：仓库切换回 master 分支并拉取
+	taskCtx.repo.Branch = "master"
+	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+		t.Fatalf("prepareAndSync failed on switching to master: %v", err)
+	}
+
+	// 验证 master 分支状态：master.txt 存在，而 feature.txt 不应存在于 master
+	if _, err := os.Stat(filepath.Join(taskCtx.codesPath, "master.txt")); os.IsNotExist(err) {
+		t.Errorf("expected master.txt to exist in checked out master branch")
+	}
+	if _, err := os.Stat(filepath.Join(taskCtx.codesPath, "feature.txt")); !os.IsNotExist(err) {
+		t.Errorf("expected feature.txt NOT to exist in checked out master branch")
+	}
+
+	// 验证数据库状态已记录为 success
+	var updatedReport models.TaskReport
+	models.DB.First(&updatedReport, report.ID)
+	if updatedReport.CloneStatus != "success" {
+		t.Errorf("expected clone_status to be 'success', got '%s'", updatedReport.CloneStatus)
+	}
+}
