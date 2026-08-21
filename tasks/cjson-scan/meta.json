@@ -1,9 +1,13 @@
 {
+  "id": 2,
   "name": "cjson_scan",
   "display_name": "cJSON 内存泄漏扫描",
   "description": "检测代码中 cJSON 库相关的内存申请与释放（内存泄漏）问题",
   "engine_mode": "chunked",
   "engine_config": {
+    "exclude_paths": [
+      "thirdparts"
+    ],
     "file_extensions": [
       ".c",
       ".cpp",
@@ -15,9 +19,6 @@
     ],
     "content_keywords": [
       "cJSON_"
-    ],
-    "exclude_paths": [
-      "thirdparts"
     ]
   },
   "ai_backend": "",
@@ -26,8 +27,12 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
-  "is_campaign": true,
+  "is_campaign": false,
   "campaign_path": "cjson",
   "governance_mode": "defect_tracking",
-  "is_active": true
+  "campaign_icon": "",
+  "campaign_config": null,
+  "is_active": false,
+  "created_at": "2026-07-24T09:11:10.530508+08:00",
+  "updated_at": "2026-08-22T07:29:58.865438+08:00"
 }

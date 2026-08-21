@@ -1,14 +1,15 @@
 {
+  "id": 5,
   "name": "float_comparison",
   "display_name": "Python 浮点数比较缺陷扫描",
-  "description": "专项分析 Python 代码中由于浮点数直接进行等值 (==)、不等 (!=) 或边界 (<=, >=) 比较导致的精度与逻辑缺陷风险",
+  "description": "专项分析 Python 代码中由于浮点数直接进行等值 (==)、不等 (!=) 或边界 (\u003c=, \u003e=) 比较导致的精度与逻辑缺陷风险",
   "engine_mode": "chunked",
   "engine_config": {
-    "file_extensions": [
-      ".py"
-    ],
     "exclude_paths": [
       "thirdparts"
+    ],
+    "file_extensions": [
+      ".py"
     ]
   },
   "ai_backend": "",
@@ -20,5 +21,9 @@
   "is_campaign": true,
   "campaign_path": "float",
   "governance_mode": "defect_tracking",
-  "is_active": true
+  "campaign_icon": "",
+  "campaign_config": null,
+  "is_active": false,
+  "created_at": "2026-07-24T09:11:10.537463+08:00",
+  "updated_at": "2026-08-22T07:29:40.654047+08:00"
 }
