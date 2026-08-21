@@ -289,7 +289,7 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
 
 
         {/* Content Body */}
-        <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, backgroundColor: activeTab === 'diagnostic' ? 'var(--bg-color)' : 'var(--card-bg, #ffffff)' }}>
+        <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, backgroundColor: activeTab === 'diagnostic' ? 'var(--bg-color)' : 'var(--card-bg)' }}>
           
           {activeTab === 'report' ? (
             /* Tab 1: Markdown Report */
