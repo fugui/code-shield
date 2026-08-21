@@ -139,7 +139,6 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
       title={isEditing ? '编辑定时策略' : '新增定时策略'}
       width="800px"
       footer={footerButtons}
-      className="shield-app"
       bodyStyle={{ padding: 0 }}
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
