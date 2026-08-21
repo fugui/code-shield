@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -558,8 +557,7 @@ func ExportDynamicCampaignFindings(c *gin.Context) {
 		return
 	}
 
-	sliceVal := reflect.ValueOf(dbFindings)
-	items := convertToExcelItems(sliceVal, isEntityMode)
+	items := convertCampaignFindingsToExcelItems(dbFindings)
 
 	generateCampaignExcel(c, repo.Name, tt.DisplayName, items, isEntityMode)
 }

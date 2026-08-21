@@ -261,90 +261,6 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 			commentMap[key] = comment
 			commentMap[keyAlt] = comment
 		}
-	} else if taskTypeName == "ut_effectiveness" {
-		var dbFindings []models.TestCaseFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeTestCaseKey(dbf.FilePath, dbf.TestCaseName)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
-	} else if taskTypeName == "coredump_risk" {
-		var dbFindings []models.CoredumpFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
-	} else if taskTypeName == "float_comparison" {
-		var dbFindings []models.FloatFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
-	} else if taskTypeName == "thread_create" {
-		var dbFindings []models.ThreadFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
-	} else if taskTypeName == "cjson_scan" {
-		var dbFindings []models.CjsonFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
-	} else if taskTypeName == "unordered_collection" {
-		var dbFindings []models.UnorderedCollectionFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
-	} else if taskTypeName == "deep_review" {
-		var dbFindings []models.DeepReviewFinding
-		if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
-			for _, dbf := range dbFindings {
-				key := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
-				statusMap[key] = dbf.Status
-				if dbf.Assignee != nil {
-					assigneeMap[key] = dbf.Assignee.Name
-				}
-				commentMap[key] = getLatestComment(dbf.StatusLog)
-			}
-		}
 	} else {
 		// Fallback to generic AnalysisFinding
 		var dbFindings []models.AnalysisFinding
@@ -869,29 +785,8 @@ func ClearInvalidReports(c *gin.Context) {
 		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.AnalysisFinding{}).Error; err != nil {
 			return err
 		}
-		// 删除统一专项 CampaignFinding 及历史各分表 (级联清理)
+		// 删除统一专项 CampaignFinding (级联清理)
 		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.CampaignFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.TestCaseFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.CoredumpFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.FloatFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.ThreadFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.CjsonFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.UnorderedCollectionFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.DeepReviewFinding{}).Error; err != nil {
 			return err
 		}
 		// 最后删除 TaskReport 自身记录
@@ -1119,29 +1014,8 @@ func DeleteTaskReport(c *gin.Context) {
 		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.AnalysisFinding{}).Error; err != nil {
 			return err
 		}
-		// 删除统一专项 CampaignFinding 及历史各分表 (级联清理)
+		// 删除统一专项 CampaignFinding (级联清理)
 		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.CampaignFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.TestCaseFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.CoredumpFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.FloatFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.ThreadFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.CjsonFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.UnorderedCollectionFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_report_id = ?", report.ID).Delete(&models.DeepReviewFinding{}).Error; err != nil {
 			return err
 		}
 		// 最后删除 TaskReport 自身记录

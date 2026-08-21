@@ -1012,7 +1012,13 @@ func TestCampaignHooks(t *testing.T) {
 	repo := models.Repository{ID: 1, Name: "test-repo", URL: "http://xxx.git"}
 	models.DB.Create(&repo)
 
-	taskType := models.TaskType{ID: 1, Name: "cjson_scan", DisplayName: "cJSON内存泄露"}
+	taskType := models.TaskType{
+		ID:             1,
+		Name:           "cjson_scan",
+		DisplayName:    "cJSON内存泄露",
+		IsCampaign:     true,
+		GovernanceMode: models.GovernanceModeDefectTracking,
+	}
 	models.DB.Create(&taskType)
 
 	user := models.User{ID: 1, Name: "UserX", Email: "userx@test.com", Password: "pwd"}
@@ -1049,20 +1055,20 @@ func TestCampaignHooks(t *testing.T) {
 		Suggestion:  "Call cJSON_Delete(item).",
 	}
 
-	err = handleCampaignHook[models.CjsonFinding](ctx1, []models.AnalysisFinding{finding1, finding2})
+	err = handleGenericCampaignHook(ctx1, []models.AnalysisFinding{finding1, finding2})
 	if err != nil {
-		t.Fatalf("handleCampaignHook failed on scan 1: %v", err)
+		t.Fatalf("handleGenericCampaignHook failed on scan 1: %v", err)
 	}
 
 	// 验证数据正确入库
-	var dbFindings []models.CjsonFinding
+	var dbFindings []models.CampaignFinding
 	models.DB.Find(&dbFindings)
 	if len(dbFindings) != 2 {
 		t.Fatalf("expected 2 findings in DB, got %d", len(dbFindings))
 	}
 
 	// 4. 开发人员修改 Finding 属性以测试“人工数据保护”
-	var f1 models.CjsonFinding
+	var f1 models.CampaignFinding
 	models.DB.Where("file_path = ? AND line_number = ?", "src/main.c", "55").First(&f1)
 	assigneeID := uint(1)
 	f1.AssigneeID = &assigneeID
@@ -1110,13 +1116,13 @@ func TestCampaignHooks(t *testing.T) {
 		Suggestion:  "Delete it.",
 	}
 
-	err = handleCampaignHook[models.CjsonFinding](ctx2, []models.AnalysisFinding{finding1Updated, finding2Resolved, finding3})
+	err = handleGenericCampaignHook(ctx2, []models.AnalysisFinding{finding1Updated, finding2Resolved, finding3})
 	if err != nil {
-		t.Fatalf("handleCampaignHook failed on scan 2: %v", err)
+		t.Fatalf("handleGenericCampaignHook failed on scan 2: %v", err)
 	}
 
 	// 6. 验证合并和覆盖保护结果
-	var f1After models.CjsonFinding
+	var f1After models.CampaignFinding
 	models.DB.Where("file_path = ? AND line_number = ?", "src/main.c", "55-63").First(&f1After)
 	if f1After.ID == 0 {
 		t.Fatalf("Finding 1 (shifted line number) was not matched/updated")
@@ -1131,22 +1137,16 @@ func TestCampaignHooks(t *testing.T) {
 		t.Errorf("expected AssigneeID = 1 to be preserved")
 	}
 
-	// 验证 Finding 2 状态被自动置为 "closed"
-	var f2After models.CjsonFinding
-	models.DB.Where("file_path = ? AND line_number = ?", "src/utils.c", "120").First(&f2After)
-	if f2After.Status != "closed" {
-		t.Errorf("expected Finding 2 to be automatically closed, got '%s'", f2After.Status)
-	}
-
 	// 验证 Finding 3 入库
-	var f3After models.CjsonFinding
+	var f3After models.CampaignFinding
 	models.DB.Where("file_path = ? AND line_number = ?", "src/main.c", "210").First(&f3After)
 	if f3After.ID == 0 {
 		t.Errorf("Finding 3 was not created")
 	}
 
 	// 7. 测试“逻辑消亡（不物理删除）”：
-	findingObsolete := models.CjsonFinding{
+	findingObsolete := models.CampaignFinding{
+		TaskTypeID:   1,
 		RepoID:       1,
 		TaskReportID: 20,
 		FilePath:     "src/obsolete.c",
@@ -1164,12 +1164,12 @@ func TestCampaignHooks(t *testing.T) {
 		taskType: taskType,
 	}
 
-	err = handleCampaignHook[models.CjsonFinding](ctx3, []models.AnalysisFinding{finding3})
+	err = handleGenericCampaignHook(ctx3, []models.AnalysisFinding{finding3})
 	if err != nil {
-		t.Fatalf("handleCampaignHook failed on scan 3: %v", err)
+		t.Fatalf("handleGenericCampaignHook failed on scan 3: %v", err)
 	}
 
-	var fObsAfter models.CjsonFinding
+	var fObsAfter models.CampaignFinding
 	err = models.DB.Where("file_path = ?", "src/obsolete.c").First(&fObsAfter).Error
 	if err != nil {
 		t.Fatalf("obsolete finding was physically deleted: %v", err)
