@@ -126,6 +126,7 @@ function TaskTypeManagement() {
       setShowForm(false);
       resetForm();
       fetchTaskTypes();
+      window.dispatchEvent(new CustomEvent('shield-task-types-changed'));
     } else {
       const d = await res.json();
       showToast(d.error || '操作失败', 'error');
@@ -138,6 +139,7 @@ function TaskTypeManagement() {
     if (res.ok) {
       showToast('已删除', 'success');
       fetchTaskTypes();
+      window.dispatchEvent(new CustomEvent('shield-task-types-changed'));
     } else {
       const d = await res.json();
       showToast(d.error || '删除失败', 'error');
@@ -145,11 +147,14 @@ function TaskTypeManagement() {
   };
 
   const handleToggleActive = async (tt: any) => {
-    await fetch(`/api/task-types/${tt.id}`, {
+    const res = await fetch(`/api/task-types/${tt.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_active: !tt.is_active })
     });
-    fetchTaskTypes();
+    if (res.ok) {
+      fetchTaskTypes();
+      window.dispatchEvent(new CustomEvent('shield-task-types-changed'));
+    }
   };
 
   // File editor functions

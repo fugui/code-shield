@@ -31,6 +31,15 @@ const DEFAULT_CAMPAIGN_ICONS: Record<string, string> = {
 
 const DEFAULT_ICON = 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01';
 
+let currentTaskTypes: TaskTypeMenuMeta[] | null = null;
+const menuListeners = new Set<(config: ModuleMenuConfig) => void>();
+
+function notifyListeners(config: ModuleMenuConfig) {
+  menuListeners.forEach(listener => {
+    try { listener(config); } catch (e) { console.error('Menu listener error:', e); }
+  });
+}
+
 export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGroup[] => {
   let campaignItems: SubMenuItem[] = [];
 
@@ -49,8 +58,8 @@ export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGrou
       });
   }
 
-  // 兜底静态内置项（未获取到动态列表时）
-  if (campaignItems.length === 0) {
+  // 仅在完全未提供任务类型列表（如离线/未完成初始化）时提供兜底静态项
+  if (!taskTypes && campaignItems.length === 0) {
     campaignItems = [
       { path: '/analysis/ut', label: '测试用例有效性', headerTitle: '测试有效性分析', icon: DEFAULT_CAMPAIGN_ICONS['ut'] },
       { path: '/analysis/coredump', label: 'Coredump风险攻关', icon: DEFAULT_CAMPAIGN_ICONS['coredump'] },
@@ -89,6 +98,54 @@ export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGrou
     },
   ];
 };
+
+export async function fetchShieldMenuConfig(): Promise<ModuleMenuConfig> {
+  try {
+    const res = await fetch('/api/task-types?active_only=true');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        currentTaskTypes = data;
+        const dynamicConfig: ModuleMenuConfig = {
+          moduleKey: 'shield',
+          moduleName: '代码质量 (Code Shield)',
+          groups: buildDynamicMenuGroups(data)
+        };
+        shieldMenuConfig.groups = dynamicConfig.groups;
+        notifyListeners(dynamicConfig);
+        return dynamicConfig;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch dynamic task types for shield menu:', err);
+  }
+  return shieldMenuConfig;
+}
+
+export function subscribeMenuChanges(listener: (config: ModuleMenuConfig) => void): () => void {
+  menuListeners.add(listener);
+  if (currentTaskTypes) {
+    listener({
+      moduleKey: 'shield',
+      moduleName: '代码质量 (Code Shield)',
+      groups: buildDynamicMenuGroups(currentTaskTypes)
+    });
+  } else {
+    fetchShieldMenuConfig();
+  }
+  return () => {
+    menuListeners.delete(listener);
+  };
+}
+
+// 监听全局任务类型变更事件
+if (typeof window !== 'undefined') {
+  window.addEventListener('shield-task-types-changed', () => {
+    fetchShieldMenuConfig();
+  });
+  // 模块加载时异步刷新一次
+  fetchShieldMenuConfig();
+}
 
 export const shieldMenuConfig: ModuleMenuConfig = {
   moduleKey: 'shield',
