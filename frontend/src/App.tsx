@@ -8,13 +8,6 @@ import PublicReportFindings from './pages/PublicReportFindings';
 import ScanManagement from './pages/ScanManagement';
 import TaskTypeManagement from './pages/TaskTypeManagement';
 import ExecutionLogs from './pages/ExecutionLogs';
-import UTAnalysis from './pages/UTAnalysis';
-import CoredumpAnalysis from './pages/CoredumpAnalysis';
-import FloatAnalysis from './pages/FloatAnalysis';
-import ThreadAnalysis from './pages/ThreadAnalysis';
-import CjsonAnalysis from './pages/CjsonAnalysis';
-import UnorderedCollectionAnalysis from './pages/UnorderedCollectionAnalysis';
-import DeepReviewAnalysis from './pages/DeepReviewAnalysis';
 import UniversalCampaignPage from './pages/UniversalCampaignPage';
 import Workbench from './pages/Workbench';
 
