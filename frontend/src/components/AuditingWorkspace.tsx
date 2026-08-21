@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Pagination } from '@code/common';
+import { Pagination, Drawer } from '@code/common';
 import { apiUrl } from '../config';
 import { useToast } from './Toast';
 import MemberSearchSelect from './MemberSearchSelect';
@@ -482,23 +482,73 @@ export default function AuditingWorkspace({
 
   const activeAssignee = editingFinding?.assignee || editingFinding?.Assignee;
 
+  const workspaceTitle = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--primary-color)', fontWeight: 700, letterSpacing: '0.05em' }}>
+        {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : workspaceType === 'thread' ? '显式创建线程安全审计工作区' : workspaceType === 'cjson' ? 'cJSON内存泄漏安全审计工作区' : workspaceType === 'unordered-collection' ? '无序集合导出安全审计工作区' : '代码仓缺陷审计工作区'}
+      </span>
+      <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-color)' }}>📁 {repoName}</span>
+    </div>
+  );
+
+  const workspaceExtra = (
+    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <button
+        className="btn btn-outline"
+        onClick={handleDownloadJson}
+        style={{ 
+          padding: '0.35rem 0.8rem', 
+          fontSize: '0.85rem', 
+          borderColor: '#0284c7', 
+          color: '#0284c7', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '0.35rem' 
+        }}
+        title="下载全部问题记录 (JSON)"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="17" x2="15" y2="17"/>
+        </svg>
+        下载 JSON
+      </button>
+      <button
+        className="btn btn-outline"
+        onClick={handleDownloadExcel}
+        style={{ 
+          padding: '0.35rem 0.8rem', 
+          fontSize: '0.85rem', 
+          borderColor: '#16a34a', 
+          color: '#16a34a', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '0.35rem' 
+        }}
+        title="下载全部问题记录 (Excel)"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        下载 Excel
+      </button>
+    </div>
+  );
+
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      right: 0,
-      bottom: 0,
-      width: '85vw',
-      background: 'var(--card-bg)',
-      boxShadow: '-10px 0 25px -5px rgba(0,0,0,0.15)',
-      zIndex: 1000,
-      display: 'flex',
-      flexDirection: 'column',
-      borderLeft: '1px solid var(--border-color)',
-      animation: 'slideIn 0.3s ease-out'
-    }}>
+    <Drawer
+      open={isOpen}
+      onClose={onClose}
+      width="85vw"
+      title={workspaceTitle}
+      extra={workspaceExtra}
+      bodyStyle={{ padding: 0, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}
+      destroyOnClose={false}
+    >
       <style>{`
-        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .workspace-location-link {
           display: inline-flex;
           align-items: center;
@@ -542,77 +592,6 @@ export default function AuditingWorkspace({
           box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08);
         }
       `}</style>
-      
-      {/* Workspace Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-        <div>
-          <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--primary-color)', fontWeight: 700, letterSpacing: '0.05em' }}>
-            {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : workspaceType === 'thread' ? '显式创建线程安全审计工作区' : workspaceType === 'cjson' ? 'cJSON内存泄漏安全审计工作区' : workspaceType === 'unordered-collection' ? '无序集合导出安全审计工作区' : '代码仓缺陷审计工作区'}
-          </span>
-          <h3 style={{ margin: '0.1rem 0 0 0', fontSize: '1.2rem', fontWeight: 700 }}>📁 {repoName}</h3>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button
-            className="btn btn-outline"
-            onClick={handleDownloadJson}
-            style={{ 
-              padding: '0.35rem 0.8rem', 
-              fontSize: '0.85rem', 
-              borderColor: '#0284c7', 
-              color: '#0284c7', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.35rem' 
-            }}
-            title="下载全部问题记录 (JSON)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/>
-            </svg>
-            下载 JSON
-          </button>
-          <button
-            className="btn btn-outline"
-            onClick={handleDownloadExcel}
-            style={{ 
-              padding: '0.35rem 0.8rem', 
-              fontSize: '0.85rem', 
-              borderColor: '#16a34a', 
-              color: '#16a34a', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.35rem' 
-            }}
-            title="下载全部问题记录 (Excel)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            下载 Excel
-          </button>
-          <button 
-            className="btn btn-outline" 
-            onClick={onClose}
-            style={{ 
-              padding: '0.35rem 0.8rem', 
-              fontSize: '0.85rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem'
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-            关闭工作区
-          </button>
-        </div>
-      </div>
 
       {/* Workspace Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -1080,6 +1059,6 @@ export default function AuditingWorkspace({
           )}
         </div>
       </div>
-    </div>
+    </Drawer>
   );
 }

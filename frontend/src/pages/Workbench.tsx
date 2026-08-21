@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { Drawer } from '@code/common';
 import { useToast } from '../components/Toast';
 import MemberSearchSelect from '../components/MemberSearchSelect';
 import ReportSidebar from '../components/ReportSidebar';
@@ -651,7 +652,7 @@ export default function Workbench() {
 														</button>
 													</div>
 												) : <span style={{ color: 'var(--text-secondary)' }}>-</span>}
-											</td>
+										</td>
 											{/* 历史报告 + > 箭头 */}
 											<td style={{ textAlign: 'center' }}>
 												<button
@@ -676,188 +677,164 @@ export default function Workbench() {
 				)}
 			</div>
 
-			{/* Slide-out detail & audit drawer */}
-			{selectedFinding && (
-				<div
-					onClick={() => setSelectedFinding(null)}
-					style={{
-						position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', zIndex: 999,
-						animation: 'fadeIn 0.2s ease-out'
-					}}
-				>
-					<div
-						onClick={e => e.stopPropagation()}
-						style={{
-							position: 'fixed', top: 0, right: 0, bottom: 0, width: '1100px', maxWidth: '100vw',
-							background: 'var(--card-bg)', borderLeft: '1px solid var(--border-color)', boxShadow: '-10px 0 30px rgba(0,0,0,0.2)',
-							zIndex: 1000, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-							animation: 'slideLeft 0.25s cubic-bezier(0.22, 1, 0.36, 1)'
-						}}
-					>
-						{/* Drawer Header */}
-						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-							<div>
-								<span style={{ fontSize: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary-color)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, marginRight: '0.5rem' }}>
-									{selectedFinding.type_name}
-								</span>
-								<span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>问题单ID: #{selectedFinding.id}</span>
+			{/* 缺陷详情与审计抽屉 Drawer */}
+			<Drawer
+				open={!!selectedFinding}
+				onClose={() => setSelectedFinding(null)}
+				width="xl"
+				title={selectedFinding ? (
+					<div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+						<span style={{ fontSize: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary-color)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600 }}>
+							{selectedFinding.type_name}
+						</span>
+						<span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>问题单ID: #{selectedFinding.id}</span>
+					</div>
+				) : undefined}
+			>
+				{selectedFinding && (
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+						<div>
+							<h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-color)', textAlign: 'left', lineHeight: 1.4 }}>
+								{selectedFinding.title}
+							</h3>
+							<div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-color)', padding: '0.45rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box', textAlign: 'left' }}>
+								<div>
+									📁 <strong>代码仓:</strong> {selectedFinding.repo_name}<br />
+									📄 <strong>文件位置:</strong> {selectedFinding.file_path}:{selectedFinding.line_number}
+								</div>
+								<button
+									type="button"
+									style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', padding: 0, borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s ease-in-out' }}
+									title="复制位置"
+									onClick={() => handleCopyLocation(selectedFinding.file_path, selectedFinding.line_number)}
+								>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+										<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+										<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+									</svg>
+								</button>
 							</div>
-							<button
-								onClick={() => setSelectedFinding(null)}
-								style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', borderRadius: '4px' }}
-								onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-color)'}
-								onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-							>
-								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-									<line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-								</svg>
-							</button>
 						</div>
 
-						{/* Drawer Content Area */}
-						<div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+						{/* Detail */}
+						<div>
+							<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left' }}>缺陷描述</h4>
+							<div style={{ padding: '0.75rem', background: 'var(--bg-color)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, textAlign: 'left', whiteSpace: 'pre-wrap' }}>
+								{selectedFinding.detail}
+							</div>
+						</div>
+
+						{/* Code snippet */}
+						{selectedFinding.code_snippet && (
 							<div>
-								<h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: 700, color: 'var(--text-color)', textAlign: 'left', lineHeight: 1.4 }}>
-									{selectedFinding.title}
-								</h3>
-								<div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-color)', padding: '0.45rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxSizing: 'border-box', textAlign: 'left' }}>
-									<div>
-										📁 <strong>代码仓:</strong> {selectedFinding.repo_name}<br />
-										📄 <strong>文件位置:</strong> {selectedFinding.file_path}:{selectedFinding.line_number}
-									</div>
-									<button
-										type="button"
-										style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', padding: 0, borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s ease-in-out' }}
-										title={`复制 ${getLocationText(selectedFinding.file_path, selectedFinding.line_number)} （可用于 VSCode Ctrl+P 快捷定位）`}
-										onClick={() => handleCopyLocation(selectedFinding.file_path, selectedFinding.line_number)}
-										onMouseEnter={e => { e.currentTarget.style.color = '#2563eb'; e.currentTarget.style.borderColor = 'rgba(37, 99, 235, 0.3)'; e.currentTarget.style.background = 'rgba(37, 99, 235, 0.08)'; }}
-										onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.background = 'var(--card-bg)'; }}
-									>
-										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-											<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-											<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-										</svg>
-									</button>
+								<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left' }}>代码片段</h4>
+								<pre style={{ margin: 0, padding: '0.75rem', background: 'var(--bg-color)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.8rem', fontFamily: 'monospace', overflowX: 'auto', textAlign: 'left', color: 'var(--text-color)' }}>
+									{selectedFinding.code_snippet}
+								</pre>
+							</div>
+						)}
+
+						{/* Suggestion */}
+						{selectedFinding.suggestion && (
+							<div>
+								<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: '#10b981', textAlign: 'left' }}>💡 修复建议</h4>
+								<div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, textAlign: 'left', whiteSpace: 'pre-wrap' }}>
+									{selectedFinding.suggestion}
 								</div>
 							</div>
+						)}
 
-							<div>
-								<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-color)', textAlign: 'left' }}>缺陷详情</h4>
-								<div style={{ fontSize: '0.85rem', color: 'var(--text-color)', textAlign: 'left', lineHeight: 1.5, background: 'rgba(239, 68, 68, 0.03)', border: '1px solid rgba(239, 68, 68, 0.12)', padding: '0.75rem 1rem', borderRadius: '6px', whiteSpace: 'pre-wrap' }}>
-									{selectedFinding.detail}
-								</div>
-							</div>
-
-							{selectedFinding.code_snippet && (
-								<div>
-									<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-color)', textAlign: 'left' }}>相关代码片段</h4>
-									<pre style={{ margin: 0, padding: '0.85rem', background: '#0f172a', color: '#e2e8f0', borderRadius: '6px', fontSize: '0.775rem', fontFamily: 'monospace', overflowX: 'auto', border: '1px solid #1e293b', textAlign: 'left', lineHeight: 1.4 }}>
-										<code>{selectedFinding.code_snippet}</code>
-									</pre>
-								</div>
-							)}
-
-							{selectedFinding.suggestion && selectedFinding.suggestion !== '无' && (
-								<div>
-									<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.875rem', fontWeight: 600, color: '#15803d', textAlign: 'left' }}>修复建议</h4>
-									<div style={{ margin: 0, padding: '0.75rem 1rem', background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, whiteSpace: 'pre-wrap', textAlign: 'left' }}>
-										{selectedFinding.suggestion}
-									</div>
-								</div>
-							)}
-
-							{/* Audit flow form */}
-							<div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-								<h4 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: 700, textAlign: 'left', color: 'var(--text-color)' }}>治理与审计处理</h4>
-								<form onSubmit={handleSaveAudit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-									<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-										<div>
-											<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-												<label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'left', fontWeight: 500 }}>指派处理人</label>
-												{myInfo && (
-													<button
-														type="button"
-														onClick={() => setEditAssignee(myInfo.id)}
-														style={{
-															background: 'none',
-															border: 'none',
-															color: Number(editAssignee) === myInfo.id ? '#10b981' : '#3b82f6',
-															fontSize: '0.75rem',
-															cursor: 'pointer',
-															fontWeight: 500,
-															display: 'flex',
-															alignItems: 'center',
-															gap: '2px',
-															padding: 0
-														}}
-													>
-														{Number(editAssignee) === myInfo.id ? '✓ 已指派给自己' : '👤 指派给我'}
-													</button>
-												)}
-											</div>
-											<MemberSearchSelect
-												value={editAssignee}
-												onChange={setEditAssignee}
-												style={{ width: '100%' }}
-											/>
-										</div>
-										<div>
-											<label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem', textAlign: 'left', fontWeight: 500 }}>审计治理状态</label>
-											<select
-												value={editStatus}
-												onChange={e => setEditStatus(e.target.value)}
-												style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.85rem', outline: 'none', cursor: 'pointer' }}
-											>
-												<option value="open">待处理 (Open)</option>
-												<option value="analyzing">问题分析 (Analyzing)</option>
-												<option value="resolved">已解决 (Resolved)</option>
-												<option value="closed">已关闭 (Closed)</option>
-												<option value="invalid">忽略/误报 (Invalid)</option>
-											</select>
-										</div>
-									</div>
-
+						{/* Audit flow form */}
+						<div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+							<h4 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: 700, textAlign: 'left', color: 'var(--text-color)' }}>治理与审计处理</h4>
+							<form onSubmit={handleSaveAudit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+								<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
 									<div>
-										<label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem', textAlign: 'left', fontWeight: 500 }}>处理反馈与跟踪意见</label>
-										<textarea
-											rows={3}
-											placeholder="请输入修改说明或验证意见..."
-											value={editFeedback}
-											onChange={e => setEditFeedback(e.target.value)}
-											style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-color)', fontSize: '0.85rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+										<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+											<label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'left', fontWeight: 500 }}>指派处理人</label>
+											{myInfo && (
+												<button
+													type="button"
+													onClick={() => setEditAssignee(myInfo.id)}
+													style={{
+														background: 'none',
+														border: 'none',
+														color: Number(editAssignee) === myInfo.id ? '#10b981' : '#3b82f6',
+														fontSize: '0.75rem',
+														cursor: 'pointer',
+														fontWeight: 500,
+														display: 'flex',
+														alignItems: 'center',
+														gap: '2px',
+														padding: 0
+													}}
+												>
+													{Number(editAssignee) === myInfo.id ? '✓ 已指派给自己' : '👤 指派给我'}
+												</button>
+											)}
+										</div>
+										<MemberSearchSelect
+											value={editAssignee}
+											onChange={setEditAssignee}
+											style={{ width: '100%' }}
 										/>
 									</div>
-
-									<div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-										<button
-											type="button"
-											className="btn btn-outline"
-											onClick={() => setSelectedFinding(null)}
-											style={{ padding: '0.45rem 1.25rem', fontSize: '0.85rem' }}
+									<div>
+										<label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem', textAlign: 'left', fontWeight: 500 }}>审计治理状态</label>
+										<select
+											value={editStatus}
+											onChange={e => setEditStatus(e.target.value)}
+											style={{ width: '100%', padding: '0.6rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.85rem', outline: 'none', cursor: 'pointer' }}
 										>
-											取消
-										</button>
-										<button
-											type="submit"
-											className="btn"
-											disabled={saving}
-											style={{ padding: '0.45rem 1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-										>
-											{saving ? '保存中...' : '提交审计'}
-										</button>
+											<option value="open">待处理 (Open)</option>
+											<option value="analyzing">问题分析 (Analyzing)</option>
+											<option value="resolved">已解决 (Resolved)</option>
+											<option value="closed">已关闭 (Closed)</option>
+											<option value="invalid">忽略/误报 (Invalid)</option>
+										</select>
 									</div>
-								</form>
-							</div>
+								</div>
 
-							{/* Flow logs timeline */}
-							<div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', paddingBottom: '1rem' }}>
-								<h4 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: 700, textAlign: 'left', color: 'var(--text-color)' }}>状态流转演进历史</h4>
-								{renderStatusLogs(selectedFinding)}
-							</div>
+								<div>
+									<label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.25rem', textAlign: 'left', fontWeight: 500 }}>处理反馈与跟踪意见</label>
+									<textarea
+										rows={3}
+										placeholder="请输入修改说明或验证意见..."
+										value={editFeedback}
+										onChange={e => setEditFeedback(e.target.value)}
+										style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-color)', fontSize: '0.85rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+									/>
+								</div>
+
+								<div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+									<button
+										type="button"
+										className="btn btn-outline"
+										onClick={() => setSelectedFinding(null)}
+										style={{ padding: '0.45rem 1.25rem', fontSize: '0.85rem' }}
+									>
+										取消
+									</button>
+									<button
+										type="submit"
+										className="btn"
+										disabled={saving}
+										style={{ padding: '0.45rem 1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+									>
+										{saving ? '保存中...' : '提交审计'}
+									</button>
+								</div>
+							</form>
+						</div>
+
+						{/* Flow logs timeline */}
+						<div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', paddingBottom: '1rem' }}>
+							<h4 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: 700, textAlign: 'left', color: 'var(--text-color)' }}>状态流转演进历史</h4>
+							{renderStatusLogs(selectedFinding)}
 						</div>
 					</div>
-				</div>
-			)}
+				)}
+			</Drawer>
 
 			<ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
 		</div>
