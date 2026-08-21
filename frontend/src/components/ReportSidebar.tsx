@@ -272,7 +272,6 @@ export default function ReportSidebar({ open, onClose, markdown, loading, report
         width="min(960px, 92vw)"
         extra={headerActions}
         bodyStyle={{ padding: 0 }}
-        className="shield-app"
       >
 
       <div style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
