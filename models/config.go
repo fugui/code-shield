@@ -35,10 +35,10 @@ type Config struct {
 		Port              string        `yaml:"port"`
 		DataDir           string        `yaml:"data_dir"`            // 运行时数据目录，下设 codes/ 和 reports/（默认 ./data）
 		GinLog            bool          `yaml:"gin_log"`             // 是否打印 GIN 请求日志，默认 false
-		ReadTimeout       time.Duration `yaml:"read_timeout"`        // 读取请求超时，默认 15s
+		ReadTimeout       time.Duration `yaml:"read_timeout"`        // 读取请求超时，默认 120s
 		ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"` // 读取 header 超时，默认 10s
-		WriteTimeout      time.Duration `yaml:"write_timeout"`       // 写入响应超时，默认 15s
-		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 60s
+		WriteTimeout      time.Duration `yaml:"write_timeout"`       // 写入响应超时，默认 120s
+		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 180s
 		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
 		WorkerCount       int           `yaml:"worker_count"`        // 全局任务并发数，默认 5
 		MaxQueueSize      int           `yaml:"max_queue_size"`      // 任务排队最大上限，默认 2000，-1 表示不限制
