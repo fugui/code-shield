@@ -15,9 +15,10 @@ import ThreadAnalysis from './pages/ThreadAnalysis';
 import CjsonAnalysis from './pages/CjsonAnalysis';
 import UnorderedCollectionAnalysis from './pages/UnorderedCollectionAnalysis';
 import DeepReviewAnalysis from './pages/DeepReviewAnalysis';
+import UniversalCampaignPage from './pages/UniversalCampaignPage';
 import Workbench from './pages/Workbench';
 
-import { menuGroups } from './menu';
+import { buildDynamicMenuGroups, TaskTypeMenuMeta } from './menu';
 import { ToastProvider } from './components/Toast';
 import { UnifiedLogin, ConfirmProvider, UserMenu, useCurrentUser, setupFetchInterceptor } from '@code/common';
 
@@ -64,7 +65,7 @@ const AdminRoute = ({ children }: { children: JSX.Element }) => {
   return children;
 };
 
-function Sidebar() {
+function Sidebar({ taskTypes }: { taskTypes: TaskTypeMenuMeta[] }) {
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -79,6 +80,8 @@ function Sidebar() {
       })
       .catch(() => {});
   }, []);
+
+  const menuGroups = buildDynamicMenuGroups(taskTypes);
 
   return (
     <aside style={{ width: '260px', background: 'var(--card-bg)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0 }}>
@@ -133,7 +136,7 @@ function Sidebar() {
 
 export const EmbeddedContext = React.createContext(false);
 
-function MainLayout({ children }: { children: React.ReactNode }) {
+function MainLayout({ children, taskTypes }: { children: React.ReactNode; taskTypes: TaskTypeMenuMeta[] }) {
   const location = useLocation();
   const isEmbedded = React.useContext(EmbeddedContext);
   const { user, logout } = useCurrentUser({ tokenKey: AUTH_TOKEN_KEY });
@@ -148,7 +151,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={isEmbedded ? "embedded" : ""} style={{ display: 'flex', minHeight: isEmbedded ? 'auto' : '100vh', background: 'var(--bg-color)', flex: 1 }}>
-      {!isEmbedded && <Sidebar />}
+      {!isEmbedded && <Sidebar taskTypes={taskTypes} />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!isEmbedded && (
           <header style={{ height: '70px', background: 'var(--card-bg)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', padding: '0 2rem', justifyContent: 'space-between', zIndex: 10 }}>
@@ -161,13 +164,24 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
                 if (relativePath.startsWith('/reports/repo') || relativePath.startsWith('/tasks/repo')) return '历史报告';
                 if (relativePath.startsWith('/reports') || relativePath.startsWith('/tasks')) return '报告概览';
-                if (relativePath.startsWith('/analysis/ut') || relativePath.startsWith('/issues')) return '测试用例有效性分析';
-                if (relativePath.startsWith('/analysis/coredump')) return 'Coredump风险攻关';
-                if (relativePath.startsWith('/analysis/float')) return 'Python浮点数专项';
-                if (relativePath.startsWith('/analysis/thread')) return '显式创建线程专项';
-                if (relativePath.startsWith('/analysis/cjson')) return 'cJSON 内存泄露专项';
-                if (relativePath.startsWith('/analysis/unordered-collection')) return '无序集合导出专项';
-                if (relativePath.startsWith('/analysis/deep-review')) return '深度代码分析专项';
+
+                // 动态匹配专项分析路由标题
+                if (relativePath.startsWith('/analysis/')) {
+                  const subKey = relativePath.replace('/analysis/', '').split('/')[0];
+                  const matched = taskTypes.find(t => t.campaign_path === subKey || t.name === subKey);
+                  if (matched) {
+                    return `${matched.display_name}专项`;
+                  }
+                  if (subKey === 'ut') return '测试用例有效性分析';
+                  if (subKey === 'coredump') return 'Coredump风险攻关';
+                  if (subKey === 'float') return 'Python浮点数专项';
+                  if (subKey === 'thread') return '显式创建线程专项';
+                  if (subKey === 'cjson') return 'cJSON 内存泄露专项';
+                  if (subKey === 'unordered-collection') return '无序集合导出专项';
+                  if (subKey === 'deep-review') return '深度代码分析专项';
+                  return '专项分析治理';
+                }
+
                 if (relativePath.startsWith('/admin/scan')) return '扫描任务管理';
                 if (relativePath.startsWith('/admin/task-types')) return '任务类型管理';
                 if (relativePath.startsWith('/admin/teams') || relativePath.startsWith('/teams')) return '团队与代码仓管理';
@@ -191,11 +205,22 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 }
 
 function AppContent() {
+  const [taskTypes, setTaskTypes] = useState<TaskTypeMenuMeta[]>([]);
+
+  useEffect(() => {
+    fetch('/api/task-types?active_only=true')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        if (Array.isArray(data)) setTaskTypes(data);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <ConfirmProvider>
-      <div className="shield-app">
-        <ToastProvider>
-        <MainLayout>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <ToastProvider>
+        <MainLayout taskTypes={taskTypes}>
           <Routes>
             <Route
               path="/login"
@@ -220,20 +245,12 @@ function AppContent() {
             {/* 个人工作台 */}
             <Route path="/workbench" element={<PrivateRoute><Workbench /></PrivateRoute>} />
 
-
-
             {/* 报告中心 */}
             <Route path="/reports" element={<PrivateRoute><ReportsOverview /></PrivateRoute>} />
             <Route path="/reports/repo/:repoId" element={<PrivateRoute><RepoTaskHistory /></PrivateRoute>} />
 
-            {/* 专项分析 */}
-            <Route path="/analysis/ut" element={<PrivateRoute><UTAnalysis /></PrivateRoute>} />
-            <Route path="/analysis/coredump" element={<PrivateRoute><CoredumpAnalysis /></PrivateRoute>} />
-            <Route path="/analysis/float" element={<PrivateRoute><FloatAnalysis /></PrivateRoute>} />
-            <Route path="/analysis/thread" element={<PrivateRoute><ThreadAnalysis /></PrivateRoute>} />
-            <Route path="/analysis/cjson" element={<PrivateRoute><CjsonAnalysis /></PrivateRoute>} />
-            <Route path="/analysis/unordered-collection" element={<PrivateRoute><UnorderedCollectionAnalysis /></PrivateRoute>} />
-            <Route path="/analysis/deep-review" element={<PrivateRoute><DeepReviewAnalysis /></PrivateRoute>} />
+            {/* 通用参数化专项分析治理路由 (适配所有内置及自定义专项) */}
+            <Route path="/analysis/:campaignKey" element={<PrivateRoute><UniversalCampaignPage /></PrivateRoute>} />
 
             {/* 管理中心 */}
             <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />

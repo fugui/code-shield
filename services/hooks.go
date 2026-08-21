@@ -36,13 +36,23 @@ func RegisterTaskHook(taskTypeName string, hook TaskHook) {
 
 // executeHooks runs all hooks registered for the current task type
 func (ctx *taskContext) executeHooks(findings []models.AnalysisFinding) {
+	// 1. 如果任务类型启用了专项分析 (IsCampaign)，自动触发通用归并引擎
+	if ctx.taskType.IsCampaign {
+		log.Printf("[TaskHooks] Running generic campaign hook for %q (GovernanceMode: %s, Report ID: %d)",
+			ctx.taskType.Name, ctx.taskType.GovernanceMode, ctx.report.ID)
+		if err := handleGenericCampaignHook(ctx, findings); err != nil {
+			log.Printf("[TaskHooks] Generic campaign hook for %q failed: %v", ctx.taskType.Name, err)
+		}
+	}
+
+	// 2. 执行已注册的自定义/遗留 Hooks
 	taskHooksMu.RLock()
 	hooks, ok := taskHooks[ctx.taskType.Name]
 	taskHooksMu.RUnlock()
 	if !ok {
 		return
 	}
-	log.Printf("[TaskHooks] Running %d hooks for task type %q (Report ID: %d)", len(hooks), ctx.taskType.Name, ctx.report.ID)
+	log.Printf("[TaskHooks] Running %d legacy/custom hooks for task type %q (Report ID: %d)", len(hooks), ctx.taskType.Name, ctx.report.ID)
 	for i, hook := range hooks {
 		if err := hook(ctx, findings); err != nil {
 			log.Printf("[TaskHooks] Hook %d for %q failed: %v", i, ctx.taskType.Name, err)
@@ -65,6 +75,322 @@ func init() {
 	RegisterTaskHook("unordered_collection", handleCampaignHook[models.UnorderedCollectionFinding])
 	// Register hook for deep review scan
 	RegisterTaskHook("deep_review", handleCampaignHook[models.DeepReviewFinding])
+}
+
+// handleGenericCampaignHook 是元数据驱动的统一专项分析归并引擎
+func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFinding) error {
+	log.Printf("[TaskHooks] Processing generic campaign hook for Task: %s, Mode: %s, Repo ID: %d, findings count: %d",
+		ctx.taskType.Name, ctx.taskType.GovernanceMode, ctx.repo.ID, len(findings))
+
+	var allOldFindings []models.CampaignFinding
+	if err := models.DB.Where("task_type_id = ? AND repo_id = ?", ctx.taskType.ID, ctx.repo.ID).Find(&allOldFindings).Error; err != nil {
+		log.Printf("[TaskHooks] Failed to load old CampaignFinding for repo: %v", err)
+	}
+
+	matchedOldIDs := make(map[uint]bool)
+	matchedFindingsMap := make(map[int]*models.CampaignFinding) // index of finding -> matched old finding
+
+	isEntityMode := ctx.taskType.GovernanceMode == models.GovernanceModeEntityAssessment
+
+	if isEntityMode {
+		// ── 模式 B (全量实体评估): 确定性 O(1) 路径+用例名称哈希匹配 ──
+		oldIndex := make(map[string]*models.CampaignFinding, len(allOldFindings))
+		for i := range allOldFindings {
+			key := allOldFindings[i].FilePath + "\x00" + allOldFindings[i].Title
+			oldIndex[key] = &allOldFindings[i]
+		}
+
+		for idx, f := range findings {
+			key := f.FilePath + "\x00" + f.Title
+			if oldF, ok := oldIndex[key]; ok {
+				matchedFindingsMap[idx] = oldF
+				matchedOldIDs[oldF.ID] = true
+			}
+		}
+	} else {
+		// ── 模式 A (缺陷攻关): Phase 1 确定性规则 + Phase 2 LLM 语义模糊比对 ──
+		for idx, f := range findings {
+			var matchedFinding *models.CampaignFinding
+			fHash := computeCodeHash(f.CodeSnippet)
+
+			// 1.1 精确行号/代码片段 Hash 比对
+			for i := range allOldFindings {
+				oldF := &allOldFindings[i]
+				if matchedOldIDs[oldF.ID] {
+					continue
+				}
+
+				if oldF.FilePath == f.FilePath {
+					lineSim := calculateLineSimilarity(oldF.LineNumber, f.LineNumber)
+					if lineSim >= 0.8 && oldF.Title == f.Title {
+						matchedFinding = oldF
+						break
+					}
+					if lineSim >= 0.5 && computeCodeHash(oldF.CodeSnippet) == fHash {
+						matchedFinding = oldF
+						break
+					}
+				}
+			}
+
+			// 1.2 高分加权评分匹配 (无需 LLM)
+			if matchedFinding == nil {
+				for i := range allOldFindings {
+					oldF := &allOldFindings[i]
+					if matchedOldIDs[oldF.ID] {
+						continue
+					}
+
+					if oldF.FilePath == f.FilePath {
+						catSim := 0.0
+						if oldF.Category == f.Category {
+							catSim = 1.0
+						}
+						lineSim := calculateLineSimilarity(oldF.LineNumber, f.LineNumber)
+						titleSim := calculateStringSimilarity(oldF.Title, f.Title)
+
+						score := 0.3*catSim + 0.3*lineSim + 0.4*titleSim
+
+						if lineSim >= 0.9 && titleSim >= 0.4 {
+							matchedFinding = oldF
+							break
+						}
+
+						if score >= 0.85 {
+							matchedFinding = oldF
+							break
+						}
+					}
+				}
+			}
+
+			if matchedFinding != nil {
+				matchedOldIDs[matchedFinding.ID] = true
+				matchedFindingsMap[idx] = matchedFinding
+			}
+		}
+
+		// Phase 2: 并发收集大模型校验任务并执行
+		type llmMatchTask struct {
+			findingIdx    int
+			oldFindingIdx int
+			oldPath       string
+			oldLine       string
+			oldTitle      string
+			oldDetail     string
+			oldSnippet    string
+			newPath       string
+			newLine       string
+			newTitle      string
+			newDetail     string
+			newSnippet    string
+		}
+
+		var llmTasks []llmMatchTask
+		for idx, f := range findings {
+			if matchedFindingsMap[idx] != nil {
+				continue
+			}
+
+			for i := range allOldFindings {
+				oldF := &allOldFindings[i]
+				if matchedOldIDs[oldF.ID] {
+					continue
+				}
+
+				if oldF.FilePath == f.FilePath {
+					catSim := 0.0
+					if oldF.Category == f.Category {
+						catSim = 1.0
+					}
+					lineSim := calculateLineSimilarity(oldF.LineNumber, f.LineNumber)
+					titleSim := calculateStringSimilarity(oldF.Title, f.Title)
+					score := 0.3*catSim + 0.3*lineSim + 0.4*titleSim
+
+					if score >= 0.45 || (lineSim >= 0.5 && titleSim >= 0.3) {
+						llmTasks = append(llmTasks, llmMatchTask{
+							findingIdx:    idx,
+							oldFindingIdx: i,
+							oldPath:       oldF.FilePath,
+							oldLine:       oldF.LineNumber,
+							oldTitle:      oldF.Title,
+							oldDetail:     oldF.Detail,
+							oldSnippet:    oldF.CodeSnippet,
+							newPath:       f.FilePath,
+							newLine:       f.LineNumber,
+							newTitle:      f.Title,
+							newDetail:     f.Detail,
+							newSnippet:    f.CodeSnippet,
+						})
+					}
+				}
+			}
+		}
+
+		if len(llmTasks) > 0 {
+			log.Printf("[TaskHooks] Running %d LLM matching tasks in parallel for generic campaign...", len(llmTasks))
+			resultsMap := make(map[string]bool)
+			var resultsMu sync.Mutex
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, 8)
+
+			for _, t := range llmTasks {
+				task := t
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					isSame := askLLMIfSameFinding(ctx,
+						task.oldPath, task.oldLine, task.oldTitle, task.oldDetail, task.oldSnippet,
+						task.newPath, task.newLine, task.newTitle, task.newDetail, task.newSnippet,
+					)
+
+					resultsMu.Lock()
+					key := fmt.Sprintf("%d_%d", task.findingIdx, task.oldFindingIdx)
+					resultsMap[key] = isSame
+					resultsMu.Unlock()
+				}()
+			}
+			wg.Wait()
+
+			for idx := range findings {
+				if matchedFindingsMap[idx] != nil {
+					continue
+				}
+				for i := range allOldFindings {
+					oldF := &allOldFindings[i]
+					if matchedOldIDs[oldF.ID] {
+						continue
+					}
+					key := fmt.Sprintf("%d_%d", idx, i)
+					if resultsMap[key] {
+						matchedFindingsMap[idx] = oldF
+						matchedOldIDs[oldF.ID] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// ── Phase 3: 顺序同步落库与老问题逻辑关闭阶段 ──
+	for idx, f := range findings {
+		matchedFinding := matchedFindingsMap[idx]
+		targetStatus := "open"
+		if f.Severity == "合格" {
+			targetStatus = "closed"
+		}
+
+		if matchedFinding == nil {
+			statusLog := []map[string]interface{}{
+				{
+					"status": targetStatus,
+					"time":   time.Now().Format("2006-01-02 15:04:05"),
+					"user":   "system",
+					"reason": "Initial scan discovery",
+				},
+			}
+			logBytes, _ := json.Marshal(statusLog)
+
+			newFinding := models.CampaignFinding{
+				TaskTypeID:   ctx.taskType.ID,
+				RepoID:       ctx.repo.ID,
+				TaskReportID: ctx.report.ID,
+				FilePath:     f.FilePath,
+				LineNumber:   f.LineNumber,
+				Title:        f.Title,
+				Detail:       f.Detail,
+				Severity:     f.Severity,
+				Category:     f.Category,
+				CodeSnippet:  f.CodeSnippet,
+				Suggestion:   f.Suggestion,
+				Status:       targetStatus,
+				StatusLog:    datatypes.JSON(logBytes),
+			}
+
+			if err := models.DB.Create(&newFinding).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to create CampaignFinding record: %v", err)
+			}
+		} else {
+			matchedOldIDs[matchedFinding.ID] = true
+			updatedStatus := matchedFinding.Status
+			var existingLog []map[string]interface{}
+			if len(matchedFinding.StatusLog) > 0 {
+				_ = json.Unmarshal(matchedFinding.StatusLog, &existingLog)
+			}
+
+			if updatedStatus != "invalid" {
+				if (updatedStatus == "closed" || updatedStatus == "resolved") && targetStatus == "open" {
+					updatedStatus = "open"
+					existingLog = append(existingLog, map[string]interface{}{
+						"status": "open",
+						"time":   time.Now().Format("2006-01-02 15:04:05"),
+						"user":   "system",
+						"reason": "Reopened by subsequent scan finding defects",
+					})
+				} else if updatedStatus == "open" && targetStatus == "closed" {
+					updatedStatus = "closed"
+					existingLog = append(existingLog, map[string]interface{}{
+						"status": "closed",
+						"time":   time.Now().Format("2006-01-02 15:04:05"),
+						"user":   "system",
+						"reason": "Automatically closed (resolved to合格 by scan)",
+					})
+				}
+			}
+			newLogBytes, _ := json.Marshal(existingLog)
+
+			matchedFinding.TaskReportID = ctx.report.ID
+			matchedFinding.LineNumber = f.LineNumber
+			matchedFinding.Detail = f.Detail
+			matchedFinding.Severity = f.Severity
+			matchedFinding.Category = f.Category
+			matchedFinding.CodeSnippet = f.CodeSnippet
+			matchedFinding.Suggestion = f.Suggestion
+			matchedFinding.Status = updatedStatus
+			matchedFinding.StatusLog = datatypes.JSON(newLogBytes)
+
+			if err := models.DB.Save(matchedFinding).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to update CampaignFinding record: %v", err)
+			}
+		}
+	}
+
+	// 历史遗留且本次未匹配到的缺陷/用例，逻辑状态自动置为 resolved
+	for i := range allOldFindings {
+		oldF := &allOldFindings[i]
+		if !matchedOldIDs[oldF.ID] {
+			if oldF.Status == "closed" || oldF.Status == "resolved" {
+				continue
+			}
+
+			var existingLog []map[string]interface{}
+			if len(oldF.StatusLog) > 0 {
+				_ = json.Unmarshal(oldF.StatusLog, &existingLog)
+			}
+
+			existingLog = append(existingLog, map[string]interface{}{
+				"status": "resolved",
+				"time":   time.Now().Format("2006-01-02 15:04:05"),
+				"user":   "system",
+				"reason": "Automatically marked as resolved (not detected in the latest scan)",
+			})
+			newLogBytes, _ := json.Marshal(existingLog)
+
+			oldF.Status = "resolved"
+			oldF.StatusLog = datatypes.JSON(newLogBytes)
+
+			if err := models.DB.Save(oldF).Error; err != nil {
+				log.Printf("[TaskHooks] Failed to logically resolve obsolete CampaignFinding: %v", err)
+			} else {
+				log.Printf("[TaskHooks] CampaignFinding ID %d logically resolved.", oldF.ID)
+			}
+		}
+	}
+
+	return nil
 }
 
 func handleUTEffectivenessHook(ctx *taskContext, findings []models.AnalysisFinding) error {

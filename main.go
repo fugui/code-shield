@@ -158,21 +158,17 @@ func main() {
 				api.POST("/issues", handlers.CreateIssue)
 				api.PATCH("/issues/:id", handlers.UpdateIssue)
 
-				// UT Effectiveness Dashboard
-				api.GET("/analysis/ut/repos", handlers.GetUTRepos)
-				api.GET("/analysis/ut/findings", handlers.GetUTFindings)
-				api.GET("/analysis/ut/findings/export", handlers.ExportUTFindings)
-				api.PATCH("/analysis/ut/findings/:id", handlers.UpdateUTFinding)
-				api.GET("/analysis/ut/departments", handlers.GetUTDepartments)
-				api.GET("/analysis/ut/trends", handlers.GetUTTrends)
-
-				// Campaign generic routes mapping
-				registerCampaignRoutes[models.CoredumpFinding](api, "coredump", "coredump_risk")
-				registerCampaignRoutes[models.FloatFinding](api, "float", "float_comparison")
-				registerCampaignRoutes[models.ThreadFinding](api, "thread", "thread_create")
-				registerCampaignRoutes[models.CjsonFinding](api, "cjson", "cjson_scan")
-				registerCampaignRoutes[models.UnorderedCollectionFinding](api, "unordered-collection", "unordered_collection")
-				registerCampaignRoutes[models.DeepReviewFinding](api, "deep-review", "deep_review")
+				// Dynamic Universal Campaign Routes (参数化通用专项路由)
+				campaignGroup := api.Group("/analysis/:campaign")
+				campaignGroup.Use(handlers.ResolveCampaignMiddleware())
+				{
+					campaignGroup.GET("/repos", handlers.GetDynamicCampaignRepos)
+					campaignGroup.GET("/findings", handlers.GetDynamicCampaignFindings)
+					campaignGroup.GET("/findings/export", handlers.ExportDynamicCampaignFindings)
+					campaignGroup.PATCH("/findings/:id", handlers.UpdateDynamicCampaignFinding)
+					campaignGroup.GET("/departments", handlers.GetDynamicCampaignDepartments)
+					campaignGroup.GET("/trends", handlers.GetDynamicCampaignTrends)
+				}
 
 				api.GET("/schedules", handlers.GetSchedules)
 				api.POST("/schedules", handlers.CreateSchedule)
@@ -212,11 +208,3 @@ func main() {
 	}
 }
 
-func registerCampaignRoutes[T any](rg *gin.RouterGroup, campaignPath string, taskTypeName string) {
-	rg.GET("/analysis/"+campaignPath+"/repos", handlers.GetCampaignRepos[T](taskTypeName))
-	rg.GET("/analysis/"+campaignPath+"/findings", handlers.GetCampaignFindings[T]())
-	rg.GET("/analysis/"+campaignPath+"/findings/export", handlers.ExportCampaignFindings[T]())
-	rg.PATCH("/analysis/"+campaignPath+"/findings/:id", handlers.UpdateCampaignFinding[T]())
-	rg.GET("/analysis/"+campaignPath+"/departments", handlers.GetCampaignDepartments[T]())
-	rg.GET("/analysis/"+campaignPath+"/trends", handlers.GetCampaignTrends[T]())
-}
