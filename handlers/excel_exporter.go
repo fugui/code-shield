@@ -1,17 +1,16 @@
 package handlers
 
 import (
+	"code-shield/models"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-	"reflect"
 	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
-	"gorm.io/datatypes"
 )
 
 // ExcelFindingItem 定义 Excel 导出通用的缺陷属性结构
@@ -30,101 +29,36 @@ type ExcelFindingItem struct {
 	CreatedAt     time.Time
 }
 
-// convertToExcelItems 使用反射将各种类型的 Finding 切片（如 TestCaseFinding, CoredumpFinding 等）统一转换为 ExcelFindingItem 切片
-func convertToExcelItems(sliceVal reflect.Value, isUT bool) []ExcelFindingItem {
-	if sliceVal.Kind() != reflect.Slice {
-		return nil
-	}
-	n := sliceVal.Len()
-	items := make([]ExcelFindingItem, n)
-	for i := 0; i < n; i++ {
-		v := sliceVal.Index(i)
-		if v.Kind() == reflect.Ptr {
-			v = v.Elem()
+// convertCampaignFindingsToExcelItems 将 CampaignFinding 切片转换为 ExcelFindingItem 切片
+func convertCampaignFindingsToExcelItems(findings []models.CampaignFinding) []ExcelFindingItem {
+	items := make([]ExcelFindingItem, len(findings))
+	for i, f := range findings {
+		assigneeName := ""
+		if f.Assignee != nil {
+			assigneeName = f.Assignee.Name
 		}
 
-		getFieldValueReflect := func(fieldName string) reflect.Value {
-			return v.FieldByName(fieldName)
+		latestComment := ""
+		if len(f.StatusLog) > 0 {
+			latestComment = getLatestComment(f.StatusLog)
 		}
-
-		getStringField := func(fieldName string) string {
-			f := getFieldValueReflect(fieldName)
-			if f.IsValid() && f.Kind() == reflect.String {
-				return f.String()
-			}
-			return ""
-		}
-
-		getUintField := func(fieldName string) uint {
-			f := getFieldValueReflect(fieldName)
-			if f.IsValid() {
-				if f.Kind() == reflect.Uint || f.Kind() == reflect.Uint64 || f.Kind() == reflect.Uint32 || f.Kind() == reflect.Uint16 || f.Kind() == reflect.Uint8 {
-					return uint(f.Uint())
-				}
-			}
-			return 0
-		}
-
-		getTimeField := func(fieldName string) time.Time {
-			f := getFieldValueReflect(fieldName)
-			if f.IsValid() {
-				if t, ok := f.Interface().(time.Time); ok {
-					return t
-				}
-			}
-			return time.Time{}
-		}
-
-		var title string
-		if isUT {
-			title = getStringField("TestCaseName")
-		} else {
-			title = getStringField("Title")
-		}
-
-		// 负责人映射
-		var assigneeName string
-		assigneeField := getFieldValueReflect("Assignee")
-		if assigneeField.IsValid() && !assigneeField.IsNil() {
-			assigneeElem := assigneeField.Elem()
-			nameField := assigneeElem.FieldByName("Name")
-			if nameField.IsValid() && nameField.Kind() == reflect.String {
-				assigneeName = nameField.String()
-			}
-		}
-
-		// 最新评论提取
-		var latestComment string
-		statusLogField := getFieldValueReflect("StatusLog")
-		if statusLogField.IsValid() {
-			if bytes, ok := statusLogField.Interface().(datatypes.JSON); ok && len(bytes) > 0 {
-				latestComment = getLatestComment(bytes)
-			} else if bytes, ok := statusLogField.Interface().([]byte); ok && len(bytes) > 0 {
-				latestComment = getLatestComment(bytes)
-			}
-		}
-
-		// 兜底处理：部分旧格式可能会存在在 Feedback 中
-		if latestComment == "" {
-			feedbackField := getFieldValueReflect("Feedback")
-			if feedbackField.IsValid() && feedbackField.Kind() == reflect.String {
-				latestComment = feedbackField.String()
-			}
+		if latestComment == "" && f.Feedback != "" {
+			latestComment = f.Feedback
 		}
 
 		items[i] = ExcelFindingItem{
-			ID:            getUintField("ID"),
-			Severity:      getStringField("Severity"),
-			Category:      getStringField("Category"),
-			FilePath:      getStringField("FilePath"),
-			LineNumber:    getStringField("LineNumber"),
-			Title:         title,
-			Detail:        getStringField("Detail"),
-			Suggestion:    getStringField("Suggestion"),
-			Status:        getStringField("Status"),
+			ID:            f.ID,
+			Severity:      f.Severity,
+			Category:      f.Category,
+			FilePath:      f.FilePath,
+			LineNumber:    f.LineNumber,
+			Title:         f.Title,
+			Detail:        f.Detail,
+			Suggestion:    f.Suggestion,
+			Status:        f.Status,
 			AssigneeName:  assigneeName,
 			LatestComment: latestComment,
-			CreatedAt:     getTimeField("CreatedAt"),
+			CreatedAt:     f.CreatedAt,
 		}
 	}
 	return items

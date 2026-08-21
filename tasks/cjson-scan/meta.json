@@ -27,12 +27,12 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
-  "is_campaign": false,
+  "is_campaign": true,
   "campaign_path": "cjson",
   "governance_mode": "defect_tracking",
   "campaign_icon": "",
   "campaign_config": null,
-  "is_active": false,
+  "is_active": true,
   "created_at": "2026-07-24T09:11:10.530508+08:00",
-  "updated_at": "2026-08-22T07:29:58.865438+08:00"
+  "updated_at": "2026-08-22T07:36:50.396405+08:00"
 }
