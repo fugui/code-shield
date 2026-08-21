@@ -13,10 +13,11 @@ export interface WorkspaceRepoDetails {
 }
 
 export interface Finding {
-  ID?: number;
-  id?: number;
-  title?: string;
-  test_case_name?: string; // Used by UT effectiveness findings
+  id: number;
+  task_type_id?: number;
+  repo_id?: number;
+  task_report_id?: number;
+  title: string;
   file_path: string;
   line_number: string | number;
   category?: string;
@@ -25,20 +26,16 @@ export interface Finding {
   detail: string;
   code_snippet?: string;
   suggestion?: string;
-  assignee_id?: number;
+  assignee_id?: number | null;
   assignee?: {
-    id?: number;
-    ID?: number;
+    id: number;
     name: string;
-  };
-  Assignee?: { // Sometimes capitalized in nested UT model
-    id?: number;
-    ID?: number;
-    name: string;
+    email?: string;
   };
   status_log?: string | any[];
-  repo?: WorkspaceRepoDetails;
-  task_report_id?: number;
+  feedback?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const getRepoSourceUrl = (
@@ -75,18 +72,9 @@ interface AuditingWorkspaceProps {
   repoName: string;
   apiPrefix: string; // e.g., "/api/analysis/float", "/api/analysis/coredump", "/api/analysis/ut"
   workspaceType: string;
+  governanceMode?: 'defect_tracking' | 'entity_assessment';
   onWorkflowSaved?: () => void;
 }
-
-const TYPE_NAME_MAP: Record<string, string> = {
-  ut: 'ut_effectiveness',
-  coredump: 'coredump_risk',
-  float: 'float_comparison',
-  thread: 'thread_create',
-  cjson: 'cjson_scan',
-  'unordered-collection': 'unordered_collection',
-  'deep-review': 'deep_review'
-};
 
 export default function AuditingWorkspace({
   isOpen,
@@ -95,6 +83,7 @@ export default function AuditingWorkspace({
   repoName,
   apiPrefix,
   workspaceType,
+  governanceMode,
   onWorkflowSaved
 }: AuditingWorkspaceProps) {
   const { showToast } = useToast();
@@ -176,20 +165,21 @@ export default function AuditingWorkspace({
         repo_id: repoId.toString(),
         pageSize: '50'
       });
-      const targetTypeName = TYPE_NAME_MAP[workspaceType];
 
       fetch(apiUrl(`/api/tasks?${params.toString()}`))
         .then(res => res.json())
         .then(data => {
           const items = data.items || data.reports || [];
-          // Find the latest successful task of this type
+          // Find the latest successful task of this campaign type
           let targetTask = items.find((item: any) => 
-            item.task_type?.name === targetTypeName && 
+            (item.task_type?.campaign_path === workspaceType || item.task_type?.name === workspaceType) && 
             (item.status === 'success' || item.status === 'skipped')
           );
           // Fallback to any task of this type
           if (!targetTask) {
-            targetTask = items.find((item: any) => item.task_type?.name === targetTypeName);
+            targetTask = items.find((item: any) => 
+              item.task_type?.campaign_path === workspaceType || item.task_type?.name === workspaceType
+            );
           }
           if (targetTask) {
             setReportId(targetTask.id || targetTask.ID);
@@ -205,12 +195,16 @@ export default function AuditingWorkspace({
     }
   }, [isOpen, repoId, workspaceType]);
 
+  const dynamicCategories = React.useMemo(() => {
+    return Array.from(new Set(workspaceFindings.map(f => f.category).filter(Boolean))) as string[];
+  }, [workspaceFindings]);
+
   const handleDownloadJson = async () => {
     let activeReportId = reportId;
     if (!activeReportId && workspaceFindings.length > 0) {
-      const first = workspaceFindings.find(f => f.task_report_id || (f as any).TaskReportID);
-      if (first) {
-        activeReportId = first.task_report_id || (first as any).TaskReportID;
+      const first = workspaceFindings.find(f => f.task_report_id);
+      if (first && first.task_report_id) {
+        activeReportId = first.task_report_id;
       }
     }
 
@@ -249,31 +243,8 @@ export default function AuditingWorkspace({
       keyword: wsKeyword
     });
 
-    let downloadUrl = '';
-    let filename = '';
-
-    if (workspaceType === 'ut') {
-      downloadUrl = apiUrl(`/api/analysis/ut/findings/export?${params.toString()}`);
-      filename = `synthesis_ut_${repoName}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    } else if (workspaceType) {
-      downloadUrl = apiUrl(`${apiPrefix}/findings/export?${params.toString()}`);
-      filename = `synthesis_${workspaceType}_${repoName}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    } else {
-      let activeReportId = reportId;
-      if (!activeReportId && workspaceFindings.length > 0) {
-        const first = workspaceFindings.find(f => f.task_report_id || (f as any).TaskReportID);
-        if (first) {
-          activeReportId = first.task_report_id || (first as any).TaskReportID;
-        }
-      }
-
-      if (!activeReportId) {
-        showToast('未找到该工作区对应的任务报告，无法下载', 'info');
-        return;
-      }
-      downloadUrl = apiUrl(`/api/tasks/${activeReportId}/synthesis/csv`);
-      filename = `report-${activeReportId}-synthesis.csv`;
-    }
+    const downloadUrl = apiUrl(`${apiPrefix}/findings/export?${params.toString()}`);
+    const filename = `synthesis_${workspaceType}_${repoName}_${new Date().toISOString().split('T')[0]}.xlsx`;
 
     try {
       const res = await fetch(downloadUrl);
@@ -480,12 +451,13 @@ export default function AuditingWorkspace({
     };
   };
 
-  const activeAssignee = editingFinding?.assignee || editingFinding?.Assignee;
+  const activeAssignee = editingFinding?.assignee;
+  const isEntityMode = governanceMode === 'entity_assessment' || workspaceType === 'ut';
 
   const workspaceTitle = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
       <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--primary-color)', fontWeight: 700, letterSpacing: '0.05em' }}>
-        {workspaceType === 'ut' ? '单元测试用例审计工作区' : workspaceType === 'coredump' ? 'Coredump风险安全审计工作区' : workspaceType === 'thread' ? '显式创建线程安全审计工作区' : workspaceType === 'cjson' ? 'cJSON内存泄漏安全审计工作区' : workspaceType === 'unordered-collection' ? '无序集合导出安全审计工作区' : '代码仓缺陷审计工作区'}
+        {isEntityMode ? '用例有效性评估工作区' : '专项缺陷审计工作区'}
       </span>
       <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-color)' }}>📁 {repoName}</span>
     </div>
@@ -629,141 +601,9 @@ export default function AuditingWorkspace({
                 style={{ padding: '0.35rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.8rem', outline: 'none', color: 'var(--text-color)', cursor: 'pointer' }}
               >
                 <option value="">所有分类</option>
-                
-                {/* UT Effectiveness & Quality */}
-                {workspaceType === 'ut' && (
-                  <>
-                    <optgroup label="✨ 测试用例有效性审计">
-                      <option value="断言有效性-空测试">断言有效性 - 空测试</option>
-                      <option value="断言有效性-永真断言">断言有效性 - 永真断言</option>
-                      <option value="断言有效性-无效捕获">断言有效性 - 无效捕获</option>
-                      <option value="断言有效性-Mock遗漏">断言有效性 - Mock遗漏</option>
-                      <option value="提前返回-非法退出">提前返回 - 非法退出</option>
-                      <option value="提前返回-静默跳过">提前返回 - 静默跳过</option>
-                      <option value="功能单一性-面条测试">功能单一性 - 面条测试</option>
-                      <option value="功能单一性-路径混合">功能单一性 - 路径混合</option>
-                      <option value="其它">其它</option>
-                    </optgroup>
-                    <optgroup label="🛡️ 测试工程质量">
-                      <option value="健壮性与稳定性">健壮性与稳定性</option>
-                      <option value="资源与生命周期管理">资源与生命周期管理</option>
-                      <option value="代码坏味道与重构问题">代码坏味道与重构问题</option>
-                    </optgroup>
-                  </>
-                )}
-
-                {/* Float Comparison */}
-                {workspaceType === 'float' && (
-                  <optgroup label="📐 浮点数比较缺陷">
-                    <option value="浮点数比较缺陷-直接等值比较">直接等值比较 (==)</option>
-                    <option value="浮点数比较缺陷-直接不等比较">直接不等比较 (!=)</option>
-                    <option value="浮点数比较缺陷-含有等号的边界比较">边界等号比较 (&lt;=, &gt;=)</option>
-                    <option value="浮点数比较缺陷-循环控制条件">循环/终止控制条件</option>
-                    <option value="其它问题-其它浮点数隐患">其它浮点数隐患</option>
-                  </optgroup>
-                )}
-
-                {/* Coredump Risks */}
-                {workspaceType === 'coredump' && (
-                  <>
-                    <optgroup label="🧵 多线程并发问题">
-                      <option value="多线程并发问题-数据竞争">数据竞争</option>
-                      <option value="多线程并发问题-锁同步不当">锁同步不当</option>
-                      <option value="多线程并发问题-死锁风险">死锁风险</option>
-                    </optgroup>
-                    <optgroup label="💾 内存管理缺陷">
-                      <option value="内存管理问题-空指针解引用">空指针解引用</option>
-                      <option value="内存管理问题-越界访问/缓冲区溢出">越界访问 / 缓冲区溢出</option>
-                      <option value="内存管理问题-双重释放">双重释放 (Double Free)</option>
-                      <option value="内存管理问题-释放后使用">释放后使用 (Use-After-Free)</option>
-                      <option value="内存管理问题-内存泄漏(OOM风险)">内存泄漏 (OOM风险)</option>
-                    </optgroup>
-                    <optgroup label="⏳ 生命周期管理">
-                      <option value="生命周期管理问题-悬挂指针与引用">悬挂指针与引用</option>
-                      <option value="生命周期管理问题-回调对象销毁竞争">回调对象销毁竞争</option>
-                    </optgroup>
-                    <optgroup label="⚠️ 时序与异常">
-                      <option value="时序与初始化问题-未初始化变量">未初始化变量</option>
-                      <option value="时序与初始化问题-释放与访问竞态">释放与访问竞态</option>
-                      <option value="运行时异常-除零错误">除零错误</option>
-                      <option value="运行时异常-栈溢出">栈溢出</option>
-                      <option value="运行时异常-未捕获异常/致命退出">未捕获异常 / 致命退出</option>
-                      <option value="运行时异常-信号处理不当">信号处理不当</option>
-                    </optgroup>
-                    <optgroup label="🔌 框架与其它">
-                      <option value="第三方框架限制-Qt跨线程UI操作">Qt跨线程UI操作</option>
-                      <option value="其它问题-其它崩溃隐患">其它崩溃隐患</option>
-                    </optgroup>
-                  </>
-                )}
-
-                {/* Explicit Thread Creation */}
-                {workspaceType === 'thread' && (
-                  <optgroup label="⚙️ 线程创建机制">
-                    <option value="pthread_create">pthread_create</option>
-                    <option value="std::thread">std::thread</option>
-                    <option value="CFThreadCreate">CFThreadCreate</option>
-                    <option value="QThread">QThread</option>
-                    <option value="OpenMP">OpenMP</option>
-                    <option value="boost::asio">boost::asio</option>
-                    <option value="std::async">std::async</option>
-                    <option value="其它">其它机制</option>
-                  </optgroup>
-                )}
-
-                {/* cJSON Memory Leaks */}
-                {workspaceType === 'cjson' && (
-                  <optgroup label="🧩 cJSON 内存管理">
-                    <option value="cJSON_Parse 泄漏">cJSON_Parse 泄漏</option>
-                    <option value="cJSON_Create 泄漏">cJSON_Create 泄漏</option>
-                    <option value="cJSON_Print 泄漏">cJSON_Print 泄漏</option>
-                    <option value="cJSON_Detach 泄漏">cJSON_Detach 泄漏</option>
-                    <option value="cJSON_Duplicate 泄漏">cJSON_Duplicate 泄漏</option>
-                    <option value="其它泄漏">其它泄漏类型</option>
-                  </optgroup>
-                )}
-
-                {/* Unordered Collection Order Dependencies */}
-                {workspaceType === 'unordered-collection' && (
-                  <optgroup label="📦 无序集合导出隐患">
-                    <option value="无序集合-哈希签名顺序依赖">无序集合-哈希签名顺序依赖</option>
-                    <option value="无序集合-单元测试断言不确定性">无序集合-单元测试断言不确定性</option>
-                    <option value="无序集合-序列化比较缺陷">无序集合-序列化比较缺陷</option>
-                    <option value="其它问题-其它无序性隐患">其它问题-其它无序性隐患</option>
-                  </optgroup>
-                )}
-
-                {/* Deep Review */}
-                {workspaceType === 'deep-review' && (
-                  <>
-                    <optgroup label="📐 逻辑与正确性">
-                      <option value="逻辑与正确性-并发安全">逻辑与正确性 - 并发安全</option>
-                      <option value="逻辑与正确性-边界处理">逻辑与正确性 - 边界处理</option>
-                      <option value="逻辑与正确性-逻辑漏洞">逻辑与正确性 - 逻辑漏洞</option>
-                      <option value="逻辑与正确性-异常控制">逻辑与正确性 - 异常控制</option>
-                    </optgroup>
-                    <optgroup label="💾 性能与运行效率">
-                      <option value="性能与运行效率-内存泄漏">性能与运行效率 - 内存泄漏</option>
-                      <option value="性能与运行效率-资源未释放">性能与运行效率 - 资源未释放</option>
-                      <option value="性能与运行效率-CPU与I/O瓶颈">性能与运行效率 - CPU与I/O瓶颈</option>
-                    </optgroup>
-                    <optgroup label="🛡️ 安全风险">
-                      <option value="安全风险-内存破坏">安全风险 - 内存破坏</option>
-                      <option value="安全风险-敏感硬编码">安全风险 - 敏感硬编码</option>
-                      <option value="安全风险-输入注入">安全风险 - 输入注入</option>
-                    </optgroup>
-                    <optgroup label="⚙️ 可维护性">
-                      <option value="可维护性-魔鬼数字">可维护性 - 魔鬼数字</option>
-                      <option value="可维护性-圈复杂度过高">可维护性 - 圈复杂度过高</option>
-                      <option value="可维护性-冗余代码">可维护性 - 冗余代码</option>
-                    </optgroup>
-                    <optgroup label="🏗️ 架构与设计">
-                      <option value="架构与设计-高耦合">架构与设计 - 高耦合</option>
-                      <option value="架构与设计-职责违背">架构与设计 - 职责违背</option>
-                      <option value="架构与设计-三方依赖">架构与设计 - 三方依赖</option>
-                    </optgroup>
-                  </>
-                )}
+                {dynamicCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
               </select>
             </div>
             

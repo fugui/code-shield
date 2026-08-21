@@ -58,17 +58,9 @@ export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGrou
       });
   }
 
-  // 仅在完全未提供任务类型列表（如离线/未完成初始化）时提供兜底静态项
+  // 仅在完全未提供任务类型列表时保持空数组，等待 API 或事件动态填充
   if (!taskTypes && campaignItems.length === 0) {
-    campaignItems = [
-      { path: '/analysis/ut', label: '测试用例有效性', headerTitle: '测试有效性分析', icon: DEFAULT_CAMPAIGN_ICONS['ut'] },
-      { path: '/analysis/coredump', label: 'Coredump风险攻关', icon: DEFAULT_CAMPAIGN_ICONS['coredump'] },
-      { path: '/analysis/float', label: 'Python浮点数专项', icon: DEFAULT_CAMPAIGN_ICONS['float'] },
-      { path: '/analysis/thread', label: '显式创建线程专项', icon: DEFAULT_CAMPAIGN_ICONS['thread'] },
-      { path: '/analysis/cjson', label: 'cJSON 内存泄露专项', icon: DEFAULT_CAMPAIGN_ICONS['cjson'] },
-      { path: '/analysis/unordered-collection', label: '无序集合导出专项', icon: DEFAULT_CAMPAIGN_ICONS['unordered-collection'] },
-      { path: '/analysis/deep-review', label: '深度代码分析专项', icon: DEFAULT_CAMPAIGN_ICONS['deep-review'] },
-    ];
+    campaignItems = [];
   }
 
   return [

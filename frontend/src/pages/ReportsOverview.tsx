@@ -221,8 +221,8 @@ function ReportsOverview() {
     }
 
     if (item.ai_summary) return item.ai_summary;
-    if (item.task_type?.name === 'ut_effectiveness') {
-      return '所有单元测试用例均评估合格！';
+    if (item.task_type?.governance_mode === 'entity_assessment' || item.task_type?.name === 'ut_effectiveness') {
+      return '所有评估实体均符合质量标准！';
     }
     return '未发现相关类型的代码缺陷';
   };
