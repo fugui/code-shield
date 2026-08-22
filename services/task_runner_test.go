@@ -991,9 +991,7 @@ func TestCampaignHooks(t *testing.T) {
 		&models.TaskReport{},
 		&models.TaskType{},
 		&models.User{},
-		&models.CjsonFinding{},
-		&models.UnorderedCollectionFinding{},
-		&models.TestCaseFinding{},
+		&models.CampaignFinding{},
 	)
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)

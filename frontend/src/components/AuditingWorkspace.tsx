@@ -34,6 +34,7 @@ export interface Finding {
   };
   status_log?: string | any[];
   feedback?: string;
+  repo?: WorkspaceRepoDetails;
   created_at?: string;
   updated_at?: string;
 }
@@ -332,7 +333,7 @@ export default function AuditingWorkspace({
     e.preventDefault();
     if (!editingFinding) return;
 
-    const findingId = editingFinding.ID || editingFinding.id;
+    const findingId = editingFinding.id;
     if (!findingId) return;
 
     fetch(apiUrl(`${apiPrefix}/findings/${findingId}`), {
@@ -622,10 +623,10 @@ export default function AuditingWorkspace({
               <div style={{ padding: '4rem 1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>未搜索到缺陷结果</div>
             ) : (
               workspaceFindings.map(f => {
-                const itemTitle = f.title || f.test_case_name || '未命名缺陷';
-                const activeId = editingFinding?.ID === f.ID && editingFinding?.id === f.id;
-                const itemId = f.ID || f.id;
-                const assigneeName = f.assignee?.name || f.Assignee?.name;
+                const itemTitle = f.title || '未命名缺陷';
+                const activeId = editingFinding?.id === f.id;
+                const itemId = f.id;
+                const assigneeName = f.assignee?.name;
 
                 return (
                   <div 
@@ -695,7 +696,7 @@ export default function AuditingWorkspace({
               {/* Defect Context Header */}
               <div>
                 <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', fontWeight: 700, color: '#ef4444', textAlign: 'left' }}>
-                  ❌ {editingFinding.title || editingFinding.test_case_name || '未命名缺陷'}
+                  ❌ {editingFinding.title || '未命名缺陷'}
                 </h3>
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                   {editingFinding.repo?.url ? (

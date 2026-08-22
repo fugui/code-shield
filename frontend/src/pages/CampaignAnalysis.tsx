@@ -818,16 +818,27 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)', width: '60px' }}>序号</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>代码仓</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>负责人</th>
-                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>跟踪缺陷数</th>
-                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>致命</th>
-                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>严重</th>
-                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>修复进度</th>
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>{isEntityMode ? '用例总数' : '跟踪缺陷数'}</th>
+                                        {isEntityMode ? (
+                                          <>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>合格用例</th>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>待优化</th>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>致命</th>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>严重</th>
+                                          </>
+                                        )}
+                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>{isEntityMode ? '合格率' : '修复进度'}</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>最近扫描</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>操作</th>
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {deptRepos[d.department].map((r: any, idx: number) => (
+                                      {deptRepos[d.department].map((r: any, idx: number) => {
+                                        const rateVal = isEntityMode ? (r.pass_rate || 0) : (r.fix_rate || 0);
+                                        return (
                                         <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{idx + 1}</td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', fontWeight: 600 }}>
@@ -848,13 +859,22 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                           </td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.owner_name}</td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.total_issues}</td>
-                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
-                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                                          {isEntityMode ? (
+                                            <>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: '#10b981', fontWeight: 600 }}>{r.pass_count || 0}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.open_issues || 0) > 0 ? '#f59e0b' : 'inherit' }}>{r.open_issues || 0}</td>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                                            </>
+                                          )}
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '95px' }}>
-                                              <span style={{ fontSize: '0.8rem', fontWeight: 600, width: '35px' }}>{r.fix_rate.toFixed(0)}%</span>
+                                              <span style={{ fontSize: '0.8rem', fontWeight: 600, width: '35px' }}>{rateVal.toFixed(0)}%</span>
                                               <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: '#e2e8f0', overflow: 'hidden' }}>
-                                                <div style={{ height: '100%', borderRadius: '2px', width: `${r.fix_rate}%`, background: r.fix_rate >= 85 ? '#10b981' : r.fix_rate >= 50 ? '#f59e0b' : '#ef4444' }} />
+                                                <div style={{ height: '100%', borderRadius: '2px', width: `${rateVal}%`, background: rateVal >= 85 ? '#10b981' : rateVal >= 50 ? '#f59e0b' : '#ef4444' }} />
                                               </div>
                                             </div>
                                           </td>
@@ -912,7 +932,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                             })()}
                                           </td>
                                         </tr>
-                                      ))}
+                                      );})}
                                     </tbody>
                                   </table>
                                 </div>
