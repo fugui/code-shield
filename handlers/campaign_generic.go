@@ -700,6 +700,7 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 		return
 	}
 	tt := taskTypeVal.(*models.TaskType)
+	isEntityMode := tt.GovernanceMode == models.GovernanceModeEntityAssessment
 
 	repoIDStr := c.Query("repo_id")
 	deptName := c.Query("department")
@@ -758,7 +759,14 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 			}
 
 			totalIssues++
-			statusOnDate := f.Status
+
+			// 1. 确定初始状态
+			initialStatus := "open"
+			if isEntityMode && f.Severity == "合格" {
+				initialStatus = "closed"
+			}
+
+			statusOnDate := initialStatus
 
 			if len(f.StatusLog) > 0 {
 				var statusHistory []struct {
@@ -785,23 +793,21 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 				resolvedIssues++
 			}
 
-			if f.Severity == "合格" {
-				passCount++
+			if isEntityMode {
+				if f.Severity == "合格" || statusOnDate == "closed" || statusOnDate == "resolved" {
+					passCount++
+				}
 			}
 		}
 
-		fixRate := 0.0
+		fixRate := 100.0
 		if totalIssues > 0 {
 			fixRate = (float64(resolvedIssues) / float64(totalIssues)) * 100.0
-		} else {
-			fixRate = 100.0
 		}
 
-		passRate := 0.0
+		passRate := 100.0
 		if totalIssues > 0 {
 			passRate = (float64(passCount) / float64(totalIssues)) * 100.0
-		} else {
-			passRate = 100.0
 		}
 
 		idx := 29 - i

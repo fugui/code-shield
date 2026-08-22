@@ -193,32 +193,25 @@ func migrateLegacyCampaignTables(db *gorm.DB) error {
 			log.Printf("[Migration] pg_advisory_xact_lock notice/warning (might not be postgres): %v", err)
 		}
 
-		type tableMigration struct {
+		// 确保任务类型 campaign_path 的部分唯一索引
+		_ = tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_types_campaign_path_active ON task_types (campaign_path) WHERE is_campaign = true AND campaign_path != '';")
+
+		migrations := []struct {
 			tableName      string
 			taskTypeName   string
-			campaignPath   string
 			governanceMode string
 			isUT           bool
-		}
-
-		migrations := []tableMigration{
-			{tableName: "test_case_findings", taskTypeName: "ut_effectiveness", campaignPath: "ut", governanceMode: GovernanceModeEntityAssessment, isUT: true},
-			{tableName: "coredump_findings", taskTypeName: "coredump_risk", campaignPath: "coredump", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "float_findings", taskTypeName: "float_comparison", campaignPath: "float", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "thread_findings", taskTypeName: "thread_create", campaignPath: "thread", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "cjson_findings", taskTypeName: "cjson_scan", campaignPath: "cjson", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "unordered_collection_findings", taskTypeName: "unordered_collection", campaignPath: "unordered-collection", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "deep_review_findings", taskTypeName: "deep_review", campaignPath: "deep-review", governanceMode: GovernanceModeDefectTracking, isUT: false},
+		}{
+			{tableName: "test_case_findings", taskTypeName: "ut_effectiveness", governanceMode: GovernanceModeEntityAssessment, isUT: true},
+			{tableName: "coredump_findings", taskTypeName: "coredump_risk", governanceMode: GovernanceModeDefectTracking, isUT: false},
+			{tableName: "float_findings", taskTypeName: "float_comparison", governanceMode: GovernanceModeDefectTracking, isUT: false},
+			{tableName: "thread_findings", taskTypeName: "thread_create", governanceMode: GovernanceModeDefectTracking, isUT: false},
+			{tableName: "cjson_findings", taskTypeName: "cjson_scan", governanceMode: GovernanceModeDefectTracking, isUT: false},
+			{tableName: "unordered_collection_findings", taskTypeName: "unordered_collection", governanceMode: GovernanceModeDefectTracking, isUT: false},
+			{tableName: "deep_review_findings", taskTypeName: "deep_review", governanceMode: GovernanceModeDefectTracking, isUT: false},
 		}
 
 		for _, m := range migrations {
-			// 更新/初始化 TaskType 的专项元数据
-			tx.Model(&TaskType{}).Where("name = ?", m.taskTypeName).Updates(map[string]interface{}{
-				"is_campaign":     true,
-				"campaign_path":   m.campaignPath,
-				"governance_mode": m.governanceMode,
-			})
-
 			// 检查旧表是否存在
 			var exists bool
 			checkSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = ?)"
@@ -232,36 +225,24 @@ func migrateLegacyCampaignTables(db *gorm.DB) error {
 				continue
 			}
 
-			var insertSQL string
+			titleCol := "title"
 			if m.isUT {
-				insertSQL = `
-INSERT INTO campaign_findings (
-    task_type_id, repo_id, task_report_id, file_path, line_number,
-    title, detail, severity, category, code_snippet, suggestion,
-    status, assignee_id, status_log, feedback, created_at, updated_at
-)
-SELECT 
-    ?, repo_id, task_report_id, file_path, line_number,
-    test_case_name AS title, detail, severity, category, code_snippet, suggestion,
-    status, assignee_id, status_log, feedback, created_at, updated_at
-FROM ` + m.tableName + `
-ON CONFLICT (task_type_id, repo_id, file_path, title) DO NOTHING;
-`
-			} else {
-				insertSQL = `
-INSERT INTO campaign_findings (
-    task_type_id, repo_id, task_report_id, file_path, line_number,
-    title, detail, severity, category, code_snippet, suggestion,
-    status, assignee_id, status_log, feedback, created_at, updated_at
-)
-SELECT 
-    ?, repo_id, task_report_id, file_path, line_number,
-    title, detail, severity, category, code_snippet, suggestion,
-    status, assignee_id, status_log, feedback, created_at, updated_at
-FROM ` + m.tableName + `
-ON CONFLICT (task_type_id, repo_id, file_path, title) DO NOTHING;
-`
+				titleCol = "test_case_name"
 			}
+
+			insertSQL := `
+INSERT INTO campaign_findings (
+    task_type_id, repo_id, task_report_id, file_path, line_number,
+    title, detail, severity, category, code_snippet, suggestion,
+    status, assignee_id, status_log, feedback, created_at, updated_at
+)
+SELECT 
+    ?, repo_id, task_report_id, file_path, line_number,
+    ` + titleCol + ` AS title, detail, severity, category, code_snippet, suggestion,
+    status, assignee_id, status_log, feedback, created_at, updated_at
+FROM ` + m.tableName + `
+ON CONFLICT (task_type_id, repo_id, file_path, title) DO NOTHING;
+`
 
 			if err := tx.Exec(insertSQL, taskType.ID).Error; err != nil {
 				log.Printf("[Migration] Error migrating table %s to campaign_findings: %v", m.tableName, err)
@@ -273,4 +254,3 @@ ON CONFLICT (task_type_id, repo_id, file_path, title) DO NOTHING;
 		return nil
 	})
 }
-

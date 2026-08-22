@@ -27,7 +27,7 @@ const (
 // ── GovernanceMode 枚举常量 ──
 const (
 	GovernanceModeDefectTracking   = "defect_tracking"   // 缺陷攻关模式
-	GovernanceModeEntityAssessment = "entity_assessment"  // 全量实体评估模式
+	GovernanceModeEntityAssessment = "entity_assessment" // 全量实体评估模式
 )
 
 type Repository struct {
@@ -216,8 +216,6 @@ type AnalysisFinding struct {
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
-
-
 const (
 	StatusPending        = "pending"
 	StatusQueued         = "queued"
@@ -331,15 +329,14 @@ func GetStatusPriority(status string) int {
 	}
 }
 
-
 // CampaignFinding 统一专项分析缺陷与实体评估记录模型（替代原 7 张独立分表）
 type CampaignFinding struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	TaskTypeID   uint           `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index;not null" json:"task_type_id"`
-	TaskType     TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	RepoID       uint           `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index;not null" json:"repo_id"`
-	Repo         Repository     `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskReportID uint           `gorm:"index" json:"task_report_id"`
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	TaskTypeID   uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index;not null" json:"task_type_id"`
+	TaskType     TaskType   `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	RepoID       uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index;not null" json:"repo_id"`
+	Repo         Repository `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskReportID uint       `gorm:"index" json:"task_report_id"`
 
 	// 缺陷/实体本身属性
 	FilePath    string `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:3;size:500;not null" json:"file_path"`
@@ -360,4 +357,3 @@ type CampaignFinding struct {
 	CreatedAt  time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt  time.Time      `json:"updated_at"`
 }
-

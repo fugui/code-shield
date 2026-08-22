@@ -53,30 +53,6 @@ export default function UniversalCampaignPage() {
   );
 
   if (!matched) {
-    // 兼容可能传入的旧静态路径（如 ut 对应 ut_effectiveness）
-    const legacyFallback = taskTypes.find(tt => {
-      if (campaignKey === 'ut' && tt.name === 'ut_effectiveness') return true;
-      if (campaignKey === 'float' && tt.name === 'float_comparison') return true;
-      if (campaignKey === 'coredump' && tt.name === 'coredump_risk') return true;
-      if (campaignKey === 'thread' && tt.name === 'thread_create') return true;
-      if (campaignKey === 'cjson' && tt.name === 'cjson_scan') return true;
-      if (campaignKey === 'unordered-collection' && tt.name === 'unordered_collection') return true;
-      if (campaignKey === 'deep-review' && tt.name === 'deep_review') return true;
-      return false;
-    });
-
-    if (legacyFallback) {
-      return (
-        <CampaignAnalysis
-          campaign={campaignKey}
-          title={legacyFallback.display_name}
-          description={legacyFallback.description}
-          taskTypeName={legacyFallback.name}
-          governanceMode={legacyFallback.governance_mode || 'defect_tracking'}
-        />
-      );
-    }
-
     return (
       <div style={{ textAlign: 'center', padding: '5rem 2rem', color: '#64748b' }}>
         <h2 style={{ fontSize: '1.25rem', color: 'var(--text-color)', marginBottom: '0.5rem' }}>未找到对应的专项分析治理任务</h2>

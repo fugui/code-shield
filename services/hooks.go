@@ -341,33 +341,38 @@ func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFindi
 	}
 
 	// 历史遗留且本次未匹配到的缺陷/用例，逻辑状态自动置为 resolved
-	for i := range allOldFindings {
-		oldF := &allOldFindings[i]
-		if !matchedOldIDs[oldF.ID] {
-			if oldF.Status == "closed" || oldF.Status == "resolved" {
-				continue
-			}
+	// 注意：若任务存在失败分片，说明扫描未完全覆盖代码仓所有文件，跳过自动消亡以避免误关缺陷
+	if ctx.hasFailedChunks {
+		log.Printf("[TaskHooks] Notice: Skipped auto-resolving obsolete findings because task report %d had failed chunks.", ctx.report.ID)
+	} else {
+		for i := range allOldFindings {
+			oldF := &allOldFindings[i]
+			if !matchedOldIDs[oldF.ID] {
+				if oldF.Status == "closed" || oldF.Status == "resolved" {
+					continue
+				}
 
-			var existingLog []map[string]interface{}
-			if len(oldF.StatusLog) > 0 {
-				_ = json.Unmarshal(oldF.StatusLog, &existingLog)
-			}
+				var existingLog []map[string]interface{}
+				if len(oldF.StatusLog) > 0 {
+					_ = json.Unmarshal(oldF.StatusLog, &existingLog)
+				}
 
-			existingLog = append(existingLog, map[string]interface{}{
-				"status": "resolved",
-				"time":   time.Now().Format("2006-01-02 15:04:05"),
-				"user":   "system",
-				"reason": "Automatically marked as resolved (not detected in the latest scan)",
-			})
-			newLogBytes, _ := json.Marshal(existingLog)
+				existingLog = append(existingLog, map[string]interface{}{
+					"status": "resolved",
+					"time":   time.Now().Format("2006-01-02 15:04:05"),
+					"user":   "system",
+					"reason": "Automatically marked as resolved (not detected in the latest scan)",
+				})
+				newLogBytes, _ := json.Marshal(existingLog)
 
-			oldF.Status = "resolved"
-			oldF.StatusLog = datatypes.JSON(newLogBytes)
+				oldF.Status = "resolved"
+				oldF.StatusLog = datatypes.JSON(newLogBytes)
 
-			if err := models.DB.Save(oldF).Error; err != nil {
-				log.Printf("[TaskHooks] Failed to logically resolve obsolete CampaignFinding: %v", err)
-			} else {
-				log.Printf("[TaskHooks] CampaignFinding ID %d logically resolved.", oldF.ID)
+				if err := models.DB.Save(oldF).Error; err != nil {
+					log.Printf("[TaskHooks] Failed to logically resolve obsolete CampaignFinding: %v", err)
+				} else {
+					log.Printf("[TaskHooks] CampaignFinding ID %d logically resolved.", oldF.ID)
+				}
 			}
 		}
 	}

@@ -240,8 +240,6 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 	assigneeMap := make(map[string]string)
 	commentMap := make(map[string]string)
 
-	taskTypeName := report.TaskType.Name
-
 	// 优先查询通用的 CampaignFinding 记录
 	var dbCampaignFindings []models.CampaignFinding
 	if err := models.DB.Preload("Assignee").Where("task_report_id = ?", report.ID).Find(&dbCampaignFindings).Error; err == nil && len(dbCampaignFindings) > 0 {
@@ -292,8 +290,8 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 		title := getMapStringField(f, "title", "Title")
 
 		var statusVal, assigneeVal, commentVal string
-		isUT := taskTypeName == "ut_effectiveness"
-		if isUT {
+		isEntityMode := report.TaskType.GovernanceMode == models.GovernanceModeEntityAssessment
+		if isEntityMode {
 			key := makeTestCaseKey(filePath, title)
 			statusVal = statusMap[key]
 			assigneeVal = assigneeMap[key]
@@ -305,7 +303,7 @@ func ExportTaskReportSynthesisCSV(c *gin.Context) {
 			commentVal = commentMap[key]
 		}
 
-		statusChinese := getStatusChinese(statusVal, isUT)
+		statusChinese := getStatusChinese(statusVal, isEntityMode)
 
 		writer.Write([]string{
 			getMapStringField(f, "id", "ID"),

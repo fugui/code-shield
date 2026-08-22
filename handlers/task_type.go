@@ -51,8 +51,26 @@ func CreateTaskType(c *gin.Context) {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
 	}
 
+	if req.IsCampaign {
+		if req.GovernanceMode == "" {
+			req.GovernanceMode = models.GovernanceModeDefectTracking
+		}
+		if req.GovernanceMode != models.GovernanceModeDefectTracking && req.GovernanceMode != models.GovernanceModeEntityAssessment {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的治理模式: 仅支持 defect_tracking 或 entity_assessment"})
+			return
+		}
+		if req.CampaignPath != "" {
+			var count int64
+			models.DB.Model(&models.TaskType{}).Where("is_campaign = ? AND campaign_path = ?", true, req.CampaignPath).Count(&count)
+			if count > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("专项分析路由路径 '%s' 已被其他任务类型占用", req.CampaignPath)})
+				return
+			}
+		}
+	}
+
 	if err := models.DB.Create(&req).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task type"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task type: " + err.Error()})
 		return
 	}
 
@@ -225,6 +243,34 @@ func UpdateTaskType(c *gin.Context) {
 		updates["campaign_config"] = string(*req.CampaignConfig)
 	}
 
+	targetIsCampaign := taskType.IsCampaign
+	if req.IsCampaign != nil {
+		targetIsCampaign = *req.IsCampaign
+	}
+	targetCampaignPath := taskType.CampaignPath
+	if req.CampaignPath != nil {
+		targetCampaignPath = *req.CampaignPath
+	}
+	targetGovernanceMode := taskType.GovernanceMode
+	if req.GovernanceMode != nil {
+		targetGovernanceMode = *req.GovernanceMode
+	}
+
+	if targetIsCampaign {
+		if targetGovernanceMode != models.GovernanceModeDefectTracking && targetGovernanceMode != models.GovernanceModeEntityAssessment {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的治理模式: 仅支持 defect_tracking 或 entity_assessment"})
+			return
+		}
+		if targetCampaignPath != "" {
+			var count int64
+			models.DB.Model(&models.TaskType{}).Where("id != ? AND is_campaign = ? AND campaign_path = ?", taskType.ID, true, targetCampaignPath).Count(&count)
+			if count > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("专项分析路由路径 '%s' 已被其他任务类型占用", targetCampaignPath)})
+				return
+			}
+		}
+	}
+
 	if err := models.DB.Model(&taskType).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task type: " + err.Error()})
 		return
@@ -237,9 +283,9 @@ func UpdateTaskType(c *gin.Context) {
 
 	// 将最新元数据重写回磁盘的 meta.json
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
-	os.MkdirAll(absTaskDir, 0755)
+	_ = os.MkdirAll(absTaskDir, 0755)
 	metaBytes, _ := json.MarshalIndent(taskType, "", "  ")
-	os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
+	_ = os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
 
 	commonAudit.SetAuditContext(c, "task_type", "update", models.AuditLevelP0,
 		fmt.Sprintf("修改了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),
