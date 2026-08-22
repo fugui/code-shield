@@ -162,7 +162,8 @@ export default function Workbench() {
 			const res = await fetch('/api/me/findings');
 			if (!res.ok) throw new Error('获取个人缺陷列表失败');
 			const data = await res.json();
-			setFindings(data || []);
+			const list = Array.isArray(data) ? data : (data?.items || []);
+			setFindings(list);
 		} catch (err: any) {
 			setError(err.message || '加载工作台失败');
 			showToast('加载缺陷数据失败', 'error');
