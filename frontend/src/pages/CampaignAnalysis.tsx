@@ -342,15 +342,17 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
     const chartHeight = height - paddingTop - paddingBottom;
 
     // Resolve max values
-    const maxIssues = Math.max(...trends.map(t => t.total_issues), 10);
+    const maxIssues = isEntityMode ? 100 : Math.max(...trends.map(t => t.total_issues), 10);
+    const themeColor = isEntityMode ? '#10b981' : '#ef4444';
 
-    // Compute SVG path string for Total Issues Line
+    // Compute SVG path string
     let linePath = '';
     let areaPath = '';
     
     trends.forEach((t, i) => {
+      const val = isEntityMode ? (t.pass_rate || 0) : t.total_issues;
       const x = paddingLeft + (i * chartWidth) / (trends.length - 1 || 1);
-      const y = paddingTop + chartHeight - (t.total_issues * chartHeight) / maxIssues;
+      const y = paddingTop + chartHeight - (val * chartHeight) / maxIssues;
       
       if (i === 0) {
         linePath = `M ${x} ${y}`;
@@ -368,11 +370,13 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
     return (
       <div style={{ background: 'var(--card-bg)', padding: '1.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', alignItems: 'center' }}>
-          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>{title} 存量缺陷收敛趋势 (过去30天)</h4>
+          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>
+            {title} {isEntityMode ? '实体评估合格率趋势 (过去30天)' : '存量缺陷收敛趋势 (过去30天)'}
+          </h4>
           <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ width: '12px', height: '12px', borderRadius: '2px', background: 'rgba(239, 68, 68, 0.2)', border: '2px solid #ef4444', display: 'inline-block' }} />
-              未整改缺陷数
+              <span style={{ width: '12px', height: '12px', borderRadius: '2px', background: isEntityMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', border: `2px solid ${themeColor}`, display: 'inline-block' }} />
+              {isEntityMode ? '用例/实体合格率 (%)' : '未整改缺陷数'}
             </span>
           </div>
         </div>
@@ -380,15 +384,15 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
         <div style={{ overflowX: 'auto' }}>
           <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="320" style={{ overflow: 'visible' }}>
             <defs>
-              <linearGradient id="issueGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ef4444" stopOpacity="0.2"/>
-                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0"/>
+              <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={themeColor} stopOpacity="0.25"/>
+                <stop offset="100%" stopColor={themeColor} stopOpacity="0.0"/>
               </linearGradient>
             </defs>
 
             {/* Horizontal Grid lines */}
             {[0, 25, 50, 75, 100].map((percent) => {
-              const val = Math.round((percent * maxIssues) / 100);
+              const val = isEntityMode ? `${percent}%` : Math.round((percent * maxIssues) / 100);
               const y = paddingTop + chartHeight - (percent * chartHeight) / 100;
               return (
                 <g key={percent}>
@@ -400,22 +404,23 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
             {/* Area under line */}
             {trends.length > 1 && (
-              <path d={areaPath} fill="url(#issueGradient)" />
+              <path d={areaPath} fill="url(#trendGradient)" />
             )}
 
             {/* Trend Line */}
             {trends.length > 1 && (
-              <path d={linePath} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <path d={linePath} fill="none" stroke={themeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
             )}
 
             {/* Circular points */}
             {trends.map((t, i) => {
+              const val = isEntityMode ? (t.pass_rate || 0) : t.total_issues;
               const x = paddingLeft + (i * chartWidth) / (trends.length - 1 || 1);
-              const y = paddingTop + chartHeight - (t.total_issues * chartHeight) / maxIssues;
+              const y = paddingTop + chartHeight - (val * chartHeight) / maxIssues;
 
               return (
                 <g key={i}>
-                  <circle cx={x} cy={y} r="5" fill="#ef4444" stroke="white" strokeWidth="2" />
+                  <circle cx={x} cy={y} r="5" fill={themeColor} stroke="white" strokeWidth="2" />
                   {/* Date labels */}
                   {i % Math.max(Math.round(trends.length / 6), 1) === 0 && (
                     <text x={x} y={height - 12} textAnchor="middle" fontSize="10" fill="#64748b" transform={`rotate(-15, ${x}, ${height - 12})`}>
@@ -423,8 +428,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                     </text>
                   )}
                   {/* Values */}
-                  <text x={x} y={y - 12} textAnchor="middle" fontSize="9" fontWeight="600" fill="#b91c1c">
-                    {t.total_issues}
+                  <text x={x} y={y - 12} textAnchor="middle" fontSize="9" fontWeight="600" fill={themeColor}>
+                    {isEntityMode ? `${val.toFixed(0)}%` : val}
                   </text>
                 </g>
               );

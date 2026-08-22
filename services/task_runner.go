@@ -89,19 +89,20 @@ type TaskSummaryReport struct {
 
 // taskContext holds all necessary data for a single task execution run
 type taskContext struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	report     models.TaskReport
-	taskType   models.TaskType
-	repo       models.Repository
-	codesPath  string
-	reportPath string
-	jsonPath   string
-	autoNotify bool
-	runParams  models.RunParams // 合并后的运行参数
-	Attempts   int              // 实际尝试次数
-	Summary    TaskSummaryReport
-	findings   []models.AnalysisFinding
+	ctx             context.Context
+	cancel          context.CancelFunc
+	report          models.TaskReport
+	taskType        models.TaskType
+	repo            models.Repository
+	codesPath       string
+	reportPath      string
+	jsonPath        string
+	autoNotify      bool
+	runParams       models.RunParams // 合并后的运行参数
+	Attempts        int              // 实际尝试次数
+	hasFailedChunks bool             // 是否存在失败分片（用于避免误消亡存量缺陷）
+	Summary         TaskSummaryReport
+	findings        []models.AnalysisFinding
 }
 
 var (
@@ -1134,11 +1135,11 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	}
 
 	if len(summaryParts) == 0 {
-		if ctx.taskType.Name == "ut_effectiveness" {
+		if ctx.taskType.GovernanceMode == models.GovernanceModeEntityAssessment {
 			if len(findings) == 0 {
-				result.Summary = "未检测到任何测试用例，建议补充单元测试！"
+				result.Summary = "未检测到任何评估实体或测试用例！"
 			} else {
-				result.Summary = "所有单元测试用例均评估合格！"
+				result.Summary = "所有评估实体/用例均符合质量标准！"
 			}
 		} else {
 			result.Summary = "未发现相关类型的代码缺陷"

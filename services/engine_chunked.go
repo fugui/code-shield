@@ -195,8 +195,10 @@ loop:
 
 	if failedChunks > 0 {
 		ctx.Summary.Analysis.Status = "failed"
+		ctx.hasFailedChunks = true
 	} else {
 		ctx.Summary.Analysis.Status = "success"
+		ctx.hasFailedChunks = false
 	}
 
 	// Save task summary report
