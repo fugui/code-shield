@@ -57,9 +57,9 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
       {/* KPI 指标卡片网格 */}
       <div className="report-kpi-grid">
         <div className="report-kpi-card">
-          <span className="kpi-title">🎯 综合评分</span>
-          <span className="kpi-number" style={{ color: meta.score >= 80 ? '#10b981' : '#ef4444' }}>
-            {meta.score} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>分 ({meta.rating})</span>
+          <span className="kpi-title">🎯 综合风险分</span>
+          <span className="kpi-number" style={{ color: '#d97706' }}>
+            {meta.score} <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>分 (估值)</span>
           </span>
         </div>
 

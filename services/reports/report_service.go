@@ -11,16 +11,9 @@ import (
 	"time"
 )
 
-// CalculateRating 根据分数计算优/良/中/差评级
+// CalculateRating 返回风险分估值说明（风险分仅为参考估值，不进行好坏等级评价）
 func CalculateRating(score int) string {
-	if score >= 90 {
-		return "优"
-	} else if score >= 75 {
-		return "良"
-	} else if score >= 60 {
-		return "中"
-	}
-	return "差"
+	return "风险估值"
 }
 
 // BuildMetaDTO 构建任务元数据 DTO

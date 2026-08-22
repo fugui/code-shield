@@ -319,8 +319,7 @@ export default function Workbench() {
 		setSidebarOpen(true);
 	};
 
-	const getScoreColor = (score: number) =>
-		score >= 20 ? '#ef4444' : score >= 10 ? '#f59e0b' : '#22c55e';
+	const getScoreColor = (_score: number) => '#d97706';
 
 	const taskStatusBadge = (status: string) => {
 		switch (status) {
@@ -548,7 +547,7 @@ export default function Workbench() {
 									<th style={{ minWidth: '200px' }}>代码仓</th>
 									<th style={{ width: '90px' }}>负责人</th>
 									<th style={{ width: '160px' }}>最新扫描报告</th>
-									<th style={{ width: '90px', textAlign: 'center' }}>评分</th>
+									<th style={{ width: '90px', textAlign: 'center' }}>风险分</th>
 									<th style={{ width: '120px', textAlign: 'center' }}>历史报告</th>
 								</tr>
 							</thead>

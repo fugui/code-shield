@@ -143,7 +143,7 @@ func exportXLSX(report *models.TaskReport, items []FindingItemDTO, isEntityMode 
 
 	infoRows := [][]string{
 		{"代码仓库", report.Repo.Name, "扫描分支", report.Repo.Branch},
-		{"任务类型", report.TaskType.DisplayName, "综合评分", fmt.Sprintf("%d 分 (%s)", report.Score, CalculateRating(report.Score))},
+		{"任务类型", report.TaskType.DisplayName, "综合风险分", fmt.Sprintf("%d 分 (风险估值)", report.Score)},
 		{"治理模式", getGovModeChinese(report.TaskType.GovernanceMode), "完成时间", report.CreatedAt.Format("2006-01-02 15:04:05")},
 	}
 	for i, row := range infoRows {

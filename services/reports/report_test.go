@@ -44,17 +44,8 @@ func TestNormalizeSeverity(t *testing.T) {
 }
 
 func TestCalculateRating(t *testing.T) {
-	if CalculateRating(95) != "优" {
-		t.Errorf("expected 优 for score 95")
-	}
-	if CalculateRating(85) != "良" {
-		t.Errorf("expected 良 for score 85")
-	}
-	if CalculateRating(65) != "中" {
-		t.Errorf("expected 中 for score 65")
-	}
-	if CalculateRating(45) != "差" {
-		t.Errorf("expected 差 for score 45")
+	if CalculateRating(95) != "风险估值" {
+		t.Errorf("expected 风险估值 for score 95")
 	}
 }
 
