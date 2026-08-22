@@ -1,9 +1,9 @@
 # Code-Shield 任务报告与治理诊断中心重构设计方案
 
-> **文档版本**：v1.0.0  
-> **创建日期**：2026-08-22  
+> **文档版本**：v1.1.0  
+> **更新日期**：2026-08-22  
 > **文档状态**：Ready for Review  
-> **适用范围**：Code-Shield 报告体系（总结报告、详细清单报告、运行轨迹与诊断、多格式导出）
+> **适用范围**：Code-Shield 报告体系（总结报告、详细清单报告、运行轨迹与诊断、在线 HTML 呈现与文件导出中心）
 
 ---
 
@@ -14,7 +14,9 @@ Code-Shield 在从早期的单一规则扫描引擎演进为支持**单仓全量
 1. **总结报告 (Summary Report)**：AI 宏观分析概要、评分、安全合规综述及全局优化建议；
 2. **详细清单报告 (Detailed Findings Report)**：结构化问题项、严重级别、代码行列定位、代码片段高亮、缺陷生命周期流转（指派/解决/忽略）及关联测试用例；
 3. **运行轨迹与诊断 (Execution Trajectory & Diagnostics)**：分片耗时分布、阶段时序流、重试链路、AI 进程输出日志及故障诊断；
-4. **多格式导出交付需求**：用户与管理层需要在不同场景下将上述成果导出为 **JSON、Markdown、PDF（打印）、HTML 独立页面、Excel (CSV/XLSX)、ZIP 归档包**。
+4. **呈现与交付需求**：
+   - **在线交互呈现**：以 **HTML 界面/抽屉 (Web UI)** 为核心载体，提供富交互、多维筛选排查、代码高亮折叠、责任人指派流转与全景监控；
+   - **文件导出交付**：用户与管理层需要在不同场景下将成果导出为 **Excel (XLSX/CSV)、结构化 JSON、Markdown、PDF（打印/另存为PDF）、ZIP 全量归档包**。
 
 ### 1.2 现有架构痛点分析
 
@@ -51,18 +53,17 @@ graph TD
 
 #### 痛点 1：概念混淆、操作割裂与信息不对称
 - **操作按钮意图与内容不对称**：在 `ReportSidebar.tsx` 顶部操作栏中，平铺了 `[打印 / PDF]`、`[下载 MD]`、`[下载 JSON]`、`[下载 Excel]`、`[查看详情]`。
-  - 用户在浏览“审计报告正文（Markdown）”时，点击“下载 JSON”或“下载 Excel”，实际下载的却是**详细清单报告（Synthesis JSON / CSV）**，用户界面上却完全没有清晰的提示；
+  - 用户在浏览“审计报告正文（Markdown）”时，点击“下载 JSON”或“下载 Excel”，实际下载的却是**详细清单报告（Synthesis JSON / CSV）**，界面上没有清晰的靶向分类提示；
   - 侧边栏抽屉里**缺少“详细清单”Tab**，导致用户若想查看具体缺陷，必须点击“查看详情”在新标签页打开 `PublicReportFindings`，破坏了在概览列表快速下钻的连续体验。
-- **运行轨迹与诊断功能无法导出**：运行轨迹（Summary JSON）与执行输出日志（`output.txt`）仅在侧边栏显示，缺少结构化导出或一键排错日志包能力。
+- **运行轨迹与诊断功能无法导出归档**：运行轨迹（Summary JSON）与执行输出日志（`output.txt`）仅在侧边栏显示，缺少一键打包排错日志能力。
 
 #### 痛点 2：前端代码冗余严重、缺乏统一的 Report 组件库
 - `ReportSidebar.tsx`（551 行）、`PublicReportFindings.tsx`（689 行）、`AuditingWorkspace.tsx`（906 行）三处各自维护了一套严重级别色彩映射表、代码片段渲染容器、行号解析定位、剪贴板复制逻辑、甚至数百行内联 `<style>` 标签；
 - 打印样式配置（`@media print`）在多处硬编码，打印效果参差不齐，容易出现表格断页被切断、代码块背景失效等排版问题。
 
-#### 痛点 3：多格式导出能力不完善且实现粗糙
+#### 痛点 3：文件导出能力分散且实现粗糙
 - **PDF 导出**：纯依赖客户端浏览器调用 `window.print()` 或拼装简单 HTML 字符串，无专业封面、无目录、无页眉页脚与分页断点控制；
-- **Excel 导出**：`handlers/task.go` 输出的是简易 CSV，而 `handlers/excel_exporter.go` 虽然引入了 `excelize` 库，但仅限专项分析使用，两套导出代码割裂且无法复用；
-- **HTML 导出**：缺少单文件离线报告导出能力（类似 Allure / Lighthouse 报告，支持打包单个完整 HTML 文件离线分发）。
+- **Excel 导出**：`handlers/task.go` 输出的是简易 CSV，而 `handlers/excel_exporter.go` 虽然引入了 `excelize` 库，但仅限专项分析使用，两套导出代码割裂且无法复用。
 
 #### 痛点 4：后端存储规范与 Handler 职责混乱
 - 报告落盘路径命名不统一，代码中充斥着大量的 `filepath.Glob(report-%d-synthesis-*.json)` 模糊匹配容错，说明文件命名缺乏严格版本与目录规范；
@@ -72,9 +73,9 @@ graph TD
 
 ## 2. 核心业务概念与信息架构模型 (IA)
 
-为了彻底解决概念模糊与操作割裂的问题，重构方案建立**标准化任务报告领域模型**，将一次任务扫描产生的所有交付物严格归整为**三大核心报告视图**与**统一导出中心**。
+为了彻底解决概念模糊与操作割裂的问题，重构方案建立**标准化任务报告领域模型**，将一次任务扫描产生的所有交付物严格归整为**三大核心报告视图**（由在线 HTML 界面统一呈现）与**统一文件导出中心**。
 
-### 2.1 三大核心资产与视图界定
+### 2.1 三大核心资产与界面呈现界定
 
 ```mermaid
 classDiagram
@@ -88,7 +89,7 @@ classDiagram
     }
 
     class View1_SummaryReport {
-        <<视图一: 总结报告>>
+        <<视图一: 总结概览 (HTML Tab)>>
         +OverviewMetrics 总体指标
         +string AISummaryText Markdown总结正文
         +SeverityDistribution 风险分布图表
@@ -96,7 +97,7 @@ classDiagram
     }
 
     class View2_FindingsReport {
-        <<视图二: 详细清单报告>>
+        <<视图二: 详细清单 (HTML Tab)>>
         +AnalysisFinding[] Findings 结构化缺陷/实体列表
         +CategoryStats 分类统计
         +GovernanceWorkflow 治理闭环状态
@@ -104,7 +105,7 @@ classDiagram
     }
 
     class View3_DiagnosticsReport {
-        <<视图三: 运行轨迹与诊断>>
+        <<视图三: 运行轨迹与诊断 (HTML Tab)>>
         +PipelineTimings 流水线阶段耗时
         +ChunkDetail[] 分片执行矩阵
         +RetryAttempts 重试轨迹
@@ -112,11 +113,11 @@ classDiagram
     }
 
     class ExportHub {
-        <<多格式交付中枢>>
+        <<文件导出交付中枢>>
         +exportExcel(Findings + Stats)
-        +exportMarkdown(Summary + FindingTable)
-        +exportJSON(FullAggregate)
-        +exportStandaloneHTML(SingleFile)
+        +exportCSV(Findings)
+        +exportMarkdown(Summary)
+        +exportJSON(Findings / FullAggregate)
         +exportPrintPDF(HighQualityPrint)
         +exportZIPArchive(AllInOne)
     }
@@ -127,12 +128,14 @@ classDiagram
     TaskInspectionContext --> ExportHub
 ```
 
-| 资产维度 | 英文标识 | 核心内容 | 典型受众 | 适配格式 |
-| :--- | :--- | :--- | :--- | :--- |
-| **1. 总结报告** | `summary` | 任务基本信息、评分评级、AI 总体评价、缺陷统计图表、总体修复建议 | 管理者 / 架构师 / 评审组 | Markdown, PDF, HTML, JSON |
-| **2. 详细清单** | `findings` | 所有检出的具体缺陷/实体、严重级别、文件行号、代码上下文、修复方案、责任人与治理状态 | 一线开发人员 / 模块负责人 | Excel (XLSX), CSV, JSON, HTML |
-| **3. 运行轨迹** | `diagnostics` | 克隆/前置/分片/综合/归并各阶段时序、分片耗时分布、重试记录、AI CLI 执行日志与报错诊断 | 平台运维 / 规则开发 / 排错人员 | JSON, Text Log, HTML |
-| **4. 全量归档** | `all_in_one` | 包含上述 1~3 的全套完整工程交付包 | 审计归档 / 离线交接 | ZIP 压缩包 |
+| 资产维度 | 英文标识 | 核心内容 | 在线 HTML 呈现形态 | 文件导出支持 | 典型受众 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. 总结报告** | `summary` | 任务基本信息、评分评级、AI 总体评价、缺陷统计图表、总体修复建议 | 抽屉/页面 Tab 1：总结概览 | Markdown (`.md`), PDF 打印 | 管理者 / 架构师 / 评审组 |
+| **2. 详细清单** | `findings` | 所有检出的具体缺陷/实体、严重级别、文件行号、代码上下文、修复方案、责任人与治理状态 | 抽屉/页面 Tab 2：详细清单（富表格、多维筛选、治理流转） | Excel (`.xlsx`), CSV (`.csv`), JSON (`.json`) | 一线开发人员 / 模块负责人 |
+| **3. 运行轨迹** | `diagnostics` | 克隆/前置/分片/综合/归并各阶段时序、分片耗时分布、重试记录、AI CLI 执行日志与报错诊断 | 抽屉/页面 Tab 3：运行轨迹与诊断（时序泳道、分片矩阵、日志查看器） | 文本日志复制 / 包含在 ZIP 中 | 平台运维 / 规则开发 / 排错人员 |
+| **4. 全量归档** | `all_in_one` | 包含上述 1~3 的全套完整工程交付包 | 在线全量聚合展示 | ZIP 压缩包 (`.zip`) | 审计归档 / 离线交接 |
+
+> **注**：HTML 页面作为系统内置的核心交互载体，支持在浏览器中直接浏览、下钻、筛选与治理流转，不需要单独导出为 `.html` 文件；离线文件分发与数据对接通过 **Excel、JSON、Markdown、PDF、ZIP** 完成。
 
 ---
 
@@ -155,15 +158,15 @@ classDiagram
 ```
 [ 🖨️ 打印 / PDF ]  [ 📄 下载 MD ]  [ 💾 下载 JSON ]  [ 📊 下载 Excel ]  [ ↗ 查看详情 ]  [ ✕ ]
 ```
-*痛点：按钮占用大量头部宽度，且 JSON 与 Excel 实际下载的是 Findings，而 MD 下载的是 Summary，用户极易产生困惑。*
+*痛点：按钮平铺占用大量头部宽度，且 JSON 与 Excel 实际下载的是 Findings，而 MD 下载的是 Summary，用户极易产生困惑。*
 
 #### 改造后（清晰意图靶向的现代化操作栏）
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 任务报告详情  #1028  ·  fugui/code-bench  ·  [ 95分 / 优 ]          [ ⛶ 全屏 ]  [ ✕ 关闭 ] │
-│ ────────────────────────────────────────────────────────────────────────────────────── │
-│ [ 📑 总结概览 ]    [ 📋 详细清单 (12) ]    [ 🔬 运行轨迹与诊断 ]     │  [ 🖨️ 打印报告 ] [ 📥 导出 ▾ ]│
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 任务报告详情  #1028  ·  fugui/code-bench  ·  [ 95分 / 优 ]              [ ⛶ 全屏 ]  [ ✕ 关闭 ] │
+│ ────────────────────────────────────────────────────────────────────────────────────────────── │
+│ [ 📑 总结概览 ]    [ 📋 详细清单 (12) ]    [ 🔬 运行轨迹与诊断 ]     │  [ 🖨️ 打印 / PDF ] [ 📥 导出 ▾ ]│
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 点击 **`[ 📥 导出 ▾ ]`** 弹出语义明确的下拉菜单：
@@ -175,8 +178,7 @@ classDiagram
 │   └─ 🔌 结构化数据 (.json)             │
 │ ────────────────────────────────────── │
 │ 📑 导出审计总结报告                    │
-│   ├─ 📝 Markdown 文档 (.md)            │
-│   └─ 🌐 独立离线 HTML 报告 (.html)     │
+│   └─ 📝 Markdown 文档 (.md)            │
 │ ────────────────────────────────────── │
 │ 📦 导出全量任务归档包                  │
 │   └─ 🗜️ ZIP 完整交付包 (.zip)          │
@@ -228,7 +230,7 @@ classDiagram
 │    ├─ [✓ 成功] chunk-01-core (12 个文件, 耗时 8.2s, 发现 4 个问题)                     │
 │    ├─ [✓ 成功] chunk-02-api  (18 个文件, 耗时 12.1s, 发现 8 个问题)                    │
 │    └─ [✓ 成功] chunk-03-utils (8 个文件, 耗时 4.5s, 无发现)                             │
-│  ● 终端输出与错误日志 [ 一键复制日志 ] [ 展开原生日志 ▼ ]                                │
+│  ● 终端输出与错误日志 [ 📋 复制日志 ] [ 展开原生日志 ▼ ]                                 │
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -345,10 +347,10 @@ export interface TaskDiagnostics {
 
 ---
 
-## 5. 后端服务架构与多格式导出引擎设计
+## 5. 后端服务架构与文件导出引擎设计
 
 ### 5.1 后端模块与文件架构
-在后端解耦 `handlers/task.go` 的重负，新建 `services/reports/` 目录，构建可扩展的导出器架构：
+在后端解耦 `handlers/task.go` 的重负，新建 `services/reports/` 目录，构建清晰的导出器架构：
 
 ```
 shield-server/
@@ -356,10 +358,9 @@ shield-server/
 │   └── reports/
 │       ├── report_service.go       # 报告聚合查询与数据组装
 │       ├── exporter_interface.go   # 导出器抽象接口
-│       ├── exporter_excel.go       # 原生 XLSX 导出 (含统计图表与双Sheet)
-│       ├── exporter_markdown.go    # 结构化 Markdown 生成
-│       ├── exporter_html.go        # 独立自包含 HTML 单文件渲染器
-│       ├── exporter_json.go        # 标准化 JSON 序列化
+│       ├── exporter_excel.go       # 原生 XLSX/CSV 导出 (含统计图表与双Sheet)
+│       ├── exporter_markdown.go    # 结构化 Markdown 导出
+│       ├── exporter_json.go        # 标准化 JSON 序列化导出
 │       └── exporter_archive.go     # ZIP 全量归档打包器
 ├── handlers/
 │   └── report_handler.go           # 专门的报告 RESTful API Handler
@@ -389,9 +390,9 @@ data/reports/{task_id}/
 | `/api/tasks/:id/report/summary` | `GET` | 仅获取总结报告 Markdown 正文 | `text/markdown` |
 | `/api/tasks/:id/report/findings` | `GET` | 获取详细问题清单（支持分页与多维筛选） | `application/json` |
 | `/api/tasks/:id/report/diagnostics` | `GET` | 获取运行轨迹与诊断指标 | `application/json` |
-| `/api/tasks/:id/report/export` | `GET` | **统一导出分发入口**<br>`?format=excel|csv|json|md|html|zip` | 文件流下载 / Attachment |
+| `/api/tasks/:id/report/export` | `GET` | **统一导出分发入口**<br>`?format=excel|csv|json|md|zip` | 文件流下载 / Attachment |
 
-### 5.4 多格式导出引擎实现要点
+### 5.4 文件导出引擎实现要点
 
 #### 1. Excel (XLSX) 高级导出器 (`exporter_excel.go`)
 - **Sheet 1【治理概览与透视】**：
@@ -403,12 +404,8 @@ data/reports/{task_id}/
   - 表头采用深 Slate（`#334155`）背景与白色加粗字体，行高自动适配，开启自动筛选（Auto-Filter）与文字换行；
   - 严重级别字段根据内容自动高亮（致命/严重标红、一般标黄）。
 
-#### 2. 自包含独立 HTML 报告生成器 (`exporter_html.go`)
-- 采用 Go `html/template` 将 CSS 样式（含深浅色支持）、语法高亮 PrismJS、以及当前报告的 JSON 数据**全部内联打包为一个独立的 `.html` 文件**；
-- 生成后的 HTML 文件仅约 150KB，任何人双击即可在无网络环境下通过任意浏览器直接交互式查阅，包含折叠、搜索、筛选及打印支持，极大方便对外部客户或内审合规的交付。
-
-#### 3. ZIP 全套任务归档包 (`exporter_archive.go`)
-- 自动将 `report-{id}.md`、`findings-{id}.xlsx`、`findings-{id}.json`、`report-{id}-standalone.html` 以及 `execution-{id}.log` 实时压缩为一个 ZIP 包下载，满足企业级一键归档与审计备查需求。
+#### 2. ZIP 全套任务归档包 (`exporter_archive.go`)
+- 自动将 `summary-{id}.md`、`findings-{id}.xlsx`、`findings-{id}.json` 以及 `execution-{id}.log` 实时压缩为一个 ZIP 包下载，满足企业级一键归档与审计备查需求。
 
 ---
 
@@ -423,7 +420,7 @@ gantt
     section Phase 1: 后端重构
     存储路径规范化与兼容适配        :a1, 2026-08-25, 3d
     ReportService与聚合接口实现     :a2, after a1, 3d
-    多格式导出器 (Excel/HTML/ZIP)   :a3, after a2, 4d
+    多格式导出器 (Excel/JSON/ZIP)   :a3, after a2, 3d
     section Phase 2: 前端重构
     ReportViewer组件族实现         :b1, after a2, 4d
     统一导出菜单与打印排版优化       :b2, after b1, 3d
@@ -434,7 +431,7 @@ gantt
     下线旧版冗余代码与全面验证       :c3, after c2, 2d
 ```
 
-### 阶段 1：后端存储与多格式导出引擎重构
+### 阶段 1：后端存储与文件导出引擎重构
 1. 实现 `services/reports/` 导出器族，保留旧版 `/api/tasks/:id/report` 等接口以保持向后兼容；
 2. 新增 `/api/tasks/:id/report/aggregate` 与 `/api/tasks/:id/report/export` 统一接口；
 3. 单元测试覆盖各导出格式生成与边界容错（如 0 缺陷、超大分片日志等）。
@@ -457,6 +454,6 @@ gantt
 | 评估维度 | 重构前现状 | 重构后效果 | 提升价值 |
 | :--- | :--- | :--- | :--- |
 | **用户体验 (UX)** | 抽屉仅能看 MD，看清单必须跳页；导出按钮混乱 | 抽屉内一站式浏览“总结/清单/诊断”，语义化下拉导出 | 操作路径缩短 60%，体验流畅一致 |
-| **交付格式完备性** | 仅支持简易 MD/CSV，PDF靠简陋截屏打印 | 支持带图表 XLSX、独立离线单文件 HTML、高质感 PDF、ZIP 全量包 | 满足研发排查、管理汇报、外发归档全场景 |
+| **交付格式完备性** | 仅支持简易 MD/CSV，PDF靠简陋截屏打印 | 支持带原生图表 XLSX、结构化 JSON、Markdown、高质感 PDF 打印、ZIP 归档全量包 | 满足研发排查、管理汇报、外发归档全场景 |
 | **代码可维护性** | 3 个大文件（2000+行）重复实现 UI 与样式，后端 Handler 臃肿 | 组件化分层清晰（ReportViewer + Tabs），专用 ReportService 域 | 消除 1000+ 行重复代码，新格式扩展零侵入 |
 | **系统鲁棒性** | 依赖 glob 模糊匹配找历史文件，容易读取崩溃 | 统一存储协议与目录规范，强类型错误防护与容错 | 彻底根除文件查找异常与格式解析失败 |
