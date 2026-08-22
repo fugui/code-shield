@@ -81,7 +81,7 @@ func (a *ArchiveExporter) Export(report *models.TaskReport, w io.Writer, opts Ex
 			"代码仓库: %s\n"+
 			"扫描分支: %s\n"+
 			"任务类型: %s\n"+
-			"综合评分: %d 分 (%s)\n"+
+			"综合风险分: %d 分 (风险估值)\n"+
 			"归档时间: %s\n\n"+
 			"文件说明:\n"+
 			"- report-%d-summary.md: AI 宏观分析概要与建议\n"+
@@ -90,7 +90,7 @@ func (a *ArchiveExporter) Export(report *models.TaskReport, w io.Writer, opts Ex
 			"- report-%d-diagnostics.json: 运行轨迹与分片时序\n"+
 			"- report-%d-execution.log: AI CLI 原始执行日志\n",
 			report.ID, report.Repo.Name, report.Repo.Branch, report.TaskType.DisplayName,
-			report.Score, CalculateRating(report.Score), time.Now().Format("2006-01-02 15:04:05"),
+			report.Score, time.Now().Format("2006-01-02 15:04:05"),
 			report.ID, report.ID, report.ID, report.ID, report.ID,
 		)
 		_, _ = readmeEntry.Write([]byte(readmeText))

@@ -61,9 +61,9 @@ export default function ReportHeader({
             · {meta.repo_name} {meta.branch ? `(${meta.branch})` : ''}
           </span>
         )}
-        {meta?.rating && (
-          <span className={`report-rating-badge rating-${meta.rating}`}>
-            {meta.score} 分 · {meta.rating}
+        {meta?.score !== undefined && (
+          <span className="report-rating-badge">
+            风险分: {meta.score} 分
           </span>
         )}
       </div>

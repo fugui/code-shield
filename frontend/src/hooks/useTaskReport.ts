@@ -87,7 +87,7 @@ export function useTaskReport(): UseTaskReportReturn {
               governance_mode: taskData.task_type?.governance_mode || 'defect_tracking',
               status: taskData.status || 'success',
               score: taskData.score || 0,
-              rating: taskData.score >= 90 ? '优' : taskData.score >= 75 ? '良' : '中',
+              rating: '风险估值',
               total_chunks: taskData.total_chunks || 0,
               processed_chunks: taskData.processed_chunks || 0,
               success_chunks: taskData.success_chunks || 0,
