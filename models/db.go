@@ -3,6 +3,7 @@ package models
 import (
 	"code-common/backend/gormdb"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -230,7 +231,37 @@ func migrateLegacyCampaignTables(db *gorm.DB) error {
 				titleCol = "test_case_name"
 			}
 
-			insertSQL := `
+			// 检查旧表中是否存在 feedback 列
+			var hasFeedback bool
+			checkFeedbackSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = 'feedback')"
+			_ = tx.Raw(checkFeedbackSQL, m.tableName).Scan(&hasFeedback)
+
+			feedbackExpr := "''"
+			if hasFeedback {
+				feedbackExpr = "feedback"
+			}
+
+			// 检查旧表中是否存在 status_log 列
+			var hasStatusLog bool
+			checkStatusLogSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = 'status_log')"
+			_ = tx.Raw(checkStatusLogSQL, m.tableName).Scan(&hasStatusLog)
+
+			statusLogExpr := "NULL"
+			if hasStatusLog {
+				statusLogExpr = "status_log"
+			}
+
+			// 检查旧表中是否存在 assignee_id 列
+			var hasAssignee bool
+			checkAssigneeSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = 'assignee_id')"
+			_ = tx.Raw(checkAssigneeSQL, m.tableName).Scan(&hasAssignee)
+
+			assigneeExpr := "NULL"
+			if hasAssignee {
+				assigneeExpr = "assignee_id"
+			}
+
+			insertSQL := fmt.Sprintf(`
 INSERT INTO campaign_findings (
     task_type_id, repo_id, task_report_id, file_path, line_number,
     title, detail, severity, category, code_snippet, suggestion,
@@ -238,11 +269,11 @@ INSERT INTO campaign_findings (
 )
 SELECT 
     ?, repo_id, task_report_id, file_path, line_number,
-    ` + titleCol + ` AS title, detail, severity, category, code_snippet, suggestion,
-    status, assignee_id, status_log, feedback, created_at, updated_at
-FROM ` + m.tableName + `
+    %s AS title, detail, severity, category, code_snippet, suggestion,
+    status, %s, %s, %s, created_at, updated_at
+FROM %s
 ON CONFLICT (task_type_id, repo_id, file_path, title) DO NOTHING;
-`
+`, titleCol, assigneeExpr, statusLogExpr, feedbackExpr, m.tableName)
 
 			if err := tx.Exec(insertSQL, taskType.ID).Error; err != nil {
 				log.Printf("[Migration] Error migrating table %s to campaign_findings: %v", m.tableName, err)
