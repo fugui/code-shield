@@ -116,9 +116,39 @@ function ReportsOverview() {
     }, { replace: true });
   };
 
+  const urlTaskId = searchParams.get('taskId') || searchParams.get('reportId');
+
+  useEffect(() => {
+    if (urlTaskId) {
+      const parsed = parseInt(urlTaskId, 10);
+      if (parsed) {
+        setCurrentReportId(parsed);
+        setSidebarOpen(true);
+      }
+    } else {
+      setSidebarOpen(false);
+      setCurrentReportId(undefined);
+    }
+  }, [urlTaskId]);
+
   const handleOpenReport = (reportId: number) => {
     setCurrentReportId(reportId);
     setSidebarOpen(true);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('taskId', reportId.toString());
+      return next;
+    });
+  };
+
+  const handleCloseReport = () => {
+    setSidebarOpen(false);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('taskId');
+      next.delete('reportId');
+      return next;
+    });
   };
 
   const handleNotify = async (reportId: number) => {
@@ -550,14 +580,14 @@ function ReportsOverview() {
           nextTaskId: nextTask ? nextTask.id : undefined,
           currentIndex: currentIdx,
           totalTasks: items.length,
-          onNavigate: (id) => setCurrentReportId(id),
+          onNavigate: (id) => handleOpenReport(id),
         } : undefined;
 
         return (
           <ReportViewer
             taskId={currentReportId}
             open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
+            onClose={handleCloseReport}
             mode="drawer"
             navigation={navContext}
             onResume={handleResume}

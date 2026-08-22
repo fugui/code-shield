@@ -1,6 +1,9 @@
 import React from 'react';
 import { TaskReportMeta, TaskNavigationContext } from '../../types/report';
 import ReportExportMenu from './ReportExportMenu';
+import { appNavigatePath } from '../../config';
+import { copyToClipboardWithFallback } from '../../utils/reportUtils';
+import { useToast } from '../Toast';
 
 interface ReportHeaderProps {
   meta?: TaskReportMeta;
@@ -23,6 +26,31 @@ export default function ReportHeader({
   onExport,
   onPrint,
 }: ReportHeaderProps) {
+  const { showToast } = useToast();
+
+  const getReportUrl = () => {
+    if (!meta?.id) return '';
+    return `${window.location.origin}${appNavigatePath(`/public/report/${meta.id}`)}`;
+  };
+
+  const handleCopyLink = async () => {
+    const url = getReportUrl();
+    if (!url) return;
+    const ok = await copyToClipboardWithFallback(url);
+    if (ok) {
+      showToast('已复制报告快速链接到剪贴板！', 'success');
+    } else {
+      showToast('复制链接失败，请手动复制', 'error');
+    }
+  };
+
+  const handleOpenExternal = () => {
+    const url = getReportUrl();
+    if (url) {
+      window.open(url, '_blank');
+    }
+  };
+
   return (
     <div className="report-header-bar">
       {/* 左侧元信息 */}
@@ -60,6 +88,26 @@ export default function ReportHeader({
               title="查看下一个任务报告"
             >
               下一个 ›
+            </button>
+          </div>
+        )}
+
+        {/* 快速链接按钮 */}
+        {meta?.id && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <button
+              className="nav-btn no-print"
+              onClick={handleCopyLink}
+              title="复制报告专属直达链接 (URL)，便于在团队中快速分享"
+            >
+              🔗 复制链接
+            </button>
+            <button
+              className="nav-btn no-print"
+              onClick={handleOpenExternal}
+              title="在新标签页中打开该报告独立视图"
+            >
+              ↗ 独立页面
             </button>
           </div>
         )}
