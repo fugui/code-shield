@@ -143,6 +143,15 @@ func main() {
 				api.POST("/tasks/:id/notify", handlers.TriggerManualNotification)
 				api.POST("/tasks/:id/resume", handlers.ResumeTask)
 				api.GET("/tasks/:id", handlers.GetTaskDetails)
+
+				// Standardized Task Report & Export Routes (New Architecture)
+				api.GET("/tasks/:id/report/summary", handlers.GetReportSummaryHandler)
+				api.GET("/tasks/:id/report/findings", handlers.GetReportFindingsHandler)
+				api.GET("/tasks/:id/report/diagnostics", handlers.GetReportDiagnosticsHandler)
+				api.GET("/tasks/:id/report/aggregate", handlers.GetReportAggregateHandler)
+				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
+
+				// Legacy Report Routes (Backward Compatible)
 				api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
 				api.GET("/tasks/:id/synthesis", handlers.GetTaskReportSynthesisJSON)
 				api.GET("/tasks/:id/synthesis/csv", handlers.ExportTaskReportSynthesisCSV)

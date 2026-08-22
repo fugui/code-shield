@@ -5,7 +5,8 @@ import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common'
 
 import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
-import ReportSidebar from '../components/ReportSidebar';
+import ReportViewer from '../components/report/ReportViewer';
+import { TaskNavigationContext } from '../types/report';
 import { appNavigatePath, apiUrl } from '../config';
 
 function ReportsOverview() {
@@ -32,8 +33,6 @@ function ReportsOverview() {
   const [totalPages, setTotalPages] = useState<number>(0);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentMarkdown, setCurrentMarkdown] = useState<string>('');
-  const [loadingMarkdown, setLoadingMarkdown] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -117,25 +116,9 @@ function ReportsOverview() {
     }, { replace: true });
   };
 
-  const handleOpenReport = async (reportId: number) => {
-    setSidebarOpen(true);
-    setLoadingMarkdown(true);
-    setCurrentMarkdown('');
+  const handleOpenReport = (reportId: number) => {
     setCurrentReportId(reportId);
-    try {
-      const res = await fetch(apiUrl(`/api/tasks/${reportId}/report`));
-      if (res.ok) {
-        const text = await res.text();
-        setCurrentMarkdown(text);
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setCurrentMarkdown(`### 获取报告数据失败\n\n原因: ${errData.error || 'Server error'}`);
-      }
-    } catch (err) {
-      setCurrentMarkdown('### 获取报告数据失败\n\n原因: 网络请求异常。');
-    } finally {
-      setLoadingMarkdown(false);
-    }
+    setSidebarOpen(true);
   };
 
   const handleNotify = async (reportId: number) => {
@@ -556,8 +539,31 @@ function ReportsOverview() {
         <Pagination totalItems={totalItems} />
       )}
 
-      {/* Sidebar detail viewer */}
-      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
+      {/* Task Report Viewer (Drawer Mode) */}
+      {(() => {
+        const currentIdx = items.findIndex((it: any) => it.id === currentReportId);
+        const prevTask = currentIdx > 0 ? items[currentIdx - 1] : null;
+        const nextTask = currentIdx >= 0 && currentIdx < items.length - 1 ? items[currentIdx + 1] : null;
+
+        const navContext: TaskNavigationContext | undefined = currentReportId ? {
+          prevTaskId: prevTask ? prevTask.id : undefined,
+          nextTaskId: nextTask ? nextTask.id : undefined,
+          currentIndex: currentIdx,
+          totalTasks: items.length,
+          onNavigate: (id) => setCurrentReportId(id),
+        } : undefined;
+
+        return (
+          <ReportViewer
+            taskId={currentReportId}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            mode="drawer"
+            navigation={navContext}
+            onResume={handleResume}
+          />
+        );
+      })()}
 
       <style>{`
         .spinner-mini {

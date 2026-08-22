@@ -195,6 +195,76 @@ func (r *TaskReport) GetAbsReportPath() string {
 	return filepath.Join(AppConfig.GetDataDir(), r.ReportPath)
 }
 
+// GetReportDir 返回任务专属的报告存储目录
+func (r *TaskReport) GetReportDir() string {
+	absReport := r.GetAbsReportPath()
+	if absReport != "" {
+		return filepath.Dir(absReport)
+	}
+	return filepath.Join(AppConfig.GetDataDir(), "reports")
+}
+
+// GetSynthesisJSONPath 返回 Synthesis Findings JSON 文件路径（内建历史命名兼容）
+func (r *TaskReport) GetSynthesisJSONPath() string {
+	dir := r.GetReportDir()
+	// 1. 标准命名
+	p1 := filepath.Join(dir, "findings.json")
+	if _, err := os.Stat(p1); err == nil {
+		return p1
+	}
+	// 2. 历史规范命名 report-{id}-synthesis-{safeRepo}.json
+	safeRepo := strings.ReplaceAll(r.Repo.Name, "/", "-")
+	p2 := filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepo))
+	if _, err := os.Stat(p2); err == nil {
+		return p2
+	}
+	// 3. Glob 兼容兜底
+	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-*.json", r.ID)))
+	if err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+	return p2
+}
+
+// GetSummaryJSONPath 返回 Summary Diagnostics JSON 文件路径（内建历史命名兼容）
+func (r *TaskReport) GetSummaryJSONPath() string {
+	dir := r.GetReportDir()
+	// 1. 标准命名
+	p1 := filepath.Join(dir, "diagnostics.json")
+	if _, err := os.Stat(p1); err == nil {
+		return p1
+	}
+	// 2. 历史规范命名 report-{id}-summary-{safeRepo}.json
+	safeRepo := strings.ReplaceAll(r.Repo.Name, "/", "-")
+	p2 := filepath.Join(dir, fmt.Sprintf("report-%d-summary-%s.json", r.ID, safeRepo))
+	if _, err := os.Stat(p2); err == nil {
+		return p2
+	}
+	// 3. Glob 兼容兜底
+	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("report-%d-summary-*.json", r.ID)))
+	if err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+	return p2
+}
+
+// GetExecutionLogPath 返回任务 AI 执行输出日志路径
+func (r *TaskReport) GetExecutionLogPath() string {
+	dir := r.GetReportDir()
+	p1 := filepath.Join(dir, "execution.log")
+	if _, err := os.Stat(p1); err == nil {
+		return p1
+	}
+	absReport := r.GetAbsReportPath()
+	if absReport != "" {
+		p2 := absReport + ".output.txt"
+		if _, err := os.Stat(p2); err == nil {
+			return p2
+		}
+	}
+	return p1
+}
+
 // AnalysisFinding 记录 AI 分析阶段输出的结构化问题
 type AnalysisFinding struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`

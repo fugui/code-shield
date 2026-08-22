@@ -1,0 +1,376 @@
+/* ==========================================================================
+   Code-Shield 任务报告与治理诊断中心专用样式系统
+   ========================================================================== */
+
+.report-viewer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-color, #f8fafc);
+  color: var(--text-color, #0f172a);
+  font-family: var(--font-family-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+}
+
+/* 顶部操作条 */
+.report-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: var(--card-bg, #ffffff);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.report-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.report-rating-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.report-rating-badge.rating-优 { background: rgba(16, 185, 129, 0.12); color: #059669; }
+.report-rating-badge.rating-良 { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+.report-rating-badge.rating-中 { background: rgba(234, 179, 8, 0.12); color: #ca8a04; }
+.report-rating-badge.rating-差 { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+
+.report-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: transparent;
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-secondary, #475569);
+  padding: 0.35rem 0.65rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.nav-btn:hover:not(:disabled) {
+  background: var(--bg-color, #f1f5f9);
+  color: var(--text-color, #0f172a);
+}
+.nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 选项卡导航 */
+.report-tab-bar {
+  display: flex;
+  background: var(--card-bg, #ffffff);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  padding: 0 1.25rem;
+  gap: 1.5rem;
+}
+
+.report-tab-item {
+  padding: 0.75rem 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary, #64748b);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.report-tab-item:hover {
+  color: var(--primary-color, #2563eb);
+}
+.report-tab-item.active {
+  color: var(--primary-color, #2563eb);
+  border-bottom-color: var(--primary-color, #2563eb);
+  font-weight: 600;
+}
+
+.tab-badge {
+  background: var(--border-color, #e2e8f0);
+  color: var(--text-secondary, #475569);
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.report-tab-item.active .tab-badge {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--primary-color, #2563eb);
+}
+
+/* 内容主体 */
+.report-content-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+/* KPI 统计卡片区 */
+.report-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.report-kpi-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.kpi-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  text-transform: uppercase;
+}
+.kpi-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-color, #0f172a);
+}
+
+/* 过滤工具栏 */
+.findings-filter-toolbar {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip-btn {
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+/* 缺陷/实体明细卡片 */
+.finding-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.finding-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border-color: #cbd5e1;
+}
+
+.finding-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.finding-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.finding-location-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-color, #f8fafc);
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #475569);
+}
+
+.code-snippet-box {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.suggestion-box {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.825rem;
+  line-height: 1.5;
+  margin-top: 0.75rem;
+}
+
+/* 导出下拉菜单 */
+.export-dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.export-menu-popup {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 260px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  padding: 0.5rem 0;
+  z-index: 1050;
+}
+
+.export-menu-group-title {
+  padding: 0.4rem 1rem 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+}
+
+.export-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.825rem;
+  color: var(--text-color, #1e293b);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.export-menu-item:hover {
+  background-color: var(--bg-color, #f1f5f9);
+  color: var(--primary-color, #2563eb);
+}
+
+.export-menu-divider {
+  height: 1px;
+  background-color: var(--border-color, #e2e8f0);
+  margin: 0.35rem 0;
+}
+
+/* 时序流水线 */
+.pipeline-step-flow {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.step-card {
+  flex: 1;
+  min-width: 140px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.step-card.step-success { border-left: 4px solid #10b981; }
+.step-card.step-failed { border-left: 4px solid #ef4444; }
+.step-card.step-running { border-left: 4px solid #3b82f6; }
+
+/* 打印专用配置 @media print */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .no-print,
+  .report-header-actions,
+  .report-tab-bar,
+  .findings-filter-toolbar,
+  .export-dropdown-wrapper,
+  .nav-btn,
+  .status-select,
+  .assignee-select {
+    display: none !important;
+  }
+
+  .report-content-body {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .finding-card {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-bottom: 1.5rem !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .code-snippet-box {
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .suggestion-box {
+    background: #f0fdf4 !important;
+    border: 1px solid #86efac !important;
+    color: #166534 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

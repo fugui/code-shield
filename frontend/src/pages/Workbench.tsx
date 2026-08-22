@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Drawer } from '@code/common';
 import { useToast } from '../components/Toast';
 import MemberSearchSelect from '../components/MemberSearchSelect';
-import ReportSidebar from '../components/ReportSidebar';
+import ReportViewer from '../components/report/ReportViewer';
 import { sshToHttps } from '../utils/urlUtils';
 import { useNavigate } from 'react-router-dom';
 import { appNavigatePath } from '../config';
@@ -314,23 +314,9 @@ export default function Workbench() {
 		}
 	};
 
-	const handleOpenReport = async (reportId: number) => {
-		setSidebarOpen(true);
-		setLoadingMarkdown(true);
-		setCurrentMarkdown('');
+	const handleOpenReport = (reportId: number) => {
 		setCurrentReportId(reportId);
-		try {
-			const res = await fetch(`/api/tasks/${reportId}/report`);
-			if (res.ok) setCurrentMarkdown(await res.text());
-			else {
-				const errData = await res.json();
-				setCurrentMarkdown(`### 获取报告数据失败\n\n原因: ${errData.error || 'Server error'}`);
-			}
-		} catch {
-			setCurrentMarkdown('### 获取报告数据失败\n\n原因: 网络请求异常。');
-		} finally {
-			setLoadingMarkdown(false);
-		}
+		setSidebarOpen(true);
 	};
 
 	const getScoreColor = (score: number) =>
@@ -837,7 +823,12 @@ export default function Workbench() {
 				)}
 			</Drawer>
 
-			<ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
+			<ReportViewer
+				taskId={currentReportId}
+				open={sidebarOpen}
+				onClose={() => setSidebarOpen(false)}
+				mode="drawer"
+			/>
 		</div>
 	);
 }
