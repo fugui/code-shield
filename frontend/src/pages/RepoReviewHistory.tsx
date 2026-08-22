@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import ReportViewer from '../components/report/ReportViewer';
@@ -8,6 +8,7 @@ import { appNavigatePath } from '../config';
 
 function RepoReviewHistory() {
   const { repoId } = useParams<{ repoId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const returnSearch = (location.state as any)?.returnSearch || '';
@@ -22,6 +23,21 @@ function RepoReviewHistory() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
+
+  const urlTaskId = searchParams.get('taskId') || searchParams.get('reportId');
+
+  useEffect(() => {
+    if (urlTaskId) {
+      const parsed = parseInt(urlTaskId, 10);
+      if (parsed) {
+        setCurrentReportId(parsed);
+        setSidebarOpen(true);
+      }
+    } else {
+      setSidebarOpen(false);
+      setCurrentReportId(undefined);
+    }
+  }, [urlTaskId]);
 
   useEffect(() => {
     fetchReviews();
@@ -67,6 +83,21 @@ function RepoReviewHistory() {
   const handleOpenReport = (reportId: number) => {
     setCurrentReportId(reportId);
     setSidebarOpen(true);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('taskId', reportId.toString());
+      return next;
+    });
+  };
+
+  const handleCloseReport = () => {
+    setSidebarOpen(false);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('taskId');
+      next.delete('reportId');
+      return next;
+    });
   };
 
   const handleNotify = async (reportId: number) => {
@@ -318,14 +349,14 @@ function RepoReviewHistory() {
           nextTaskId: nextTask ? nextTask.id : undefined,
           currentIndex: currentIdx,
           totalTasks: reviews.length,
-          onNavigate: (id) => setCurrentReportId(id),
+          onNavigate: (id) => handleOpenReport(id),
         } : undefined;
 
         return (
           <ReportViewer
             taskId={currentReportId}
             open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
+            onClose={handleCloseReport}
             mode="drawer"
             navigation={navContext}
             onResume={handleResume}

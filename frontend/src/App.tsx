@@ -247,6 +247,8 @@ function AppContent() {
             {/* 报告独立视图路由（受保护） */}
             <Route path="/public/report/:reportId" element={<PrivateRoute><PublicReportFindings /></PrivateRoute>} />
             <Route path="/public/reports/:reportId" element={<PrivateRoute><PublicReportFindings /></PrivateRoute>} />
+            <Route path="/reports/task/:reportId" element={<PrivateRoute><PublicReportFindings /></PrivateRoute>} />
+            <Route path="/reports/tasks/:reportId" element={<PrivateRoute><PublicReportFindings /></PrivateRoute>} />
 
             {/* 兼容旧路由重定向 */}
             <Route path="/tasks" element={<Navigate to={appNavigatePath("/reports")} replace />} />
