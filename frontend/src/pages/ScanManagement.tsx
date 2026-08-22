@@ -6,7 +6,7 @@ import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common'
 import ScheduleSidebar, { ScheduleFormData } from '../components/ScheduleSidebar';
 import { useToast } from '../components/Toast';
 import { appNavigatePath } from '../config';
-import ReportSidebar from '../components/ReportSidebar';
+import ReportViewer from '../components/report/ReportViewer';
 import ExecutionLogs from './ExecutionLogs';
 import TriggerLogs from './TriggerLogs';
 import { sshToHttps } from '../utils/urlUtils';
@@ -273,24 +273,9 @@ function ScanManagement() {
     }
   };
 
-  const handleOpenReport = async (reportId: number) => {
-    setSidebarOpen(true);
-    setLoadingMarkdown(true);
-    setCurrentMarkdown('');
+  const handleOpenReport = (reportId: number) => {
     setCurrentReportId(reportId);
-    try {
-      const res = await fetch(`/api/tasks/${reportId}/report`);
-      if (res.ok) {
-        setCurrentMarkdown(await res.text());
-      } else {
-        const err = await res.json();
-        setCurrentMarkdown(`### 获取报告失败\n\n原因: ${err.error || 'Server error'}`);
-      }
-    } catch {
-      setCurrentMarkdown('### 获取报告失败\n\n原因: 网络请求异常。');
-    } finally {
-      setLoadingMarkdown(false);
-    }
+    setSidebarOpen(true);
   };
 
   const deletePending = async (logId: number, isRunning: boolean) => {
@@ -883,7 +868,12 @@ function ScanManagement() {
       )}
 
       {/* Slideout report viewer sidebar */}
-      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
+      <ReportViewer
+        taskId={currentReportId}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        mode="drawer"
+      />
 
       <style>{`
         .spinner-mini {

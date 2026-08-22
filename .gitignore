@@ -28,7 +28,7 @@ code_shield.db-shm
 code_shield.db-wal
 codes/
 review-reports/
-reports/
+/reports/
 
 # Binary executables
 code-shield-server

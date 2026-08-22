@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
-import ReportSidebar from '../components/ReportSidebar';
+import ReportViewer from '../components/report/ReportViewer';
+import { TaskNavigationContext } from '../types/report';
 import { appNavigatePath } from '../config';
 
 function RepoReviewHistory() {
@@ -20,8 +21,6 @@ function RepoReviewHistory() {
   const [totalPages, setTotalPages] = useState(0);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentMarkdown, setCurrentMarkdown] = useState('');
-  const [loadingMarkdown, setLoadingMarkdown] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
 
   useEffect(() => {
@@ -65,24 +64,9 @@ function RepoReviewHistory() {
     }
   }, [repoId, repoName]);
 
-  const handleOpenReport = async (reportId: number) => {
-    setSidebarOpen(true);
-    setLoadingMarkdown(true);
-    setCurrentMarkdown('');
+  const handleOpenReport = (reportId: number) => {
     setCurrentReportId(reportId);
-    try {
-      const res = await fetch(`/api/tasks/${reportId}/report`);
-      if (res.ok) {
-        setCurrentMarkdown(await res.text());
-      } else {
-        const err = await res.json();
-        setCurrentMarkdown(`### 获取报告失败\n\n原因: ${err.error || 'Server error'}`);
-      }
-    } catch {
-      setCurrentMarkdown('### 获取报告失败\n\n原因: 网络请求异常。');
-    } finally {
-      setLoadingMarkdown(false);
-    }
+    setSidebarOpen(true);
   };
 
   const handleNotify = async (reportId: number) => {
@@ -323,7 +307,31 @@ function RepoReviewHistory() {
         <Pagination totalItems={totalItems} defaultPageSize={15} />
       )}
 
-      <ReportSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} markdown={currentMarkdown} loading={loadingMarkdown} reportId={currentReportId} />
+      {/* Task Report Viewer (Drawer Mode) */}
+      {(() => {
+        const currentIdx = reviews.findIndex((it: any) => it.id === currentReportId);
+        const prevTask = currentIdx > 0 ? reviews[currentIdx - 1] : null;
+        const nextTask = currentIdx >= 0 && currentIdx < reviews.length - 1 ? reviews[currentIdx + 1] : null;
+
+        const navContext: TaskNavigationContext | undefined = currentReportId ? {
+          prevTaskId: prevTask ? prevTask.id : undefined,
+          nextTaskId: nextTask ? nextTask.id : undefined,
+          currentIndex: currentIdx,
+          totalTasks: reviews.length,
+          onNavigate: (id) => setCurrentReportId(id),
+        } : undefined;
+
+        return (
+          <ReportViewer
+            taskId={currentReportId}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            mode="drawer"
+            navigation={navContext}
+            onResume={handleResume}
+          />
+        );
+      })()}
     </div>
   );
 }
