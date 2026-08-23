@@ -136,7 +136,15 @@ export default function ReportFindingsTab({
   return (
     <div>
       {/* 1. 严重性指标卡片看板 (默认全选中高亮，支持智能单选/多选组合) */}
-      <div className="severity-cards-grid no-print">
+      <div
+        className="severity-cards-grid no-print"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '1.25rem',
+          marginBottom: '1.75rem',
+        }}
+      >
         {cards.map((c) => {
           const isSelected = selectedSevs.includes(c.key);
           return (
@@ -145,22 +153,40 @@ export default function ReportFindingsTab({
               onClick={() => handleCardClick(c.key)}
               className={`severity-metric-card ${isSelected ? 'selected' : ''}`}
               style={{
-                border: isSelected ? `1.5px solid ${c.color}` : '1.5px solid var(--border-color, #e2e8f0)',
+                background: '#ffffff',
+                backgroundColor: '#ffffff',
+                border: isSelected ? `1.5px solid ${c.color}` : '1.5px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '1.2rem 1.5rem',
+                minHeight: '96px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                cursor: 'pointer',
                 opacity: isSelected ? 1 : 0.45,
+                boxSizing: 'border-box',
               }}
             >
-              <div className="card-top-row">
+              <div className="card-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span
                   className="card-sev-name"
-                  style={{ color: isSelected ? c.color : 'var(--text-secondary, #64748b)' }}
+                  style={{ color: isSelected ? c.color : '#64748b', fontSize: '0.85rem', fontWeight: 600 }}
                 >
                   {c.name}
                 </span>
                 <div
                   className="filter-checkbox"
                   style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '4px',
+                    border: '1.5px solid',
                     borderColor: isSelected ? c.color : '#cbd5e1',
                     background: isSelected ? c.color : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
                   {isSelected && (
@@ -170,23 +196,12 @@ export default function ReportFindingsTab({
                   )}
                 </div>
               </div>
-
-              <div className="card-count-row">
-                <span
-                  className="card-count-number"
-                  style={{ color: isSelected ? c.color : 'var(--text-color, #0f172a)' }}
-                >
+              <div className="card-bottom-row" style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', marginTop: '0.5rem' }}>
+                <span className="card-count-num" style={{ fontSize: '1.8rem', fontWeight: 700, color: isSelected ? c.color : '#0f172a' }}>
                   {c.count}
                 </span>
-                <span className="card-count-unit">个</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>个</span>
               </div>
-
-              <div
-                className="card-color-bar"
-                style={{
-                  background: isSelected ? c.color : '#e2e8f0',
-                }}
-              />
             </div>
           );
         })}
