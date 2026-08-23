@@ -148,6 +148,7 @@ func main() {
 				api.GET("/tasks/:id/report/summary", handlers.GetReportSummaryHandler)
 				api.GET("/tasks/:id/report/findings", handlers.GetReportFindingsHandler)
 				api.GET("/tasks/:id/report/diagnostics", handlers.GetReportDiagnosticsHandler)
+				api.GET("/tasks/:id/summary", handlers.GetReportDiagnosticsHandler) // 兼容历史别名
 				api.GET("/tasks/:id/report/aggregate", handlers.GetReportAggregateHandler)
 				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
 

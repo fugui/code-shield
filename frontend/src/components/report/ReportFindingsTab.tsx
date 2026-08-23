@@ -8,8 +8,6 @@ interface ReportFindingsTabProps {
   findingsPage: FindingsPageResponse | null;
   loading: boolean;
   onFilterChange: (filters: Record<string, any>) => void;
-  onStatusChange?: (finding: TaskFindingItem, newStatus: string) => void;
-  isReadOnly?: boolean;
 }
 
 interface SeverityCardItem {
@@ -24,22 +22,29 @@ export default function ReportFindingsTab({
   findingsPage,
   loading,
   onFilterChange,
-  onStatusChange,
-  isReadOnly = false,
 }: ReportFindingsTabProps) {
   const isEntityMode = meta?.governance_mode === 'entity_assessment';
   const defaultKeys = isEntityMode
-    ? ['pass', 'fatal']
+    ? ['pass', 'unpass']
     : ['fatal', 'critical', 'major', 'suggestion'];
 
   const [selectedSevs, setSelectedSevs] = useState<string[]>(defaultKeys);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [keyword, setKeyword] = useState<string>('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState<string>('');
   const [page, setPage] = useState<number>(1);
 
   const metrics = findingsPage?.metrics;
   const items = findingsPage?.items || [];
   const total = findingsPage?.total || 0;
+
+  // 搜索输入防抖
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(keyword.trim());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [keyword]);
 
   // 构建指标卡片列表
   const cards: SeverityCardItem[] = [];
@@ -51,7 +56,7 @@ export default function ReportFindingsTab({
       color: '#10b981',
     });
     cards.push({
-      key: 'fatal',
+      key: 'unpass',
       name: '不合格 / 风险',
       count: (metrics?.fatal_count ?? 0) + (metrics?.critical_count ?? 0) + (metrics?.major_count ?? 0),
       color: '#ef4444',
@@ -89,16 +94,21 @@ export default function ReportFindingsTab({
   const isAllSelected = allAvailableKeys.length > 0 && allAvailableKeys.every(k => selectedSevs.includes(k));
 
   useEffect(() => {
-    // 全选或未选时，severity 传空代表查询全部
-    const sevParam = isAllSelected || selectedSevs.length === 0 ? '' : selectedSevs.join(',');
+    // 全选或未选时，severity 传空代表查询全部；部分选时将 unpass 映射为 fatal,critical,major
+    let sevParam = '';
+    if (!isAllSelected && selectedSevs.length > 0) {
+      const mapped = selectedSevs.map(k => (k === 'unpass' ? 'fatal,critical,major' : k));
+      sevParam = mapped.join(',');
+    }
+
     onFilterChange({
       severity: sevParam,
       status: selectedStatus,
-      keyword: keyword.trim(),
+      keyword: debouncedKeyword,
       page,
       pageSize: 50,
     });
-  }, [selectedSevs, selectedStatus, keyword, page, isAllSelected]);
+  }, [selectedSevs, selectedStatus, debouncedKeyword, page, isAllSelected]);
 
   // 点击卡片智能切换 (全选状态下点击某张则单独选中该项；部分选中状态下 toggle)
   const handleCardClick = (key: string) => {
@@ -274,8 +284,6 @@ export default function ReportFindingsTab({
               governanceMode={meta?.governance_mode}
               repoUrl={meta?.repo_url}
               branch={meta?.branch}
-              isReadOnly={isReadOnly}
-              onStatusChange={onStatusChange}
             />
           ))}
 

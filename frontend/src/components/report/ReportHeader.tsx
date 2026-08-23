@@ -162,7 +162,6 @@ export default function ReportHeader({
 
         {/* 导出多格式报告下拉菜单 (核心 Primary Action) */}
         <ReportExportMenu
-          taskId={meta?.id || 0}
           exporting={exporting}
           onExport={onExport}
           onPrint={onPrint}

@@ -4,6 +4,7 @@ import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import ReportViewer from '../components/report/ReportViewer';
 import { sshToHttps } from '../utils/urlUtils';
+import { apiUrl } from '../config';
 
 interface ExecutionLogsProps {
   embedded?: boolean;
@@ -239,13 +240,13 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   const fetchSummary = async (reportId: number) => {
     setLoadingSummaries(prev => ({ ...prev, [reportId]: true }));
     try {
-      const res = await fetch(`/api/tasks/${reportId}/summary`);
+      const res = await fetch(apiUrl(`/api/tasks/${reportId}/report/diagnostics`));
       if (res.ok) {
         const data = await res.json();
         setSummaries(prev => ({ ...prev, [reportId]: data }));
       }
     } catch (err) {
-      console.error('Failed to fetch summary:', err);
+      console.error('Failed to fetch diagnostics summary:', err);
     } finally {
       setLoadingSummaries(prev => ({ ...prev, [reportId]: false }));
     }
@@ -744,28 +745,31 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                             </h4>
                             {loadingSummaries[report.id] ? (
                               <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.8rem' }}>
-                                <span className="report-sidebar-spinner" style={{ display: 'inline-block', width: '10px', height: '10px', border: '2px solid rgba(100,116,139,0.3)', borderRadius: '50%', borderTopColor: 'var(--primary-color)', animation: 'report-sidebar-spin 1s infinite', verticalAlign: 'middle', marginRight: '5px' }} />
+                                <span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(100,116,139,0.3)', borderRadius: '50%', borderTopColor: 'var(--primary-color, #2563eb)', verticalAlign: 'middle', marginRight: '6px' }} />
                                 正在获取运行轨迹...
                               </div>
                             ) : summaries[report.id] ? (() => {
                               const s = summaries[report.id];
-                              const chunks = s.analysis?.chunks || [];
+                              const chunks = s.chunks || s.analysis?.chunks || [];
                               const failedChunk = chunks.find((c: any) => c.status === 'failed');
+                              const analysisDur = s.analysis_duration ?? s.analysis?.duration_seconds ?? 0;
+                              const totalDur = s.total_duration ?? s.duration_seconds ?? 0;
+                              const successChunks = chunks.filter((c: any) => c.status === 'success').length;
                               return (
                                 <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', color: '#475569' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <span>⏱️ 静态分析耗时:</span>
-                                    <strong style={{ color: '#0f172a' }}>{formatDuration(s.analysis?.duration_seconds)}</strong>
+                                    <strong style={{ color: '#0f172a' }}>{formatDuration(analysisDur)}</strong>
                                   </div>
                                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>🎨 综合报告耗时:</span>
-                                    <strong style={{ color: '#0f172a' }}>{formatDuration(s.synthesis?.duration_seconds)}</strong>
+                                    <span>⌛ 任务总体耗时:</span>
+                                    <strong style={{ color: '#0f172a' }}>{formatDuration(totalDur)}</strong>
                                   </div>
                                   {chunks.length > 0 && (
                                     <div>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                                         <span>🧩 分片扫描进度:</span>
-                                        <strong>{s.analysis?.success_chunks} / {s.analysis?.total_chunks} 成功</strong>
+                                        <strong>{successChunks} / {chunks.length} 成功</strong>
                                       </div>
                                       
                                       {/* Mini Chunk Color Grid */}

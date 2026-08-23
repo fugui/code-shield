@@ -443,10 +443,8 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 				}
 			}
 
-			// 构建时序步骤
+			// 构建时序步骤 (完全基于实际执行记录，杜绝硬编码虚构耗时)
 			dto.PipelineSteps = []PipelineStep{
-				{Name: "初始化克隆", Status: "success", DurationSeconds: 1.0},
-				{Name: "前置检查", Status: "success", DurationSeconds: 0.5},
 				{Name: "代码静态分析", Status: getStepStatus(summaryMap, "analysis"), DurationSeconds: dto.AnalysisDuration},
 				{Name: "综合报告生成", Status: getStepStatus(summaryMap, "synthesis"), DurationSeconds: getStepDuration(summaryMap, "synthesis")},
 				{Name: "缺陷归并与入库", Status: getStepStatus(summaryMap, "merging"), DurationSeconds: getStepDuration(summaryMap, "merging")},

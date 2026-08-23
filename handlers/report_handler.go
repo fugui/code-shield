@@ -147,8 +147,9 @@ func ExportReportHandler(c *gin.Context) {
 	encodedFilename := url.PathEscape(filename)
 
 	c.Header("Content-Type", exporter.ContentType())
-	// RFC 5987 标准 Content-Disposition
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", filename, encodedFilename))
+	// RFC 5987 标准 Content-Disposition (ASCII 兜底 + UTF-8 真实多语言文件名)
+	fallbackFilename := "report" + exporter.FileExtension()
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", fallbackFilename, encodedFilename))
 
 	opts := reports.ExportOptions{
 		Format: format,

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"code-shield/models"
+	"code-shield/services/reports"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -103,7 +104,7 @@ func generateCampaignExcel(c *gin.Context, repoName, campaignTitle string, items
 		_ = f.SetRowStyle(sheet1, r, r, dataStyle)
 
 		if isEntityMode {
-			statusCn := getCampaignStatusChinese(item.Status, true)
+			statusCn := reports.GetStatusChinese(item.Status, true)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", r), item.ID)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", r), item.Severity)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("C%d", r), item.Category)
@@ -115,7 +116,7 @@ func generateCampaignExcel(c *gin.Context, repoName, campaignTitle string, items
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("I%d", r), item.Assignee)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("J%d", r), item.Comment)
 		} else {
-			statusCn := getCampaignStatusChinese(item.Status, false)
+			statusCn := reports.GetStatusChinese(item.Status, false)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", r), item.ID)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", r), item.Severity)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("C%d", r), item.Category)
@@ -143,32 +144,6 @@ func generateCampaignExcel(c *gin.Context, repoName, campaignTitle string, items
 
 	if err := f.Write(c.Writer); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出 Excel 文件写入失败: " + err.Error()})
-	}
-}
-
-func getCampaignStatusChinese(status string, isUT bool) string {
-	switch status {
-	case "open":
-		if isUT {
-			return "待复核"
-		}
-		return "待处理"
-	case "analyzing":
-		return "问题分析"
-	case "resolved":
-		if isUT {
-			return "已整改"
-		}
-		return "已解决"
-	case "closed":
-		return "已关闭"
-	case "invalid":
-		if isUT {
-			return "无效问题"
-		}
-		return "忽略/误报"
-	default:
-		return status
 	}
 }
 

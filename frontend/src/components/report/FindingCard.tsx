@@ -8,8 +8,6 @@ interface FindingCardProps {
   governanceMode?: GovernanceMode;
   repoUrl?: string;
   branch?: string;
-  isReadOnly?: boolean;
-  onStatusChange?: (finding: TaskFindingItem, newStatus: string) => void;
 }
 
 export default function FindingCard({
@@ -17,8 +15,6 @@ export default function FindingCard({
   governanceMode = 'defect_tracking',
   repoUrl,
   branch,
-  isReadOnly = false,
-  onStatusChange,
 }: FindingCardProps) {
   const { showToast } = useToast();
   const [codeExpanded, setCodeExpanded] = useState(false);
