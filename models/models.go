@@ -212,21 +212,12 @@ func (r *TaskReport) GetSynthesisJSONPath() string {
 	if _, err := os.Stat(p1); err == nil {
 		return p1
 	}
-	// 2. 历史规范命名 report-{id}-synthesis-{safeRepo}.json
+	// 2. 规范命名 report-{id}-synthesis-{safeRepo}.json
 	safeRepo := strings.ReplaceAll(r.Repo.Name, "/", "-")
-	p2 := filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepo))
-	if _, err := os.Stat(p2); err == nil {
-		return p2
-	}
-	// 3. Glob 兼容兜底 (TODO: 待历史老旧报告完全归档后，于后续版本移除 Glob 兜底)
-	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-*.json", r.ID)))
-	if err == nil && len(matches) > 0 {
-		return matches[0]
-	}
-	return p2
+	return filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepo))
 }
 
-// GetSummaryJSONPath 返回 Summary Diagnostics JSON 文件路径（内建历史命名兼容）
+// GetSummaryJSONPath 返回 Summary Diagnostics JSON 文件路径（100% 确定性寻址，彻底消除 Glob）
 func (r *TaskReport) GetSummaryJSONPath() string {
 	dir := r.GetReportDir()
 	// 1. 标准命名
@@ -234,18 +225,9 @@ func (r *TaskReport) GetSummaryJSONPath() string {
 	if _, err := os.Stat(p1); err == nil {
 		return p1
 	}
-	// 2. 历史规范命名 report-{id}-summary-{safeRepo}.json
+	// 2. 规范命名 report-{id}-summary-{safeRepo}.json
 	safeRepo := strings.ReplaceAll(r.Repo.Name, "/", "-")
-	p2 := filepath.Join(dir, fmt.Sprintf("report-%d-summary-%s.json", r.ID, safeRepo))
-	if _, err := os.Stat(p2); err == nil {
-		return p2
-	}
-	// 3. Glob 兼容兜底 (TODO: 待历史老旧报告完全归档后，于后续版本移除 Glob 兜底)
-	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("report-%d-summary-*.json", r.ID)))
-	if err == nil && len(matches) > 0 {
-		return matches[0]
-	}
-	return p2
+	return filepath.Join(dir, fmt.Sprintf("report-%d-summary-%s.json", r.ID, safeRepo))
 }
 
 // GetExecutionLogPath 返回任务 AI 执行输出日志路径
