@@ -218,7 +218,7 @@ func (r *TaskReport) GetSynthesisJSONPath() string {
 	if _, err := os.Stat(p2); err == nil {
 		return p2
 	}
-	// 3. Glob 兼容兜底
+	// 3. Glob 兼容兜底 (TODO: 待历史老旧报告完全归档后，于后续版本移除 Glob 兜底)
 	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-*.json", r.ID)))
 	if err == nil && len(matches) > 0 {
 		return matches[0]
@@ -240,7 +240,7 @@ func (r *TaskReport) GetSummaryJSONPath() string {
 	if _, err := os.Stat(p2); err == nil {
 		return p2
 	}
-	// 3. Glob 兼容兜底
+	// 3. Glob 兼容兜底 (TODO: 待历史老旧报告完全归档后，于后续版本移除 Glob 兜底)
 	matches, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("report-%d-summary-*.json", r.ID)))
 	if err == nil && len(matches) > 0 {
 		return matches[0]

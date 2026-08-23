@@ -52,7 +52,7 @@ export default function ReportViewer({
       setActiveTab('summary');
       loadSummary(taskId);
     }
-  }, [taskId, open]);
+  }, [taskId, open, resetState, loadSummary]);
 
   // 当 summary 加载完成后，如果任务是失败状态，自动定位到 diagnostics
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function ReportViewer({
       setActiveTab('diagnostics');
       if (taskId) loadDiagnostics(taskId);
     }
-  }, [summary?.meta?.status, taskId]);
+  }, [summary?.meta?.status, taskId, loadDiagnostics]);
 
   // Tab 切换时按需加载
   const handleTabClick = (tab: 'summary' | 'findings' | 'diagnostics') => {

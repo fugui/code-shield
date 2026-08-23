@@ -215,7 +215,7 @@ export default function AuditingWorkspace({
     }
 
     try {
-      const res = await fetch(apiUrl(`/api/tasks/${activeReportId}/synthesis`));
+      const res = await fetch(apiUrl(`/api/tasks/${activeReportId}/report/export?format=json&scope=findings`));
       if (!res.ok) {
         showToast('无法获取问题记录 JSON 文件，请确认文件是否存在', 'error');
         return;
@@ -224,7 +224,7 @@ export default function AuditingWorkspace({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `report-${activeReportId}-synthesis.json`;
+      a.download = `report-${activeReportId}-findings.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('下载 JSON 文件成功', 'success');
