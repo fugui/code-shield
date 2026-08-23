@@ -298,8 +298,19 @@ func GetReportFindings(taskID uint, query FindingsQuery) (*FindingsPageDTO, erro
 	// 过滤
 	var filtered []FindingItemDTO
 	for _, item := range allItems {
-		if query.Severity != "" && item.Severity != NormalizeSeverity(query.Severity) {
-			continue
+		if query.Severity != "" {
+			sevs := strings.Split(query.Severity, ",")
+			matched := false
+			for _, s := range sevs {
+				s = strings.TrimSpace(s)
+				if s != "" && item.Severity == NormalizeSeverity(s) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
 		}
 		if query.Status != "" && !strings.EqualFold(item.Status, query.Status) {
 			continue

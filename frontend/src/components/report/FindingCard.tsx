@@ -57,49 +57,15 @@ export default function FindingCard({
           )}
         </div>
 
-        {/* 状态与责任人操作区 */}
+        {/* 状态展示 (只读 Badge) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-          {isReadOnly ? (
-            <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: 'var(--bg-color, #f1f5f9)', color: 'var(--text-secondary, #475569)', fontWeight: 600 }}>
-              状态: {finding.status_display || finding.status}
-            </span>
-          ) : (
-            <select
-              className="status-select"
-              value={finding.status}
-              onChange={(e) => onStatusChange?.(finding, e.target.value)}
-              style={{
-                fontSize: '0.75rem',
-                padding: '0.2rem 0.4rem',
-                borderRadius: '4px',
-                border: '1px solid var(--border-color, #cbd5e1)',
-                background: 'var(--card-bg, #ffffff)',
-                color: 'var(--text-color, #0f172a)',
-                cursor: 'pointer',
-              }}
-            >
-              {isEntityMode ? (
-                <>
-                  <option value="pass">合格</option>
-                  <option value="fail">待整改/不合格</option>
-                  <option value="analyzing">复核中</option>
-                  <option value="invalid">无效用例</option>
-                </>
-              ) : (
-                <>
-                  <option value="open">待处理</option>
-                  <option value="analyzing">问题分析</option>
-                  <option value="resolved">已解决</option>
-                  <option value="closed">已关闭</option>
-                  <option value="invalid">忽略/误报</option>
-                </>
-              )}
-            </select>
-          )}
+          <span className="finding-status-tag" title={`状态: ${finding.status_display || finding.status}`}>
+            {finding.status_display || (finding.status === 'open' ? '待处理' : finding.status === 'pass' ? '合格' : finding.status)}
+          </span>
 
           {finding.assignee_name && (
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
-              👤 {finding.assignee_name}
+              @{finding.assignee_name}
             </span>
           )}
         </div>
