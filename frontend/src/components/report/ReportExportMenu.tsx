@@ -68,10 +68,6 @@ export default function ReportExportMenu({
             <span>Excel 工作簿 (.xlsx)</span>
             <span style={{ fontSize: '0.7rem', color: '#16a34a', marginLeft: 'auto', fontWeight: 600 }}>推荐</span>
           </div>
-          <div className="export-menu-item" onClick={() => handleAction('csv', 'findings')}>
-            <span>📄</span>
-            <span>CSV 表格文件 (.csv)</span>
-          </div>
           <div className="export-menu-item" onClick={() => handleAction('json', 'findings')}>
             <span>🔌</span>
             <span>结构化数据 (.json)</span>
@@ -87,11 +83,7 @@ export default function ReportExportMenu({
 
           <div className="export-menu-divider" />
 
-          <div className="export-menu-group-title">📦 交付归档与打印</div>
-          <div className="export-menu-item" onClick={() => handleAction('zip', 'all')}>
-            <span>🗜️</span>
-            <span>ZIP 全量任务交付包 (.zip)</span>
-          </div>
+          <div className="export-menu-group-title">🖨️ 视图打印与 PDF</div>
           <div
             className="export-menu-item"
             onClick={() => {
