@@ -106,9 +106,11 @@ export default function ReportFindingsTab({
   const isAllSelected = allAvailableKeys.length > 0 && allAvailableKeys.every(k => selectedSevs.includes(k));
 
   useEffect(() => {
-    // 全选或未选时，severity 传空代表查询全部；部分选时将 unpass 映射为 fatal,critical,major
     let sevParam = '';
-    if (!isAllSelected && selectedSevs.length > 0) {
+    if (selectedSevs.length === 0) {
+      // 当所有级别均被取消勾选时，传 __none__ 使得查询结果为空列表，符合排除过滤直觉
+      sevParam = '__none__';
+    } else if (!isAllSelected) {
       const mapped = selectedSevs.map(k => (k === 'unpass' ? 'fatal,critical,major' : k));
       sevParam = mapped.join(',');
     }
@@ -122,20 +124,12 @@ export default function ReportFindingsTab({
     });
   }, [selectedSevs, selectedStatus, debouncedKeyword, page, isAllSelected]);
 
-  // 点击卡片智能切换 (全选状态下点击某张则单独选中该项；部分选中状态下 toggle)
+  // 标准 Checkbox 常识交互：点击卡片即切换当前级别的选中/取消状态
   const handleCardClick = (key: string) => {
-    if (isAllSelected) {
-      // 当前是全选状态，用户点击某卡片通常意图是“单独查看此级别”
-      setSelectedSevs([key]);
+    if (selectedSevs.includes(key)) {
+      setSelectedSevs(selectedSevs.filter(k => k !== key));
     } else {
-      // 当前是部分筛选状态，进行多选 Toggle
-      if (selectedSevs.includes(key)) {
-        const next = selectedSevs.filter(k => k !== key);
-        // 如果取消到 0 个，自动恢复全选
-        setSelectedSevs(next.length === 0 ? allAvailableKeys : next);
-      } else {
-        setSelectedSevs([...selectedSevs, key]);
-      }
+      setSelectedSevs([...selectedSevs, key]);
     }
     setPage(1);
   };
