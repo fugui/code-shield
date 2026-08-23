@@ -37,23 +37,25 @@ export default function ReportExportMenu({
   return (
     <div className="export-dropdown-wrapper no-print" ref={menuRef}>
       <button
-        className="nav-btn"
+        className="nav-btn btn-primary-export"
         onClick={() => setOpen(!open)}
         disabled={exporting}
-        style={{
-          background: 'var(--primary-color, #2563eb)',
-          color: '#ffffff',
-          borderColor: 'transparent',
-          fontWeight: 600,
-        }}
         title="导出或打印多格式报告"
       >
         {exporting ? (
-          <>⏳ 正在生成...</>
+          <>
+            <span className="export-spin">⏳</span>
+            <span>正在生成...</span>
+          </>
         ) : (
           <>
-            <span>📥 导出报告</span>
-            <span style={{ fontSize: '0.65rem' }}>▼</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>导出报告</span>
+            <span style={{ fontSize: '0.65rem', opacity: 0.8, marginLeft: '1px' }}>▼</span>
           </>
         )}
       </button>
