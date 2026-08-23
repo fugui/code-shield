@@ -319,15 +319,29 @@
 .step-card.step-failed { border-left: 4px solid #ef4444; }
 .step-card.step-running { border-left: 4px solid #3b82f6; }
 
-/* 打印专用配置 @media print */
+/* ==========================================================================
+   出版级打印排版规则 @media print
+   ========================================================================== */
 @media print {
+  html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
     padding: 0 !important;
     margin: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
+  /* 隐藏所有背景页面内容、导航侧边栏、全局头部与遮罩层 */
+  body > #root:not(:has(.report-viewer-container)),
+  body.report-print-mode > #root:not(:has(.report-viewer-container)),
+  body > div[style*="inset: 0"],
+  body > div[style*="position: fixed"]:not(:has(.report-viewer-container)),
+  aside,
+  header,
   .no-print,
   .report-header-actions,
   .report-tab-bar,
@@ -339,17 +353,130 @@
     display: none !important;
   }
 
-  .report-content-body {
-    padding: 0 !important;
+  /* 解除抽屉容器的 fixed 定位与 overflow 限制，使其自然展开流动 */
+  body > div:has(.report-viewer-container),
+  div[style*="position: fixed"]:has(.report-viewer-container),
+  div[style*="position: absolute"]:has(.report-viewer-container),
+  div[style*="overflow-y: auto"]:has(.report-viewer-container),
+  .report-viewer-container,
+  .report-content-body,
+  .markdown-body {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
+  /* 报告顶部操作栏打印展示 */
+  .report-header-bar {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 0 0 0.75rem 0 !important;
+    border-bottom: 2px solid #0f172a !important;
+    margin-bottom: 1.25rem !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .report-title-meta {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+  }
+
+  .report-rating-badge {
+    border: 1px solid #cbd5e1 !important;
+    background: #f8fafc !important;
+    color: #b45309 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* KPI 指标卡网格 */
+  .report-kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 0.75rem !important;
+    margin-bottom: 1.5rem !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .report-kpi-card {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    padding: 0.75rem !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Markdown 正文跨页自然排版 */
+  .markdown-body {
+    border: none !important;
+    padding: 0 !important;
+    font-size: 10pt !important;
+    line-height: 1.6 !important;
+    color: #0f172a !important;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4 {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    color: #000000 !important;
+    margin-top: 1.25rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .markdown-body p,
+  .markdown-body ul,
+  .markdown-body ol,
+  .markdown-body blockquote {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .markdown-body table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-bottom: 1rem !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  .markdown-body th,
+  .markdown-body td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 0.4rem 0.6rem !important;
+    font-size: 9pt !important;
+    background: #ffffff !important;
+  }
+
+  /* 缺陷卡片分页 */
   .finding-card {
     box-shadow: none !important;
     border: 1px solid #cbd5e1 !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    margin-bottom: 1.5rem !important;
+    margin-bottom: 1.25rem !important;
+    padding: 1rem !important;
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -361,6 +488,9 @@
     border: 1px solid #cbd5e1 !important;
     white-space: pre-wrap !important;
     word-break: break-all !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -369,6 +499,8 @@
     background: #f0fdf4 !important;
     border: 1px solid #86efac !important;
     color: #166534 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
