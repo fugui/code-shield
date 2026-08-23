@@ -43,7 +43,7 @@ export default function ReportExportMenu({
       >
         {exporting ? (
           <>
-            <span className="export-spin">⏳</span>
+            <span>⏳</span>
             <span>正在生成...</span>
           </>
         ) : (

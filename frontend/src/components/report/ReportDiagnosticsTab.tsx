@@ -37,7 +37,7 @@ export default function ReportDiagnosticsTab({
 
   if (loading && !diagnostics) {
     return (
-      <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
+      <div className="report-loading">
         ⏳ 正在获取运行轨迹与诊断数据...
       </div>
     );
@@ -60,80 +60,30 @@ export default function ReportDiagnosticsTab({
       )}
 
       {/* KPI 卡片区 */}
-      <div
-        className="report-kpi-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: '1.25rem',
-          marginBottom: '1.75rem',
-        }}
-      >
-        <div
-          className="report-kpi-card"
-          style={{
-            background: '#ffffff',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '1.25rem 1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.45rem',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-            boxSizing: 'border-box',
-          }}
-        >
-          <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+      <div className="report-kpi-grid">
+        <div className="report-kpi-card">
+          <span className="kpi-title">
             ⏳ 任务总耗时
           </span>
-          <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: '#0f172a' }}>
+          <span className="kpi-number">
             {formatDuration(diagnostics?.total_duration || meta?.duration_seconds)}
           </span>
         </div>
 
-        <div
-          className="report-kpi-card"
-          style={{
-            background: '#ffffff',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '1.25rem 1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.45rem',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-            boxSizing: 'border-box',
-          }}
-        >
-          <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+        <div className="report-kpi-card">
+          <span className="kpi-title">
             🎯 静态分析耗时
           </span>
-          <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: '#0f172a' }}>
+          <span className="kpi-number">
             {formatDuration(diagnostics?.analysis_duration)}
           </span>
         </div>
 
-        <div
-          className="report-kpi-card"
-          style={{
-            background: '#ffffff',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '1.25rem 1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.45rem',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-            boxSizing: 'border-box',
-          }}
-        >
-          <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+        <div className="report-kpi-card">
+          <span className="kpi-title">
             🧩 执行引擎模式
           </span>
-          <span className="kpi-number" style={{ fontSize: '1.25rem', fontWeight: 700, color: '#2563eb' }}>
+          <span className="kpi-number" style={{ fontSize: '1.25rem', color: '#2563eb' }}>
             {isSingleEngine ? '单仓全量分析 (Single)' : `分片并发分析 (${diagnostics?.chunks?.length || 0} 片)`}
           </span>
         </div>
@@ -141,172 +91,113 @@ export default function ReportDiagnosticsTab({
 
       {/* 1. 流水线阶段时序流 (现代化流程节点与卡片设计) */}
       {(() => {
-        const steps = (diagnostics?.pipeline_steps && diagnostics.pipeline_steps.length > 0)
-          ? diagnostics.pipeline_steps
-          : [
-              { name: '代码静态分析', status: 'success', duration_seconds: diagnostics?.analysis_duration || 0 },
-              { name: '综合报告生成', status: 'success', duration_seconds: 0 },
-            ];
+        const steps = diagnostics?.pipeline_steps || [];
 
         return (
-          <div
-            style={{
-              background: '#ffffff',
-              backgroundColor: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '1.5rem 1.85rem',
-              marginBottom: '1.75rem',
-              boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
-              boxSizing: 'border-box',
-            }}
-          >
+          <div className="diagnostics-panel">
             {/* 卡片头部 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.35rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '1.1rem' }}>🏃</span>
-                <span style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a' }}>流水线阶段时序流</span>
+            <div className="panel-header-row" style={{ marginBottom: steps.length > 0 ? '1.35rem' : 0 }}>
+              <div className="panel-title-row">
+                <span className="panel-emoji">🏃</span>
+                <span className="panel-title">流水线阶段时序流</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {steps.length > 0 && (
                 <span
+                  className="status-pill pill-lg"
                   style={{
-                    background: isFailed ? '#fef2f2' : '#f0fdf4',
-                    color: isFailed ? '#dc2626' : '#16a34a',
-                    border: `1px solid ${isFailed ? '#fecaca' : '#bbf7d0'}`,
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '9999px',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                  }}
+                    '--pill-bg': isFailed ? '#fef2f2' : '#f0fdf4',
+                    '--pill-color': isFailed ? '#dc2626' : '#16a34a',
+                    '--pill-border': isFailed ? '#fecaca' : '#bbf7d0',
+                  } as React.CSSProperties}
                 >
                   {isFailed ? '执行中断' : `全部阶段完成 (${steps.length}/${steps.length})`}
                 </span>
-              </div>
+              )}
             </div>
 
-            {/* 流程节点横向网格 */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: `repeat(${steps.length}, 1fr)`,
-                gap: '1rem',
-                alignItems: 'stretch',
-              }}
-            >
-              {steps.map((step, idx) => {
-                const isStepFailed = step.status === 'failed';
-                const isStepRunning = step.status === 'running';
+            {steps.length > 0 ? (
+              /* 流程节点横向网格 */
+              <div className="step-grid" style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
+                {steps.map((step, idx) => {
+                  const isStepFailed = step.status === 'failed';
+                  const isStepRunning = step.status === 'running';
 
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      background: isStepFailed ? '#fff1f2' : '#f8fafc',
-                      border: `1.5px solid ${isStepFailed ? '#fecdd3' : '#e2e8f0'}`,
-                      borderRadius: '12px',
-                      padding: '1.15rem 1.25rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      position: 'relative',
-                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
-                      boxSizing: 'border-box',
-                      minHeight: '92px',
-                    }}
-                  >
-                    {/* 节点序号与状态徽章 */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <div
-                          style={{
-                            width: '20px',
-                            height: '20px',
-                            borderRadius: '50%',
-                            background: isStepFailed ? '#ef4444' : isStepRunning ? '#3b82f6' : '#10b981',
-                            color: '#ffffff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            boxShadow: isStepFailed ? '0 0 0 3px rgba(239, 68, 68, 0.15)' : '0 0 0 3px rgba(16, 185, 129, 0.15)',
-                          }}
-                        >
-                          {isStepFailed ? '✕' : isStepRunning ? '●' : '✓'}
+                  return (
+                    <div
+                      key={idx}
+                      className="step-node"
+                      style={
+                        isStepFailed
+                          ? { '--step-bg': '#fff1f2', '--step-border': '#fecdd3' } as React.CSSProperties
+                          : undefined
+                      }
+                    >
+                      {/* 节点序号与状态徽章 */}
+                      <div className="step-node-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <div
+                            className="step-badge"
+                            style={
+                              isStepFailed
+                                ? { '--badge-bg': '#ef4444', '--badge-ring': 'rgba(239, 68, 68, 0.15)' } as React.CSSProperties
+                                : isStepRunning
+                                  ? { '--badge-bg': '#3b82f6' } as React.CSSProperties
+                                  : undefined
+                            }
+                          >
+                            {isStepFailed ? '✕' : isStepRunning ? '●' : '✓'}
+                          </div>
+                          <span className="step-label">
+                            STAGE {String(idx + 1).padStart(2, '0')}
+                          </span>
                         </div>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
-                          STAGE {String(idx + 1).padStart(2, '0')}
+
+                        {/* 耗时胶囊 */}
+                        <span className="duration-pill">
+                          ⏱️ {formatDuration(step.duration_seconds)}
                         </span>
                       </div>
 
-                      {/* 耗时胶囊 */}
-                      <span
-                        style={{
-                          background: '#ffffff',
-                          border: '1px solid #cbd5e1',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '6px',
-                          fontSize: '0.75rem',
-                          fontFamily: '"JetBrains Mono", monospace',
-                          color: '#334155',
-                          fontWeight: 600,
-                        }}
-                      >
-                        ⏱️ {formatDuration(step.duration_seconds)}
-                      </span>
+                      {/* 阶段名称 */}
+                      <div className="step-name">
+                        {step.name}
+                      </div>
                     </div>
-
-                    {/* 阶段名称 */}
-                    <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.4 }}>
-                      {step.name}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.85rem', color: '#64748b', padding: '0.5rem 0' }}>
+                该任务未记录流水线阶段时序数据。
+              </div>
+            )}
           </div>
         );
       })()}
 
       {/* 2. 分片执行矩阵 */}
       {!isSingleEngine && diagnostics?.chunks && diagnostics.chunks.length > 0 && (
-        <div
-          style={{
-            background: '#ffffff',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '1.5rem 1.85rem',
-            marginBottom: '1.75rem',
-            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
-            boxSizing: 'border-box',
-          }}
-        >
+        <div className="diagnostics-panel">
           {/* 矩阵标题栏 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.1rem' }}>📦</span>
-              <span style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a' }}>
-                分片执行矩阵
-              </span>
+          <div className="panel-header-row" style={{ marginBottom: '1.25rem' }}>
+            <div className="panel-title-row">
+              <span className="panel-emoji">📦</span>
+              <span className="panel-title">分片执行矩阵</span>
             </div>
             <span
+              className="status-pill pill-sm"
               style={{
-                background: 'rgba(59, 130, 246, 0.08)',
-                color: '#2563eb',
-                border: '1px solid rgba(59, 130, 246, 0.25)',
-                padding: '0.2rem 0.65rem',
-                borderRadius: '9999px',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-              }}
+                '--pill-bg': 'rgba(59, 130, 246, 0.08)',
+                '--pill-color': '#2563eb',
+                '--pill-border': 'rgba(59, 130, 246, 0.25)',
+              } as React.CSSProperties}
             >
               共 {diagnostics.chunks.length} 个并发分片
             </span>
           </div>
 
           {/* 分片列表 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div className="chunk-list">
             {diagnostics.chunks.map((chunk) => {
               const isChunkFailed = chunk.status === 'failed';
               const expanded = !!expandedChunks[chunk.chunk_name];
@@ -314,72 +205,56 @@ export default function ReportDiagnosticsTab({
               return (
                 <div
                   key={chunk.chunk_name}
-                  style={{
-                    background: '#f8fafc',
-                    border: `1px solid ${isChunkFailed ? '#fecdd3' : '#e2e8f0'}`,
-                    borderRadius: '10px',
-                    padding: '0.95rem 1.25rem',
-                    boxSizing: 'border-box',
-                    transition: 'all 0.15s ease-in-out',
-                  }}
+                  className="chunk-row"
+                  style={{ '--chunk-border': isChunkFailed ? '#fecdd3' : '#e2e8f0' } as React.CSSProperties}
                 >
                   <div
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                    className="chunk-row-header"
                     onClick={() => toggleChunk(chunk.chunk_name)}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                       <span
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          background: isChunkFailed ? '#ef4444' : '#10b981',
-                          color: '#ffffff',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.65rem',
-                          fontWeight: 700,
-                        }}
+                        className="chunk-badge"
+                        style={isChunkFailed ? { '--chunk-badge-bg': '#ef4444' } as React.CSSProperties : undefined}
                       >
                         {isChunkFailed ? '✕' : '✓'}
                       </span>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>{chunk.chunk_name}</span>
+                      <span className="chunk-name">{chunk.chunk_name}</span>
                       {chunk.attempts > 1 && (
-                        <span style={{ fontSize: '0.72rem', background: 'rgba(239, 68, 68, 0.1)', color: '#dc2626', padding: '0.12rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>
+                        <span className="retry-badge">
                           重试 {chunk.attempts} 次
                         </span>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.82rem', color: '#64748b' }}>
-                      <span style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '0.2rem 0.55rem', borderRadius: '6px', fontFamily: 'monospace' }}>
+                    <div className="chunk-meta">
+                      <span className="meta-pill mono">
                         ⏱️ {formatDuration(chunk.duration_seconds)}
                       </span>
-                      <span style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '0.2rem 0.55rem', borderRadius: '6px' }}>
+                      <span className="meta-pill">
                         📂 {chunk.files_count} 个文件
                       </span>
-                      <span style={{ color: '#2563eb', fontWeight: 600, fontSize: '0.8rem' }}>
+                      <span className="toggle-hint">
                         {expanded ? '收起 ▲' : '详情 ▼'}
                       </span>
                     </div>
                   </div>
 
                   {expanded && (
-                    <div style={{ marginTop: '0.85rem', paddingTop: '0.85rem', borderTop: '1px solid #e2e8f0' }}>
+                    <div className="chunk-expanded">
                       {chunk.error_message && (
-                        <div style={{ background: '#fff1f2', color: '#be123c', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.78rem', marginBottom: '0.65rem', fontFamily: 'monospace' }}>
+                        <div className="chunk-error">
                           错误信息: {chunk.error_message}
                         </div>
                       )}
                       {chunk.files && chunk.files.length > 0 && (
                         <div>
-                          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', marginBottom: '0.35rem' }}>
+                          <div className="file-list-label">
                             该分片包含的文件清单 ({chunk.files.length} 个):
                           </div>
-                          <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#ffffff', border: '1px solid #e2e8f0', padding: '0.65rem', borderRadius: '6px', fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                          <div className="file-list-box">
                             {chunk.files.map((f, i) => (
-                              <div key={i} style={{ color: '#334155', padding: '0.15rem 0' }}>• {f}</div>
+                              <div key={i} className="file-line">• {f}</div>
                             ))}
                           </div>
                         </div>
@@ -395,22 +270,11 @@ export default function ReportDiagnosticsTab({
 
       {/* 3. 执行输出日志查看器 */}
       {diagnostics?.raw_output_log && (
-        <div
-          style={{
-            background: '#ffffff',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '1.5rem 1.85rem',
-            marginBottom: '1.75rem',
-            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
-            boxSizing: 'border-box',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.95rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.1rem' }}>📜</span>
-              <span style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a' }}>
+        <div className="diagnostics-panel">
+          <div className="panel-header-row" style={{ marginBottom: '0.95rem' }}>
+            <div className="panel-title-row">
+              <span className="panel-emoji">📜</span>
+              <span className="panel-title">
                 终端执行输出日志 {diagnostics.log_truncated ? `(展示最新 200 行，共 ${diagnostics.total_log_lines} 行)` : ''}
               </span>
             </div>
@@ -427,15 +291,8 @@ export default function ReportDiagnosticsTab({
             className="code-snippet-box"
             style={{
               maxHeight: logExpanded ? 'none' : '260px',
-              background: '#0f172a',
-              color: '#e2e8f0',
-              padding: '1.25rem 1.5rem',
-              borderRadius: '10px',
-              fontFamily: '"JetBrains Mono", Consolas, monospace',
               fontSize: '0.8rem',
               lineHeight: 1.6,
-              overflowX: 'auto',
-              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3)',
             }}
           >
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'inherit' }}>
@@ -445,20 +302,7 @@ export default function ReportDiagnosticsTab({
           {diagnostics.total_log_lines > 20 && (
             <button
               onClick={() => setLogExpanded(!logExpanded)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#2563eb',
-                fontSize: '0.8rem',
-                cursor: 'pointer',
-                padding: '0.4rem 0',
-                fontWeight: 600,
-                marginTop: '0.35rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-              }}
-              className="no-print"
+              className="expand-toggle-btn no-print"
             >
               {logExpanded ? '▲ 收起日志' : '▼ 展开全部日志窗口'}
             </button>

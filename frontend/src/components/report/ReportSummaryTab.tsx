@@ -35,7 +35,7 @@ interface ReportSummaryTabProps {
 export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabProps) {
   if (loading && !summary) {
     return (
-      <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
+      <div className="report-loading">
         ⏳ 正在加载总结概览...
       </div>
     );
@@ -43,7 +43,7 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
 
   if (!summary) {
     return (
-      <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
+      <div className="report-loading">
         *暂无报告信息*
       </div>
     );
@@ -52,83 +52,62 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
   const { meta, metrics, markdown_content } = summary;
   const isEntityMode = meta.governance_mode === 'entity_assessment';
 
-  const cardStyle: React.CSSProperties = {
-    background: '#ffffff',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    borderRadius: '12px',
-    padding: '1.25rem 1.5rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.45rem',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-    boxSizing: 'border-box',
-  };
-
   return (
     <div>
       {/* KPI 指标卡片网格 (宽松四列/自适应网格) */}
-      <div
-        className="report-kpi-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: '1.25rem',
-          marginBottom: '1.75rem',
-        }}
-      >
-        <div className="report-kpi-card" style={cardStyle}>
-          <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+      <div className="report-kpi-grid">
+        <div className="report-kpi-card">
+          <span className="kpi-title">
             🎯 综合风险分
           </span>
-          <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: '#d97706' }}>
+          <span className="kpi-number" style={{ color: '#d97706' }}>
             {meta.score} <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>分 (估值)</span>
           </span>
         </div>
 
-        <div className="report-kpi-card" style={cardStyle}>
-          <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+        <div className="report-kpi-card">
+          <span className="kpi-title">
             ⏳ 任务总耗时
           </span>
-          <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: '#0f172a' }}>
+          <span className="kpi-number">
             {formatDuration(meta.duration_seconds)}
           </span>
         </div>
 
         {isEntityMode ? (
           <>
-            <div className="report-kpi-card" style={cardStyle}>
-              <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+            <div className="report-kpi-card">
+              <span className="kpi-title">
                 📊 综合达标率
               </span>
-              <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: (metrics.pass_rate || 0) >= 80 ? '#10b981' : '#eab308' }}>
+              <span className="kpi-number" style={{ color: (metrics.pass_rate || 0) >= 80 ? '#10b981' : '#eab308' }}>
                 {(metrics.pass_rate || 0).toFixed(1)}%
               </span>
             </div>
-            <div className="report-kpi-card" style={cardStyle}>
-              <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+            <div className="report-kpi-card">
+              <span className="kpi-title">
                 📦 评估实体总数
               </span>
-              <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: '#0f172a' }}>
+              <span className="kpi-number">
                 {metrics.total_findings} 个
               </span>
             </div>
           </>
         ) : (
           <>
-            <div className="report-kpi-card" style={cardStyle}>
-              <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+            <div className="report-kpi-card">
+              <span className="kpi-title">
                 ⚠️ 发现问题总数
               </span>
-              <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: metrics.total_findings > 0 ? '#f97316' : '#10b981' }}>
+              <span className="kpi-number" style={{ color: metrics.total_findings > 0 ? '#f97316' : '#10b981' }}>
                 {metrics.total_findings} 个
               </span>
             </div>
-            <div className="report-kpi-card" style={cardStyle}>
-              <span className="kpi-title" style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+            <div className="report-kpi-card">
+              <span className="kpi-title">
                 🔴 高风险问题 (P0/P1)
               </span>
-              <span className="kpi-number" style={{ fontSize: '1.65rem', fontWeight: 700, color: metrics.fatal_count + metrics.critical_count > 0 ? '#ef4444' : '#10b981' }}>
+              <span className="kpi-number" style={{ color: metrics.fatal_count + metrics.critical_count > 0 ? '#ef4444' : '#10b981' }}>
                 {metrics.fatal_count + metrics.critical_count} 个
               </span>
             </div>
@@ -137,20 +116,7 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
       </div>
 
       {/* Markdown 正文卡片容器 */}
-      <div
-        className="report-summary-markdown-card markdown-body"
-        style={{
-          background: '#ffffff',
-          backgroundColor: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '12px',
-          padding: '2.25rem 2.75rem',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-          lineHeight: 1.75,
-          color: '#1e293b',
-          boxSizing: 'border-box',
-        }}
-      >
+      <div className="report-summary-markdown-card markdown-body">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

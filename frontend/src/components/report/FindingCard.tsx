@@ -33,23 +33,10 @@ export default function FindingCard({
   };
 
   return (
-    <div
-      className="finding-card"
-      id={`finding-${finding.id}`}
-      style={{
-        background: '#ffffff',
-        backgroundColor: '#ffffff',
-        border: '1px solid #e2e8f0',
-        borderRadius: '14px',
-        padding: '1.6rem 1.85rem',
-        marginBottom: '1.5rem',
-        boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
-        boxSizing: 'border-box',
-      }}
-    >
+    <div className="finding-card" id={`finding-${finding.id}`}>
       {/* 头部信息 (严重度徽章 + 标题 + 分类 + 只读状态) */}
-      <div className="finding-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1.25rem', marginBottom: '0.95rem' }}>
-        <div className="finding-title-row" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap', flex: 1 }}>
+      <div className="finding-card-header">
+        <div className="finding-title-row">
           <span
             className="chip-btn"
             style={{
@@ -78,21 +65,7 @@ export default function FindingCard({
 
         {/* 状态展示 (只读 Badge) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
-          <span
-            className="finding-status-tag"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              padding: '0.28rem 0.75rem',
-              borderRadius: '6px',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              background: '#f8fafc',
-              color: '#475569',
-              border: '1px solid #cbd5e1',
-            }}
-            title={`状态: ${finding.status_display || finding.status}`}
-          >
+          <span className="finding-status-tag" title={`状态: ${finding.status_display || finding.status}`}>
             {finding.status_display || (finding.status === 'open' ? '待处理' : finding.status === 'pass' ? '合格' : finding.status)}
           </span>
 
@@ -106,21 +79,7 @@ export default function FindingCard({
 
       {/* 位置栏与操作按钮 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', margin: '0.85rem 0 1rem 0' }}>
-        <div
-          className="finding-location-bar"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.55rem',
-            background: '#f8fafc',
-            padding: '0.45rem 0.85rem',
-            borderRadius: '6px',
-            border: '1px solid #e2e8f0',
-            fontFamily: '"JetBrains Mono", Consolas, monospace',
-            fontSize: '0.82rem',
-            color: '#475569',
-          }}
-        >
+        <div className="finding-location-bar">
           <span>📄</span>
           <span>{finding.file_path}{finding.line_number ? `:${finding.line_number}` : ''}</span>
         </div>
@@ -130,7 +89,7 @@ export default function FindingCard({
             className="nav-btn no-print"
             onClick={handleCopy}
             title="复制文件路径与行号"
-            style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+            style={{ fontSize: '0.82rem' }}
           >
             📋 复制定位
           </button>
@@ -140,7 +99,7 @@ export default function FindingCard({
               target="_blank"
               rel="noopener noreferrer"
               className="nav-btn no-print"
-              style={{ textDecoration: 'none', padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+              style={{ textDecoration: 'none', fontSize: '0.82rem' }}
               title="在代码仓中查看源码"
             >
               ↗ 源码
@@ -161,19 +120,7 @@ export default function FindingCard({
         <div style={{ margin: '1rem 0' }}>
           <div
             className="code-snippet-box"
-            style={{
-              maxHeight: codeExpanded ? 'none' : '150px',
-              position: 'relative',
-              background: '#0f172a',
-              color: '#e2e8f0',
-              padding: '1.25rem 1.5rem',
-              borderRadius: '10px',
-              fontFamily: '"JetBrains Mono", Consolas, "Fira Code", monospace',
-              fontSize: '0.84rem',
-              lineHeight: 1.65,
-              overflowX: 'auto',
-              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3)',
-            }}
+            style={{ maxHeight: codeExpanded ? 'none' : '150px' }}
           >
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit' }}>
               {finding.code_snippet}
@@ -182,20 +129,7 @@ export default function FindingCard({
           {finding.code_snippet.split('\n').length > 4 && (
             <button
               onClick={() => setCodeExpanded(!codeExpanded)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#2563eb',
-                fontSize: '0.8rem',
-                cursor: 'pointer',
-                padding: '0.4rem 0',
-                fontWeight: 600,
-                marginTop: '0.35rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-              }}
-              className="no-print"
+              className="expand-toggle-btn no-print"
             >
               {codeExpanded ? '▲ 收起代码片段' : '▼ 展开完整代码片段'}
             </button>
@@ -205,19 +139,7 @@ export default function FindingCard({
 
       {/* 修复建议 (仅缺陷模式展示) */}
       {!isEntityMode && finding.suggestion && (
-        <div
-          className="suggestion-box"
-          style={{
-            background: '#f0fdf4',
-            border: '1px solid #bbf7d0',
-            color: '#15803d',
-            padding: '1rem 1.35rem',
-            borderRadius: '10px',
-            fontSize: '0.85rem',
-            lineHeight: 1.65,
-            marginTop: '1.15rem',
-          }}
-        >
+        <div className="suggestion-box">
           <div style={{ fontWeight: 700, marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
             💡 修复建议:
           </div>

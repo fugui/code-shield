@@ -12,7 +12,7 @@
 }
 
 /* 顶部操作条 (采用纯白优雅顶栏，带有清晰底边框与微阴影) */
-.report-header-bar {
+.report-viewer-container .report-header-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -27,7 +27,7 @@
   box-sizing: border-box;
 }
 
-.report-title-meta {
+.report-viewer-container .report-title-meta {
   display: flex;
   align-items: center;
   gap: 0.95rem;
@@ -38,7 +38,7 @@
   white-space: nowrap;
 }
 
-.report-main-title {
+.report-viewer-container .report-main-title {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-color, #0f172a);
@@ -46,7 +46,7 @@
   flex-shrink: 0;
 }
 
-.report-repo-tag {
+.report-viewer-container .report-repo-tag {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -64,7 +64,7 @@
   flex-shrink: 1;
 }
 
-.report-rating-badge {
+.report-viewer-container .report-rating-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -78,14 +78,14 @@
   flex-shrink: 0;
 }
 
-.rating-dot {
+.report-viewer-container .rating-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #f59e0b;
 }
 
-.report-header-actions {
+.report-viewer-container .report-header-actions {
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -94,7 +94,7 @@
   white-space: nowrap;
 }
 
-.header-action-group {
+.report-viewer-container .header-action-group {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -102,7 +102,7 @@
 }
 
 /* 纯图标功能按钮 (全屏、独立页面、复制链接) */
-.icon-action-btn {
+.report-viewer-container .icon-action-btn {
   width: 32px;
   height: 32px;
   display: inline-flex;
@@ -118,20 +118,20 @@
   flex-shrink: 0;
 }
 
-.icon-action-btn:hover {
+.report-viewer-container .icon-action-btn:hover {
   background: var(--bg-color, #f8fafc);
   border-color: var(--primary-color, #3b82f6);
   color: var(--primary-color, #2563eb);
 }
 
-.icon-action-btn.btn-copied {
+.report-viewer-container .icon-action-btn.btn-copied {
   border-color: #86efac !important;
   background: #f0fdf4 !important;
   color: #16a34a !important;
 }
 
 /* 分段导航按钮对 (‹ 上一个 / 下一个 ›) */
-.nav-segmented-group {
+.report-viewer-container .nav-segmented-group {
   display: inline-flex;
   align-items: center;
   background: var(--card-bg, #ffffff);
@@ -142,7 +142,7 @@
   flex-shrink: 0;
 }
 
-.nav-btn.segment-btn {
+.report-viewer-container .nav-btn.segment-btn {
   border: none;
   border-radius: 0;
   padding: 0.35rem 0.75rem;
@@ -153,19 +153,19 @@
   cursor: pointer;
   transition: all 0.15s;
 }
-.nav-btn.segment-btn:first-child {
+.report-viewer-container .nav-btn.segment-btn:first-child {
   border-right: 1px solid var(--border-color, #cbd5e1);
 }
-.nav-btn.segment-btn:hover:not(:disabled) {
+.report-viewer-container .nav-btn.segment-btn:hover:not(:disabled) {
   background: var(--bg-color, #f1f5f9);
   color: var(--primary-color, #2563eb);
 }
-.nav-btn.segment-btn:disabled {
+.report-viewer-container .nav-btn.segment-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
-.nav-btn {
+.report-viewer-container .nav-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -181,18 +181,18 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-.nav-btn:hover:not(:disabled) {
+.report-viewer-container .nav-btn:hover:not(:disabled) {
   background: var(--bg-color, #f8fafc);
   border-color: #94a3b8;
 }
 
-.nav-btn.btn-copied {
+.report-viewer-container .nav-btn.btn-copied {
   border-color: #86efac !important;
   background: #f0fdf4 !important;
   color: #16a34a !important;
 }
 
-.nav-btn.btn-primary-export {
+.report-viewer-container .nav-btn.btn-primary-export {
   background: var(--primary-color, #2563eb) !important;
   border-color: var(--primary-color, #2563eb) !important;
   color: #ffffff !important;
@@ -200,20 +200,20 @@
   box-shadow: 0 1px 3px 0 rgba(37, 99, 235, 0.25) !important;
 }
 
-.nav-btn.btn-primary-export:hover:not(:disabled) {
+.report-viewer-container .nav-btn.btn-primary-export:hover:not(:disabled) {
   background: #1d4ed8 !important;
   border-color: #1d4ed8 !important;
   color: #ffffff !important;
   box-shadow: 0 2px 5px 0 rgba(37, 99, 235, 0.35) !important;
 }
 
-.nav-btn:disabled {
+.report-viewer-container .nav-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
 /* 轻量图标工具按钮 (全屏、关闭等) */
-.icon-tool-btn {
+.report-viewer-container .icon-tool-btn {
   width: 32px;
   height: 32px;
   display: inline-flex;
@@ -227,53 +227,56 @@
   transition: all 0.15s ease-in-out;
 }
 
-.icon-tool-btn:hover {
+.report-viewer-container .icon-tool-btn:hover {
   background: var(--bg-color, #f1f5f9);
   color: var(--text-color, #0f172a);
 }
 
-.icon-tool-btn.btn-close:hover {
+.report-viewer-container .icon-tool-btn.btn-close:hover {
   background: rgba(239, 68, 68, 0.1) !important;
   color: #ef4444 !important;
 }
 
 /* 选项卡导航 (采用纯白优雅底色，页边距对齐) */
-.report-tab-bar,
-.cs-report-tab-bar {
+.report-viewer-container .report-tab-bar,
+.report-viewer-container .cs-report-tab-bar {
   display: flex !important;
+  align-items: center !important;
   background: #ffffff !important;
   border-bottom: 1px solid #e2e8f0 !important;
   padding: 0 2.25rem !important;
   gap: 2.5rem !important;
   box-sizing: border-box !important;
+  min-height: 48px !important;
 }
 
-.report-tab-item,
-.cs-report-tab-item {
+.report-viewer-container .report-tab-item,
+.report-viewer-container .cs-report-tab-item {
   padding: 1.05rem 0.5rem !important;
   font-size: 0.92rem !important;
-  font-weight: 500;
-  color: #64748b;
+  font-weight: 500 !important;
+  color: #64748b !important;
   border-bottom: 2.5px solid transparent !important;
   cursor: pointer !important;
   transition: all 0.2s ease-in-out !important;
   display: flex !important;
   align-items: center !important;
   gap: 0.55rem !important;
+  user-select: none !important;
 }
-.report-tab-item:hover,
-.cs-report-tab-item:hover {
+.report-viewer-container .report-tab-item:hover,
+.report-viewer-container .cs-report-tab-item:hover {
   color: #2563eb !important;
 }
-.report-tab-item.active,
-.cs-report-tab-item.active {
+.report-viewer-container .report-tab-item.active,
+.report-viewer-container .cs-report-tab-item.active {
   color: #2563eb !important;
   border-bottom-color: #2563eb !important;
   font-weight: 600 !important;
 }
 
-.tab-badge,
-.cs-tab-badge {
+.report-viewer-container .tab-badge,
+.report-viewer-container .cs-tab-badge {
   background: #e2e8f0;
   color: #475569;
   padding: 0.15rem 0.55rem;
@@ -281,14 +284,32 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
-.report-tab-item.active .tab-badge,
-.cs-report-tab-item.active .cs-tab-badge {
+.report-viewer-container .report-tab-item.active .tab-badge,
+.report-viewer-container .cs-report-tab-item.active .cs-tab-badge {
   background: rgba(37, 99, 235, 0.12) !important;
   color: #2563eb !important;
 }
+.report-viewer-container .report-tab-item .tab-badge.danger,
+.report-viewer-container .cs-report-tab-item .cs-tab-badge.danger {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+}
+
+/* 内容加载 / 空数据占位 */
+.report-viewer-container .report-loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary, #64748b);
+}
+
+/* 独立全屏页面外壳 */
+.report-fullpage-shell {
+  min-height: 100vh;
+  background: #f1f5f9;
+}
 
 /* 内容主体滚动容器 (浅灰底衬托白底卡片，具备宽敞的上下左右页边距) */
-.report-content-body {
+.report-viewer-container .report-content-body {
   flex: 1;
   overflow-y: auto;
   padding: 2rem 2.25rem 3.5rem 2.25rem;
@@ -297,7 +318,7 @@
 }
 
 /* 内部居中内容宽度容器 */
-.report-tab-inner-container {
+.report-viewer-container .report-tab-inner-container {
   max-width: 1320px;
   margin: 0 auto;
   width: 100%;
@@ -305,14 +326,14 @@
 }
 
 /* KPI 统计卡片区 */
-.report-kpi-grid {
+.report-viewer-container .report-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 1.25rem;
   margin-bottom: 1.75rem;
 }
 
-.report-kpi-card {
+.report-viewer-container .report-kpi-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -324,26 +345,26 @@
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.report-kpi-card:hover {
+.report-viewer-container .report-kpi-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
 }
 
-.kpi-title {
+.report-viewer-container .kpi-title {
   font-size: 0.78rem;
   font-weight: 600;
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
-.kpi-number {
+.report-viewer-container .kpi-number {
   font-size: 1.65rem;
   font-weight: 700;
   color: #0f172a;
 }
 
 /* Markdown 检视报告正文大卡片容器 */
-.report-summary-markdown-card {
+.report-viewer-container .report-summary-markdown-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -354,88 +375,88 @@
 }
 
 /* 1. 严重性指标卡片看板 (完全还原上一版的大气卡片 Dashboard，饱满网格排布) */
-.severity-cards-grid {
+.report-viewer-container .severity-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.25rem;
   margin-bottom: 1.75rem;
 }
 
-.severity-metric-card {
-  background: var(--card-bg, #ffffff);
-  border: 1.5px solid var(--border-color, #e2e8f0);
+.report-viewer-container .severity-metric-card {
+  --sev-color: #e2e8f0;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
   border-radius: 12px;
-  padding: 1.1rem 1.35rem;
+  padding: 1.2rem 1.5rem;
   min-height: 96px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   cursor: pointer;
   user-select: none;
-  position: relative;
   transition: all 0.2s ease-in-out;
   box-sizing: border-box;
 }
 
-.severity-metric-card:hover {
+.report-viewer-container .severity-metric-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 14px -2px rgba(0, 0, 0, 0.06);
 }
 
-.severity-metric-card.selected {
+.report-viewer-container .severity-metric-card.selected {
+  border-color: var(--sev-color);
   box-shadow: 0 6px 16px -2px rgba(0, 0, 0, 0.08);
 }
+.report-viewer-container .severity-metric-card:not(.selected) {
+  opacity: 0.45;
+}
 
-.card-top-row {
+.report-viewer-container .card-top-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.card-sev-name {
-  font-size: 0.88rem;
+.report-viewer-container .card-sev-name {
+  font-size: 0.85rem;
   font-weight: 600;
+  color: #64748b;
+}
+.report-viewer-container .severity-metric-card.selected .card-sev-name {
+  color: var(--sev-color);
 }
 
-.filter-checkbox {
-  width: 18px;
-  height: 18px;
+.report-viewer-container .filter-checkbox {
+  width: 16px;
+  height: 16px;
   border-radius: 4px;
   border: 1.5px solid #cbd5e1;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
 }
+.report-viewer-container .severity-metric-card.selected .filter-checkbox {
+  border-color: var(--sev-color);
+  background: var(--sev-color);
+}
 
-.card-count-row {
+.report-viewer-container .card-bottom-row {
   display: flex;
   align-items: baseline;
-  gap: 0.4rem;
-  margin: 0.35rem 0;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
 }
 
-.card-count-number {
-  font-size: 1.75rem;
+.report-viewer-container .card-count-num {
+  font-size: 1.8rem;
   font-weight: 700;
-  line-height: 1.1;
-}
-
-.card-count-unit {
-  font-size: 0.8rem;
-  color: var(--text-secondary, #94a3b8);
-}
-
-.card-color-bar {
-  height: 4px;
-  border-radius: 2px;
-  margin-top: 0.35rem;
-  transition: background-color 0.2s;
 }
 
 /* 2. 独立过滤搜索工具栏 (宽敞清爽，与上方大卡片层次分明) */
-.findings-filter-toolbar {
+.report-viewer-container .findings-filter-toolbar {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -450,7 +471,7 @@
   box-sizing: border-box;
 }
 
-.filter-summary-info {
+.report-viewer-container .filter-summary-info {
   font-size: 0.88rem;
   color: #475569;
   display: flex;
@@ -458,7 +479,7 @@
   gap: 0.75rem;
 }
 
-.filter-reset-btn {
+.report-viewer-container .filter-reset-btn {
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
   border: 1px solid rgba(239, 68, 68, 0.25);
@@ -469,59 +490,61 @@
   font-weight: 500;
   transition: all 0.15s;
 }
-.filter-reset-btn:hover {
+.report-viewer-container .filter-reset-btn:hover {
   background: rgba(239, 68, 68, 0.15);
 }
 
-.filter-search-group {
+.report-viewer-container .filter-search-group {
   display: flex;
   align-items: center;
   gap: 0.85rem;
   flex-shrink: 0;
 }
 
-.filter-status-select {
-  height: 40px;
-  padding: 0.45rem 1.15rem;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  font-size: 0.88rem;
-  color: #0f172a;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.15s;
-  box-sizing: border-box;
+.report-viewer-container .filter-status-select {
+  /* 宿主微前端 (code-pipeline 等) 会以高特异性重置 drawer 内表单控件，这里用 !important 锁定 */
+  height: 40px !important;
+  padding: 0.45rem 1.15rem !important;
+  border-radius: 8px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  font-size: 0.88rem !important;
+  color: #0f172a !important;
+  outline: none !important;
+  cursor: pointer !important;
+  transition: border-color 0.15s !important;
+  box-sizing: border-box !important;
 }
-.filter-status-select:focus {
-  border-color: #2563eb;
+.report-viewer-container .filter-status-select:focus {
+  border-color: #2563eb !important;
 }
 
-.filter-search-input-wrapper {
+.report-viewer-container .filter-search-input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-.filter-search-input {
-  height: 40px;
-  width: 360px;
-  min-width: 280px;
-  padding: 0.45rem 1rem 0.45rem 2.4rem;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  font-size: 0.88rem;
-  background: #ffffff;
-  color: #0f172a;
-  outline: none;
-  transition: border-color 0.15s, width 0.2s;
-  box-sizing: border-box;
+.report-viewer-container .filter-search-input {
+  /* 宿主微前端 (code-pipeline 等) 会以高特异性重置 drawer 内表单控件，这里用 !important 锁定 */
+  height: 40px !important;
+  width: 360px !important;
+  min-width: 280px !important;
+  padding: 0.45rem 1rem 0.45rem 2.4rem !important;
+  border-radius: 8px !important;
+  border: 1px solid #cbd5e1 !important;
+  font-size: 0.88rem !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  outline: none !important;
+  transition: border-color 0.15s, width 0.2s !important;
+  box-sizing: border-box !important;
 }
-.filter-search-input:focus {
-  border-color: #2563eb;
+.report-viewer-container .filter-search-input:focus {
+  border-color: #2563eb !important;
 }
 
-.filter-search-clear {
+.report-viewer-container .filter-search-clear {
   position: absolute;
   right: 10px;
   background: transparent;
@@ -532,12 +555,12 @@
   padding: 2px 4px;
   border-radius: 4px;
 }
-.filter-search-clear:hover {
+.report-viewer-container .filter-search-clear:hover {
   color: #0f172a;
 }
 
 /* 缺陷/实体明细卡片 (纯白大卡片，边框圆角与呼吸感) */
-.finding-card {
+.report-viewer-container .finding-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
@@ -547,13 +570,13 @@
   transition: box-shadow 0.2s, border-color 0.2s;
   box-sizing: border-box;
 }
-.finding-card:hover {
+.report-viewer-container .finding-card:hover {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
   border-color: #cbd5e1;
 }
 
 /* 只读状态徽章 */
-.finding-status-tag {
+.report-viewer-container .finding-status-tag {
   display: inline-flex;
   align-items: center;
   padding: 0.28rem 0.75rem;
@@ -566,7 +589,7 @@
   user-select: none;
 }
 
-.finding-card-header {
+.report-viewer-container .finding-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -574,7 +597,7 @@
   margin-bottom: 0.95rem;
 }
 
-.finding-title-row {
+.report-viewer-container .finding-title-row {
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -582,7 +605,7 @@
   flex: 1;
 }
 
-.finding-location-bar {
+.report-viewer-container .finding-location-bar {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
@@ -595,7 +618,7 @@
   color: #475569;
 }
 
-.code-snippet-box {
+.report-viewer-container .code-snippet-box {
   background: #0f172a;
   color: #e2e8f0;
   padding: 1.25rem 1.5rem;
@@ -608,7 +631,7 @@
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.suggestion-box {
+.report-viewer-container .suggestion-box {
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   color: #15803d;
@@ -619,13 +642,260 @@
   margin-top: 1.15rem;
 }
 
+/* ==========================================================================
+   运行轨迹与诊断中心 (流水线时序流 / 分片矩阵 / 日志查看器)
+   ========================================================================== */
+
+.report-viewer-container .diagnostics-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1.5rem 1.85rem;
+  margin-bottom: 1.75rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+}
+
+.report-viewer-container .panel-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.report-viewer-container .panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.report-viewer-container .panel-emoji {
+  font-size: 1.1rem;
+}
+
+.report-viewer-container .panel-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.report-viewer-container .status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--pill-bg);
+  color: var(--pill-color);
+  border: 1px solid var(--pill-border);
+}
+.report-viewer-container .status-pill.pill-lg {
+  padding: 0.25rem 0.75rem;
+}
+.report-viewer-container .status-pill.pill-sm {
+  padding: 0.2rem 0.65rem;
+}
+
+.report-viewer-container .step-grid {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.report-viewer-container .step-node {
+  background: var(--step-bg, #f8fafc);
+  border: 1.5px solid var(--step-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-sizing: border-box;
+  min-height: 92px;
+}
+
+.report-viewer-container .step-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.65rem;
+}
+
+.report-viewer-container .step-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--badge-bg, #10b981);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  box-shadow: 0 0 0 3px var(--badge-ring, rgba(16, 185, 129, 0.15));
+}
+
+.report-viewer-container .step-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.report-viewer-container .duration-pill {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: "JetBrains Mono", monospace;
+  color: #334155;
+  font-weight: 600;
+}
+
+.report-viewer-container .step-name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.report-viewer-container .chunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.report-viewer-container .chunk-row {
+  background: #f8fafc;
+  border: 1px solid var(--chunk-border, #e2e8f0);
+  border-radius: 10px;
+  padding: 0.95rem 1.25rem;
+  box-sizing: border-box;
+  transition: all 0.15s ease-in-out;
+}
+
+.report-viewer-container .chunk-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.report-viewer-container .chunk-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--chunk-badge-bg, #10b981);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.report-viewer-container .chunk-name {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.report-viewer-container .retry-badge {
+  font-size: 0.72rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.report-viewer-container .chunk-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.report-viewer-container .meta-pill {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+}
+.report-viewer-container .meta-pill.mono {
+  font-family: monospace;
+}
+
+.report-viewer-container .toggle-hint {
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.report-viewer-container .chunk-expanded {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.report-viewer-container .chunk-error {
+  background: #fff1f2;
+  color: #be123c;
+  padding: 0.65rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  margin-bottom: 0.65rem;
+  font-family: monospace;
+}
+
+.report-viewer-container .file-list-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 0.35rem;
+}
+
+.report-viewer-container .file-list-box {
+  max-height: 150px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 0.65rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: monospace;
+}
+
+.report-viewer-container .file-line {
+  color: #334155;
+  padding: 0.15rem 0;
+}
+
+.report-viewer-container .expand-toggle-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.4rem 0;
+  font-weight: 600;
+  margin-top: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 /* 导出下拉菜单 */
-.export-dropdown-wrapper {
+.report-viewer-container .export-dropdown-wrapper {
   position: relative;
   display: inline-block;
 }
 
-.export-menu-popup {
+.report-viewer-container .export-menu-popup {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
@@ -638,7 +908,7 @@
   z-index: 1050;
 }
 
-.export-menu-group-title {
+.report-viewer-container .export-menu-group-title {
   padding: 0.4rem 1rem 0.2rem;
   font-size: 0.7rem;
   font-weight: 700;
@@ -646,7 +916,7 @@
   text-transform: uppercase;
 }
 
-.export-menu-item {
+.report-viewer-container .export-menu-item {
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -656,39 +926,16 @@
   cursor: pointer;
   transition: background-color 0.15s;
 }
-.export-menu-item:hover {
+.report-viewer-container .export-menu-item:hover {
   background-color: var(--bg-color, #f1f5f9);
   color: var(--primary-color, #2563eb);
 }
 
-.export-menu-divider {
+.report-viewer-container .export-menu-divider {
   height: 1px;
   background-color: var(--border-color, #e2e8f0);
   margin: 0.35rem 0;
 }
-
-/* 时序流水线 */
-.pipeline-step-flow {
-  display: flex;
-  gap: 0.75rem;
-  margin: 1rem 0 1.5rem;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
-}
-
-.step-card {
-  flex: 1;
-  min-width: 140px;
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
-  padding: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.step-card.step-success { border-left: 4px solid #10b981; }
-.step-card.step-failed { border-left: 4px solid #ef4444; }
 /* ==========================================================================
    出版级打印排版规则 @media print
    ========================================================================== */
