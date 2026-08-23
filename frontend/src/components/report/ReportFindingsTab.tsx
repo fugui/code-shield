@@ -47,12 +47,12 @@ export default function ReportFindingsTab({
 
   return (
     <div>
-      {/* 过滤工具栏 */}
+      {/* 过滤工具栏 (单行紧凑集成布局) */}
       <div className="findings-filter-toolbar no-print">
         {/* 严重度/结论过滤 Chips */}
         <div className="filter-chips">
           <button
-            className="chip-btn"
+            className={`chip-btn ${selectedSev === '' ? 'chip-active' : ''}`}
             style={{
               background: selectedSev === '' ? 'var(--primary-color, #2563eb)' : 'var(--bg-color, #f1f5f9)',
               color: selectedSev === '' ? '#ffffff' : 'var(--text-secondary, #475569)',
@@ -103,8 +103,8 @@ export default function ReportFindingsTab({
                 <button
                   className="chip-btn"
                   style={{
-                    background: selectedSev === 'critical' ? '#f97316' : 'rgba(249, 115, 22, 0.12)',
-                    color: selectedSev === 'critical' ? '#ffffff' : '#ea580c',
+                    background: selectedSev === 'critical' ? '#ea580c' : 'rgba(234, 88, 12, 0.12)',
+                    color: selectedSev === 'critical' ? '#ffffff' : '#c2410c',
                   }}
                   onClick={() => handleSevChip('critical')}
                 >
@@ -115,8 +115,8 @@ export default function ReportFindingsTab({
                 <button
                   className="chip-btn"
                   style={{
-                    background: selectedSev === 'major' ? '#eab308' : 'rgba(234, 179, 8, 0.12)',
-                    color: selectedSev === 'major' ? '#ffffff' : '#ca8a04',
+                    background: selectedSev === 'major' ? '#d97706' : 'rgba(217, 119, 6, 0.12)',
+                    color: selectedSev === 'major' ? '#ffffff' : '#b45309',
                   }}
                   onClick={() => handleSevChip('major')}
                 >
@@ -127,7 +127,7 @@ export default function ReportFindingsTab({
                 <button
                   className="chip-btn"
                   style={{
-                    background: selectedSev === 'suggestion' ? '#6b7280' : 'rgba(107, 114, 128, 0.12)',
+                    background: selectedSev === 'suggestion' ? '#64748b' : 'rgba(100, 116, 139, 0.12)',
                     color: selectedSev === 'suggestion' ? '#ffffff' : '#475569',
                   }}
                   onClick={() => handleSevChip('suggestion')}
@@ -139,21 +139,14 @@ export default function ReportFindingsTab({
           )}
         </div>
 
-        {/* 关键字搜索与状态下拉 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        {/* 右侧筛选区 (同一水平线上的状态选择与搜索输入框) */}
+        <div className="filter-search-group">
           <select
+            className="filter-status-select"
             value={selectedStatus}
             onChange={(e) => {
               setSelectedStatus(e.target.value);
               setPage(1);
-            }}
-            style={{
-              padding: '0.35rem 0.6rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color, #cbd5e1)',
-              background: 'var(--card-bg, #ffffff)',
-              fontSize: '0.8rem',
-              color: 'var(--text-color, #0f172a)',
             }}
           >
             <option value="">全部状态</option>
@@ -174,24 +167,32 @@ export default function ReportFindingsTab({
             )}
           </select>
 
-          <input
-            type="text"
-            placeholder="搜索标题、文件或详细描述..."
-            value={keyword}
-            onChange={(e) => {
-              setKeyword(e.target.value);
-              setPage(1);
-            }}
-            style={{
-              padding: '0.35rem 0.65rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color, #cbd5e1)',
-              fontSize: '0.8rem',
-              width: '200px',
-              background: 'var(--card-bg, #ffffff)',
-              color: 'var(--text-color, #0f172a)',
-            }}
-          />
+          <div className="filter-search-input-wrapper">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '9px', color: 'var(--text-secondary, #94a3b8)', pointerEvents: 'none' }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              className="filter-search-input"
+              placeholder="搜索标题、文件路径..."
+              value={keyword}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setPage(1);
+              }}
+            />
+            {keyword && (
+              <button
+                type="button"
+                className="filter-search-clear"
+                onClick={() => setKeyword('')}
+                title="清空搜索"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
