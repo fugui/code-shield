@@ -100,7 +100,7 @@ export const getSeverityMeta = (raw?: string): SeverityMeta => {
 };
 
 export const formatDuration = (seconds?: number): string => {
-  if (seconds == null || isNaN(seconds) || seconds < 0) return '-';
+  if (seconds == null || isNaN(seconds) || seconds <= 0) return '-';
   if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
   const s = Math.round(seconds);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
