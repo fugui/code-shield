@@ -108,28 +108,106 @@ export default function ReportViewer({
         onPrint={printReport}
       />
 
-      {/* 选项卡栏 */}
-      <div className="report-tab-bar no-print">
+      {/* 选项卡栏 (采用内联样式强行固化，彻底杜绝微前端样式覆盖引起的随机跳跃) */}
+      <div
+        className="report-tab-bar cs-report-tab-bar no-print"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: '#ffffff',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          padding: '0 2.25rem',
+          gap: '2.5rem',
+          boxSizing: 'border-box',
+          minHeight: '48px',
+        }}
+      >
         <div
-          className={`report-tab-item ${activeTab === 'summary' ? 'active' : ''}`}
+          className={`report-tab-item cs-report-tab-item ${activeTab === 'summary' ? 'active' : ''}`}
           onClick={() => handleTabClick('summary')}
+          style={{
+            padding: '1.05rem 0.5rem',
+            fontSize: '0.92rem',
+            fontWeight: activeTab === 'summary' ? 600 : 500,
+            color: activeTab === 'summary' ? '#2563eb' : '#64748b',
+            borderBottom: activeTab === 'summary' ? '2.5px solid #2563eb' : '2.5px solid transparent',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            transition: 'all 0.15s ease-in-out',
+            userSelect: 'none',
+          }}
         >
           <span>📑 审计总结报告</span>
         </div>
+
         <div
-          className={`report-tab-item ${activeTab === 'findings' ? 'active' : ''}`}
+          className={`report-tab-item cs-report-tab-item ${activeTab === 'findings' ? 'active' : ''}`}
           onClick={() => handleTabClick('findings')}
+          style={{
+            padding: '1.05rem 0.5rem',
+            fontSize: '0.92rem',
+            fontWeight: activeTab === 'findings' ? 600 : 500,
+            color: activeTab === 'findings' ? '#2563eb' : '#64748b',
+            borderBottom: activeTab === 'findings' ? '2.5px solid #2563eb' : '2.5px solid transparent',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            transition: 'all 0.15s ease-in-out',
+            userSelect: 'none',
+          }}
         >
           <span>📋 详细问题清单</span>
-          {totalFindingsCount > 0 && <span className="tab-badge">{totalFindingsCount}</span>}
+          {totalFindingsCount > 0 && (
+            <span
+              className="tab-badge cs-tab-badge"
+              style={{
+                background: activeTab === 'findings' ? 'rgba(37, 99, 235, 0.12)' : '#e2e8f0',
+                color: activeTab === 'findings' ? '#2563eb' : '#475569',
+                padding: '0.15rem 0.55rem',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+              }}
+            >
+              {totalFindingsCount}
+            </span>
+          )}
         </div>
+
         <div
-          className={`report-tab-item ${activeTab === 'diagnostics' ? 'active' : ''}`}
+          className={`report-tab-item cs-report-tab-item ${activeTab === 'diagnostics' ? 'active' : ''}`}
           onClick={() => handleTabClick('diagnostics')}
+          style={{
+            padding: '1.05rem 0.5rem',
+            fontSize: '0.92rem',
+            fontWeight: activeTab === 'diagnostics' ? 600 : 500,
+            color: activeTab === 'diagnostics' ? '#2563eb' : '#64748b',
+            borderBottom: activeTab === 'diagnostics' ? '2.5px solid #2563eb' : '2.5px solid transparent',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            transition: 'all 0.15s ease-in-out',
+            userSelect: 'none',
+          }}
         >
           <span>🔬 运行轨迹与诊断</span>
           {meta?.status === 'failed' && (
-            <span className="tab-badge" style={{ background: '#fee2e2', color: '#dc2626' }}>
+            <span
+              className="tab-badge cs-tab-badge"
+              style={{
+                background: '#fee2e2',
+                color: '#dc2626',
+                padding: '0.15rem 0.55rem',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+              }}
+            >
               异常
             </span>
           )}
