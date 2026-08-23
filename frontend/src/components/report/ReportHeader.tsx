@@ -101,52 +101,11 @@ export default function ReportHeader({
           </div>
         )}
 
-        {/* 页面直达与复制链接组 (独立页面在前，复制链接在后，纯图标呈现) */}
-        {meta?.id && (
-          <div className="header-action-group no-print">
-            <button
-              className="icon-action-btn"
-              onClick={handleOpenExternal}
-              title="在新标签页中打开该报告独立全屏页面"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </button>
-            <button
-              className={`icon-action-btn ${copied ? 'btn-copied' : ''}`}
-              onClick={handleCopyLink}
-              title={copied ? "已复制直达链接！" : "复制报告专属直达链接 (URL)"}
-            >
-              {copied ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* 导出多格式报告下拉菜单 (核心 Primary Action) */}
-        <ReportExportMenu
-          taskId={meta?.id || 0}
-          exporting={exporting}
-          onExport={onExport}
-          onPrint={onPrint}
-        />
-
-        {/* 全屏切换与关闭控制 */}
-        <div className="header-action-group no-print" style={{ marginLeft: '0.25rem' }}>
+        {/* 视口/窗口操作组 (全屏在前，独立页面紧随，复制链接在后) */}
+        <div className="header-action-group no-print">
           {onToggleFullscreen && (
             <button
-              className="icon-tool-btn"
+              className="icon-action-btn"
               onClick={onToggleFullscreen}
               title={isFullscreen ? '退出全屏 (还原抽屉)' : '全屏展开查看'}
             >
@@ -168,7 +127,50 @@ export default function ReportHeader({
             </button>
           )}
 
-          {onClose && (
+          {meta?.id && (
+            <>
+              <button
+                className="icon-action-btn"
+                onClick={handleOpenExternal}
+                title="在新标签页中打开该报告独立全屏页面"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </button>
+              <button
+                className={`icon-action-btn ${copied ? 'btn-copied' : ''}`}
+                onClick={handleCopyLink}
+                title={copied ? "已复制直达链接！" : "复制报告专属直达链接 (URL)"}
+              >
+                {copied ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                )}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* 导出多格式报告下拉菜单 (核心 Primary Action) */}
+        <ReportExportMenu
+          taskId={meta?.id || 0}
+          exporting={exporting}
+          onExport={onExport}
+          onPrint={onPrint}
+        />
+
+        {/* 关闭控制 */}
+        {onClose && (
+          <div className="header-action-group no-print" style={{ marginLeft: '0.15rem' }}>
             <button
               className="icon-tool-btn btn-close"
               onClick={onClose}
@@ -179,8 +181,8 @@ export default function ReportHeader({
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
