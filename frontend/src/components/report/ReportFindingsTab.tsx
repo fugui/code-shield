@@ -208,28 +208,67 @@ export default function ReportFindingsTab({
       </div>
 
       {/* 2. 独立搜索与状态过滤工具栏 */}
-      <div className="findings-filter-toolbar no-print">
-        <div className="filter-summary-info">
-          <span>共检索到 <strong>{total}</strong> 项结果</span>
+      <div
+        className="findings-filter-toolbar no-print"
+        style={{
+          background: '#ffffff',
+          backgroundColor: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '12px',
+          padding: '1.1rem 1.6rem',
+          marginBottom: '1.75rem',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1.25rem',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div className="filter-summary-info" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.88rem', color: '#475569' }}>
+          <span>共检索到 <strong style={{ color: '#0f172a', fontSize: '0.95rem' }}>{total}</strong> 项结果</span>
           {!isAllSelected && (
             <button
               type="button"
               className="filter-reset-btn"
               onClick={handleResetAllSevs}
               title="恢复所有级别全选"
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                padding: '0.25rem 0.6rem',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
             >
               ✕ 恢复全部级别
             </button>
           )}
         </div>
 
-        <div className="filter-search-group">
+        <div className="filter-search-group" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexShrink: 0 }}>
           <select
             className="filter-status-select"
             value={selectedStatus}
             onChange={(e) => {
               setSelectedStatus(e.target.value);
               setPage(1);
+            }}
+            style={{
+              height: '40px',
+              padding: '0.45rem 1.15rem',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              fontSize: '0.88rem',
+              color: '#0f172a',
+              outline: 'none',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
             }}
           >
             <option value="">全部状态</option>
@@ -250,8 +289,8 @@ export default function ReportFindingsTab({
             )}
           </select>
 
-          <div className="filter-search-input-wrapper">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '9px', color: 'var(--text-secondary, #94a3b8)', pointerEvents: 'none' }}>
+          <div className="filter-search-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }}>
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -264,12 +303,24 @@ export default function ReportFindingsTab({
                 setKeyword(e.target.value);
                 setPage(1);
               }}
+              style={{
+                height: '40px',
+                width: '360px',
+                minWidth: '280px',
+                padding: '0.45rem 1rem 0.45rem 2.4rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                fontSize: '0.88rem',
+                background: '#ffffff',
+                color: '#0f172a',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
             />
             {keyword && (
               <button
                 type="button"
                 className="filter-search-clear"
-                onClick={() => setKeyword('')}
                 title="清空搜索"
               >
                 ✕

@@ -16,7 +16,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.95rem 2rem;
+  padding: 1.15rem 2.25rem;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
@@ -242,14 +242,14 @@
   display: flex;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
-  padding: 0 2rem;
-  gap: 2.25rem;
+  padding: 0 2.25rem;
+  gap: 2.5rem;
   box-sizing: border-box;
 }
 
 .report-tab-item {
-  padding: 0.85rem 0.35rem;
-  font-size: 0.88rem;
+  padding: 1.05rem 0.5rem;
+  font-size: 0.92rem;
   font-weight: 500;
   color: var(--text-secondary, #64748b);
   border-bottom: 2px solid transparent;
@@ -257,7 +257,7 @@
   transition: all 0.2s ease-in-out;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
 }
 .report-tab-item:hover {
   color: var(--primary-color, #2563eb);
@@ -271,9 +271,9 @@
 .tab-badge {
   background: #e2e8f0;
   color: #475569;
-  padding: 0.12rem 0.5rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 9999px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 .report-tab-item.active .tab-badge {
@@ -430,36 +430,37 @@
 
 /* 2. 独立过滤搜索工具栏 (宽敞清爽，与上方大卡片层次分明) */
 .findings-filter-toolbar {
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 10px;
-  padding: 0.95rem 1.4rem;
-  margin-bottom: 1.5rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.1rem 1.6rem;
+  margin-bottom: 1.75rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1.15rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  gap: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   box-sizing: border-box;
 }
 
 .filter-summary-info {
-  font-size: 0.82rem;
-  color: var(--text-secondary, #64748b);
+  font-size: 0.88rem;
+  color: #475569;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
 }
 
 .filter-reset-btn {
   background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
   cursor: pointer;
+  font-weight: 500;
   transition: all 0.15s;
 }
 .filter-reset-btn:hover {
@@ -469,26 +470,25 @@
 .filter-search-group {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
   flex-shrink: 0;
 }
 
 .filter-status-select {
-  padding: 0.45rem 0.85rem;
-  border-radius: 6px;
-  border: 1px solid var(--border-color, #cbd5e1);
-  background: var(--card-bg, #ffffff);
-  font-size: 0.85rem;
-  color: var(--text-color, #0f172a);
+  height: 40px;
+  padding: 0.45rem 1.15rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  font-size: 0.88rem;
+  color: #0f172a;
   outline: none;
   cursor: pointer;
   transition: border-color 0.15s;
-  height: 38px;
-  line-height: 1.5;
   box-sizing: border-box;
 }
 .filter-status-select:focus {
-  border-color: var(--primary-color, #3b82f6);
+  border-color: #2563eb;
 }
 
 .filter-search-input-wrapper {
@@ -498,52 +498,51 @@
 }
 
 .filter-search-input {
-  padding: 0.45rem 0.85rem 0.45rem 2.2rem;
-  border-radius: 6px;
-  border: 1px solid var(--border-color, #cbd5e1);
-  font-size: 0.85rem;
-  width: 320px;
-  min-width: 240px;
-  background: var(--card-bg, #ffffff);
-  color: var(--text-color, #0f172a);
+  height: 40px;
+  width: 360px;
+  min-width: 280px;
+  padding: 0.45rem 1rem 0.45rem 2.4rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.88rem;
+  background: #ffffff;
+  color: #0f172a;
   outline: none;
   transition: border-color 0.15s, width 0.2s;
-  height: 38px;
-  line-height: 1.5;
   box-sizing: border-box;
 }
 .filter-search-input:focus {
-  border-color: var(--primary-color, #3b82f6);
-  width: 360px;
+  border-color: #2563eb;
 }
 
 .filter-search-clear {
   position: absolute;
-  right: 8px;
+  right: 10px;
   background: transparent;
   border: none;
-  color: var(--text-secondary, #94a3b8);
-  font-size: 0.75rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
 }
 .filter-search-clear:hover {
-  color: var(--text-color, #0f172a);
+  color: #0f172a;
 }
 
-/* 缺陷/实体明细卡片 */
+/* 缺陷/实体明细卡片 (纯白大卡片，边框圆角与呼吸感) */
 .finding-card {
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 8px;
-  padding: 1.25rem;
-  margin-bottom: 1rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1.6rem 1.85rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   transition: box-shadow 0.2s, border-color 0.2s;
+  box-sizing: border-box;
 }
 .finding-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
   border-color: #cbd5e1;
 }
 
@@ -551,13 +550,13 @@
 .finding-status-tag {
   display: inline-flex;
   align-items: center;
-  padding: 0.25rem 0.65rem;
+  padding: 0.28rem 0.75rem;
   border-radius: 6px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  background: var(--bg-color, #f1f5f9);
-  color: var(--text-secondary, #475569);
-  border: 1px solid var(--border-color, #cbd5e1);
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
   user-select: none;
 }
 
@@ -565,51 +564,53 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
+  gap: 1.25rem;
+  margin-bottom: 0.95rem;
 }
 
 .finding-title-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
+  flex: 1;
 }
 
 .finding-location-bar {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  background: var(--bg-color, #f8fafc);
-  padding: 0.35rem 0.65rem;
+  gap: 0.55rem;
+  background: #f8fafc;
+  padding: 0.45rem 0.85rem;
   border-radius: 6px;
-  border: 1px solid var(--border-color, #e2e8f0);
-  font-family: monospace;
-  font-size: 0.8rem;
-  color: var(--text-secondary, #475569);
+  border: 1px solid #e2e8f0;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 0.82rem;
+  color: #475569;
 }
 
 .code-snippet-box {
   background: #0f172a;
   color: #e2e8f0;
-  padding: 1rem;
-  border-radius: 6px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.8rem;
-  line-height: 1.5;
+  padding: 1.25rem 1.5rem;
+  border-radius: 10px;
+  font-family: "JetBrains Mono", Consolas, "Fira Code", monospace;
+  font-size: 0.84rem;
+  line-height: 1.65;
   overflow-x: auto;
-  margin: 0.75rem 0;
+  margin: 0.85rem 0;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .suggestion-box {
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   color: #15803d;
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
-  font-size: 0.825rem;
-  line-height: 1.5;
-  margin-top: 0.75rem;
+  padding: 1rem 1.35rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  margin-top: 1.15rem;
 }
 
 /* 导出下拉菜单 */
