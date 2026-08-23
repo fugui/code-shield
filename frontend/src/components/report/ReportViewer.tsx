@@ -136,9 +136,18 @@ export default function ReportViewer({
         </div>
       </div>
 
-      {/* 内容主体 */}
-      <div className="report-content-body">
-        <div className="report-tab-inner-container">
+      {/* 内容主体 (充沛页边距 + 浅灰底色衬托) */}
+      <div
+        className="report-content-body"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '2rem 2.25rem 3.5rem 2.25rem',
+          backgroundColor: '#f1f5f9',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div className="report-tab-inner-container" style={{ maxWidth: '1320px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
           {activeTab === 'summary' && (
             <ReportSummaryTab summary={summary} loading={loadingSummary} />
           )}
@@ -169,8 +178,8 @@ export default function ReportViewer({
         open={open}
         onClose={onClose || (() => {})}
         title={null}
-        width={isFullscreen ? '100vw' : 'min(1180px, 95vw)'}
-        bodyStyle={{ padding: 0, height: '100%', background: 'var(--bg-color, #f1f5f9)' }}
+        width={isFullscreen ? '100vw' : 'min(1200px, 95vw)'}
+        bodyStyle={{ padding: 0, height: '100%', background: '#f1f5f9', backgroundColor: '#f1f5f9' }}
         headerStyle={{ display: 'none' }}
       >
         {content}
@@ -179,7 +188,7 @@ export default function ReportViewer({
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-color, #f1f5f9)' }}>
+    <div style={{ minHeight: '100vh', background: '#f1f5f9', backgroundColor: '#f1f5f9' }}>
       {content}
     </div>
   );
