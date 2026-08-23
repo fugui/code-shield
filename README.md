@@ -199,15 +199,37 @@ code-shield/
 │   ├── engine_chunked.go   # 自动切片并发分析执行引擎
 │   ├── opencode_cli.go     # OpenCode CLI 驱动适配器
 │   ├── claude_cli.go       # Claude CLI 驱动适配器
-│   └── agent_sync.go       # OpenCode Agent 配置同步服务
+│   ├── agent_sync.go       # OpenCode Agent 配置同步服务
+│   └── reports/            # 任务报告领域聚合与多格式导出引擎
+│       ├── report_service.go # 报告元信息/总结/问题清单/诊断核心服务
+│       ├── exporter_md.go    # Markdown 导出器
+│       ├── exporter_json.go  # JSON 结构化导出器
+│       └── exporter_excel.go # 出版级 Excel (.xlsx) 导出器
 ├── cron_jobs/              # 定时任务调度器
 ├── frontend/               # React 前端工程 (接入 @code/common)
+│   ├── src/components/report/ # 现代化任务报告中心组件群 (Viewer/Tabs/Cards)
 └── Makefile                # 自动化编译与运行脚本
 ```
 
 ---
 
 ## 🏷️ 版本历史
+
+### v1.6.0 (2026-08-23)
+- **任务报告中心统一重构 (Task Report Center Refactor)**：
+  - 彻底重构统一了任务报告抽屉与全屏详情查看器（`ReportViewer`），统筹收拢了全局 7 个业务页面的报告入口。
+  - 全新设计并拆分三大核心模块：`📑 审计总结报告 (Summary)`、`📋 详细问题清单 (Findings)`、`🔬 运行轨迹与诊断 (Diagnostics)`。
+  - 引入统一领域模型 DTO（`TaskReportMeta`、`SummaryDTO`、`FindingsPageResponse`、`DiagnosticsDTO`），杜绝大 JSON 一次性拉取性能瓶颈，支持服务端轻量分页（50 条/页）与级别/状态多维过滤。
+- **企业级多格式报告导出引擎 (Multi-Format Exporter Engine)**：
+  - 搭建独立报告导出引擎，支持 `Markdown`、`JSON`、`Excel (.xlsx)` 及出版级 `PDF 打印` 多格式导出。
+  - Excel 报告内置【检视概要看板】与【问题明细清单】双 Sheet 豪华排版，自适应中文双字节列宽。
+- **现代化 CI/CD 流水线诊断看板 (Pipeline Stepper Flow)**：
+  - 全新设计流水线阶段时序流（`STAGE 01/02/03`、微光状态徽章、耗时胶囊），支持分片矩阵并发状态与终端输出日志优雅折叠。
+- **高质感卡片布局与微前端样式强隔离**：
+  - 抽屉视窗宽度扩充至 `min(1200px, 95vw)`，采用科技浅灰底色（`#f1f5f9`）衬托白底圆角大卡片，告别局促拥挤感。
+  - 彻底解决微前端模块联邦（Module Federation）样式时序竞争导致的界面跳跃问题，固化组件级内边距与标准 Checkbox 勾选交互。
+- **100% 确定性路径寻址 (Deterministic Path Resolution)**：
+  - 彻底消除全部 `filepath.Glob` 模糊匹配依赖，历史产物与标准产物路径 100% 确定性寻址。
 
 ### v1.5.0 (2026-08-14)
 - **数据库持久化任务队列 (DB Persistent Queue)**：将扫描任务队列全面升级为基于 PostgreSQL 数据库持久化拉取与原子抢占模型，新增 `max_queue_size` 限额保护，杜绝重启任务丢失。
