@@ -238,37 +238,42 @@
 }
 
 /* 选项卡导航 (采用纯白优雅底色，页边距对齐) */
-.report-tab-bar {
-  display: flex;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 0 2.25rem;
-  gap: 2.5rem;
-  box-sizing: border-box;
+.report-tab-bar,
+.cs-report-tab-bar {
+  display: flex !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding: 0 2.25rem !important;
+  gap: 2.5rem !important;
+  box-sizing: border-box !important;
 }
 
-.report-tab-item {
-  padding: 1.05rem 0.5rem;
-  font-size: 0.92rem;
+.report-tab-item,
+.cs-report-tab-item {
+  padding: 1.05rem 0.5rem !important;
+  font-size: 0.92rem !important;
   font-weight: 500;
-  color: var(--text-secondary, #64748b);
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s ease-in-out;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
+  color: #64748b;
+  border-bottom: 2.5px solid transparent !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease-in-out !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.55rem !important;
 }
-.report-tab-item:hover {
-  color: var(--primary-color, #2563eb);
+.report-tab-item:hover,
+.cs-report-tab-item:hover {
+  color: #2563eb !important;
 }
-.report-tab-item.active {
-  color: var(--primary-color, #2563eb);
-  border-bottom-color: var(--primary-color, #2563eb);
-  font-weight: 600;
+.report-tab-item.active,
+.cs-report-tab-item.active {
+  color: #2563eb !important;
+  border-bottom-color: #2563eb !important;
+  font-weight: 600 !important;
 }
 
-.tab-badge {
+.tab-badge,
+.cs-tab-badge {
   background: #e2e8f0;
   color: #475569;
   padding: 0.15rem 0.55rem;
@@ -276,9 +281,10 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
-.report-tab-item.active .tab-badge {
-  background: rgba(37, 99, 235, 0.12);
-  color: var(--primary-color, #2563eb);
+.report-tab-item.active .tab-badge,
+.cs-report-tab-item.active .cs-tab-badge {
+  background: rgba(37, 99, 235, 0.12) !important;
+  color: #2563eb !important;
 }
 
 /* 内容主体滚动容器 (浅灰底衬托白底卡片，具备宽敞的上下左右页边距) */
