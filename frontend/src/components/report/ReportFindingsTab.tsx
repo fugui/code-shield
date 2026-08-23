@@ -27,7 +27,7 @@ export default function ReportFindingsTab({
   onStatusChange,
   isReadOnly = false,
 }: ReportFindingsTabProps) {
-  const [selectedSev, setSelectedSev] = useState<string>('');
+  const [selectedSevs, setSelectedSevs] = useState<string[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [keyword, setKeyword] = useState<string>('');
   const [page, setPage] = useState<number>(1);
@@ -39,28 +39,29 @@ export default function ReportFindingsTab({
 
   useEffect(() => {
     onFilterChange({
-      severity: selectedSev,
+      severity: selectedSevs.join(','),
       status: selectedStatus,
       keyword: keyword.trim(),
       page,
       pageSize: 50,
     });
-  }, [selectedSev, selectedStatus, keyword, page]);
+  }, [selectedSevs, selectedStatus, keyword, page]);
 
+  // 点击卡片实现多选切换 (Toggle)
   const handleCardClick = (key: string) => {
-    setSelectedSev(prev => (prev === key ? '' : key));
+    setSelectedSevs(prev => {
+      if (prev.includes(key)) {
+        return prev.filter(k => k !== key);
+      } else {
+        return [...prev, key];
+      }
+    });
     setPage(1);
   };
 
-  // 构建指标卡片列表 (完全还原上一版的大气卡片 Dashboard)
+  // 构建指标卡片列表 (去除全部问题卡片，直接展示分类项以供多选)
   const cards: SeverityCardItem[] = [];
   if (isEntityMode) {
-    cards.push({
-      key: '',
-      name: '全部项',
-      count: metrics?.total_findings ?? total,
-      color: '#2563eb',
-    });
     cards.push({
       key: 'pass',
       name: '合格项',
@@ -74,12 +75,6 @@ export default function ReportFindingsTab({
       color: '#ef4444',
     });
   } else {
-    cards.push({
-      key: '',
-      name: '全部问题',
-      count: metrics?.total_findings ?? total,
-      color: '#2563eb',
-    });
     if ((metrics?.fatal_count ?? 0) > 0) {
       cards.push({
         key: 'fatal',
@@ -108,12 +103,14 @@ export default function ReportFindingsTab({
     });
   }
 
+  const hasFilter = selectedSevs.length > 0;
+
   return (
     <div>
-      {/* 1. 严重性指标卡片看板 (参考重构前上一版设计：大卡片、统计数、勾选框与彩色下划线) */}
+      {/* 1. 严重性指标卡片看板 (支持多选，点击组合过滤) */}
       <div className="severity-cards-grid no-print">
         {cards.map((c) => {
-          const isSelected = selectedSev === c.key;
+          const isSelected = selectedSevs.includes(c.key);
           return (
             <div
               key={c.key}
@@ -121,7 +118,7 @@ export default function ReportFindingsTab({
               className={`severity-metric-card ${isSelected ? 'selected' : ''}`}
               style={{
                 border: isSelected ? `1.5px solid ${c.color}` : '1.5px solid var(--border-color, #e2e8f0)',
-                opacity: selectedSev === '' || isSelected ? 1 : 0.55,
+                opacity: !hasFilter || isSelected ? 1 : 0.5,
               }}
             >
               <div className="card-top-row">
@@ -167,18 +164,18 @@ export default function ReportFindingsTab({
         })}
       </div>
 
-      {/* 2. 独立搜索与状态过滤工具栏 (宽敞清爽，与上方大卡片层次分明) */}
+      {/* 2. 独立搜索与状态过滤工具栏 (高度舒适、搜索框更宽) */}
       <div className="findings-filter-toolbar no-print">
         <div className="filter-summary-info">
           <span>共检索到 <strong>{total}</strong> 项结果</span>
-          {selectedSev && (
+          {hasFilter && (
             <button
               type="button"
               className="filter-reset-btn"
-              onClick={() => setSelectedSev('')}
-              title="清除分类过滤"
+              onClick={() => setSelectedSevs([])}
+              title="清除所有分类过滤"
             >
-              ✕ 清除分类
+              ✕ 清除分类过滤 ({selectedSevs.length})
             </button>
           )}
         </div>
