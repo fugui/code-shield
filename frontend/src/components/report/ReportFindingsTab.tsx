@@ -12,6 +12,13 @@ interface ReportFindingsTabProps {
   isReadOnly?: boolean;
 }
 
+interface SeverityCardItem {
+  key: string;
+  name: string;
+  count: number;
+  color: string;
+}
+
 export default function ReportFindingsTab({
   meta,
   findingsPage,
@@ -40,106 +47,142 @@ export default function ReportFindingsTab({
     });
   }, [selectedSev, selectedStatus, keyword, page]);
 
-  const handleSevChip = (sev: string) => {
-    setSelectedSev(prev => (prev === sev ? '' : sev));
+  const handleCardClick = (key: string) => {
+    setSelectedSev(prev => (prev === key ? '' : key));
     setPage(1);
   };
 
+  // 构建指标卡片列表 (完全还原上一版的大气卡片 Dashboard)
+  const cards: SeverityCardItem[] = [];
+  if (isEntityMode) {
+    cards.push({
+      key: '',
+      name: '全部项',
+      count: metrics?.total_findings ?? total,
+      color: '#2563eb',
+    });
+    cards.push({
+      key: 'pass',
+      name: '合格项',
+      count: metrics?.pass_count ?? 0,
+      color: '#10b981',
+    });
+    cards.push({
+      key: 'fatal',
+      name: '不合格 / 风险',
+      count: (metrics?.fatal_count ?? 0) + (metrics?.critical_count ?? 0) + (metrics?.major_count ?? 0),
+      color: '#ef4444',
+    });
+  } else {
+    cards.push({
+      key: '',
+      name: '全部问题',
+      count: metrics?.total_findings ?? total,
+      color: '#2563eb',
+    });
+    if ((metrics?.fatal_count ?? 0) > 0) {
+      cards.push({
+        key: 'fatal',
+        name: '致命',
+        count: metrics?.fatal_count ?? 0,
+        color: '#dc2626',
+      });
+    }
+    cards.push({
+      key: 'critical',
+      name: '严重',
+      count: metrics?.critical_count ?? 0,
+      color: '#ea580c',
+    });
+    cards.push({
+      key: 'major',
+      name: '一般',
+      count: metrics?.major_count ?? 0,
+      color: '#d97706',
+    });
+    cards.push({
+      key: 'suggestion',
+      name: '建议',
+      count: metrics?.suggestion_count ?? 0,
+      color: '#64748b',
+    });
+  }
+
   return (
     <div>
-      {/* 过滤工具栏 (单行紧凑集成布局) */}
-      <div className="findings-filter-toolbar no-print">
-        {/* 严重度/结论过滤 Chips */}
-        <div className="filter-chips">
-          <button
-            className={`chip-btn ${selectedSev === '' ? 'chip-active' : ''}`}
-            style={{
-              background: selectedSev === '' ? 'var(--primary-color, #2563eb)' : 'var(--bg-color, #f1f5f9)',
-              color: selectedSev === '' ? '#ffffff' : 'var(--text-secondary, #475569)',
-            }}
-            onClick={() => handleSevChip('')}
-          >
-            全部 ({metrics?.total_findings ?? total})
-          </button>
+      {/* 1. 严重性指标卡片看板 (参考重构前上一版设计：大卡片、统计数、勾选框与彩色下划线) */}
+      <div className="severity-cards-grid no-print">
+        {cards.map((c) => {
+          const isSelected = selectedSev === c.key;
+          return (
+            <div
+              key={c.key}
+              onClick={() => handleCardClick(c.key)}
+              className={`severity-metric-card ${isSelected ? 'selected' : ''}`}
+              style={{
+                border: isSelected ? `1.5px solid ${c.color}` : '1.5px solid var(--border-color, #e2e8f0)',
+                opacity: selectedSev === '' || isSelected ? 1 : 0.55,
+              }}
+            >
+              <div className="card-top-row">
+                <span
+                  className="card-sev-name"
+                  style={{ color: isSelected ? c.color : 'var(--text-secondary, #64748b)' }}
+                >
+                  {c.name}
+                </span>
+                <div
+                  className="filter-checkbox"
+                  style={{
+                    borderColor: isSelected ? c.color : '#cbd5e1',
+                    background: isSelected ? c.color : 'transparent',
+                  }}
+                >
+                  {isSelected && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+              </div>
 
-          {isEntityMode ? (
-            <>
-              <button
-                className="chip-btn"
+              <div className="card-count-row">
+                <span
+                  className="card-count-number"
+                  style={{ color: isSelected ? c.color : 'var(--text-color, #0f172a)' }}
+                >
+                  {c.count}
+                </span>
+                <span className="card-count-unit">个</span>
+              </div>
+
+              <div
+                className="card-color-bar"
                 style={{
-                  background: selectedSev === 'pass' ? '#10b981' : 'rgba(16, 185, 129, 0.12)',
-                  color: selectedSev === 'pass' ? '#ffffff' : '#059669',
+                  background: isSelected ? c.color : '#e2e8f0',
                 }}
-                onClick={() => handleSevChip('pass')}
-              >
-                合格 ({metrics?.pass_count ?? 0})
-              </button>
-              <button
-                className="chip-btn"
-                style={{
-                  background: selectedSev === 'fatal' ? '#ef4444' : 'rgba(239, 68, 68, 0.12)',
-                  color: selectedSev === 'fatal' ? '#ffffff' : '#dc2626',
-                }}
-                onClick={() => handleSevChip('fatal')}
-              >
-                不合格/风险 ({(metrics?.fatal_count ?? 0) + (metrics?.critical_count ?? 0) + (metrics?.major_count ?? 0)})
-              </button>
-            </>
-          ) : (
-            <>
-              {(metrics?.fatal_count ?? 0) > 0 && (
-                <button
-                  className="chip-btn"
-                  style={{
-                    background: selectedSev === 'fatal' ? '#ef4444' : 'rgba(239, 68, 68, 0.12)',
-                    color: selectedSev === 'fatal' ? '#ffffff' : '#dc2626',
-                  }}
-                  onClick={() => handleSevChip('fatal')}
-                >
-                  致命 ({metrics?.fatal_count})
-                </button>
-              )}
-              {(metrics?.critical_count ?? 0) > 0 && (
-                <button
-                  className="chip-btn"
-                  style={{
-                    background: selectedSev === 'critical' ? '#ea580c' : 'rgba(234, 88, 12, 0.12)',
-                    color: selectedSev === 'critical' ? '#ffffff' : '#c2410c',
-                  }}
-                  onClick={() => handleSevChip('critical')}
-                >
-                  严重 ({metrics?.critical_count})
-                </button>
-              )}
-              {(metrics?.major_count ?? 0) > 0 && (
-                <button
-                  className="chip-btn"
-                  style={{
-                    background: selectedSev === 'major' ? '#d97706' : 'rgba(217, 119, 6, 0.12)',
-                    color: selectedSev === 'major' ? '#ffffff' : '#b45309',
-                  }}
-                  onClick={() => handleSevChip('major')}
-                >
-                  一般 ({metrics?.major_count})
-                </button>
-              )}
-              {(metrics?.suggestion_count ?? 0) > 0 && (
-                <button
-                  className="chip-btn"
-                  style={{
-                    background: selectedSev === 'suggestion' ? '#64748b' : 'rgba(100, 116, 139, 0.12)',
-                    color: selectedSev === 'suggestion' ? '#ffffff' : '#475569',
-                  }}
-                  onClick={() => handleSevChip('suggestion')}
-                >
-                  建议 ({metrics?.suggestion_count})
-                </button>
-              )}
-            </>
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 2. 独立搜索与状态过滤工具栏 (宽敞清爽，与上方大卡片层次分明) */}
+      <div className="findings-filter-toolbar no-print">
+        <div className="filter-summary-info">
+          <span>共检索到 <strong>{total}</strong> 项结果</span>
+          {selectedSev && (
+            <button
+              type="button"
+              className="filter-reset-btn"
+              onClick={() => setSelectedSev('')}
+              title="清除分类过滤"
+            >
+              ✕ 清除分类
+            </button>
           )}
         </div>
 
-        {/* 右侧筛选区 (同一水平线上的状态选择与搜索输入框) */}
         <div className="filter-search-group">
           <select
             className="filter-status-select"
