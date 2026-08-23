@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FindingsPageResponse, TaskReportMeta, TaskFindingItem } from '../../types/report';
 import FindingCard from './FindingCard';
 import ReportEmptyState from './ReportEmptyState';
+
+const ENTITY_MODE_SEVS = ['pass', 'unpass'];
+const DEFECT_MODE_SEVS = ['fatal', 'critical', 'major', 'suggestion'];
 
 interface ReportFindingsTabProps {
   meta?: TaskReportMeta;
@@ -24,15 +27,24 @@ export default function ReportFindingsTab({
   onFilterChange,
 }: ReportFindingsTabProps) {
   const isEntityMode = meta?.governance_mode === 'entity_assessment';
-  const defaultKeys = isEntityMode
-    ? ['pass', 'unpass']
-    : ['fatal', 'critical', 'major', 'suggestion'];
+  const modeKeys = isEntityMode ? ENTITY_MODE_SEVS : DEFECT_MODE_SEVS;
 
-  const [selectedSevs, setSelectedSevs] = useState<string[]>(defaultKeys);
+  const [selectedSevs, setSelectedSevs] = useState<string[]>(modeKeys);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [keyword, setKeyword] = useState<string>('');
   const [debouncedKeyword, setDebouncedKeyword] = useState<string>('');
   const [page, setPage] = useState<number>(1);
+  // meta 异步到达后治理模式可能从默认值翻转，这里在模式变化时校正默认选中项
+  const prevModeRef = useRef(isEntityMode);
+  useEffect(() => {
+    if (prevModeRef.current !== isEntityMode) {
+      prevModeRef.current = isEntityMode;
+      setSelectedSevs(prev => {
+        const valid = prev.filter(k => modeKeys.includes(k));
+        return valid.length > 0 ? valid : modeKeys;
+      });
+    }
+  }, [isEntityMode, modeKeys]);
 
   const metrics = findingsPage?.metrics;
   const items = findingsPage?.items || [];
@@ -136,15 +148,7 @@ export default function ReportFindingsTab({
   return (
     <div>
       {/* 1. 严重性指标卡片看板 (默认全选中高亮，支持智能单选/多选组合) */}
-      <div
-        className="severity-cards-grid no-print"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '1.25rem',
-          marginBottom: '1.75rem',
-        }}
-      >
+      <div className="severity-cards-grid no-print">
         {cards.map((c) => {
           const isSelected = selectedSevs.includes(c.key);
           return (
@@ -152,43 +156,13 @@ export default function ReportFindingsTab({
               key={c.key}
               onClick={() => handleCardClick(c.key)}
               className={`severity-metric-card ${isSelected ? 'selected' : ''}`}
-              style={{
-                background: '#ffffff',
-                backgroundColor: '#ffffff',
-                border: isSelected ? `1.5px solid ${c.color}` : '1.5px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '1.2rem 1.5rem',
-                minHeight: '96px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-                cursor: 'pointer',
-                opacity: isSelected ? 1 : 0.45,
-                boxSizing: 'border-box',
-              }}
+              style={{ '--sev-color': c.color } as React.CSSProperties}
             >
-              <div className="card-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span
-                  className="card-sev-name"
-                  style={{ color: isSelected ? c.color : '#64748b', fontSize: '0.85rem', fontWeight: 600 }}
-                >
+              <div className="card-top-row">
+                <span className="card-sev-name">
                   {c.name}
                 </span>
-                <div
-                  className="filter-checkbox"
-                  style={{
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '4px',
-                    border: '1.5px solid',
-                    borderColor: isSelected ? c.color : '#cbd5e1',
-                    background: isSelected ? c.color : 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
+                <div className="filter-checkbox">
                   {isSelected && (
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20 6 9 17 4 12" />
@@ -196,8 +170,8 @@ export default function ReportFindingsTab({
                   )}
                 </div>
               </div>
-              <div className="card-bottom-row" style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem', marginTop: '0.5rem' }}>
-                <span className="card-count-num" style={{ fontSize: '1.8rem', fontWeight: 700, color: isSelected ? c.color : '#0f172a' }}>
+              <div className="card-bottom-row">
+                <span className="card-count-num" style={{ color: isSelected ? c.color : '#0f172a' }}>
                   {c.count}
                 </span>
                 <span style={{ fontSize: '0.8rem', color: '#64748b' }}>个</span>
@@ -208,25 +182,8 @@ export default function ReportFindingsTab({
       </div>
 
       {/* 2. 独立搜索与状态过滤工具栏 */}
-      <div
-        className="findings-filter-toolbar no-print"
-        style={{
-          background: '#ffffff',
-          backgroundColor: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '12px',
-          padding: '1.1rem 1.6rem',
-          marginBottom: '1.75rem',
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '1.25rem',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-          boxSizing: 'border-box',
-        }}
-      >
-        <div className="filter-summary-info" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.88rem', color: '#475569' }}>
+      <div className="findings-filter-toolbar no-print">
+        <div className="filter-summary-info">
           <span>共检索到 <strong style={{ color: '#0f172a', fontSize: '0.95rem' }}>{total}</strong> 项结果</span>
           {!isAllSelected && (
             <button
@@ -234,41 +191,19 @@ export default function ReportFindingsTab({
               className="filter-reset-btn"
               onClick={handleResetAllSevs}
               title="恢复所有级别全选"
-              style={{
-                background: 'rgba(239, 68, 68, 0.08)',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
-                padding: '0.25rem 0.6rem',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                cursor: 'pointer',
-                fontWeight: 500,
-              }}
             >
               ✕ 恢复全部级别
             </button>
           )}
         </div>
 
-        <div className="filter-search-group" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexShrink: 0 }}>
+        <div className="filter-search-group">
           <select
             className="filter-status-select"
             value={selectedStatus}
             onChange={(e) => {
               setSelectedStatus(e.target.value);
               setPage(1);
-            }}
-            style={{
-              height: '40px',
-              padding: '0.45rem 1.15rem',
-              borderRadius: '8px',
-              border: '1px solid #cbd5e1',
-              background: '#ffffff',
-              fontSize: '0.88rem',
-              color: '#0f172a',
-              outline: 'none',
-              cursor: 'pointer',
-              boxSizing: 'border-box',
             }}
           >
             <option value="">全部状态</option>
@@ -289,7 +224,7 @@ export default function ReportFindingsTab({
             )}
           </select>
 
-          <div className="filter-search-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <div className="filter-search-input-wrapper">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }}>
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -302,19 +237,6 @@ export default function ReportFindingsTab({
               onChange={(e) => {
                 setKeyword(e.target.value);
                 setPage(1);
-              }}
-              style={{
-                height: '40px',
-                width: '360px',
-                minWidth: '280px',
-                padding: '0.45rem 1rem 0.45rem 2.4rem',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.88rem',
-                background: '#ffffff',
-                color: '#0f172a',
-                outline: 'none',
-                boxSizing: 'border-box',
               }}
             />
             {keyword && (
@@ -332,7 +254,7 @@ export default function ReportFindingsTab({
 
       {/* 列表内容区 */}
       {loading && items.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary, #64748b)' }}>
+        <div className="report-loading">
           ⏳ 正在加载问题清单...
         </div>
       ) : items.length === 0 ? (

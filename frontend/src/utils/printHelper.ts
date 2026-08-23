@@ -51,7 +51,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         --border-color: #e2e8f0 !important;
         --primary-color: #2563eb !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
         color: #0f172a !important;
       }
       *, *::before, *::after {
@@ -75,7 +74,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         overflow: visible !important;
         padding: 0 !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
         color: #0f172a !important;
       }
       .report-header-bar {
@@ -86,7 +84,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         border-bottom: 2px solid #0f172a !important;
         margin-bottom: 20px !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
         color: #0f172a !important;
         page-break-after: avoid !important;
         break-after: avoid !important;
@@ -107,7 +104,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         font-size: 12px !important;
         font-weight: 700 !important;
         background: #fffbeb !important;
-        background-color: #fffbeb !important;
         color: #b45309 !important;
         border: 1px solid #fde68a !important;
       }
@@ -122,7 +118,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
       .report-kpi-card {
         border: 1px solid #cbd5e1 !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
         border-radius: 6px !important;
         padding: 10px 12px !important;
         display: flex !important;
@@ -146,12 +141,10 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         overflow: visible !important;
         padding: 0 !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
       }
       .markdown-body {
         border: none !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
         color: #0f172a !important;
         padding: 0 !important;
         font-size: 13px !important;
@@ -190,13 +183,11 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
       }
       .markdown-body th {
         background: #f1f5f9 !important;
-        background-color: #f1f5f9 !important;
         color: #0f172a !important;
         font-weight: 600 !important;
       }
       .markdown-body td {
         background: #ffffff !important;
-        background-color: #ffffff !important;
         color: #1e293b !important;
       }
       .finding-card {
@@ -208,7 +199,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         margin-bottom: 16px !important;
         padding: 14px !important;
         background: #ffffff !important;
-        background-color: #ffffff !important;
       }
       .finding-card-header {
         display: flex !important;
@@ -221,7 +211,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         align-items: center !important;
         gap: 6px !important;
         background: #f8fafc !important;
-        background-color: #f8fafc !important;
         padding: 4px 8px !important;
         border-radius: 4px !important;
         border: 1px solid #e2e8f0 !important;
@@ -232,7 +221,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
       }
       .code-snippet-box, pre, code {
         background: #f8fafc !important;
-        background-color: #f8fafc !important;
         color: #0f172a !important;
         border: 1px solid #e2e8f0 !important;
         border-radius: 4px !important;
@@ -253,7 +241,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
       }
       .suggestion-box {
         background: #f0fdf4 !important;
-        background-color: #f0fdf4 !important;
         border: 1px solid #bbf7d0 !important;
         color: #15803d !important;
         padding: 8px 12px !important;
@@ -265,21 +252,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
       }
       .suggestion-box * {
         color: #15803d !important;
-      }
-      .pipeline-step-flow {
-        display: flex !important;
-        gap: 8px !important;
-        margin: 12px 0 16px !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-      }
-      .step-card {
-        flex: 1 !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        padding: 8px 10px !important;
-        background: #ffffff !important;
-        background-color: #ffffff !important;
       }
     </style>
   `;
