@@ -16,12 +16,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.85rem 1.5rem;
+  padding: 0.95rem 1.65rem;
   background: var(--bg-color, #f8fafc);
   border-bottom: 1px solid var(--border-color, #e2e8f0);
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
   flex-wrap: nowrap !important;
-  gap: 0.85rem;
+  gap: 1.25rem;
   z-index: 10;
   min-width: 0;
 }
@@ -29,7 +29,7 @@
 .report-title-meta {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.85rem;
   flex-wrap: nowrap !important;
   flex: 1 1 auto;
   min-width: 0;
@@ -38,7 +38,7 @@
 }
 
 .report-main-title {
-  font-size: 1.05rem;
+  font-size: 1.08rem;
   font-weight: 700;
   color: var(--text-color, #0f172a);
   letter-spacing: -0.01em;
@@ -48,12 +48,12 @@
 .report-repo-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.55rem;
+  gap: 0.4rem;
+  padding: 0.22rem 0.6rem;
   border-radius: 6px;
   background: rgba(59, 130, 246, 0.07);
   color: var(--primary-color, #2563eb);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   border: 1px solid rgba(59, 130, 246, 0.16);
   max-width: 280px;
@@ -66,10 +66,10 @@
 .report-rating-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.65rem;
+  gap: 0.4rem;
+  padding: 0.22rem 0.7rem;
   border-radius: 9999px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 700;
   background: rgba(245, 158, 11, 0.12);
   color: #b45309;
@@ -87,7 +87,7 @@
 .report-header-actions {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.6rem;
   flex-wrap: nowrap !important;
   flex: 0 0 auto;
   white-space: nowrap;
@@ -316,7 +316,87 @@
   color: var(--text-color, #0f172a);
 }
 
-/* 过滤工具栏 (单行水平紧凑集成) */
+/* 1. 严重性指标卡片看板 (完全还原上一版的大气卡片 Dashboard) */
+.severity-cards-grid {
+  display: flex;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.severity-metric-card {
+  flex: 1 1 135px;
+  background: var(--card-bg, #ffffff);
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  padding: 0.85rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: all 0.2s ease-in-out;
+}
+
+.severity-metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.05);
+}
+
+.severity-metric-card.selected {
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+}
+
+.card-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-sev-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.filter-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.card-count-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0.15rem 0;
+}
+
+.card-count-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.card-count-unit {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.card-color-bar {
+  height: 3px;
+  border-radius: 1.5px;
+  margin-top: 0.2rem;
+  transition: background-color 0.2s;
+}
+
+/* 2. 独立过滤搜索工具栏 (宽敞清爽，与上方大卡片层次分明) */
 .findings-filter-toolbar {
   background: var(--card-bg, #ffffff);
   border: 1px solid var(--border-color, #e2e8f0);
@@ -331,24 +411,26 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-.filter-chips {
+.filter-summary-info {
+  font-size: 0.82rem;
+  color: var(--text-secondary, #64748b);
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.65rem;
 }
 
-.chip-btn {
-  padding: 0.28rem 0.65rem;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
+.filter-reset-btn {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
   cursor: pointer;
-  border: 1px solid transparent;
   transition: all 0.15s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+}
+.filter-reset-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .filter-search-group {
