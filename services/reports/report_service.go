@@ -23,6 +23,16 @@ func BuildMetaDTO(report *models.TaskReport) ReportMetaDTO {
 		govMode = models.GovernanceModeDefectTracking
 	}
 
+	var durationSec float64
+	if sumBytes, err := os.ReadFile(report.GetSummaryJSONPath()); err == nil {
+		var summaryMap map[string]interface{}
+		if err := json.Unmarshal(sumBytes, &summaryMap); err == nil {
+			if dur, ok := summaryMap["duration_seconds"].(float64); ok {
+				durationSec = dur
+			}
+		}
+	}
+
 	return ReportMetaDTO{
 		ID:              report.ID,
 		RepoID:          report.RepoID,
@@ -40,6 +50,7 @@ func BuildMetaDTO(report *models.TaskReport) ReportMetaDTO {
 		TotalChunks:     report.TotalChunks,
 		ProcessedChunks: report.ProcessedChunks,
 		SuccessChunks:   report.SuccessChunks,
+		DurationSeconds: durationSec,
 		BaseCommit:      report.BaseCommit,
 		HeadCommit:      report.HeadCommit,
 		CreatedAt:       report.CreatedAt,
