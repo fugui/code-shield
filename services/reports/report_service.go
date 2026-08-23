@@ -491,7 +491,12 @@ func GetReportAggregate(taskID uint) (*ReportAggregateDTO, error) {
 		return nil, err
 	}
 
-	diagnostics, _ := GetReportDiagnostics(taskID)
+	diagnostics, diagErr := GetReportDiagnostics(taskID)
+	if diagErr != nil || diagnostics == nil {
+		diagnostics = &DiagnosticsDTO{
+			Meta: summary.Meta,
+		}
+	}
 
 	return &ReportAggregateDTO{
 		Meta:        summary.Meta,

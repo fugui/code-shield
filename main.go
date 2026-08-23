@@ -151,13 +151,6 @@ func main() {
 				api.GET("/tasks/:id/report/aggregate", handlers.GetReportAggregateHandler)
 				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
 
-				// Legacy Report Routes (Backward Compatible)
-				api.GET("/tasks/:id/report", handlers.GetTaskReportMarkdown)
-				api.GET("/tasks/:id/synthesis", handlers.GetTaskReportSynthesisJSON)
-				api.GET("/tasks/:id/synthesis/csv", handlers.ExportTaskReportSynthesisCSV)
-				api.GET("/tasks/:id/summary", handlers.GetTaskReportSummaryJSON)
-				api.GET("/tasks/:id/findings", handlers.GetAnalysisFindings)
-
 				// Task type management (read-only for normal users)
 				api.GET("/task-types", handlers.GetTaskTypes)
 				api.GET("/task-types/:id", handlers.GetTaskType)

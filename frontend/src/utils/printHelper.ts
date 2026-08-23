@@ -29,23 +29,6 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
     clone.querySelectorAll(sel).forEach(el => el.remove());
   });
 
-  // 清洗内联暗色变量引用，确保 100% 亮色主题
-  clone.querySelectorAll('*').forEach((el: any) => {
-    if (el.style) {
-      if (el.style.background && el.style.background.includes('var(--')) {
-        el.style.background = '';
-      }
-      if (el.style.backgroundColor && el.style.backgroundColor.includes('var(--')) {
-        el.style.backgroundColor = '';
-      }
-      if (el.style.color && el.style.color.includes('var(--text-secondary')) {
-        el.style.color = '#475569';
-      } else if (el.style.color && el.style.color.includes('var(--')) {
-        el.style.color = '#0f172a';
-      }
-    }
-  });
-
   // 获取当前页面所有样式表规则
   let stylesHtml = '';
   document.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
