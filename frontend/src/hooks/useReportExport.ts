@@ -62,7 +62,19 @@ export function useReportExport(): UseReportExportReturn {
   );
 
   const printReport = useCallback(() => {
-    window.print();
+    document.body.classList.add('report-print-mode');
+    const cleanup = () => {
+      document.body.classList.remove('report-print-mode');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+
+    // 稍微延时确保 DOM 与打印类名生效渲染完成
+    setTimeout(() => {
+      window.print();
+      // 兜底清理
+      setTimeout(cleanup, 3000);
+    }, 50);
   }, []);
 
   return {
