@@ -23,13 +23,6 @@ export interface UseTaskReportReturn {
   diagnosticsError: string | null;
   loadDiagnostics: (taskId: number) => Promise<void>;
 
-  updateFindingStatus: (
-    finding: TaskFindingItem,
-    newStatus: string,
-    assigneeId?: number | null,
-    comment?: string
-  ) => Promise<boolean>;
-
   resetState: () => void;
 }
 
@@ -153,69 +146,6 @@ export function useTaskReport(): UseTaskReportReturn {
     }
   }, []);
 
-  // 4. 缺陷流转与责任人指派 (具备失败自动回滚机制)
-  const updateFindingStatus = useCallback(
-    async (finding: TaskFindingItem, newStatus: string, assigneeId?: number | null, comment?: string): Promise<boolean> => {
-      if (!finding || !finding.id) return false;
-
-      // 保存更新前的快照用于失败回滚
-      let prevSnapshot: FindingsPageResponse | null = null;
-
-      // 执行乐观更新
-      setFindingsPage(prev => {
-        if (!prev) return prev;
-        prevSnapshot = prev;
-        const updatedItems = prev.items.map(it => {
-          if (it.id === finding.id) {
-            return {
-              ...it,
-              status: newStatus,
-              status_display: newStatus === 'resolved' ? '已解决' : newStatus === 'invalid' ? '忽略/误报' : '待处理',
-              assignee_id: assigneeId !== undefined ? assigneeId : it.assignee_id,
-              latest_comment: comment !== undefined ? comment : it.latest_comment,
-            };
-          }
-          return it;
-        });
-        return {
-          ...prev,
-          items: updatedItems,
-        };
-      });
-
-      try {
-        const payload: Record<string, any> = {
-          status: newStatus,
-        };
-        if (assigneeId !== undefined) payload.assignee_id = assigneeId;
-        if (comment) payload.comment = comment;
-
-        const res = await fetch(apiUrl(`/api/campaign/findings/${finding.id}/status`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-          // 提交失败：自动回滚快照
-          if (prevSnapshot) {
-            setFindingsPage(prevSnapshot);
-          }
-          return false;
-        }
-
-        return true;
-      } catch {
-        // 异常网络错误：自动回滚快照
-        if (prevSnapshot) {
-          setFindingsPage(prevSnapshot);
-        }
-        return false;
-      }
-    },
-    []
-  );
-
   return {
     summary,
     loadingSummary,
@@ -232,7 +162,6 @@ export function useTaskReport(): UseTaskReportReturn {
     diagnosticsError,
     loadDiagnostics,
 
-    updateFindingStatus,
     resetState,
   };
 }

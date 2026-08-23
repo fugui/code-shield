@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 interface ReportExportMenuProps {
-  taskId: number;
   exporting: boolean;
   onExport: (format: string, scope?: string) => void;
   onPrint: () => void;

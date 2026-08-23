@@ -82,12 +82,9 @@ export default function ReportDiagnosticsTab({
         🏃 流水线阶段时序流
       </h4>
       <div className="pipeline-step-flow">
-        {(diagnostics?.pipeline_steps || [
-          { name: '代码克隆', status: 'success', duration_seconds: 1 },
-          { name: '前置预检', status: 'success', duration_seconds: 0.5 },
-          { name: '静态分析', status: 'success', duration_seconds: diagnostics?.analysis_duration || 0 },
-          { name: '报告综合', status: 'success', duration_seconds: 2 },
-          { name: '结果入库', status: 'success', duration_seconds: 1 },
+        {(diagnostics?.pipeline_steps && diagnostics.pipeline_steps.length > 0 ? diagnostics.pipeline_steps : [
+          { name: '代码静态分析', status: 'success', duration_seconds: diagnostics?.analysis_duration || 0 },
+          { name: '综合报告生成', status: 'success', duration_seconds: 0 },
         ]).map((step, idx) => (
           <div key={idx} className={`step-card step-${step.status}`}>
             <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-color, #0f172a)' }}>

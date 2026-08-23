@@ -39,7 +39,6 @@ export default function ReportViewer({
     diagnostics,
     loadingDiagnostics,
     loadDiagnostics,
-    updateFindingStatus,
     resetState,
   } = useTaskReport();
 
@@ -80,10 +79,6 @@ export default function ReportViewer({
     }
   };
 
-  const handleStatusChange = async (finding: any, newStatus: string) => {
-    await updateFindingStatus(finding, newStatus);
-  };
-
   const handleExport = (format: string, scope?: string) => {
     if (taskId) {
       exportReport(taskId, format, scope);
@@ -96,7 +91,6 @@ export default function ReportViewer({
     }
   };
 
-  const isReadOnly = mode === 'readonly';
   const meta = summary?.meta;
   const totalFindingsCount = summary?.metrics?.total_findings ?? findingsPage?.total ?? 0;
 
@@ -154,8 +148,6 @@ export default function ReportViewer({
               findingsPage={findingsPage}
               loading={loadingFindings}
               onFilterChange={handleFindingsFilter}
-              onStatusChange={handleStatusChange}
-              isReadOnly={isReadOnly}
             />
           )}
           {activeTab === 'diagnostics' && (
