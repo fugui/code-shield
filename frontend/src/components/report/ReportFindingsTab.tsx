@@ -27,39 +27,21 @@ export default function ReportFindingsTab({
   onStatusChange,
   isReadOnly = false,
 }: ReportFindingsTabProps) {
-  const [selectedSevs, setSelectedSevs] = useState<string[]>([]);
+  const isEntityMode = meta?.governance_mode === 'entity_assessment';
+  const defaultKeys = isEntityMode
+    ? ['pass', 'fatal']
+    : ['fatal', 'critical', 'major', 'suggestion'];
+
+  const [selectedSevs, setSelectedSevs] = useState<string[]>(defaultKeys);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [keyword, setKeyword] = useState<string>('');
   const [page, setPage] = useState<number>(1);
 
-  const isEntityMode = meta?.governance_mode === 'entity_assessment';
   const metrics = findingsPage?.metrics;
   const items = findingsPage?.items || [];
   const total = findingsPage?.total || 0;
 
-  useEffect(() => {
-    onFilterChange({
-      severity: selectedSevs.join(','),
-      status: selectedStatus,
-      keyword: keyword.trim(),
-      page,
-      pageSize: 50,
-    });
-  }, [selectedSevs, selectedStatus, keyword, page]);
-
-  // 点击卡片实现多选切换 (Toggle)
-  const handleCardClick = (key: string) => {
-    setSelectedSevs(prev => {
-      if (prev.includes(key)) {
-        return prev.filter(k => k !== key);
-      } else {
-        return [...prev, key];
-      }
-    });
-    setPage(1);
-  };
-
-  // 构建指标卡片列表 (去除全部问题卡片，直接展示分类项以供多选)
+  // 构建指标卡片列表
   const cards: SeverityCardItem[] = [];
   if (isEntityMode) {
     cards.push({
@@ -103,11 +85,47 @@ export default function ReportFindingsTab({
     });
   }
 
-  const hasFilter = selectedSevs.length > 0;
+  const allAvailableKeys = cards.map(c => c.key);
+  const isAllSelected = allAvailableKeys.length > 0 && allAvailableKeys.every(k => selectedSevs.includes(k));
+
+  useEffect(() => {
+    // 全选或未选时，severity 传空代表查询全部
+    const sevParam = isAllSelected || selectedSevs.length === 0 ? '' : selectedSevs.join(',');
+    onFilterChange({
+      severity: sevParam,
+      status: selectedStatus,
+      keyword: keyword.trim(),
+      page,
+      pageSize: 50,
+    });
+  }, [selectedSevs, selectedStatus, keyword, page, isAllSelected]);
+
+  // 点击卡片智能切换 (全选状态下点击某张则单独选中该项；部分选中状态下 toggle)
+  const handleCardClick = (key: string) => {
+    if (isAllSelected) {
+      // 当前是全选状态，用户点击某卡片通常意图是“单独查看此级别”
+      setSelectedSevs([key]);
+    } else {
+      // 当前是部分筛选状态，进行多选 Toggle
+      if (selectedSevs.includes(key)) {
+        const next = selectedSevs.filter(k => k !== key);
+        // 如果取消到 0 个，自动恢复全选
+        setSelectedSevs(next.length === 0 ? allAvailableKeys : next);
+      } else {
+        setSelectedSevs([...selectedSevs, key]);
+      }
+    }
+    setPage(1);
+  };
+
+  const handleResetAllSevs = () => {
+    setSelectedSevs(allAvailableKeys);
+    setPage(1);
+  };
 
   return (
     <div>
-      {/* 1. 严重性指标卡片看板 (支持多选，点击组合过滤) */}
+      {/* 1. 严重性指标卡片看板 (默认全选中高亮，支持智能单选/多选组合) */}
       <div className="severity-cards-grid no-print">
         {cards.map((c) => {
           const isSelected = selectedSevs.includes(c.key);
@@ -118,7 +136,7 @@ export default function ReportFindingsTab({
               className={`severity-metric-card ${isSelected ? 'selected' : ''}`}
               style={{
                 border: isSelected ? `1.5px solid ${c.color}` : '1.5px solid var(--border-color, #e2e8f0)',
-                opacity: !hasFilter || isSelected ? 1 : 0.5,
+                opacity: isSelected ? 1 : 0.45,
               }}
             >
               <div className="card-top-row">
@@ -164,18 +182,18 @@ export default function ReportFindingsTab({
         })}
       </div>
 
-      {/* 2. 独立搜索与状态过滤工具栏 (高度舒适、搜索框更宽) */}
+      {/* 2. 独立搜索与状态过滤工具栏 */}
       <div className="findings-filter-toolbar no-print">
         <div className="filter-summary-info">
           <span>共检索到 <strong>{total}</strong> 项结果</span>
-          {hasFilter && (
+          {!isAllSelected && (
             <button
               type="button"
               className="filter-reset-btn"
-              onClick={() => setSelectedSevs([])}
-              title="清除所有分类过滤"
+              onClick={handleResetAllSevs}
+              title="恢复所有级别全选"
             >
-              ✕ 清除分类过滤 ({selectedSevs.length})
+              ✕ 恢复全部级别
             </button>
           )}
         </div>
