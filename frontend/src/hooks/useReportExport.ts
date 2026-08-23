@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import { apiUrl } from '../config';
 import { useToast } from '../components/Toast';
+import { printReportContainer } from '../utils/printHelper';
 
 export interface UseReportExportReturn {
   exporting: boolean;
   exportReport: (taskId: number, format: string, scope?: string) => Promise<void>;
-  printReport: () => void;
+  printReport: (container?: HTMLElement | null) => void;
 }
 
 export function useReportExport(): UseReportExportReturn {
@@ -61,20 +62,8 @@ export function useReportExport(): UseReportExportReturn {
     [exporting, showToast]
   );
 
-  const printReport = useCallback(() => {
-    document.body.classList.add('report-print-mode');
-    const cleanup = () => {
-      document.body.classList.remove('report-print-mode');
-      window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-
-    // 稍微延时确保 DOM 与打印类名生效渲染完成
-    setTimeout(() => {
-      window.print();
-      // 兜底清理
-      setTimeout(cleanup, 3000);
-    }, 50);
+  const printReport = useCallback((container?: HTMLElement | null) => {
+    printReportContainer(container);
   }, []);
 
   return {

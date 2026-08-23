@@ -317,31 +317,17 @@
 }
 .step-card.step-success { border-left: 4px solid #10b981; }
 .step-card.step-failed { border-left: 4px solid #ef4444; }
-.step-card.step-running { border-left: 4px solid #3b82f6; }
-
 /* ==========================================================================
    出版级打印排版规则 @media print
    ========================================================================== */
 @media print {
-  html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
     padding: 0 !important;
     margin: 0 !important;
-    height: auto !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
   }
 
-  /* 隐藏所有背景页面内容、导航侧边栏、全局头部与遮罩层 */
-  body > #root:not(:has(.report-viewer-container)),
-  body.report-print-mode > #root:not(:has(.report-viewer-container)),
-  body > div[style*="inset: 0"],
-  body > div[style*="position: fixed"]:not(:has(.report-viewer-container)),
-  aside,
-  header,
   .no-print,
   .report-header-actions,
   .report-tab-bar,
@@ -353,32 +339,12 @@
     display: none !important;
   }
 
-  /* 解除抽屉容器的 fixed 定位与 overflow 限制，使其自然展开流动 */
-  body > div:has(.report-viewer-container),
-  div[style*="position: fixed"]:has(.report-viewer-container),
-  div[style*="position: absolute"]:has(.report-viewer-container),
-  div[style*="overflow-y: auto"]:has(.report-viewer-container),
-  .report-viewer-container,
-  .report-content-body,
-  .markdown-body {
-    position: static !important;
-    transform: none !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    height: auto !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
-    display: block !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
+  .report-viewer-container {
     background: #ffffff !important;
     color: #000000 !important;
+    padding: 0 !important;
   }
 
-  /* 报告顶部操作栏打印展示 */
   .report-header-bar {
     display: flex !important;
     justify-content: space-between !important;
@@ -403,7 +369,6 @@
     print-color-adjust: exact !important;
   }
 
-  /* KPI 指标卡网格 */
   .report-kpi-grid {
     display: grid !important;
     grid-template-columns: repeat(4, 1fr) !important;
@@ -424,7 +389,6 @@
     print-color-adjust: exact !important;
   }
 
-  /* Markdown 正文跨页自然排版 */
   .markdown-body {
     border: none !important;
     padding: 0 !important;
@@ -469,7 +433,6 @@
     background: #ffffff !important;
   }
 
-  /* 缺陷卡片分页 */
   .finding-card {
     box-shadow: none !important;
     border: 1px solid #cbd5e1 !important;
