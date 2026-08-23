@@ -169,8 +169,8 @@ export default function ReportViewer({
         open={open}
         onClose={onClose || (() => {})}
         title={null}
-        width={isFullscreen ? '100vw' : 'min(980px, 94vw)'}
-        bodyStyle={{ padding: 0, height: '100%' }}
+        width={isFullscreen ? '100vw' : 'min(1180px, 95vw)'}
+        bodyStyle={{ padding: 0, height: '100%', background: 'var(--bg-color, #f1f5f9)' }}
         headerStyle={{ display: 'none' }}
       >
         {content}
@@ -179,7 +179,7 @@ export default function ReportViewer({
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-color, #f8fafc)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-color, #f1f5f9)' }}>
       {content}
     </div>
   );

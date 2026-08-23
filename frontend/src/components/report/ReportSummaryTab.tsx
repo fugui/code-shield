@@ -99,17 +99,8 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
         )}
       </div>
 
-      {/* Markdown 正文 */}
-      <div
-        className="markdown-body"
-        style={{
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: '8px',
-          padding: '1.5rem 2rem',
-          lineHeight: 1.7,
-        }}
-      >
+      {/* Markdown 正文卡片容器 */}
+      <div className="report-summary-markdown-card markdown-body">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
@@ -121,7 +112,7 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
                   style={ghcolors}
                   language={match[1]}
                   PreTag="div"
-                  customStyle={{ borderRadius: '6px', fontSize: '85%', margin: '0' }}
+                  customStyle={{ borderRadius: '6px', fontSize: '85%', margin: '0.75rem 0' }}
                 >
                   {codeString}
                 </SyntaxHighlighter>
