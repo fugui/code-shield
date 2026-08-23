@@ -144,27 +144,29 @@ export default function ReportViewer({
 
       {/* 内容主体 */}
       <div className="report-content-body">
-        {activeTab === 'summary' && (
-          <ReportSummaryTab summary={summary} loading={loadingSummary} />
-        )}
-        {activeTab === 'findings' && (
-          <ReportFindingsTab
-            meta={meta}
-            findingsPage={findingsPage}
-            loading={loadingFindings}
-            onFilterChange={handleFindingsFilter}
-            onStatusChange={handleStatusChange}
-            isReadOnly={isReadOnly}
-          />
-        )}
-        {activeTab === 'diagnostics' && (
-          <ReportDiagnosticsTab
-            meta={meta}
-            diagnostics={diagnostics}
-            loading={loadingDiagnostics}
-            onResume={handleResumeClick}
-          />
-        )}
+        <div className="report-tab-inner-container">
+          {activeTab === 'summary' && (
+            <ReportSummaryTab summary={summary} loading={loadingSummary} />
+          )}
+          {activeTab === 'findings' && (
+            <ReportFindingsTab
+              meta={meta}
+              findingsPage={findingsPage}
+              loading={loadingFindings}
+              onFilterChange={handleFindingsFilter}
+              onStatusChange={handleStatusChange}
+              isReadOnly={isReadOnly}
+            />
+          )}
+          {activeTab === 'diagnostics' && (
+            <ReportDiagnosticsTab
+              meta={meta}
+              diagnostics={diagnostics}
+              loading={loadingDiagnostics}
+              onResume={handleResumeClick}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
