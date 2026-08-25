@@ -44,7 +44,7 @@ func ProvisionShieldUser(c *gin.Context, claims *commonAuth.PortalClaims, db *go
 		oldID := existingUser.ID
 		newID := claims.UserID
 		errTx := db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec("UPDATE users SET id = ?, reg_method = 'sso', is_active = 1 WHERE id = ?", newID, oldID).Error; err != nil {
+			if err := tx.Exec("UPDATE users SET id = ?, reg_method = 'sso', is_active = true WHERE id = ?", newID, oldID).Error; err != nil {
 				return err
 			}
 			tx.Exec("UPDATE departments SET leader_id = ? WHERE leader_id = ?", newID, oldID)
@@ -446,8 +446,6 @@ func OAuth2Callback(c *gin.Context) {
 		}
 		var initialRoles datatypes.JSON
 		if isAdmin {
-			b, _ := commonAuth.GenerateToken(0, "", "", "", false, nil, "", 0) // dummy
-			_ = b
 			initialRoles = datatypes.JSON(`["super_admin", "shield_admin"]`)
 		}
 		user = models.User{

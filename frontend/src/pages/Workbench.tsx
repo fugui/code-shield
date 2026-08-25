@@ -184,15 +184,20 @@ export default function Workbench() {
 			setTeamRepos(repos);
 			// For each repo, fetch latest tasks (any status)
 			const taskMap: Record<number, any[]> = {};
-			await Promise.all(repos.slice(0, 50).map(async (repo: any) => {
-				try {
-					const r = await fetch(`/api/tasks?repo_id=${repo.id}&pageSize=3`);
-					if (r.ok) {
-						const d = await r.json();
-						taskMap[repo.id] = d.items || [];
-					}
-				} catch { /* ignore */ }
-			}));
+			const maxRepos = repos.slice(0, 50);
+			const batchSize = 5;
+			for (let i = 0; i < maxRepos.length; i += batchSize) {
+				const batch = maxRepos.slice(i, i + batchSize);
+				await Promise.all(batch.map(async (repo: any) => {
+					try {
+						const r = await fetch(`/api/tasks?repo_id=${repo.id}&pageSize=3`);
+						if (r.ok) {
+							const d = await r.json();
+							taskMap[repo.id] = d.items || [];
+						}
+					} catch { /* ignore */ }
+				}));
+			}
 			setRepoTasks(taskMap);
 		} catch { /* ignore */ } finally {
 			setReposLoading(false);

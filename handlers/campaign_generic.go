@@ -193,8 +193,8 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 
 	// 5. Fetch last scan times from reports
 	type DbScanTime struct {
-		RepoID    uint   `gorm:"column:repo_id"`
-		CreatedAt string `gorm:"column:created_at"`
+		RepoID    uint       `gorm:"column:repo_id"`
+		CreatedAt *time.Time `gorm:"column:created_at"`
 	}
 	var scanTimes []DbScanTime
 	models.DB.Model(&models.TaskReport{}).
@@ -205,24 +205,8 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 
 	scanTimeMap := make(map[uint]time.Time)
 	for _, st := range scanTimes {
-		if st.CreatedAt != "" {
-			layouts := []string{
-				"2006-01-02 15:04:05.999999999-07:00",
-				"2006-01-02 15:04:05.999999999",
-				"2006-01-02 15:04:05",
-				time.RFC3339,
-			}
-			var parsedTime time.Time
-			var err error
-			for _, layout := range layouts {
-				parsedTime, err = time.Parse(layout, st.CreatedAt)
-				if err == nil {
-					break
-				}
-			}
-			if err == nil {
-				scanTimeMap[st.RepoID] = parsedTime
-			}
+		if st.CreatedAt != nil {
+			scanTimeMap[st.RepoID] = *st.CreatedAt
 		}
 	}
 
@@ -747,6 +731,41 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 		return
 	}
 
+	type DeptMetrics struct {
+		DepartmentID   uint
+		TotalRepos     int
+		ScannedRepos   int
+		TotalIssues    int
+		OpenIssues     int
+		ResolvedIssues int
+		PassCount      int
+	}
+
+	query := `
+		SELECT
+			r.department_id,
+			COUNT(DISTINCT r.id) AS total_repos,
+			COUNT(DISTINCT cf.repo_id) AS scanned_repos,
+			COUNT(cf.id) AS total_issues,
+			COUNT(CASE WHEN cf.status IN ('open', 'analyzing') THEN 1 END) AS open_issues,
+			COUNT(CASE WHEN cf.status IN ('resolved', 'closed', 'invalid') THEN 1 END) AS resolved_issues,
+			COUNT(CASE WHEN cf.severity = '合格' THEN 1 END) AS pass_count
+		FROM repositories r
+		LEFT JOIN campaign_findings cf ON cf.repo_id = r.id AND cf.task_type_id = ?
+		WHERE r.department_id IS NOT NULL
+		GROUP BY r.department_id
+	`
+	var metrics []DeptMetrics
+	if err := models.DB.Raw(query, tt.ID).Scan(&metrics).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch metrics"})
+		return
+	}
+
+	metricsMap := make(map[uint]DeptMetrics)
+	for _, m := range metrics {
+		metricsMap[m.DepartmentID] = m
+	}
+
 	type DeptSummary struct {
 		Department     string  `json:"department"`
 		ScannedRepos   int     `json:"scanned_repos"`
@@ -761,62 +780,29 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 
 	var summaries []DeptSummary
 	for _, dept := range depts {
-		var repos []models.Repository
-		if err := models.DB.Where("department_id = ?", dept.ID).Find(&repos).Error; err != nil || len(repos) == 0 {
+		m, ok := metricsMap[dept.ID]
+		if !ok || m.TotalRepos == 0 {
 			continue
 		}
 
-		var repoIDs []uint
-		for _, r := range repos {
-			repoIDs = append(repoIDs, r.ID)
+		fixRate := 100.0
+		if m.TotalIssues > 0 {
+			fixRate = (float64(m.ResolvedIssues) / float64(m.TotalIssues)) * 100.0
 		}
 
-		var totalIssues, openIssues, resolvedIssues, passCount int64
-
-		models.DB.Model(&models.CampaignFinding{}).
-			Where("task_type_id = ? AND repo_id IN ?", tt.ID, repoIDs).
-			Count(&totalIssues)
-
-		models.DB.Model(&models.CampaignFinding{}).
-			Where("task_type_id = ? AND repo_id IN ? AND status IN ?", tt.ID, repoIDs, []string{"open", "analyzing"}).
-			Count(&openIssues)
-
-		models.DB.Model(&models.CampaignFinding{}).
-			Where("task_type_id = ? AND repo_id IN ? AND status IN ?", tt.ID, repoIDs, []string{"resolved", "closed", "invalid"}).
-			Count(&resolvedIssues)
-
-		models.DB.Model(&models.CampaignFinding{}).
-			Where("task_type_id = ? AND repo_id IN ? AND severity = ?", tt.ID, repoIDs, "合格").
-			Count(&passCount)
-
-		var scannedCount int64
-		models.DB.Model(&models.CampaignFinding{}).
-			Where("task_type_id = ? AND repo_id IN ?", tt.ID, repoIDs).
-			Distinct("repo_id").
-			Count(&scannedCount)
-
-		fixRate := 0.0
-		if totalIssues > 0 {
-			fixRate = (float64(resolvedIssues) / float64(totalIssues)) * 100.0
-		} else {
-			fixRate = 100.0
-		}
-
-		passRate := 0.0
-		if totalIssues > 0 {
-			passRate = (float64(passCount) / float64(totalIssues)) * 100.0
-		} else {
-			passRate = 100.0
+		passRate := 100.0
+		if m.TotalIssues > 0 {
+			passRate = (float64(m.PassCount) / float64(m.TotalIssues)) * 100.0
 		}
 
 		summaries = append(summaries, DeptSummary{
 			Department:     dept.Name,
-			ScannedRepos:   int(scannedCount),
-			TotalRepos:     len(repos),
-			TotalIssues:    int(totalIssues),
-			OpenIssues:     int(openIssues),
-			ResolvedIssues: int(resolvedIssues),
-			PassCount:      int(passCount),
+			ScannedRepos:   m.ScannedRepos,
+			TotalRepos:     m.TotalRepos,
+			TotalIssues:    m.TotalIssues,
+			OpenIssues:     m.OpenIssues,
+			ResolvedIssues: m.ResolvedIssues,
+			PassCount:      m.PassCount,
 			PassRate:       passRate,
 			FixRate:        fixRate,
 		})
