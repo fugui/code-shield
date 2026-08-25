@@ -2,6 +2,7 @@ package handlers
 
 import (
 	commonAudit "code-common/backend/audit"
+	commonAuth "code-common/backend/auth"
 	commonModels "code-common/backend/models"
 	"code-shield/models"
 	"encoding/json"
@@ -517,26 +518,56 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 		return
 	}
 
-	currentUserName := "admin"
-	if u, exists := c.Get("user"); exists {
-		if userObj, ok := u.(*models.User); ok && userObj.Name != "" {
-			currentUserName = userObj.Name
+	currentUserName := "系统用户"
+	if uc := commonAuth.GetUserContext(c); uc != nil {
+		if uc.Name != "" {
+			currentUserName = uc.Name
+		} else if uc.Username != "" {
+			currentUserName = uc.Username
+		} else if uc.Email != "" {
+			currentUserName = uc.Email
+		}
+	}
+	if currentUserName == "系统用户" {
+		if name, exists := c.Get("name"); exists && fmt.Sprintf("%v", name) != "" {
+			currentUserName = fmt.Sprintf("%v", name)
+		} else if uname, exists := c.Get("username"); exists && fmt.Sprintf("%v", uname) != "" {
+			currentUserName = fmt.Sprintf("%v", uname)
+		} else if uidVal, exists := c.Get("userID"); exists {
+			if uid, ok := uidVal.(uint); ok && uid > 0 {
+				var u models.User
+				if err := models.DB.First(&u, uid).Error; err == nil {
+					if u.Name != "" {
+						currentUserName = u.Name
+					} else if u.Email != "" {
+						currentUserName = u.Email
+					}
+				}
+			}
 		}
 	}
 
-	if input.Status != "" && input.Status != finding.Status {
+	targetStatus := finding.Status
+	if input.Status != "" {
+		targetStatus = input.Status
+	}
+
+	statusChanged := input.Status != "" && input.Status != finding.Status
+	hasFeedback := input.Feedback != ""
+
+	if statusChanged || hasFeedback {
 		var existingLog []map[string]interface{}
 		if len(finding.StatusLog) > 0 {
 			_ = json.Unmarshal(finding.StatusLog, &existingLog)
 		}
 		existingLog = append(existingLog, map[string]interface{}{
-			"status":  input.Status,
+			"status":  targetStatus,
 			"time":    time.Now().Format("2006-01-02 15:04:05"),
 			"user":    currentUserName,
 			"comment": input.Feedback,
 		})
 		logBytes, _ := json.Marshal(existingLog)
-		finding.Status = input.Status
+		finding.Status = targetStatus
 		finding.StatusLog = datatypes.JSON(logBytes)
 	}
 

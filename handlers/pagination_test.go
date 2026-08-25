@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"bytes"
+	commonAuth "code-common/backend/auth"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -289,5 +292,103 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 func jsonNum(n uint) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+func TestUpdateDynamicCampaignFindingOperator(t *testing.T) {
+	db := setupTestDB(t)
+	if db == nil {
+		return
+	}
+	models.DB = db
+
+	_ = db.AutoMigrate(&models.CampaignFinding{}, &models.TaskType{}, &models.Repository{}, &models.Department{}, &models.User{})
+
+	dept := models.Department{Name: "test-op-dept-" + time.Now().Format("150405.000000")}
+	_ = db.Create(&dept).Error
+	defer db.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-op-user-" + time.Now().Format("150405.000000"), Name: "张三测试员", Email: "zhangsan@test.com"}
+	_ = db.Create(&user).Error
+	defer db.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-op-repo-" + time.Now().Format("150405.000000"),
+		URL:          "http://example.com/op-test.git",
+	}
+	_ = db.Create(&repo).Error
+	defer db.Delete(&models.Repository{}, repo.ID)
+
+	taskType := models.TaskType{Name: "test-op-type-" + time.Now().Format("150405.000000"), DisplayName: "测试操作人扫描"}
+	_ = db.Create(&taskType).Error
+	defer db.Delete(&models.TaskType{}, taskType.ID)
+
+	finding := models.CampaignFinding{
+		TaskTypeID: taskType.ID,
+		RepoID:     repo.ID,
+		FilePath:   "src/main.cpp",
+		LineNumber: "42",
+		Title:      "测试缺陷1",
+		Severity:   "严重",
+		Status:     "open",
+	}
+	if err := db.Create(&finding).Error; err != nil {
+		t.Fatalf("Failed to create finding: %v", err)
+	}
+	defer db.Delete(&models.CampaignFinding{}, finding.ID)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PATCH("/api/analysis/:campaign/findings/:id", func(c *gin.Context) {
+		c.Set("taskType", &taskType)
+		commonAuth.SetUserContext(c, &commonAuth.UserContext{
+			UserID:   user.ID,
+			Name:     user.Name,
+			Username: user.Username,
+			Email:    user.Email,
+		})
+		UpdateDynamicCampaignFinding(c)
+	})
+
+	updateBody := map[string]interface{}{
+		"status":   "analyzing",
+		"feedback": "已由张三介入核验",
+	}
+	bodyBytes, _ := json.Marshal(updateBody)
+
+	req, _ := http.NewRequest("PATCH", fmt.Sprintf("/api/analysis/test-op-path/findings/%d", finding.ID), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated models.CampaignFinding
+	if err := db.First(&updated, finding.ID).Error; err != nil {
+		t.Fatalf("Failed to query updated finding: %v", err)
+	}
+
+	if updated.Status != "analyzing" {
+		t.Errorf("Expected status 'analyzing', got '%s'", updated.Status)
+	}
+
+	var logs []map[string]interface{}
+	if err := json.Unmarshal(updated.StatusLog, &logs); err != nil {
+		t.Fatalf("Failed to parse status_log: %v", err)
+	}
+
+	if len(logs) != 1 {
+		t.Fatalf("Expected 1 log entry, got %d", len(logs))
+	}
+
+	if logs[0]["user"] != "张三测试员" {
+		t.Errorf("Expected operator user to be '张三测试员', got '%v'", logs[0]["user"])
+	}
+	if logs[0]["comment"] != "已由张三介入核验" {
+		t.Errorf("Expected comment '已由张三介入核验', got '%v'", logs[0]["comment"])
+	}
 }
 
