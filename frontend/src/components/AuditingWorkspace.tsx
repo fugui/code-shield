@@ -5,6 +5,7 @@ import { apiUrl } from '../config';
 import { useToast } from './Toast';
 import MemberSearchSelect from './MemberSearchSelect';
 import { sshToHttps } from '../utils/urlUtils';
+import { extractFirstLineNumber } from '../utils/reportUtils';
 
 export interface WorkspaceRepoDetails {
   id: number;
@@ -95,7 +96,8 @@ export default function AuditingWorkspace({
     if (!filePath) return '';
     const parts = filePath.split(/[/\\]/);
     const fileName = parts[parts.length - 1] || filePath;
-    return lineNumber ? `${fileName}:${lineNumber}` : fileName;
+    const firstLine = extractFirstLineNumber(lineNumber);
+    return firstLine ? `${fileName}:${firstLine}` : fileName;
   };
 
   const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {

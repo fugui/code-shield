@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast';
 import MemberSearchSelect from '../components/MemberSearchSelect';
 import ReportViewer from '../components/report/ReportViewer';
 import { sshToHttps } from '../utils/urlUtils';
+import { extractFirstLineNumber } from '../utils/reportUtils';
 import { useNavigate } from 'react-router-dom';
 import { appNavigatePath } from '../config';
 
@@ -93,7 +94,8 @@ export default function Workbench() {
 		if (!filePath) return '';
 		const parts = filePath.split(/[/\\]/);
 		const fileName = parts[parts.length - 1] || filePath;
-		return lineNumber ? `${fileName}:${lineNumber}` : fileName;
+		const firstLine = extractFirstLineNumber(lineNumber);
+		return firstLine ? `${fileName}:${firstLine}` : fileName;
 	};
 
 	const handleCopyLocation = (filePath: string, lineNumber?: string | number) => {

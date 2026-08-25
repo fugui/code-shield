@@ -96,8 +96,10 @@ function RepoReviewHistory() {
       const next = new URLSearchParams(prev);
       next.delete('taskId');
       next.delete('reportId');
+      next.delete('tab');
+      next.delete('findingId');
       return next;
-    });
+    }, { replace: true });
   };
 
   const handleNotify = async (reportId: number) => {

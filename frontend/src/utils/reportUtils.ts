@@ -106,11 +106,20 @@ export const formatDuration = (seconds?: number): string => {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 };
 
+export const extractFirstLineNumber = (lineNumber?: string | number): string => {
+  if (lineNumber == null) return '';
+  const s = lineNumber.toString().trim();
+  if (!s) return '';
+  const match = s.match(/\d+/);
+  return match ? match[0] : '';
+};
+
 export const getLocationText = (filePath: string, lineNumber?: string | number): string => {
   if (!filePath) return '';
   const parts = filePath.split(/[/\\]/);
   const fileName = parts[parts.length - 1] || filePath;
-  return lineNumber ? `${fileName}:${lineNumber}` : fileName;
+  const firstLine = extractFirstLineNumber(lineNumber);
+  return firstLine ? `${fileName}:${firstLine}` : fileName;
 };
 
 export const getRepoSourceUrl = (
@@ -126,12 +135,9 @@ export const getRepoSourceUrl = (
   const encodedBranch = encodeURIComponent(targetBranch);
 
   let fileUrl = `${webUrl}/files?ref=${encodedBranch}&filePath=${encodedFilePath}&isFile=true`;
-  if (lineNumber) {
-    const cleanLine = lineNumber.toString().replace(/\s+/g, '');
-    const firstLineMatch = cleanLine.match(/^([0-9]+)/);
-    if (firstLineMatch) {
-      fileUrl += `#L${firstLineMatch[1]}`;
-    }
+  const firstLine = extractFirstLineNumber(lineNumber);
+  if (firstLine) {
+    fileUrl += `#L${firstLine}`;
   }
   return fileUrl;
 };

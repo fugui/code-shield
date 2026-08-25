@@ -575,6 +575,35 @@
   border-color: #cbd5e1;
 }
 
+.report-viewer-container .finding-card.finding-card-highlighted {
+  animation: findingHighlightPulse 3.5s ease-out forwards;
+}
+
+@keyframes findingHighlightPulse {
+  0% {
+    background-color: #eff6ff;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25), 0 6px 16px rgba(37, 99, 235, 0.12);
+    transform: translateY(-1px);
+  }
+  25% {
+    background-color: #eff6ff;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 6px 16px rgba(37, 99, 235, 0.15);
+  }
+  75% {
+    background-color: #f8fafc;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  }
+  100% {
+    background-color: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    transform: none;
+  }
+}
+
 /* 只读状态徽章 */
 .report-viewer-container .finding-status-tag {
   display: inline-flex;

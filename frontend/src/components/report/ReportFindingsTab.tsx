@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { FindingsPageResponse, TaskReportMeta, TaskFindingItem } from '../../types/report';
 import FindingCard from './FindingCard';
 import ReportEmptyState from './ReportEmptyState';
@@ -26,6 +27,8 @@ export default function ReportFindingsTab({
   loading,
   onFilterChange,
 }: ReportFindingsTabProps) {
+  const [searchParams] = useSearchParams();
+  const findingIdParam = searchParams.get('findingId');
   const isEntityMode = meta?.governance_mode === 'entity_assessment';
   const modeKeys = isEntityMode ? ENTITY_MODE_SEVS : DEFECT_MODE_SEVS;
 
@@ -57,6 +60,28 @@ export default function ReportFindingsTab({
     }, 250);
     return () => clearTimeout(timer);
   }, [keyword]);
+
+  // 当问题列表加载完毕，根据 URL 参数 findingId 或 hash 自动定位并呼吸高亮
+  useEffect(() => {
+    if (!loading && items.length > 0) {
+      const hashId = window.location.hash ? window.location.hash.replace('#finding-', '') : null;
+      const targetId = findingIdParam || hashId;
+      if (targetId) {
+        const timer = setTimeout(() => {
+          const el = document.getElementById(`finding-${targetId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('finding-card-highlighted');
+            const cleanTimer = setTimeout(() => {
+              el.classList.remove('finding-card-highlighted');
+            }, 3500);
+            return () => clearTimeout(cleanTimer);
+          }
+        }, 200);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [loading, items, findingIdParam]);
 
   // 构建指标卡片列表
   const cards: SeverityCardItem[] = [];
