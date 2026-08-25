@@ -7,6 +7,7 @@ import { useToast } from '../Toast';
 
 interface ReportHeaderProps {
   meta?: TaskReportMeta;
+  activeTab?: 'summary' | 'findings' | 'diagnostics';
   isFullscreen: boolean;
   onToggleFullscreen?: () => void;
   onClose?: () => void;
@@ -18,6 +19,7 @@ interface ReportHeaderProps {
 
 export default function ReportHeader({
   meta,
+  activeTab,
   isFullscreen,
   onToggleFullscreen,
   onClose,
@@ -31,7 +33,11 @@ export default function ReportHeader({
 
   const getReportUrl = () => {
     if (!meta?.id) return '';
-    return `${window.location.origin}${appNavigatePath(`/public/report/${meta.id}`)}`;
+    const base = `${window.location.origin}${appNavigatePath(`/public/report/${meta.id}`)}`;
+    if (activeTab && activeTab !== 'summary') {
+      return `${base}?tab=${activeTab}`;
+    }
+    return base;
   };
 
   const handleOpenExternal = () => {

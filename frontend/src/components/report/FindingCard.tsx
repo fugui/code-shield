@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TaskFindingItem, GovernanceMode } from '../../types/report';
-import { getSeverityMeta, getRepoSourceUrl, copyToClipboardWithFallback } from '../../utils/reportUtils';
+import { getSeverityMeta, getRepoSourceUrl, copyToClipboardWithFallback, extractFirstLineNumber } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
 
 interface FindingCardProps {
@@ -18,17 +18,40 @@ export default function FindingCard({
 }: FindingCardProps) {
   const { showToast } = useToast();
   const [codeExpanded, setCodeExpanded] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const isEntityMode = governanceMode === 'entity_assessment';
   const sevMeta = getSeverityMeta(finding.severity);
   const sourceUrl = getRepoSourceUrl(repoUrl, branch, finding.file_path, finding.line_number);
 
-  const handleCopy = async () => {
-    const loc = finding.line_number ? `${finding.file_path}:${finding.line_number}` : finding.file_path;
+  const handleCopyLocation = async () => {
+    const firstLine = extractFirstLineNumber(finding.line_number);
+    const loc = firstLine ? `${finding.file_path}:${firstLine}` : finding.file_path;
     const ok = await copyToClipboardWithFallback(loc);
     if (ok) {
-      showToast(`已复制: ${loc}`, 'success');
+      showToast(`已复制定位: ${loc}`, 'success');
     } else {
       showToast('复制失败', 'error');
+    }
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'findings');
+      url.searchParams.set('findingId', finding.id.toString());
+      url.hash = `finding-${finding.id}`;
+
+      const shareUrl = url.toString();
+      const ok = await copyToClipboardWithFallback(shareUrl);
+      if (ok) {
+        setLinkCopied(true);
+        showToast('已复制问题直达链接到剪贴板！', 'success');
+        setTimeout(() => setLinkCopied(false), 2000);
+      } else {
+        showToast('复制链接失败', 'error');
+      }
+    } catch {
+      showToast('复制链接失败', 'error');
     }
   };
 
@@ -87,11 +110,19 @@ export default function FindingCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <button
             className="nav-btn no-print"
-            onClick={handleCopy}
-            title="复制文件路径与行号"
+            onClick={handleCopyLocation}
+            title="复制文件路径与起始行号 (可用于 VSCode Ctrl+P 快捷跳转定位)"
             style={{ fontSize: '0.82rem' }}
           >
             📋 复制定位
+          </button>
+          <button
+            className={`nav-btn no-print ${linkCopied ? 'btn-copied' : ''}`}
+            onClick={handleCopyLink}
+            title="复制该问题的专属直达链接 (其他人打开将直接定位并高亮此问题)"
+            style={{ fontSize: '0.82rem' }}
+          >
+            {linkCopied ? '✓ 已复制链接' : '🔗 复制链接'}
           </button>
           {sourceUrl && (
             <a

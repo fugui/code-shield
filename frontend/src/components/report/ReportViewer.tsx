@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Drawer } from '@code/common';
 import { useTaskReport } from '../../hooks/useTaskReport';
 import { useReportExport } from '../../hooks/useReportExport';
@@ -26,7 +27,13 @@ export default function ReportViewer({
   navigation,
   onResume,
 }: ReportViewerProps) {
-  const [activeTab, setActiveTab] = useState<'summary' | 'findings' | 'diagnostics'>('summary');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary')
+    ? (rawTab as 'summary' | 'findings' | 'diagnostics')
+    : undefined;
+
+  const [activeTab, setActiveTab] = useState<'summary' | 'findings' | 'diagnostics'>(urlTab || 'summary');
   const [isFullscreen, setIsFullscreen] = useState(mode === 'fullpage');
 
   const {
@@ -48,22 +55,38 @@ export default function ReportViewer({
   useEffect(() => {
     if (open && taskId) {
       resetState();
-      setActiveTab('summary');
+      const currentTab = urlTab || 'summary';
+      setActiveTab(currentTab);
       loadSummary(taskId);
+      if (currentTab === 'findings') {
+        loadFindings(taskId);
+      } else if (currentTab === 'diagnostics') {
+        loadDiagnostics(taskId);
+      }
     }
-  }, [taskId, open, resetState, loadSummary]);
+  }, [taskId, open, resetState, loadSummary, loadFindings, loadDiagnostics, urlTab]);
 
-  // 当 summary 加载完成后，如果任务是失败状态，自动定位到 diagnostics
+  // 当 summary 加载完成后，如果任务是失败状态且未显式指定 tab，自动定位到 diagnostics
   useEffect(() => {
-    if (summary?.meta?.status === 'failed') {
+    if (summary?.meta?.status === 'failed' && !urlTab) {
       setActiveTab('diagnostics');
       if (taskId) loadDiagnostics(taskId);
     }
-  }, [summary?.meta?.status, taskId, loadDiagnostics]);
+  }, [summary?.meta?.status, taskId, loadDiagnostics, urlTab]);
 
-  // Tab 切换时按需加载
+  // Tab 切换时按需加载并同步 URL 参数
   const handleTabClick = (tab: 'summary' | 'findings' | 'diagnostics') => {
     setActiveTab(tab);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (tab === 'summary') {
+        next.delete('tab');
+      } else {
+        next.set('tab', tab);
+      }
+      return next;
+    }, { replace: true });
+
     if (!taskId) return;
 
     if (tab === 'findings' && !findingsPage) {
@@ -99,6 +122,7 @@ export default function ReportViewer({
       {/* 顶部操作条 */}
       <ReportHeader
         meta={meta}
+        activeTab={activeTab}
         isFullscreen={isFullscreen}
         onToggleFullscreen={mode === 'drawer' ? () => setIsFullscreen(!isFullscreen) : undefined}
         onClose={onClose}
