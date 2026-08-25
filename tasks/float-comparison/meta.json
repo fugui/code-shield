@@ -1,7 +1,7 @@
 {
   "id": 5,
   "name": "float_comparison",
-  "display_name": "Python 浮点数比较缺陷扫描",
+  "display_name": "浮点数比较分析",
   "description": "专项分析 Python 代码中由于浮点数直接进行等值 (==)、不等 (!=) 或边界 (\u003c=, \u003e=) 比较导致的精度与逻辑缺陷风险",
   "engine_mode": "chunked",
   "engine_config": {
