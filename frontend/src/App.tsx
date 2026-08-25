@@ -191,15 +191,38 @@ function MainLayout({ children, taskTypes }: { children: React.ReactNode; taskTy
 }
 
 function AppContent() {
-  const [taskTypes, setTaskTypes] = useState<TaskTypeMenuMeta[]>([]);
+  const [taskTypes, setTaskTypes] = useState<TaskTypeMenuMeta[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('shield_task_types_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  });
 
-  useEffect(() => {
+  const loadTaskTypes = () => {
     fetch('/api/task-types?active_only=true')
       .then(res => res.ok ? res.json() : [])
       .then(data => {
-        if (Array.isArray(data)) setTaskTypes(data);
+        if (Array.isArray(data)) {
+          setTaskTypes(data);
+          try { sessionStorage.setItem('shield_task_types_cache', JSON.stringify(data)); } catch (_) {}
+        }
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadTaskTypes();
+
+    window.addEventListener('shield-task-types-changed', loadTaskTypes);
+    window.addEventListener('auth-change', loadTaskTypes);
+    return () => {
+      window.removeEventListener('shield-task-types-changed', loadTaskTypes);
+      window.removeEventListener('auth-change', loadTaskTypes);
+    };
   }, []);
 
   return (
