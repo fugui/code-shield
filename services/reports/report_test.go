@@ -131,3 +131,35 @@ func TestExcelExporterCSV(t *testing.T) {
 		t.Errorf("expected UTF-8 BOM prefix")
 	}
 }
+
+func TestExtractLatestComment(t *testing.T) {
+	// 1. 空字节
+	if got := ExtractLatestComment(nil); got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+
+	// 2. 只有系统原因
+	systemLogs := []byte(`[{"status":"open","time":"2026-08-25 10:00:00","user":"system","reason":"Initial scan discovery"}]`)
+	if got := ExtractLatestComment(systemLogs); got != "Initial scan discovery" {
+		t.Errorf("expected 'Initial scan discovery', got %q", got)
+	}
+
+	// 3. 人工填写了意见
+	userLogs := []byte(`[
+		{"status":"open","time":"2026-08-25 10:00:00","user":"system","reason":"Initial scan discovery"},
+		{"status":"analyzing","time":"2026-08-25 11:00:00","user":"张三","comment":"排查中，确认为边界缺陷"}
+	]`)
+	if got := ExtractLatestComment(userLogs); got != "排查中，确认为边界缺陷" {
+		t.Errorf("expected '排查中，确认为边界缺陷', got %q", got)
+	}
+
+	// 4. 后续流转未填写意见（优先保留最近一次填写的意见）
+	userLogsWithSubsequentEmpty := []byte(`[
+		{"status":"open","time":"2026-08-25 10:00:00","user":"system","reason":"Initial scan discovery"},
+		{"status":"analyzing","time":"2026-08-25 11:00:00","user":"张三","comment":"排查中，确认为边界缺陷"},
+		{"status":"resolved","time":"2026-08-25 12:00:00","user":"李四","comment":""}
+	]`)
+	if got := ExtractLatestComment(userLogsWithSubsequentEmpty); got != "排查中，确认为边界缺陷" {
+		t.Errorf("expected '排查中，确认为边界缺陷', got %q", got)
+	}
+}

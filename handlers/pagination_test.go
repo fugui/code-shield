@@ -256,14 +256,14 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 	}
 
 	var resp struct {
-		Total         int64                  `json:"total"`
-		Page          int                    `json:"page"`
-		PageSize      int                    `json:"page_size"`
+		Total         int64                    `json:"total"`
+		Page          int                      `json:"page"`
+		PageSize      int                      `json:"page_size"`
 		Items         []models.CampaignFinding `json:"items"`
-		SeverityStats map[string]int         `json:"severityStats"`
-		StatusStats   map[string]int         `json:"statusStats"`
-		CategoryStats map[string]int         `json:"categoryStats"`
-		Categories    []string               `json:"categories"`
+		SeverityStats map[string]int           `json:"severityStats"`
+		StatusStats   map[string]int           `json:"statusStats"`
+		CategoryStats map[string]int           `json:"categoryStats"`
+		Categories    []string                 `json:"categories"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("Failed to parse json response: %v", err)
@@ -414,3 +414,43 @@ func TestUpdateDynamicCampaignFindingOperator(t *testing.T) {
 	}
 }
 
+func TestConvertCampaignFindingsToExcelItems(t *testing.T) {
+	findings := []models.CampaignFinding{
+		{
+			ID:       1,
+			Title:    "缺陷A",
+			Feedback: "旧的Feedback备用",
+			StatusLog: []byte(`[
+				{"status":"open","time":"2026-08-25 10:00:00","user":"system","reason":"Initial scan discovery"},
+				{"status":"analyzing","time":"2026-08-25 11:00:00","user":"开发A","comment":"分析中发现确实存在越界风险"}
+			]`),
+		},
+		{
+			ID:       2,
+			Title:    "缺陷B",
+			Feedback: "直接通过Feedback提供意见",
+		},
+		{
+			ID:    3,
+			Title: "缺陷C",
+			StatusLog: []byte(`[
+				{"status":"open","time":"2026-08-25 10:00:00","user":"system","reason":"Initial scan discovery"}
+			]`),
+		},
+	}
+
+	items := convertCampaignFindingsToExcelItems(findings)
+	if len(items) != 3 {
+		t.Fatalf("Expected 3 items, got %d", len(items))
+	}
+
+	if items[0].Comment != "分析中发现确实存在越界风险" {
+		t.Errorf("Expected items[0].Comment to be '分析中发现确实存在越界风险', got '%s'", items[0].Comment)
+	}
+	if items[1].Comment != "直接通过Feedback提供意见" {
+		t.Errorf("Expected items[1].Comment to be '直接通过Feedback提供意见', got '%s'", items[1].Comment)
+	}
+	if items[2].Comment != "Initial scan discovery" {
+		t.Errorf("Expected items[2].Comment to be 'Initial scan discovery', got '%s'", items[2].Comment)
+	}
+}

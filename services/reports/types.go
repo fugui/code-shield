@@ -202,15 +202,15 @@ type ChunkDiagnosticDetail struct {
 
 // DiagnosticsDTO 运行轨迹与诊断 DTO
 type DiagnosticsDTO struct {
-	Meta            ReportMetaDTO           `json:"meta"`
-	PipelineSteps   []PipelineStep          `json:"pipeline_steps"`
-	TotalDuration   float64                 `json:"total_duration"`
-	AnalysisDuration float64                `json:"analysis_duration"`
-	Chunks          []ChunkDiagnosticDetail `json:"chunks"`
-	RawOutputLog    string                  `json:"raw_output_log"`
-	LogTruncated    bool                    `json:"log_truncated"`
-	TotalLogLines   int                     `json:"total_log_lines"`
-	ErrorMessage    string                  `json:"error_message,omitempty"`
+	Meta             ReportMetaDTO           `json:"meta"`
+	PipelineSteps    []PipelineStep          `json:"pipeline_steps"`
+	TotalDuration    float64                 `json:"total_duration"`
+	AnalysisDuration float64                 `json:"analysis_duration"`
+	Chunks           []ChunkDiagnosticDetail `json:"chunks"`
+	RawOutputLog     string                  `json:"raw_output_log"`
+	LogTruncated     bool                    `json:"log_truncated"`
+	TotalLogLines    int                     `json:"total_log_lines"`
+	ErrorMessage     string                  `json:"error_message,omitempty"`
 }
 
 // ReportAggregateDTO 全量聚合 DTO
@@ -218,7 +218,7 @@ type ReportAggregateDTO struct {
 	Meta        ReportMetaDTO    `json:"meta"`
 	Summary     ReportSummaryDTO `json:"summary"`
 	Findings    []FindingItemDTO `json:"findings"`
-	Diagnostics DiagnosticsDTO  `json:"diagnostics"`
+	Diagnostics DiagnosticsDTO   `json:"diagnostics"`
 }
 
 // FindingsQuery 详细清单查询参数

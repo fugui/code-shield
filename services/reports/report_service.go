@@ -99,7 +99,7 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 					assigneeIDMap[k1] = dbf.AssigneeID
 					assigneeIDMap[k2] = dbf.AssigneeID
 				}
-				comment := extractLatestComment(dbf.StatusLog)
+				comment := ExtractLatestComment(dbf.StatusLog)
 				if comment == "" && dbf.Feedback != "" {
 					comment = dbf.Feedback
 				}
@@ -572,7 +572,8 @@ func makeTestCaseKey(filePath, testCaseName string) string {
 	return filePath + "||" + testCaseName
 }
 
-func extractLatestComment(statusLogBytes []byte) string {
+// ExtractLatestComment 从 StatusLog 字节数据中提取最近一次有效的跟踪意见或原因
+func ExtractLatestComment(statusLogBytes []byte) string {
 	if len(statusLogBytes) == 0 {
 		return ""
 	}
@@ -580,12 +581,17 @@ func extractLatestComment(statusLogBytes []byte) string {
 	if err := json.Unmarshal(statusLogBytes, &logs); err != nil || len(logs) == 0 {
 		return ""
 	}
-	lastEntry := logs[len(logs)-1]
-	if comment, ok := lastEntry["comment"].(string); ok {
-		return comment
+	// 优先从后往前查找最近一次填写的 comment
+	for i := len(logs) - 1; i >= 0; i-- {
+		if comment, ok := logs[i]["comment"].(string); ok && strings.TrimSpace(comment) != "" {
+			return comment
+		}
 	}
-	if reason, ok := lastEntry["reason"].(string); ok {
-		return reason
+	// 若无 comment，再从后往前查找最近一次的原因记录 (例如系统自动识别/关闭原因)
+	for i := len(logs) - 1; i >= 0; i-- {
+		if reason, ok := logs[i]["reason"].(string); ok && strings.TrimSpace(reason) != "" {
+			return reason
+		}
 	}
 	return ""
 }
