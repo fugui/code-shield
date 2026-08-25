@@ -3,7 +3,6 @@ package models
 import (
 	"code-common/backend/gormdb"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -48,10 +47,8 @@ func InitDB() {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
 
-	// 自动幂等执行历史专项分表数据迁移至 campaign_findings
-	if err := migrateLegacyCampaignTables(DB); err != nil {
-		log.Printf("[DB] Warning: migrateLegacyCampaignTables returned error: %v", err)
-	}
+	// 确保任务类型 campaign_path 的部分唯一索引
+	_ = DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_types_campaign_path_active ON task_types (campaign_path) WHERE is_campaign = true AND campaign_path != '';")
 
 	// Seed admin user if no users exist
 	seedDatabase()
@@ -184,104 +181,4 @@ func seedBuiltinTaskTypes() {
 			}
 		}
 	}
-}
-
-// migrateLegacyCampaignTables 自动幂等迁移历史 7 张分表数据至通用的 campaign_findings 表
-func migrateLegacyCampaignTables(db *gorm.DB) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		// 1. 获取事务级全局排他咨询锁（事务结束自动提交/回滚时释放，防止多 Pod 并发竞态与死锁残留）
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext('campaign_migration'))").Error; err != nil {
-			log.Printf("[Migration] pg_advisory_xact_lock notice/warning (might not be postgres): %v", err)
-		}
-
-		// 确保任务类型 campaign_path 的部分唯一索引
-		_ = tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_types_campaign_path_active ON task_types (campaign_path) WHERE is_campaign = true AND campaign_path != '';")
-
-		migrations := []struct {
-			tableName      string
-			taskTypeName   string
-			governanceMode string
-			isUT           bool
-		}{
-			{tableName: "test_case_findings", taskTypeName: "ut_effectiveness", governanceMode: GovernanceModeEntityAssessment, isUT: true},
-			{tableName: "coredump_findings", taskTypeName: "coredump_risk", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "float_findings", taskTypeName: "float_comparison", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "thread_findings", taskTypeName: "thread_create", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "cjson_findings", taskTypeName: "cjson_scan", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "unordered_collection_findings", taskTypeName: "unordered_collection", governanceMode: GovernanceModeDefectTracking, isUT: false},
-			{tableName: "deep_review_findings", taskTypeName: "deep_review", governanceMode: GovernanceModeDefectTracking, isUT: false},
-		}
-
-		for _, m := range migrations {
-			// 检查旧表是否存在
-			var exists bool
-			checkSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = ?)"
-			if err := tx.Raw(checkSQL, m.tableName).Scan(&exists).Error; err != nil || !exists {
-				continue
-			}
-
-			// 查询对应 task_type_id
-			var taskType TaskType
-			if err := tx.Where("name = ?", m.taskTypeName).First(&taskType).Error; err != nil {
-				continue
-			}
-
-			titleCol := "title"
-			if m.isUT {
-				titleCol = "test_case_name"
-			}
-
-			// 检查旧表中是否存在 feedback 列
-			var hasFeedback bool
-			checkFeedbackSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = 'feedback')"
-			_ = tx.Raw(checkFeedbackSQL, m.tableName).Scan(&hasFeedback)
-
-			feedbackExpr := "''"
-			if hasFeedback {
-				feedbackExpr = "feedback"
-			}
-
-			// 检查旧表中是否存在 status_log 列
-			var hasStatusLog bool
-			checkStatusLogSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = 'status_log')"
-			_ = tx.Raw(checkStatusLogSQL, m.tableName).Scan(&hasStatusLog)
-
-			statusLogExpr := "NULL"
-			if hasStatusLog {
-				statusLogExpr = "status_log"
-			}
-
-			// 检查旧表中是否存在 assignee_id 列
-			var hasAssignee bool
-			checkAssigneeSQL := "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = 'assignee_id')"
-			_ = tx.Raw(checkAssigneeSQL, m.tableName).Scan(&hasAssignee)
-
-			assigneeExpr := "NULL"
-			if hasAssignee {
-				assigneeExpr = "assignee_id"
-			}
-
-			insertSQL := fmt.Sprintf(`
-INSERT INTO campaign_findings (
-    task_type_id, repo_id, task_report_id, file_path, line_number,
-    title, detail, severity, category, code_snippet, suggestion,
-    status, assignee_id, status_log, feedback, created_at, updated_at
-)
-SELECT 
-    ?, repo_id, task_report_id, file_path, line_number,
-    %s AS title, detail, severity, category, code_snippet, suggestion,
-    status, %s, %s, %s, created_at, updated_at
-FROM %s
-ON CONFLICT (task_type_id, repo_id, file_path, title) DO NOTHING;
-`, titleCol, assigneeExpr, statusLogExpr, feedbackExpr, m.tableName)
-
-			if err := tx.Exec(insertSQL, taskType.ID).Error; err != nil {
-				log.Printf("[Migration] Error migrating table %s to campaign_findings: %v", m.tableName, err)
-				return err
-			}
-		}
-
-		log.Println("[Migration] Legacy campaign tables migration completed successfully.")
-		return nil
-	})
 }

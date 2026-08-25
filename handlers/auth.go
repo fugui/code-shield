@@ -49,11 +49,7 @@ func ProvisionShieldUser(c *gin.Context, claims *commonAuth.PortalClaims, db *go
 			}
 			tx.Exec("UPDATE departments SET leader_id = ? WHERE leader_id = ?", newID, oldID)
 			tx.Exec("UPDATE repositories SET owner_id = ? WHERE owner_id = ?", newID, oldID)
-			tx.Exec("UPDATE test_case_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-			tx.Exec("UPDATE coredump_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-			tx.Exec("UPDATE float_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-			tx.Exec("UPDATE thread_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
-			tx.Exec("UPDATE cjson_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
+			tx.Exec("UPDATE campaign_findings SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
 			tx.Exec("UPDATE key_issues SET assignee_id = ? WHERE assignee_id = ?", newID, oldID)
 			return nil
 		})
