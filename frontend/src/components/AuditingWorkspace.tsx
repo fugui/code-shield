@@ -145,7 +145,7 @@ export default function AuditingWorkspace({
 
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/me')
+      fetch(apiUrl('/api/me'))
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.id) {
@@ -160,7 +160,7 @@ export default function AuditingWorkspace({
     if (currentUser?.id && editingFinding && !workflowAssignee && !editingFinding.assignee_id) {
       setWorkflowAssignee(currentUser.id);
     }
-  }, [currentUser, editingFinding, workflowAssignee]);
+  }, [currentUser?.id, editingFinding?.id]);
 
   useEffect(() => {
     if (isOpen && repoId) {
