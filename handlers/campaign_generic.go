@@ -387,11 +387,77 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 		return
 	}
 
+	// 聚合当前专项（及当前仓库）维度的全量统计指标（等级、状态、分类）
+	type DbAggStat struct {
+		StatKey string `gorm:"column:stat_key"`
+		Count   int    `gorm:"column:count"`
+	}
+
+	var parsedRepoID int
+	if repoIDStr != "" {
+		parsedRepoID, _ = strconv.Atoi(repoIDStr)
+	}
+
+	// 1. 影响等级统计
+	var dbSevStats []DbAggStat
+	sevQuery := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
+	if parsedRepoID > 0 {
+		sevQuery = sevQuery.Where("repo_id = ?", parsedRepoID)
+	}
+	sevQuery.Select("severity as stat_key, count(*) as count").
+		Where("severity != '' AND severity IS NOT NULL").
+		Group("severity").
+		Scan(&dbSevStats)
+	severityStats := make(map[string]int)
+	for _, s := range dbSevStats {
+		severityStats[s.StatKey] = s.Count
+	}
+
+	// 2. 治理审计状态统计
+	var dbStatusStats []DbAggStat
+	statusQuery := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
+	if parsedRepoID > 0 {
+		statusQuery = statusQuery.Where("repo_id = ?", parsedRepoID)
+	}
+	statusQuery.Select("status as stat_key, count(*) as count").
+		Where("status != '' AND status IS NOT NULL").
+		Group("status").
+		Scan(&dbStatusStats)
+	statusStats := make(map[string]int)
+	for _, s := range dbStatusStats {
+		statusStats[s.StatKey] = s.Count
+	}
+
+	// 3. 问题分类统计与全量分类列表
+	var dbCatStats []DbAggStat
+	catQuery := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
+	if parsedRepoID > 0 {
+		catQuery = catQuery.Where("repo_id = ?", parsedRepoID)
+	}
+	catQuery.Select("category as stat_key, count(*) as count").
+		Where("category != '' AND category IS NOT NULL").
+		Group("category").
+		Order("count DESC").
+		Scan(&dbCatStats)
+	categoryStats := make(map[string]int)
+	categories := make([]string, 0, len(dbCatStats))
+	for _, c := range dbCatStats {
+		categoryStats[c.StatKey] = c.Count
+		categories = append(categories, c.StatKey)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-		"items":     list,
+		"total":          total,
+		"page":           page,
+		"page_size":      pageSize,
+		"items":          list,
+		"severity_stats": severityStats,
+		"severityStats":  severityStats,
+		"status_stats":   statusStats,
+		"statusStats":    statusStats,
+		"category_stats": categoryStats,
+		"categoryStats":  categoryStats,
+		"categories":     categories,
 	})
 }
 
