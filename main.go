@@ -157,6 +157,7 @@ func main() {
 				{
 					campaignGroup.GET("/repos", handlers.GetDynamicCampaignRepos)
 					campaignGroup.GET("/findings", handlers.GetDynamicCampaignFindings)
+					campaignGroup.GET("/findings/:id", handlers.GetDynamicCampaignFinding)
 					campaignGroup.GET("/findings/export", handlers.ExportDynamicCampaignFindings)
 					campaignGroup.PATCH("/findings/:id", handlers.UpdateDynamicCampaignFinding)
 					campaignGroup.GET("/departments", handlers.GetDynamicCampaignDepartments)

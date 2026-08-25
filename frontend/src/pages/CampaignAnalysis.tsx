@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Pagination, usePagination } from '@code/common';
 import { apiUrl } from '../config';
 import { useToast } from '../components/Toast';
@@ -58,6 +59,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const { showToast } = useToast();
   const isEntityMode = governanceMode === 'entity_assessment';
   
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Dashboard overall stats & states
   const [loading, setLoading] = useState(true);
   const [repos, setRepos] = useState<any[]>([]);
@@ -179,7 +182,16 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
     fetch(apiUrl(`/api/analysis/${campaign}/repos?${params.toString()}`))
       .then(res => res.json())
       .then(data => {
-        setRepos(Array.isArray(data) ? data : []);
+        const repoList = Array.isArray(data) ? data : [];
+        setRepos(repoList);
+        const currentRepoId = searchParams.get('repoId');
+        if (currentRepoId) {
+          const rId = parseInt(currentRepoId, 10);
+          const matched = repoList.find((r: any) => r.repo_id === rId || r.id === rId);
+          if (matched) {
+            setSelectedRepoName(matched.repo_name || matched.name);
+          }
+        }
       })
       .catch(err => {
         console.error(err);
@@ -227,11 +239,54 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
       .finally(() => setLoading(false));
   };
 
+  // Sync workspace state from URL search params on mount or param changes
+  useEffect(() => {
+    const rIdStr = searchParams.get('repoId');
+    if (rIdStr) {
+      const rId = parseInt(rIdStr, 10);
+      if (!isNaN(rId) && rId > 0) {
+        setSelectedRepoId(rId);
+        setWorkspaceOpen(true);
+        const matched = repos.find(r => r.repo_id === rId || r.id === rId);
+        if (matched) {
+          setSelectedRepoName(matched.repo_name || matched.name);
+        }
+      }
+    } else if (workspaceOpen) {
+      setWorkspaceOpen(false);
+      setSelectedRepoId(null);
+      setSelectedRepoName('');
+    }
+  }, [searchParams.get('repoId'), repos]);
+
   // Open Workspace for a specific Repository
   const openWorkspace = (repoId: number, repoName: string) => {
     setSelectedRepoId(repoId);
     setSelectedRepoName(repoName);
     setWorkspaceOpen(true);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('repoId', repoId.toString());
+      return next;
+    }, { replace: true });
+  };
+
+  // Close Workspace and clean URL
+  const handleCloseWorkspace = () => {
+    setWorkspaceOpen(false);
+    setSelectedRepoId(null);
+    setSelectedRepoName('');
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('repoId');
+      next.delete('findingId');
+      return next;
+    }, { replace: true });
+
+    // Re-fetch data on close to update the KPI metrics
+    if (activeTab === 'repos') fetchReposData();
+    else if (activeTab === 'depts') fetchDeptsData();
+    else if (activeTab === 'trends') fetchTrendsData();
   };
 
   // Sorting columns
@@ -1012,13 +1067,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
       {/* 4. FLOATING AUDITING WORKSPACE MODAL */}
       <AuditingWorkspace 
         isOpen={workspaceOpen}
-        onClose={() => {
-          setWorkspaceOpen(false);
-          // Re-fetch data on close to update the KPI metrics
-          if (activeTab === 'repos') fetchReposData();
-          else if (activeTab === 'depts') fetchDeptsData();
-          else if (activeTab === 'trends') fetchTrendsData();
-        }}
+        onClose={handleCloseWorkspace}
         repoId={selectedRepoId || 0}
         repoName={selectedRepoName}
         apiPrefix={`/api/analysis/${campaign}`}

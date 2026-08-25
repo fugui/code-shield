@@ -482,6 +482,31 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 	})
 }
 
+// GetDynamicCampaignFinding 获取单个专项缺陷详情
+func GetDynamicCampaignFinding(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid finding ID"})
+		return
+	}
+
+	taskTypeVal, exists := c.Get("taskType")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "TaskType context missing"})
+		return
+	}
+	tt := taskTypeVal.(*models.TaskType)
+
+	var finding models.CampaignFinding
+	if err := models.DB.Preload("Assignee").Preload("Repo").Where("id = ? AND task_type_id = ?", id, tt.ID).First(&finding).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Finding not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, finding)
+}
+
 // UpdateDynamicCampaignFinding 通用更新专项缺陷状态与审计指派
 func UpdateDynamicCampaignFinding(c *gin.Context) {
 	idStr := c.Param("id")

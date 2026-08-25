@@ -390,5 +390,27 @@ func TestUpdateDynamicCampaignFindingOperator(t *testing.T) {
 	if logs[0]["comment"] != "已由张三介入核验" {
 		t.Errorf("Expected comment '已由张三介入核验', got '%v'", logs[0]["comment"])
 	}
+
+	// Test GET single finding by ID
+	router.GET("/api/analysis/:campaign/findings/:id", func(c *gin.Context) {
+		c.Set("taskType", &taskType)
+		GetDynamicCampaignFinding(c)
+	})
+
+	getReq, _ := http.NewRequest("GET", fmt.Sprintf("/api/analysis/test-op-path/findings/%d", finding.ID), nil)
+	getW := httptest.NewRecorder()
+	router.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 for GET finding by ID, got %d: %s", getW.Code, getW.Body.String())
+	}
+
+	var fetchedFinding models.CampaignFinding
+	if err := json.Unmarshal(getW.Body.Bytes(), &fetchedFinding); err != nil {
+		t.Fatalf("Failed to parse fetched finding: %v", err)
+	}
+	if fetchedFinding.ID != finding.ID || fetchedFinding.Title != "测试缺陷1" {
+		t.Errorf("Unexpected fetched finding content: %+v", fetchedFinding)
+	}
 }
 
