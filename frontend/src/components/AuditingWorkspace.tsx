@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Pagination, Drawer } from '@code/common';
 import { apiUrl } from '../config';
 import { useToast } from './Toast';
@@ -88,6 +89,7 @@ export default function AuditingWorkspace({
   onWorkflowSaved
 }: AuditingWorkspaceProps) {
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const getLocationText = (filePath: string, lineNumber?: string | number) => {
     if (!filePath) return '';
@@ -112,6 +114,31 @@ export default function AuditingWorkspace({
         showToast(`已复制: ${copyText}`, 'success');
       } catch {
         showToast('复制失败', 'error');
+      }
+      document.body.removeChild(textArea);
+    });
+  };
+
+  const handleCopyShareLink = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('repoId', repoId.toString());
+    if (editingFinding?.id) {
+      url.searchParams.set('findingId', editingFinding.id.toString());
+    }
+    const shareUrl = url.toString();
+
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      showToast(editingFinding ? '已复制问题直达链接，可直接发送给团队成员' : '已复制工作区直达链接，可直接发送给团队成员', 'success');
+    }).catch(() => {
+      const textArea = document.createElement('textarea');
+      textArea.value = shareUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast(editingFinding ? '已复制问题直达链接，可直接发送给团队成员' : '已复制工作区直达链接，可直接发送给团队成员', 'success');
+      } catch {
+        showToast('复制链接失败', 'error');
       }
       document.body.removeChild(textArea);
     });
@@ -280,7 +307,8 @@ export default function AuditingWorkspace({
     severity: string,
     status: string,
     category: string,
-    keyword: string
+    keyword: string,
+    targetFindingId?: number | null
   ) => {
     const params = new URLSearchParams({
       repo_id: rId.toString(),
@@ -308,6 +336,23 @@ export default function AuditingWorkspace({
           } else if (data.categoryStats || data.category_stats) {
             setCategoriesList(Object.keys(data.categoryStats || data.category_stats));
           }
+
+          if (targetFindingId) {
+            const matched = list.find((f: Finding) => f.id === targetFindingId);
+            if (matched) {
+              startWorkflow(matched, false);
+            } else {
+              // Direct query if finding is on another page or filter
+              fetch(apiUrl(`${apiPrefix}/findings/${targetFindingId}`))
+                .then(res => res.ok ? res.json() : null)
+                .then(item => {
+                  if (item && item.id) {
+                    startWorkflow(item, false);
+                  }
+                })
+                .catch(() => {});
+            }
+          }
         }
       })
       .catch(err => {
@@ -320,8 +365,11 @@ export default function AuditingWorkspace({
   useEffect(() => {
     if (isOpen && repoId) {
       setWorkspacePage(1);
-      setEditingFinding(null);
-      fetchWorkspaceFindings(repoId, 1, wsSeverity, wsStatus, wsCategory, wsKeyword);
+      const urlFindingId = searchParams.get('findingId') ? parseInt(searchParams.get('findingId')!, 10) : null;
+      if (!urlFindingId) {
+        setEditingFinding(null);
+      }
+      fetchWorkspaceFindings(repoId, 1, wsSeverity, wsStatus, wsCategory, wsKeyword, urlFindingId);
     }
   }, [isOpen, repoId, wsSeverity, wsStatus, wsCategory, wsKeyword]);
 
@@ -333,11 +381,20 @@ export default function AuditingWorkspace({
   };
 
   // Open finding details workflow
-  const startWorkflow = (finding: Finding) => {
+  const startWorkflow = (finding: Finding, syncUrl = true) => {
     setEditingFinding(finding);
     setWorkflowStatus(finding.status || 'open');
     setWorkflowAssignee(finding.assignee_id || currentUser?.id || '');
     setWorkflowComment('');
+
+    if (syncUrl && finding.id) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set('repoId', repoId.toString());
+        next.set('findingId', finding.id.toString());
+        return next;
+      }, { replace: true });
+    }
   };
 
   // Submit workflow change
@@ -474,17 +531,39 @@ export default function AuditingWorkspace({
   const activeAssignee = editingFinding?.assignee;
   const isEntityMode = governanceMode === 'entity_assessment' || workspaceType === 'ut';
 
+  const displayRepoName = repoName || editingFinding?.repo?.name || (repoId ? `代码仓 #${repoId}` : '');
+
   const workspaceTitle = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
       <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--primary-color)', fontWeight: 700, letterSpacing: '0.05em' }}>
         {isEntityMode ? '用例有效性评估工作区' : '专项缺陷审计工作区'}
       </span>
-      <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-color)' }}>📁 {repoName}</span>
+      <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-color)' }}>📁 {displayRepoName}</span>
     </div>
   );
 
   const workspaceExtra = (
     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <button
+        className="btn btn-outline"
+        onClick={handleCopyShareLink}
+        style={{ 
+          padding: '0.35rem 0.8rem', 
+          fontSize: '0.85rem', 
+          borderColor: '#6366f1', 
+          color: '#6366f1', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '0.35rem' 
+        }}
+        title="复制当前工作区及问题直达分享链接"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        复制链接
+      </button>
       <button
         className="btn btn-outline"
         onClick={handleDownloadJson}
@@ -755,6 +834,18 @@ export default function AuditingWorkspace({
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-copy-btn"
+                    title="复制当前问题直达分享链接"
+                    onClick={handleCopyShareLink}
+                    style={{ color: '#4f46e5' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
                     </svg>
                   </button>
                   {editingFinding.category && (
