@@ -342,6 +342,9 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 
 	pageStr := c.DefaultQuery("page", "1")
 	pageSizeStr := c.DefaultQuery("page_size", "25")
+	if c.Query("pageSize") != "" {
+		pageSizeStr = c.Query("pageSize")
+	}
 	page, _ := strconv.Atoi(pageStr)
 	pageSize, _ := strconv.Atoi(pageSizeStr)
 	if page < 1 {
@@ -351,38 +354,60 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 		pageSize = 25
 	}
 
-	query := models.DB.Model(&models.CampaignFinding{}).
-		Preload("Assignee").Preload("Repo").
-		Where("task_type_id = ?", tt.ID)
-
+	var parsedRepoID int
 	if repoIDStr != "" {
-		if repoID, err := strconv.Atoi(repoIDStr); err == nil && repoID > 0 {
-			query = query.Where("repo_id = ?", repoID)
-		}
+		parsedRepoID, _ = strconv.Atoi(repoIDStr)
+	}
+
+	// 构建用于总数计数的独立 Query 句柄（避免 GORM Statement 污染）
+	countQuery := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
+	if parsedRepoID > 0 {
+		countQuery = countQuery.Where("repo_id = ?", parsedRepoID)
 	}
 	if severity != "" {
-		query = query.Where("severity = ?", severity)
+		countQuery = countQuery.Where("severity = ?", severity)
 	}
 	if status != "" {
-		query = query.Where("status = ?", status)
+		countQuery = countQuery.Where("status = ?", status)
 	}
 	if category != "" {
-		query = query.Where("category = ?", category)
+		countQuery = countQuery.Where("category = ?", category)
 	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+		countQuery = countQuery.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
 	}
 
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := countQuery.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count findings"})
 		return
 	}
 
-	var list []models.CampaignFinding
+	// 构建用于分页列表查询的独立 Query 句柄
+	findQuery := models.DB.Model(&models.CampaignFinding{}).
+		Preload("Assignee").Preload("Repo").
+		Where("task_type_id = ?", tt.ID)
+	if parsedRepoID > 0 {
+		findQuery = findQuery.Where("repo_id = ?", parsedRepoID)
+	}
+	if severity != "" {
+		findQuery = findQuery.Where("severity = ?", severity)
+	}
+	if status != "" {
+		findQuery = findQuery.Where("status = ?", status)
+	}
+	if category != "" {
+		findQuery = findQuery.Where("category = ?", category)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		findQuery = findQuery.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+	}
+
+	list := make([]models.CampaignFinding, 0)
 	orderClause := "CASE severity WHEN '致命' THEN 1 WHEN '阻塞' THEN 1 WHEN '严重' THEN 2 WHEN '一般' THEN 3 WHEN '主要' THEN 3 WHEN '提示' THEN 3 WHEN '建议' THEN 4 WHEN '合格' THEN 5 ELSE 6 END, id DESC"
-	if err := query.Order(orderClause).Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+	if err := findQuery.Order(orderClause).Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch findings"})
 		return
 	}
@@ -391,11 +416,6 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 	type DbAggStat struct {
 		StatKey string `gorm:"column:stat_key"`
 		Count   int    `gorm:"column:count"`
-	}
-
-	var parsedRepoID int
-	if repoIDStr != "" {
-		parsedRepoID, _ = strconv.Atoi(repoIDStr)
 	}
 
 	// 1. 影响等级统计
