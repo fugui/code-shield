@@ -31,7 +31,21 @@ const DEFAULT_CAMPAIGN_ICONS: Record<string, string> = {
 
 const DEFAULT_ICON = 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01';
 
-let currentTaskTypes: TaskTypeMenuMeta[] | null = null;
+const CACHE_KEY = 'shield_task_types_cache';
+
+const loadCachedTaskTypes = (): TaskTypeMenuMeta[] | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (_) {}
+  return null;
+};
+
+let currentTaskTypes: TaskTypeMenuMeta[] | null = loadCachedTaskTypes();
 const menuListeners = new Set<(config: ModuleMenuConfig) => void>();
 
 function notifyListeners(config: ModuleMenuConfig) {
@@ -43,8 +57,12 @@ function notifyListeners(config: ModuleMenuConfig) {
 export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGroup[] => {
   let campaignItems: SubMenuItem[] = [];
 
-  if (Array.isArray(taskTypes) && taskTypes.length > 0) {
-    campaignItems = taskTypes
+  const types = (Array.isArray(taskTypes) && taskTypes.length > 0)
+    ? taskTypes
+    : (currentTaskTypes && currentTaskTypes.length > 0 ? currentTaskTypes : []);
+
+  if (types.length > 0) {
+    campaignItems = types
       .filter(tt => tt.is_campaign && tt.is_active !== false)
       .map(tt => {
         const pathKey = tt.campaign_path || tt.name;
@@ -56,11 +74,6 @@ export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGrou
           icon
         };
       });
-  }
-
-  // 仅在完全未提供任务类型列表时保持空数组，等待 API 或事件动态填充
-  if (!taskTypes && campaignItems.length === 0) {
-    campaignItems = [];
   }
 
   return [
@@ -91,48 +104,75 @@ export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGrou
   ];
 };
 
+let inFlightPromise: Promise<ModuleMenuConfig> | null = null;
+
 export async function fetchShieldMenuConfig(): Promise<ModuleMenuConfig> {
-  try {
-    const res = await fetch('/api/task-types?active_only=true');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        currentTaskTypes = data;
-        const dynamicConfig: ModuleMenuConfig = {
-          moduleKey: 'shield',
-          moduleName: '代码质量 (Code Shield)',
-          groups: buildDynamicMenuGroups(data)
-        };
-        shieldMenuConfig.groups = dynamicConfig.groups;
-        notifyListeners(dynamicConfig);
-        return dynamicConfig;
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to fetch dynamic task types for shield menu:', err);
+  if (inFlightPromise) {
+    return inFlightPromise;
   }
-  return shieldMenuConfig;
+
+  inFlightPromise = (async () => {
+    try {
+      // 智能探测 API 路径：微前端容器环境下优先使用 /shield/api 前缀
+      const isEmbedded = typeof window !== 'undefined' && !!(window as any).__POWERED_BY_PORTAL__;
+      const primaryUrl = isEmbedded ? '/shield/api/task-types?active_only=true' : '/api/task-types?active_only=true';
+
+      let res = await fetch(primaryUrl);
+      // 若在微前端模式下首次尝试失败且非 401（例如独立调试场景），优雅尝试回退路径
+      if (!res.ok && res.status !== 401 && isEmbedded) {
+        res = await fetch('/api/task-types?active_only=true');
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          currentTaskTypes = data;
+          try {
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
+          } catch (_) {}
+
+          const dynamicConfig: ModuleMenuConfig = {
+            moduleKey: 'shield',
+            moduleName: '代码质量 (Code Shield)',
+            groups: buildDynamicMenuGroups(data)
+          };
+          shieldMenuConfig.groups = dynamicConfig.groups;
+          notifyListeners(dynamicConfig);
+          return dynamicConfig;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch dynamic task types for shield menu:', err);
+    } finally {
+      inFlightPromise = null;
+    }
+    return shieldMenuConfig;
+  })();
+
+  return inFlightPromise;
 }
 
 export function subscribeMenuChanges(listener: (config: ModuleMenuConfig) => void): () => void {
   menuListeners.add(listener);
-  if (currentTaskTypes) {
-    listener({
-      moduleKey: 'shield',
-      moduleName: '代码质量 (Code Shield)',
-      groups: buildDynamicMenuGroups(currentTaskTypes)
-    });
-  } else {
-    fetchShieldMenuConfig();
-  }
+  // 订阅时立即使用当前已知数据（含缓存）推送一次，确保微框架即时获取
+  listener({
+    moduleKey: 'shield',
+    moduleName: '代码质量 (Code Shield)',
+    groups: buildDynamicMenuGroups(currentTaskTypes || undefined)
+  });
+  // 后台异步刷新最新数据
+  fetchShieldMenuConfig();
   return () => {
     menuListeners.delete(listener);
   };
 }
 
-// 监听全局任务类型变更事件
+// 监听全局任务类型变更与鉴权状态变更事件
 if (typeof window !== 'undefined') {
   window.addEventListener('shield-task-types-changed', () => {
+    fetchShieldMenuConfig();
+  });
+  window.addEventListener('auth-change', () => {
     fetchShieldMenuConfig();
   });
   // 模块加载时异步刷新一次
@@ -142,12 +182,13 @@ if (typeof window !== 'undefined') {
 export const shieldMenuConfig: ModuleMenuConfig = {
   moduleKey: 'shield',
   moduleName: '代码质量 (Code Shield)',
-  groups: buildDynamicMenuGroups()
+  groups: buildDynamicMenuGroups(currentTaskTypes || undefined)
 };
 
 export const menuGroups: MenuGroup[] = shieldMenuConfig.groups;
 export const menuItems: SubMenuItem[] = shieldMenuConfig.groups.flatMap(group => group.items);
 
 export default shieldMenuConfig;
+
 
 
