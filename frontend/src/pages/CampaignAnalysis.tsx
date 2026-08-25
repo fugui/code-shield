@@ -171,7 +171,6 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
   const fetchReposData = () => {
     setLoading(true);
-    setRepoPage(1);
     const params = new URLSearchParams({
       sort_by: sortField,
       sort_order: sortOrder,
@@ -610,7 +609,12 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                 placeholder="搜索代码仓名称..."
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && fetchReposData()}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    setRepoPage(1);
+                    fetchReposData();
+                  }
+                }}
                 style={{ padding: '0.4rem 0.75rem 0.4rem 2rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.85rem', outline: 'none', width: '180px' }}
               />
               <span style={{ position: 'absolute', left: '8px', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
@@ -645,7 +649,16 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
-            <button className="btn" onClick={fetchReposData} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>查询</button>
+            <button
+              className="btn"
+              onClick={() => {
+                setRepoPage(1);
+                fetchReposData();
+              }}
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+            >
+              查询
+            </button>
           </div>
         )}
       </div>
