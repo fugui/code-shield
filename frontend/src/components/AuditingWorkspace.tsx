@@ -130,6 +130,8 @@ export default function AuditingWorkspace({
   const [workspaceTotalPages, setWorkspaceTotalPages] = useState(1);
   const [severityStats, setSeverityStats] = useState<Record<string, number>>({});
   const [statusStats, setStatusStats] = useState<Record<string, number>>({});
+  const [categoryStats, setCategoryStats] = useState<Record<string, number>>({});
+  const [categoriesList, setCategoriesList] = useState<string[]>([]);
   
   // Active Selected Finding & Workflow States
   const [editingFinding, setEditingFinding] = useState<Finding | null>(null);
@@ -197,8 +199,11 @@ export default function AuditingWorkspace({
   }, [isOpen, repoId, workspaceType]);
 
   const dynamicCategories = React.useMemo(() => {
+    if (categoriesList.length > 0) {
+      return categoriesList;
+    }
     return Array.from(new Set(workspaceFindings.map(f => f.category).filter(Boolean))) as string[];
-  }, [workspaceFindings]);
+  }, [categoriesList, workspaceFindings]);
 
   const handleDownloadJson = async () => {
     let activeReportId = reportId;
@@ -294,8 +299,14 @@ export default function AuditingWorkspace({
           setWorkspaceFindings(list);
           setWorkspaceTotalPages(data.totalPages || 1);
           setWorkspaceTotal(data.total !== undefined ? data.total : (data.totalPages ? data.totalPages * 10 : list.length));
-          if (data.severityStats) setSeverityStats(data.severityStats);
-          if (data.statusStats) setStatusStats(data.statusStats);
+          if (data.severityStats || data.severity_stats) setSeverityStats(data.severityStats || data.severity_stats || {});
+          if (data.statusStats || data.status_stats) setStatusStats(data.statusStats || data.status_stats || {});
+          if (data.categoryStats || data.category_stats) setCategoryStats(data.categoryStats || data.category_stats || {});
+          if (Array.isArray(data.categories) && data.categories.length > 0) {
+            setCategoriesList(data.categories);
+          } else if (data.categoryStats || data.category_stats) {
+            setCategoriesList(Object.keys(data.categoryStats || data.category_stats));
+          }
         }
       })
       .catch(err => {
@@ -603,7 +614,9 @@ export default function AuditingWorkspace({
               >
                 <option value="">所有分类</option>
                 {dynamicCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <option key={cat} value={cat}>
+                    {cat} {categoryStats[cat] !== undefined ? `(${categoryStats[cat]})` : ''}
+                  </option>
                 ))}
               </select>
             </div>

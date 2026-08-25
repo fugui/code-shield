@@ -174,7 +174,120 @@ func TestGetExecutionLogsPagination(t *testing.T) {
 	}
 }
 
+func TestGetDynamicCampaignFindingsStats(t *testing.T) {
+	db := setupTestDB(t)
+	if db == nil {
+		return
+	}
+	models.DB = db
+
+	for _, model := range []interface{}{
+		&models.Department{},
+		&models.User{},
+		&models.Repository{},
+		&models.TaskType{},
+		&models.CampaignFinding{},
+	} {
+		_ = db.AutoMigrate(model)
+	}
+
+	dept := models.Department{Name: "test-finding-dept-" + time.Now().Format("150405.000000")}
+	_ = db.Create(&dept).Error
+	defer db.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-finding-user-" + time.Now().Format("150405.000000"), Email: "finding@test.com"}
+	_ = db.Create(&user).Error
+	defer db.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-finding-repo-" + time.Now().Format("150405.000000"),
+		URL:          "http://example.com/finding-test.git",
+	}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatalf("Failed to create test repo: %v", err)
+	}
+	defer db.Delete(&models.Repository{}, repo.ID)
+
+	taskType := models.TaskType{Name: "test-finding-type-" + time.Now().Format("150405.000000"), DisplayName: "测试专项分析", IsCampaign: true, CampaignPath: "test-finding-path"}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("Failed to create test task type: %v", err)
+	}
+	defer db.Delete(&models.TaskType{}, taskType.ID)
+
+	// Clean up findings
+	defer db.Where("task_type_id = ?", taskType.ID).Delete(&models.CampaignFinding{})
+
+	// Insert test findings:
+	// 2 Critical / 3 Major / 1 Suggestion
+	// Status: 3 open / 2 resolved / 1 invalid
+	// Category: 4 Concurrency / 2 MemoryLeak
+	testFindings := []models.CampaignFinding{
+		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 1", FilePath: "a.cpp", Severity: "严重", Status: "open", Category: "并发安全"},
+		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 2", FilePath: "b.cpp", Severity: "严重", Status: "open", Category: "并发安全"},
+		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 3", FilePath: "c.cpp", Severity: "一般", Status: "open", Category: "并发安全"},
+		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 4", FilePath: "d.cpp", Severity: "一般", Status: "resolved", Category: "并发安全"},
+		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 5", FilePath: "e.cpp", Severity: "一般", Status: "resolved", Category: "内存泄漏"},
+		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 6", FilePath: "f.cpp", Severity: "建议", Status: "invalid", Category: "内存泄漏"},
+	}
+	for _, f := range testFindings {
+		if err := db.Create(&f).Error; err != nil {
+			t.Fatalf("Failed to create test finding: %v", err)
+		}
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/api/analysis/:campaign/findings", func(c *gin.Context) {
+		c.Set("taskType", &taskType)
+		GetDynamicCampaignFindings(c)
+	})
+
+	req, _ := http.NewRequest("GET", "/api/analysis/test-finding-path/findings?repo_id="+jsonNum(repo.ID)+"&page=1&page_size=2", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Total         int64                  `json:"total"`
+		Page          int                    `json:"page"`
+		PageSize      int                    `json:"page_size"`
+		Items         []models.CampaignFinding `json:"items"`
+		SeverityStats map[string]int         `json:"severityStats"`
+		StatusStats   map[string]int         `json:"statusStats"`
+		CategoryStats map[string]int         `json:"categoryStats"`
+		Categories    []string               `json:"categories"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse json response: %v", err)
+	}
+
+	if resp.Total != 6 {
+		t.Errorf("Expected total 6, got %d", resp.Total)
+	}
+	if len(resp.Items) != 2 {
+		t.Errorf("Expected page 1 items 2, got %d", len(resp.Items))
+	}
+	if resp.SeverityStats["严重"] != 2 || resp.SeverityStats["一般"] != 3 || resp.SeverityStats["建议"] != 1 {
+		t.Errorf("Unexpected SeverityStats: %+v", resp.SeverityStats)
+	}
+	if resp.StatusStats["open"] != 3 || resp.StatusStats["resolved"] != 2 || resp.StatusStats["invalid"] != 1 {
+		t.Errorf("Unexpected StatusStats: %+v", resp.StatusStats)
+	}
+	if resp.CategoryStats["并发安全"] != 4 || resp.CategoryStats["内存泄漏"] != 2 {
+		t.Errorf("Unexpected CategoryStats: %+v", resp.CategoryStats)
+	}
+	if len(resp.Categories) != 2 || resp.Categories[0] != "并发安全" || resp.Categories[1] != "内存泄漏" {
+		t.Errorf("Unexpected Categories ordering: %+v", resp.Categories)
+	}
+}
+
 func jsonNum(n uint) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
