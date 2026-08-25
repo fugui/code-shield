@@ -29,7 +29,6 @@ var (
 
 func main() {
 	staleAction := flag.String("stale", "recover", "Action for stale (pending/running) tasks found at startup: 'recover' (re-enqueue), 'ignore' (leave as is), 'delete' (delete from database)")
-	backfill := flag.Bool("backfill", false, "Backfill historical findings from successful task reports of specialized campaigns into campaign tables")
 	flag.Parse()
 
 	if *staleAction != "recover" && *staleAction != "ignore" && *staleAction != "delete" {
@@ -56,15 +55,6 @@ func main() {
 
 	// 初始化多 LLM 调度分配器
 	services.InitModelDispatcher()
-
-	if *backfill {
-		log.Println("[Server] Running in backfill mode.")
-		if err := services.BackfillHistoricalFindings(); err != nil {
-			log.Fatalf("[Server] Backfill failed: %v", err)
-		}
-		log.Println("[Server] Backfill completed successfully.")
-		return
-	}
 
 	// Sync opencode agent files with current prompt files
 	services.SyncAllAgents()
