@@ -21,7 +21,26 @@ import (
 var (
 	campaignCache    sync.Map // key: campaignPath/name, value: *CachedTaskType
 	campaignCacheTTL = 5 * time.Minute
+
+	trendCacheLock sync.RWMutex
+	trendCache     = make(map[string]campaignTrendCacheEntry)
 )
+
+type campaignTrendCacheEntry struct {
+	data      interface{}
+	expiresAt time.Time
+}
+
+func invalidateTrendCache(taskTypeID uint) {
+	trendCacheLock.Lock()
+	defer trendCacheLock.Unlock()
+	prefix := fmt.Sprintf("%d_", taskTypeID)
+	for k := range trendCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(trendCache, k)
+		}
+	}
+}
 
 // CachedTaskType 进程内 TaskType 缓存项
 type CachedTaskType struct {
@@ -632,6 +651,8 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 		return
 	}
 
+	invalidateTrendCache(tt.ID)
+
 	// 注入全局操作审计打点
 	summaryText := fmt.Sprintf("人工核销了专项缺陷 #%d (状态更新为: %s)", id, input.Status)
 	if input.Feedback != "" {
@@ -834,7 +855,7 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 	c.JSON(http.StatusOK, summaries)
 }
 
-// GetDynamicCampaignTrends 通用专项 30 天收敛趋势统计
+// GetDynamicCampaignTrends 通用专项 30 天收敛趋势统计 (高性能优化版)
 func GetDynamicCampaignTrends(c *gin.Context) {
 	taskTypeVal, exists := c.Get("taskType")
 	if !exists {
@@ -846,6 +867,15 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 
 	repoIDStr := c.Query("repo_id")
 	deptName := c.Query("department")
+
+	cacheKey := fmt.Sprintf("%d_%s_%s", tt.ID, repoIDStr, deptName)
+	trendCacheLock.RLock()
+	if entry, ok := trendCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		trendCacheLock.RUnlock()
+		c.JSON(http.StatusOK, entry.data)
+		return
+	}
+	trendCacheLock.RUnlock()
 
 	query := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
 
@@ -870,10 +900,66 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 		}
 	}
 
-	var allFindings []models.CampaignFinding
-	if err := query.Find(&allFindings).Error; err != nil {
+	// 1. 轻量字段投影：仅查询 created_at, severity, status, status_log，杜绝全字段检索重型大文本
+	type findingTrendProjection struct {
+		CreatedAt time.Time      `gorm:"column:created_at"`
+		Severity  string         `gorm:"column:severity"`
+		Status    string         `gorm:"column:status"`
+		StatusLog datatypes.JSON `gorm:"column:status_log"`
+	}
+
+	var allFindings []findingTrendProjection
+	if err := query.Select("created_at, severity, status, status_log").Find(&allFindings).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch findings for trend"})
 		return
+	}
+
+	// 2. 一次性 O(N) 预解析：将状态变更记录提前解析为 time.Time，彻底避免在 30 天循环内执行数百万次 json.Unmarshal / time.Parse
+	type statusChangeEntry struct {
+		t      time.Time
+		status string
+	}
+
+	type preprocessedFinding struct {
+		createdTime   time.Time
+		initialStatus string
+		isPass        bool
+		history       []statusChangeEntry
+	}
+
+	parsedFindings := make([]preprocessedFinding, len(allFindings))
+	for idx, f := range allFindings {
+		isPass := isEntityMode && f.Severity == "合格"
+		initialStatus := "open"
+		if isPass {
+			initialStatus = "closed"
+		}
+
+		pf := preprocessedFinding{
+			createdTime:   f.CreatedAt,
+			initialStatus: initialStatus,
+			isPass:        isPass,
+		}
+
+		if len(f.StatusLog) > 4 {
+			var statusHistory []struct {
+				Status string `json:"status"`
+				Time   string `json:"time"`
+			}
+			if err := json.Unmarshal(f.StatusLog, &statusHistory); err == nil && len(statusHistory) > 0 {
+				pf.history = make([]statusChangeEntry, 0, len(statusHistory))
+				for _, entry := range statusHistory {
+					if t, err := time.Parse("2006-01-02 15:04:05", entry.Time); err == nil {
+						pf.history = append(pf.history, statusChangeEntry{
+							t:      t,
+							status: entry.Status,
+						})
+					}
+				}
+			}
+		}
+
+		parsedFindings[idx] = pf
 	}
 
 	type TrendPoint struct {
@@ -888,6 +974,7 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 	now := time.Now()
 	trendMap := make([]TrendPoint, 30)
 
+	// 3. 内存高效统计 30 天时序收敛曲线
 	for i := 29; i >= 0; i-- {
 		targetDate := now.AddDate(0, 0, -i)
 		dateStr := targetDate.Format("2006-01-02")
@@ -895,36 +982,18 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 
 		var totalIssues, openIssues, resolvedIssues, passCount int
 
-		for _, f := range allFindings {
-			if f.CreatedAt.After(endOfDay) {
+		for _, pf := range parsedFindings {
+			if pf.createdTime.After(endOfDay) {
 				continue
 			}
 
 			totalIssues++
 
-			// 1. 确定初始状态
-			initialStatus := "open"
-			if isEntityMode && f.Severity == "合格" {
-				initialStatus = "closed"
-			}
-
-			statusOnDate := initialStatus
-
-			if len(f.StatusLog) > 0 {
-				var statusHistory []struct {
-					Status string `json:"status"`
-					Time   string `json:"time"`
-				}
-				if err := json.Unmarshal(f.StatusLog, &statusHistory); err == nil {
-					var lastStatus string
-					for _, logEntry := range statusHistory {
-						t, err := time.Parse("2006-01-02 15:04:05", logEntry.Time)
-						if err == nil && !t.After(endOfDay) {
-							lastStatus = logEntry.Status
-						}
-					}
-					if lastStatus != "" {
-						statusOnDate = lastStatus
+			statusOnDate := pf.initialStatus
+			if len(pf.history) > 0 {
+				for _, h := range pf.history {
+					if !h.t.After(endOfDay) {
+						statusOnDate = h.status
 					}
 				}
 			}
@@ -936,7 +1005,7 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 			}
 
 			if isEntityMode {
-				if f.Severity == "合格" || statusOnDate == "closed" || statusOnDate == "resolved" {
+				if pf.isPass || statusOnDate == "closed" || statusOnDate == "resolved" {
 					passCount++
 				}
 			}
@@ -962,6 +1031,14 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 			FixRate:     fixRate,
 		}
 	}
+
+	// 4. 写入短 TTL 本地缓存
+	trendCacheLock.Lock()
+	trendCache[cacheKey] = campaignTrendCacheEntry{
+		data:      trendMap,
+		expiresAt: time.Now().Add(60 * time.Second),
+	}
+	trendCacheLock.Unlock()
 
 	c.JSON(http.StatusOK, trendMap)
 }
