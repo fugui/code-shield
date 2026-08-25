@@ -67,18 +67,21 @@ export default function ReportFindingsTab({
       const hashId = window.location.hash ? window.location.hash.replace('#finding-', '') : null;
       const targetId = findingIdParam || hashId;
       if (targetId) {
+        let cleanTimer: NodeJS.Timeout;
         const timer = setTimeout(() => {
           const el = document.getElementById(`finding-${targetId}`);
           if (el) {
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             el.classList.add('finding-card-highlighted');
-            const cleanTimer = setTimeout(() => {
+            cleanTimer = setTimeout(() => {
               el.classList.remove('finding-card-highlighted');
             }, 3500);
-            return () => clearTimeout(cleanTimer);
           }
         }, 200);
-        return () => clearTimeout(timer);
+        return () => {
+          clearTimeout(timer);
+          if (cleanTimer) clearTimeout(cleanTimer);
+        };
       }
     }
   }, [loading, items, findingIdParam]);
