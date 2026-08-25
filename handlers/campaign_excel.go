@@ -36,6 +36,10 @@ func convertCampaignFindingsToExcelItems(dbFindings []models.CampaignFinding) []
 				assigneeName = f.Assignee.EmployeeID
 			}
 		}
+		comment := reports.ExtractLatestComment(f.StatusLog)
+		if comment == "" && f.Feedback != "" {
+			comment = f.Feedback
+		}
 		items = append(items, ExcelFindingItem{
 			ID:         fmt.Sprintf("%d", f.ID),
 			Severity:   f.Severity,
@@ -47,7 +51,7 @@ func convertCampaignFindingsToExcelItems(dbFindings []models.CampaignFinding) []
 			Suggestion: f.Suggestion,
 			Status:     f.Status,
 			Assignee:   assigneeName,
-			Comment:    f.Feedback,
+			Comment:    comment,
 		})
 	}
 	return items
