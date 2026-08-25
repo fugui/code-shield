@@ -139,6 +139,7 @@ export default function AuditingWorkspace({
   const [workflowAssignee, setWorkflowAssignee] = useState<number | ''>('');
   const [workflowComment, setWorkflowComment] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Resolved Task Report ID for synthesis JSON download
   const [reportId, setReportId] = useState<number | null>(null);
@@ -340,44 +341,51 @@ export default function AuditingWorkspace({
   };
 
   // Submit workflow change
-  const submitWorkflow = (e: React.FormEvent) => {
+  const submitWorkflow = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingFinding) return;
+    if (!editingFinding || submitting) return;
 
     const findingId = editingFinding.id;
     if (!findingId) return;
 
-    fetch(apiUrl(`${apiPrefix}/findings/${findingId}`), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: workflowStatus,
-        assignee_id: workflowAssignee || null,
-        feedback: workflowComment || undefined,
-      }),
-    })
-      .then(res => {
-        if (res.ok) {
-          showToast('缺陷审计状态已成功更新', 'success');
-          
-          // Re-fetch findings list to get updated status and comments
-          fetchWorkspaceFindings(repoId, workspacePage, wsSeverity, wsStatus, wsCategory, wsKeyword);
-          
-          // Clear active panel selection
-          setEditingFinding(null);
-          
-          // Notify parent (e.g. to update dashboard metrics)
-          if (onWorkflowSaved) {
-            onWorkflowSaved();
-          }
-        } else {
-          showToast('更新审计信息失败', 'error');
-        }
-      })
-      .catch(err => {
-        console.error('Error submitting workflow:', err);
-        showToast('网络请求错误，更新失败', 'error');
+    setSubmitting(true);
+    try {
+      const res = await fetch(apiUrl(`${apiPrefix}/findings/${findingId}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: workflowStatus,
+          assignee_id: workflowAssignee || null,
+          feedback: workflowComment || undefined,
+        }),
       });
+
+      if (res.ok) {
+        const updatedFinding: Finding = await res.json();
+        showToast(isEntityMode ? '用例评估流转成功' : '缺陷流转状态已成功更新', 'success');
+        
+        // Re-fetch findings list to get updated status and comments on the left list
+        fetchWorkspaceFindings(repoId, workspacePage, wsSeverity, wsStatus, wsCategory, wsKeyword);
+        
+        // Keep active panel open with updated finding data
+        setEditingFinding(updatedFinding);
+        setWorkflowStatus(updatedFinding.status || 'open');
+        setWorkflowAssignee(updatedFinding.assignee_id || '');
+        setWorkflowComment('');
+        
+        // Notify parent (e.g. to update dashboard metrics)
+        if (onWorkflowSaved) {
+          onWorkflowSaved();
+        }
+      } else {
+        showToast('更新审计流转信息失败', 'error');
+      }
+    } catch (err) {
+      console.error('Error submitting workflow:', err);
+      showToast('网络请求错误，更新失败', 'error');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -852,8 +860,13 @@ export default function AuditingWorkspace({
                     />
                   </div>
 
-                  <button type="submit" className="btn" style={{ alignSelf: 'flex-end', padding: '0.5rem 1.5rem', fontSize: '0.85rem' }}>
-                    保存审计记录
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={submitting}
+                    style={{ alignSelf: 'flex-end', padding: '0.5rem 1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    {submitting ? '流转中...' : (isEntityMode ? '用例流转' : '缺陷流转')}
                   </button>
                 </form>
               </div>
