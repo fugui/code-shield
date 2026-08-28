@@ -297,7 +297,7 @@ export default function Workbench() {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', textAlign: 'left' }}>
 					{logs.map((log: any, idx: number) => (
 						<div key={idx} style={{ position: 'relative', paddingLeft: '1.25rem', borderLeft: '2px solid var(--border-color)', paddingBottom: '0.25rem' }}>
-							<div style={{ position: 'absolute', left: '-5px', top: '4px', width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6' }} />
+							<div style={{ position: 'absolute', left: '-5px', top: '4px', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-primary)' }} />
 							<div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-color)' }}>
 								{statusMap[log.status]?.label || log.status}
 							</div>
