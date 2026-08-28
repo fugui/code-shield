@@ -738,12 +738,12 @@ function ScanManagement() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem',
-                  background: !gapTaskTypeId ? 'var(--border-color)' : 'linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%)',
-                  color: !gapTaskTypeId ? 'var(--text-secondary)' : 'white',
+                  background: !gapTaskTypeId ? 'var(--border-color)' : 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-active) 100%)',
+                  color: !gapTaskTypeId ? 'var(--text-secondary)' : 'var(--color-text-white)',
                   cursor: !gapTaskTypeId ? 'not-allowed' : 'pointer',
                   border: 'none',
-                  borderRadius: '6px',
-                  boxShadow: !gapTaskTypeId ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.2)',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  boxShadow: !gapTaskTypeId ? 'none' : 'var(--shadow-sm)',
                   transition: 'all 0.2s'
                 }}
               >
