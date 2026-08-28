@@ -7,6 +7,8 @@ import { sshToHttps } from '../utils/urlUtils';
 import { extractFirstLineNumber } from '../utils/reportUtils';
 import { useNavigate } from 'react-router-dom';
 import { appNavigatePath } from '../config';
+import './workbench.css';
+
 
 interface WorkbenchFinding {
 	id: number;
@@ -344,50 +346,38 @@ export default function Workbench() {
 	};
 
 	return (
-		<div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', fontFamily: 'system-ui, sans-serif' }}>
-			<style>{`
-				@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-				@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-				@keyframes slideLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }
-				.wb-kanban-col::-webkit-scrollbar { width: 4px; }
-				.wb-kanban-col::-webkit-scrollbar-track { background: transparent; }
-				.wb-kanban-col::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
-			`}</style>
-
+		<div className="shield-wb-page">
 			{/* Metric summary boxes */}
-			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+			<div className="shield-wb-metrics-grid">
 				{[
-					{ label: '全部分配问题单', count: totalCount, color: 'var(--primary-color)', accent: 'none' },
-					{ label: '待处理 / 分析中', count: activeCount, color: '#ef4444', accent: '#ef4444' },
-					{ label: '已解决', count: resolvedCount, color: '#10b981', accent: '#10b981' },
-					{ label: '已关闭 / 忽略', count: doneCount, color: '#6b7280', accent: '#6b7280' },
-				].map(({ label, count, color, accent }) => (
-					<div key={label} className="card" style={{
-						display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: '1.25rem',
-						borderLeft: accent !== 'none' ? `4px solid ${accent}` : undefined
-					}}>
-						<span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
-						<span style={{ fontSize: '1.8rem', fontWeight: 800, color }}>{count} 个</span>
+					{ label: '全部分配问题单', count: totalCount, color: 'var(--color-primary)', variant: 'shield-wb-metric-card--primary' },
+					{ label: '待处理 / 分析中', count: activeCount, color: 'var(--color-danger)', variant: 'shield-wb-metric-card--danger' },
+					{ label: '已解决', count: resolvedCount, color: 'var(--color-success)', variant: 'shield-wb-metric-card--success' },
+					{ label: '已关闭 / 忽略', count: doneCount, color: 'var(--color-text-muted)', variant: 'shield-wb-metric-card--muted' },
+				].map(({ label, count, color, variant }) => (
+					<div key={label} className={`shield-wb-metric-card ${variant}`}>
+						<span className="shield-wb-metric-label">{label}</span>
+						<span className="shield-wb-metric-value" style={{ color }}>{count} 个</span>
 					</div>
 				))}
 			</div>
 
 			{/* Filter area */}
-			<div className="card" style={{ padding: '1rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+			<div className="shield-wb-filters">
 				<div style={{ flex: 1, minWidth: '220px' }}>
 					<input
 						type="text"
 						placeholder="搜索缺陷名称 / 代码仓 / 文件路径..."
 						value={search}
 						onChange={e => setSearch(e.target.value)}
-						style={{ width: '100%', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.875rem', boxSizing: 'border-box' }}
+						className="shield-wb-search-input"
 					/>
 				</div>
 				<div>
 					<select
 						value={filterType}
 						onChange={e => setFilterType(e.target.value)}
-						style={{ padding: '0.55rem 1.5rem 0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.875rem', cursor: 'pointer' }}
+						className="shield-wb-select"
 					>
 						<option value="">全部专项类型</option>
 						{Array.from(new Set(findings.map(f => JSON.stringify({ type: f.type, type_name: f.type_name }))))
@@ -402,7 +392,7 @@ export default function Workbench() {
 					<select
 						value={filterSeverity}
 						onChange={e => setFilterSeverity(e.target.value)}
-						style={{ padding: '0.55rem 1.5rem 0.55rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.875rem', cursor: 'pointer' }}
+						className="shield-wb-select"
 					>
 						<option value="">所有影响等级</option>
 						<option value="致命">致命 (Blocker / Critical)</option>
@@ -417,50 +407,40 @@ export default function Workbench() {
 			{/* Loading & Error States */}
 			{loading ? (
 				<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem' }}>
-					<div style={{ width: '36px', height: '36px', border: '4px solid var(--border-color)', borderTop: '4px solid var(--primary-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-					<span style={{ marginTop: '1rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>正在加载分配给您的治理问题单...</span>
+					<div style={{ width: '36px', height: '36px', border: '4px solid var(--color-border-subtle)', borderTop: '4px solid var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+					<span style={{ marginTop: '1rem', color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>正在加载分配给您的治理问题单...</span>
 				</div>
 			) : error ? (
-				<div style={{ padding: '3rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)' }}>
+				<div style={{ padding: '3rem', textAlign: 'center', background: 'var(--color-danger-subtle)', color: 'var(--color-danger)', borderRadius: '8px', border: '1px solid var(--color-danger-border)' }}>
 					<h3>加载数据失败</h3>
 					<p>{error}</p>
-					<button className="btn" onClick={loadFindings} style={{ marginTop: '0.5rem' }}>重试</button>
+					<button type="button" className="btn" onClick={loadFindings} style={{ marginTop: '0.5rem' }}>重试</button>
 				</div>
 			) : (
 				/* Kanban board — 3 merged columns */
-				<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', alignItems: 'flex-start' }}>
+				<div className="shield-wb-kanban-grid">
 					{kanbanColumns.map(col => {
 						const columnFindings = filtered.filter(f => col.statuses.includes(f.status));
 						return (
 							<div
 								key={col.key}
-								style={{
-									background: 'var(--bg-color)',
-									border: '1px solid var(--border-color)',
-									borderTop: `3px solid ${col.color}`,
-									borderRadius: '10px',
-									padding: '0.75rem',
-									display: 'flex',
-									flexDirection: 'column',
-									gap: '0.6rem',
-									maxHeight: '68vh',
-								}}
+								className={`shield-wb-kanban-col shield-wb-kanban-col--${col.key}`}
 							>
 								{/* Column header */}
-								<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.15rem 0.25rem' }}>
-									<div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: col.color }}>
+								<div className="shield-wb-kanban-header">
+									<div className="shield-wb-kanban-title" style={{ color: col.color }}>
 										{col.icon}
-										<span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-color)' }}>{col.label}</span>
+										<span>{col.label}</span>
 									</div>
-									<span style={{ background: col.color + '20', color: col.color, fontSize: '0.72rem', fontWeight: 700, padding: '0.1rem 0.5rem', borderRadius: '10px' }}>
+									<span className="shield-wb-kanban-badge">
 										{columnFindings.length}
 									</span>
 								</div>
 
 								{/* Cards scroll area */}
-								<div className="wb-kanban-col" style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', overflowY: 'auto', flex: 1 }}>
+								<div className="shield-wb-kanban-body">
 									{columnFindings.length === 0 ? (
-										<div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.75rem', background: 'var(--card-bg)', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+										<div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '0.75rem', background: 'var(--color-bg-surface)', borderRadius: '8px', border: '1px dashed var(--color-border-subtle)' }}>
 											无当前状态记录
 										</div>
 									) : (
@@ -470,44 +450,22 @@ export default function Workbench() {
 												<div
 													key={`${f.type}-${f.id}`}
 													onClick={() => openAudit(f)}
-													style={{
-														background: 'var(--card-bg)',
-														border: '1px solid var(--border-color)',
-														borderRadius: '8px',
-														padding: '0.8rem',
-														cursor: 'pointer',
-														transition: 'transform 0.15s, box-shadow 0.15s, border-color 0.15s',
-														display: 'flex',
-														flexDirection: 'column',
-														gap: '0.45rem',
-														textAlign: 'left',
-														flexShrink: 0,
-													}}
-													onMouseEnter={e => {
-														e.currentTarget.style.transform = 'translateY(-2px)';
-														e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.1)';
-														e.currentTarget.style.borderColor = col.color;
-													}}
-													onMouseLeave={e => {
-														e.currentTarget.style.transform = 'translateY(0)';
-														e.currentTarget.style.boxShadow = 'none';
-														e.currentTarget.style.borderColor = 'var(--border-color)';
-													}}
+													className="shield-wb-card"
 												>
 													<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.25rem' }}>
-														<span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary-color)', borderRadius: '4px', fontWeight: 600, flexShrink: 0 }}>
+														<span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', background: 'var(--color-primary-subtle)', color: 'var(--color-primary)', borderRadius: '4px', fontWeight: 600, flexShrink: 0 }}>
 															{f.type_name}
 														</span>
 														<span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', background: sevStyle.bg, color: sevStyle.color, borderRadius: '4px', fontWeight: 700, flexShrink: 0 }}>
 															{f.severity}
 														</span>
 													</div>
-													<h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-color)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+													<h4 className="shield-wb-card-title">
 														{f.title}
 													</h4>
-													<div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+													<div className="shield-wb-card-meta">
 														<span>📁 {f.repo_name}</span>
-														<span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>📄 {f.file_path}:{f.line_number}</span>
+														<span style={{ fontFamily: 'var(--font-family-mono, monospace)', wordBreak: 'break-all' }}>📄 {f.file_path}:{f.line_number}</span>
 													</div>
 												</div>
 											);
