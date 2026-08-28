@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Drawer } from '@code/common';
+import { Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import MemberSearchSelect from '../components/MemberSearchSelect';
 import ReportViewer from '../components/report/ReportViewer';
@@ -7,7 +7,7 @@ import { sshToHttps } from '../utils/urlUtils';
 import { extractFirstLineNumber } from '../utils/reportUtils';
 import { useNavigate } from 'react-router-dom';
 import { appNavigatePath } from '../config';
-import './workbench.css';
+
 
 
 interface WorkbenchFinding {
@@ -346,38 +346,43 @@ export default function Workbench() {
 	};
 
 	return (
-		<div className="shield-wb-page">
-			{/* Metric summary boxes */}
-			<div className="shield-wb-metrics-grid">
+		<div className="flex-col gap-lg w-full">
+			{/* 1. Metric summary boxes */}
+			<div className="grid-cols-4 gap-md">
 				{[
-					{ label: '全部分配问题单', count: totalCount, color: 'var(--color-primary)', variant: 'shield-wb-metric-card--primary' },
-					{ label: '待处理 / 分析中', count: activeCount, color: 'var(--color-danger)', variant: 'shield-wb-metric-card--danger' },
-					{ label: '已解决', count: resolvedCount, color: 'var(--color-success)', variant: 'shield-wb-metric-card--success' },
-					{ label: '已关闭 / 忽略', count: doneCount, color: 'var(--color-text-muted)', variant: 'shield-wb-metric-card--muted' },
-				].map(({ label, count, color, variant }) => (
-					<div key={label} className={`shield-wb-metric-card ${variant}`}>
-						<span className="shield-wb-metric-label">{label}</span>
-						<span className="shield-wb-metric-value" style={{ color }}>{count} 个</span>
+					{ label: '全部分配问题单', count: totalCount, color: 'var(--color-primary)', bg: 'var(--color-primary-subtle)' },
+					{ label: '待处理 / 分析中', count: activeCount, color: 'var(--color-danger)', bg: 'var(--color-danger-subtle)' },
+					{ label: '已解决', count: resolvedCount, color: 'var(--color-success)', bg: 'var(--color-success-subtle)' },
+					{ label: '已关闭 / 忽略', count: doneCount, color: 'var(--color-text-muted)', bg: 'var(--color-bg-muted)' },
+				].map(({ label, count, color, bg }) => (
+					<div key={label} className="code-stat-card">
+						<div className="code-stat-icon" style={{ background: bg, color }}>
+							<span style={{ fontSize: 18, fontWeight: 800 }}>#</span>
+						</div>
+						<div>
+							<div className="code-stat-label">{label}</div>
+							<div className="code-stat-value" style={{ color }}>{count} 个</div>
+						</div>
 					</div>
 				))}
 			</div>
 
-			{/* Filter area */}
-			<div className="shield-wb-filters">
-				<div style={{ flex: 1, minWidth: '220px' }}>
+			{/* 2. Filter area */}
+			<div className="code-card flex-between gap-md flex-wrap" style={{ padding: '1rem 1.5rem' }}>
+				<div className="flex-1" style={{ minWidth: '220px' }}>
 					<input
 						type="text"
 						placeholder="搜索缺陷名称 / 代码仓 / 文件路径..."
 						value={search}
 						onChange={e => setSearch(e.target.value)}
-						className="shield-wb-search-input"
+						className="code-input w-full"
 					/>
 				</div>
 				<div>
 					<select
 						value={filterType}
 						onChange={e => setFilterType(e.target.value)}
-						className="shield-wb-select"
+						className="code-select"
 					>
 						<option value="">全部专项类型</option>
 						{Array.from(new Set(findings.map(f => JSON.stringify({ type: f.type, type_name: f.type_name }))))
@@ -392,7 +397,7 @@ export default function Workbench() {
 					<select
 						value={filterSeverity}
 						onChange={e => setFilterSeverity(e.target.value)}
-						className="shield-wb-select"
+						className="code-select"
 					>
 						<option value="">所有影响等级</option>
 						<option value="致命">致命 (Blocker / Critical)</option>
@@ -404,45 +409,51 @@ export default function Workbench() {
 				</div>
 			</div>
 
-			{/* Loading & Error States */}
+			{/* 3. Loading & Error States */}
 			{loading ? (
-				<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem' }}>
+				<div className="flex-center flex-col gap-md" style={{ padding: '4rem' }}>
 					<div style={{ width: '36px', height: '36px', border: '4px solid var(--color-border-subtle)', borderTop: '4px solid var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-					<span style={{ marginTop: '1rem', color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>正在加载分配给您的治理问题单...</span>
+					<span className="text-secondary" style={{ fontSize: '0.9rem' }}>正在加载分配给您的治理问题单...</span>
 				</div>
 			) : error ? (
-				<div style={{ padding: '3rem', textAlign: 'center', background: 'var(--color-danger-subtle)', color: 'var(--color-danger)', borderRadius: '8px', border: '1px solid var(--color-danger-border)' }}>
+				<div className="code-card" style={{ padding: '3rem', textAlign: 'center', background: 'var(--color-danger-subtle)', color: 'var(--color-danger)', borderColor: 'var(--color-danger-border)' }}>
 					<h3>加载数据失败</h3>
 					<p>{error}</p>
-					<button type="button" className="btn" onClick={loadFindings} style={{ marginTop: '0.5rem' }}>重试</button>
+					<button type="button" className="btn btn-secondary" onClick={loadFindings} style={{ marginTop: '0.5rem' }}>重试</button>
 				</div>
 			) : (
 				/* Kanban board — 3 merged columns */
-				<div className="shield-wb-kanban-grid">
+				<div className="grid-cols-3 gap-md" style={{ alignItems: 'flex-start' }}>
 					{kanbanColumns.map(col => {
 						const columnFindings = filtered.filter(f => col.statuses.includes(f.status));
 						return (
 							<div
 								key={col.key}
-								className={`shield-wb-kanban-col shield-wb-kanban-col--${col.key}`}
+								className="code-card flex-col gap-sm"
+								style={{
+									padding: '0.75rem',
+									maxHeight: '68vh',
+									borderTop: `3px solid ${col.color}`
+								}}
 							>
 								{/* Column header */}
-								<div className="shield-wb-kanban-header">
-									<div className="shield-wb-kanban-title" style={{ color: col.color }}>
+								<div className="flex-between" style={{ padding: '0.15rem 0.25rem' }}>
+									<div className="flex-center gap-xs" style={{ color: col.color, fontWeight: 700, fontSize: '0.875rem' }}>
 										{col.icon}
-										<span>{col.label}</span>
+										<span className="text-primary">{col.label}</span>
 									</div>
-									<span className="shield-wb-kanban-badge">
+									<span className="code-badge code-badge--muted">
 										{columnFindings.length}
 									</span>
 								</div>
 
 								{/* Cards scroll area */}
-								<div className="shield-wb-kanban-body">
+								<div className="flex-col gap-xs overflow-y-auto" style={{ flex: 1, paddingRight: 2 }}>
 									{columnFindings.length === 0 ? (
-										<div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '0.75rem', background: 'var(--color-bg-surface)', borderRadius: '8px', border: '1px dashed var(--color-border-subtle)' }}>
-											无当前状态记录
-										</div>
+										<EmptyState
+											title="无当前状态记录"
+											compact
+										/>
 									) : (
 										columnFindings.map(f => {
 											const sevStyle = getSeverityStyle(f.severity);
@@ -450,20 +461,26 @@ export default function Workbench() {
 												<div
 													key={`${f.type}-${f.id}`}
 													onClick={() => openAudit(f)}
-													className="shield-wb-card"
+													className="code-card cursor-pointer flex-col gap-xs"
+													style={{
+														padding: '0.8rem',
+														textAlign: 'left',
+														flexShrink: 0,
+														borderLeft: `3px solid ${sevStyle.color}`
+													}}
 												>
-													<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.25rem' }}>
-														<span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', background: 'var(--color-primary-subtle)', color: 'var(--color-primary)', borderRadius: '4px', fontWeight: 600, flexShrink: 0 }}>
+													<div className="flex-between gap-xs">
+														<span className="code-badge code-badge--primary" style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem' }}>
 															{f.type_name}
 														</span>
-														<span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', background: sevStyle.bg, color: sevStyle.color, borderRadius: '4px', fontWeight: 700, flexShrink: 0 }}>
+														<span className="code-badge" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', background: sevStyle.bg, color: sevStyle.color }}>
 															{f.severity}
 														</span>
 													</div>
-													<h4 className="shield-wb-card-title">
+													<h4 className="text-primary text-truncate" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600, lineHeight: 1.4 }}>
 														{f.title}
 													</h4>
-													<div className="shield-wb-card-meta">
+													<div className="text-secondary flex-col" style={{ fontSize: '0.7rem', gap: 2 }}>
 														<span>📁 {f.repo_name}</span>
 														<span style={{ fontFamily: 'var(--font-family-mono, monospace)', wordBreak: 'break-all' }}>📄 {f.file_path}:{f.line_number}</span>
 													</div>
