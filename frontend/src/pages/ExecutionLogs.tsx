@@ -410,7 +410,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
             </svg>
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
               <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>AI 扫描并发流控</h4>
               {throttleMode === 'work_hours' ? (
                 sysConfig.concurrency_scale === 0 ? (
@@ -429,6 +429,39 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               ) : (
                 <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>正常速度运行 (100%)</span>
               )}
+
+              {/* 队列调度状态与控制 (紧跟在并发流控后方) */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginLeft: '0.5rem', paddingLeft: '0.6rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>队列调度:</span>
+                {sysConfig?.queue_paused ? (
+                  <span className="status-badge status-warning" style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem' }}>
+                    ⏸️ 已暂停 (排空模式)
+                  </span>
+                ) : (
+                  <span className="status-badge status-success" style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem' }}>
+                    🟢 正常分发中
+                  </span>
+                )}
+                {isAdmin && (
+                  <button
+                    className="btn"
+                    disabled={togglingQueue}
+                    onClick={() => handleToggleQueue(!sysConfig?.queue_paused)}
+                    style={{
+                      height: '24px',
+                      padding: '0 0.5rem',
+                      fontSize: '0.75rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: sysConfig?.queue_paused ? 'var(--color-primary, #3b82f6)' : 'transparent',
+                      color: sysConfig?.queue_paused ? '#ffffff' : 'var(--color-text-primary, #1e293b)',
+                      border: sysConfig?.queue_paused ? '1px solid transparent' : '1px solid var(--color-border-primary, #e2e8f0)'
+                    }}
+                  >
+                    {togglingQueue ? '切换中...' : (sysConfig?.queue_paused ? '恢复派发' : '暂停派发')}
+                  </button>
+                )}
+              </div>
             </div>
             <p style={{ margin: 0, fontSize: '0.825rem', color: '#64748b', lineHeight: '1.3' }}>
               {throttleMode === 'work_hours' ? (
@@ -531,57 +564,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               >
                 {applyingConfig ? '应用中...' : (selectedScale === 1.0 ? '重置速度' : '应用调节')}
               </button>
-
-              {/* 队列分发与排空控制 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem', paddingLeft: '0.75rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
-                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>队列调度:</span>
-                {sysConfig?.queue_paused ? (
-                  <span className="status-badge status-warning" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
-                    ⏸️ 已暂停 (排空模式)
-                  </span>
-                ) : (
-                  <span className="status-badge status-success" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
-                    🟢 正常分发中
-                  </span>
-                )}
-                <button
-                  className="btn"
-                  disabled={togglingQueue}
-                  onClick={() => handleToggleQueue(!sysConfig?.queue_paused)}
-                  style={{
-                    height: '32px',
-                    padding: '0 0.75rem',
-                    fontSize: '0.825rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                    background: sysConfig?.queue_paused ? 'var(--color-primary, #3b82f6)' : 'transparent',
-                    color: sysConfig?.queue_paused ? '#ffffff' : 'var(--color-text-primary, #1e293b)',
-                    border: sysConfig?.queue_paused ? '1px solid transparent' : '1px solid var(--color-border-primary, #e2e8f0)'
-                  }}
-                >
-                  {togglingQueue ? '切换中...' : (sysConfig?.queue_paused ? '恢复派发' : '暂停派发 (Drain)')}
-                </button>
-              </div>
             </>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>队列调度:</span>
-                {sysConfig?.queue_paused ? (
-                  <span className="status-badge status-warning" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
-                    ⏸️ 已暂停 (排空模式)
-                  </span>
-                ) : (
-                  <span className="status-badge status-success" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
-                    🟢 正常分发中
-                  </span>
-                )}
-              </div>
-              <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                * 仅系统管理员拥有流控与调度调节权限。
-              </span>
-            </div>
+            <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontStyle: 'italic' }}>
+              * 仅系统管理员拥有流控调节权限。
+            </span>
           )}
         </div>
       </div>
