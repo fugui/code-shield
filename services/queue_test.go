@@ -52,6 +52,28 @@ func TestQueue_PauseAndResume(t *testing.T) {
 	}
 }
 
+func TestQueue_ResumeBroadcastsNotify(t *testing.T) {
+	// 模拟 StartWorkerPool(3)：设置池规模并扩容唤醒 channel
+	workerCount = 3
+	workerNotifyChan = make(chan struct{}, 3)
+	defer func() {
+		workerCount = 0
+		workerNotifyChan = make(chan struct{}, 1)
+	}()
+
+	SetQueuePaused(true)
+	// 清空可能残留的唤醒信号，确保断言精确
+	for len(workerNotifyChan) > 0 {
+		<-workerNotifyChan
+	}
+
+	// 恢复派发时必须为每个 Worker 发送一个唤醒信号
+	SetQueuePaused(false)
+	if got := len(workerNotifyChan); got != 3 {
+		t.Fatalf("expected 3 notify signals after resume, got %d", got)
+	}
+}
+
 func TestTaskFromExecLog_ResumeFlag(t *testing.T) {
 	resumeLog := &models.TaskExecutionLog{
 		ID:         42,

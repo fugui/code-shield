@@ -34,6 +34,9 @@ type Task struct {
 // workerNotifyChan 用于在新任务入队时即时唤醒空闲 Worker
 var workerNotifyChan = make(chan struct{}, 1)
 
+// workerCount 记录当前 Worker 池规模，恢复派发时用于广播唤醒全部 Worker
+var workerCount int
+
 // isQueuePaused 内存级原子开关缓存（优雅排空模式/暂停派发）
 var isQueuePaused atomic.Bool
 
@@ -46,7 +49,10 @@ func IsQueuePaused() bool {
 func SetQueuePaused(paused bool) {
 	isQueuePaused.Store(paused)
 	if !paused {
-		NotifyWorker()
+		// 恢复派发时广播唤醒所有 Worker（每个 Worker 一个信号）
+		for i := 0; i < workerCount; i++ {
+			NotifyWorker()
+		}
 	}
 }
 
@@ -74,6 +80,13 @@ func NotifyWorker() {
 
 // StartWorkerPool starts the background workers
 func StartWorkerPool(workers int) {
+	workerCount = workers
+	// 广播唤醒需要至少能容纳全部 Worker 的信号容量
+	capacity := workers
+	if capacity < 1 {
+		capacity = 1
+	}
+	workerNotifyChan = make(chan struct{}, capacity)
 	log.Printf("[WorkerPool] Starting %d background workers (DB-backed persistent queue)\n", workers)
 	for i := 1; i <= workers; i++ {
 		go worker(i)
@@ -235,6 +248,11 @@ func fetchNextPendingTask() (*Task, bool) {
 
 	// 使用数据库事务原子抢占最早的一条 pending 任务
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		// 事务内二次复查暂停开关，缩小与外部暂停操作的竞态窗口
+		if IsQueuePaused() {
+			return nil
+		}
+
 		// 查找最早创建的 pending 记录，使用 FOR UPDATE SKIP LOCKED 确保并发安全
 		query := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Preload("Repo").
