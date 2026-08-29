@@ -998,6 +998,12 @@ export default function AuditingWorkspace({
                               原因: {log.reason}
                             </div>
                           )}
+                          {log.confirm_count && log.confirm_count > 1 ? (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--color-bg-muted, #f8fafc)', padding: '0.35rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
+                              <span>持续存在：最近于 <strong>{log.last_confirmed_at || log.time}</strong> 再次扫描确认（累计确认 <strong>{log.confirm_count}</strong> 次）</span>
+                            </div>
+                          ) : null}
                         </div>
                       ));
                     } catch (err) {
