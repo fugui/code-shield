@@ -266,12 +266,15 @@ func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFindi
 		}
 
 		if matchedFinding == nil {
+			nowStr := time.Now().Format("2006-01-02 15:04:05")
 			statusLog := []map[string]interface{}{
 				{
-					"status": targetStatus,
-					"time":   time.Now().Format("2006-01-02 15:04:05"),
-					"user":   "system",
-					"reason": "Initial scan discovery",
+					"status":            targetStatus,
+					"time":              nowStr,
+					"user":              "system",
+					"reason":            "Initial scan discovery",
+					"last_confirmed_at": nowStr,
+					"confirm_count":     1,
 				},
 			}
 			logBytes, _ := json.Marshal(statusLog)
@@ -303,25 +306,60 @@ func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFindi
 				_ = json.Unmarshal(matchedFinding.StatusLog, &existingLog)
 			}
 
+			nowStr := time.Now().Format("2006-01-02 15:04:05")
+			reopened := false
+
 			if updatedStatus != "invalid" {
 				if (updatedStatus == "closed" || updatedStatus == "resolved") && targetStatus == "open" {
 					updatedStatus = "open"
+					reopened = true
 					existingLog = append(existingLog, map[string]interface{}{
-						"status": "open",
-						"time":   time.Now().Format("2006-01-02 15:04:05"),
-						"user":   "system",
-						"reason": "Reopened by subsequent scan finding defects",
+						"status":            "open",
+						"time":              nowStr,
+						"user":              "system",
+						"reason":            "Reopened by subsequent scan finding defects",
+						"last_confirmed_at": nowStr,
+						"confirm_count":     1,
 					})
 				} else if updatedStatus == "open" && targetStatus == "closed" {
 					updatedStatus = "closed"
 					existingLog = append(existingLog, map[string]interface{}{
 						"status": "closed",
-						"time":   time.Now().Format("2006-01-02 15:04:05"),
+						"time":   nowStr,
 						"user":   "system",
 						"reason": "Automatically closed (resolved to合格 by scan)",
 					})
 				}
 			}
+
+			// 如果未发生 reopen 或 auto-close 状态变化（例如持续处于 open 状态），则更新首条初始发现记录的确认时间与累计确认次数
+			if !reopened && updatedStatus != "closed" && len(existingLog) > 0 {
+				targetIdx := -1
+				for i := range existingLog {
+					if r, ok := existingLog[i]["reason"].(string); ok && strings.HasPrefix(r, "Initial scan discovery") {
+						targetIdx = i
+						break
+					}
+				}
+				if targetIdx == -1 {
+					targetIdx = 0
+				}
+
+				existingLog[targetIdx]["last_confirmed_at"] = nowStr
+				cnt := 1
+				if rawCnt, ok := existingLog[targetIdx]["confirm_count"]; ok {
+					switch v := rawCnt.(type) {
+					case float64:
+						cnt = int(v)
+					case int:
+						cnt = v
+					case int64:
+						cnt = int(v)
+					}
+				}
+				existingLog[targetIdx]["confirm_count"] = cnt + 1
+			}
+
 			newLogBytes, _ := json.Marshal(existingLog)
 
 			matchedFinding.TaskReportID = ctx.report.ID
