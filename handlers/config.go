@@ -67,12 +67,18 @@ func UpdateConfig(c *gin.Context) {
 
 	if req.AutoNotify != nil {
 		config.AutoNotify = *req.AutoNotify
-		models.DB.Save(&config)
+		if err := models.DB.Save(&config).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存系统通知配置失败: " + err.Error()})
+			return
+		}
 	}
 
 	if req.QueuePaused != nil {
 		config.QueuePaused = *req.QueuePaused
-		models.DB.Save(&config)
+		if err := models.DB.Save(&config).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存队列调度状态失败: " + err.Error()})
+			return
+		}
 		services.SetQueuePaused(*req.QueuePaused)
 	}
 
@@ -95,9 +101,9 @@ func UpdateConfig(c *gin.Context) {
 	auditDesc := fmt.Sprintf("修改了系统限流/通知配置 (限流倍率: %.2f)", info.EffectiveScale)
 	if req.QueuePaused != nil {
 		if *req.QueuePaused {
-			auditDesc = "暂停了任务队列派发 (进入排空模式)"
+			auditDesc += "；暂停了任务队列派发 (进入排空模式)"
 		} else {
-			auditDesc = "恢复了任务队列正常派发"
+			auditDesc += "；恢复了任务队列正常派发"
 		}
 	}
 

@@ -433,7 +433,9 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               {/* 队列调度状态与控制 (紧跟在并发流控后方) */}
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.75rem', paddingLeft: '0.75rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
                 <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>队列调度</h4>
-                {sysConfig?.queue_paused ? (
+                {sysConfig == null ? (
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#f1f5f9', color: '#64748b', fontWeight: 600 }}>加载中…</span>
+                ) : sysConfig.queue_paused ? (
                   <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>
                     已暂停 (排空模式)
                   </span>
@@ -445,8 +447,8 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                 {isAdmin && (
                   <button
                     className="btn"
-                    disabled={togglingQueue}
-                    onClick={() => handleToggleQueue(!sysConfig?.queue_paused)}
+                    disabled={togglingQueue || !sysConfig}
+                    onClick={() => sysConfig && handleToggleQueue(!sysConfig.queue_paused)}
                     style={{
                       height: '24px',
                       padding: '0 0.5rem',
