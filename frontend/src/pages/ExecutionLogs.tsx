@@ -431,15 +431,15 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               )}
 
               {/* 队列调度状态与控制 (紧跟在并发流控后方) */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginLeft: '0.5rem', paddingLeft: '0.6rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>队列调度:</span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.75rem', paddingLeft: '0.75rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>队列调度</h4>
                 {sysConfig?.queue_paused ? (
-                  <span className="status-badge status-warning" style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem' }}>
-                    ⏸️ 已暂停 (排空模式)
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>
+                    已暂停 (排空模式)
                   </span>
                 ) : (
-                  <span className="status-badge status-success" style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem' }}>
-                    🟢 正常分发中
+                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>
+                    正常分发中
                   </span>
                 )}
                 {isAdmin && (
