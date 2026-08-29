@@ -59,6 +59,9 @@ func main() {
 	// Sync opencode agent files with current prompt files
 	services.SyncAllAgents()
 
+	// 初始化任务队列调度状态（从 DB 加载是否暂停/排空）
+	services.InitQueueState()
+
 	// Start worker pool with configured concurrency
 	services.StartWorkerPool(models.AppConfig.Server.WorkerCount)
 

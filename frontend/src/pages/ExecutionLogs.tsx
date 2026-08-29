@@ -31,6 +31,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   const [selectedScale, setSelectedScale] = useState<number>(1.0);
   const [durationHours, setDurationHours] = useState<number>(2);
   const [applyingConfig, setApplyingConfig] = useState(false);
+  const [togglingQueue, setTogglingQueue] = useState(false);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -72,6 +73,33 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       showToast('网络请求异常，调节失败', 'error');
     } finally {
       setApplyingConfig(false);
+    }
+  };
+
+  const handleToggleQueue = async (paused: boolean) => {
+    setTogglingQueue(true);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          queue_paused: paused
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSysConfig(data);
+        showToast(paused ? '任务队列已暂停派发 (排空模式)' : '任务队列已恢复正常派发', 'success');
+      } else {
+        const err = await res.json();
+        showToast(err.error || '操作失败，请重试', 'error');
+      }
+    } catch {
+      showToast('网络请求异常，操作失败', 'error');
+    } finally {
+      setTogglingQueue(false);
     }
   };
 
@@ -503,11 +531,57 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               >
                 {applyingConfig ? '应用中...' : (selectedScale === 1.0 ? '重置速度' : '应用调节')}
               </button>
+
+              {/* 队列分发与排空控制 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem', paddingLeft: '0.75rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
+                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>队列调度:</span>
+                {sysConfig?.queue_paused ? (
+                  <span className="status-badge status-warning" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
+                    ⏸️ 已暂停 (排空模式)
+                  </span>
+                ) : (
+                  <span className="status-badge status-success" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
+                    🟢 正常分发中
+                  </span>
+                )}
+                <button
+                  className="btn"
+                  disabled={togglingQueue}
+                  onClick={() => handleToggleQueue(!sysConfig?.queue_paused)}
+                  style={{
+                    height: '32px',
+                    padding: '0 0.75rem',
+                    fontSize: '0.825rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    background: sysConfig?.queue_paused ? 'var(--color-primary, #3b82f6)' : 'transparent',
+                    color: sysConfig?.queue_paused ? '#ffffff' : 'var(--color-text-primary, #1e293b)',
+                    border: sysConfig?.queue_paused ? '1px solid transparent' : '1px solid var(--color-border-primary, #e2e8f0)'
+                  }}
+                >
+                  {togglingQueue ? '切换中...' : (sysConfig?.queue_paused ? '恢复派发' : '暂停派发 (Drain)')}
+                </button>
+              </div>
             </>
           ) : (
-            <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontStyle: 'italic' }}>
-              * 仅系统管理员拥有流控调节权限。
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>队列调度:</span>
+                {sysConfig?.queue_paused ? (
+                  <span className="status-badge status-warning" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
+                    ⏸️ 已暂停 (排空模式)
+                  </span>
+                ) : (
+                  <span className="status-badge status-success" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>
+                    🟢 正常分发中
+                  </span>
+                )}
+              </div>
+              <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                * 仅系统管理员拥有流控与调度调节权限。
+              </span>
+            </div>
           )}
         </div>
       </div>
