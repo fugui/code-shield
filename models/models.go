@@ -305,6 +305,7 @@ type SystemConfig struct {
 	AutoNotify       bool       `gorm:"default:false" json:"auto_notify"`
 	ConcurrencyScale float64    `gorm:"default:1.0" json:"concurrency_scale"`
 	ScaleExpiresAt   *time.Time `json:"scale_expires_at"`
+	QueuePaused      bool       `gorm:"default:false" json:"queue_paused"`
 }
 
 type ScheduleConfig struct {

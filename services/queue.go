@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/datatypes"
@@ -32,6 +33,36 @@ type Task struct {
 
 // workerNotifyChan 用于在新任务入队时即时唤醒空闲 Worker
 var workerNotifyChan = make(chan struct{}, 1)
+
+// isQueuePaused 内存级原子开关缓存（优雅排空模式/暂停派发）
+var isQueuePaused atomic.Bool
+
+// IsQueuePaused 查询当前队列是否处于暂停派发状态
+func IsQueuePaused() bool {
+	return isQueuePaused.Load()
+}
+
+// SetQueuePaused 设置调度开关，并在恢复派发时即时唤醒 Worker
+func SetQueuePaused(paused bool) {
+	isQueuePaused.Store(paused)
+	if !paused {
+		NotifyWorker()
+	}
+}
+
+// InitQueueState 在服务启动时从 DB 加载初始队列状态
+func InitQueueState() {
+	if models.DB == nil {
+		return
+	}
+	var cfg models.SystemConfig
+	if err := models.DB.First(&cfg, 1).Error; err == nil {
+		isQueuePaused.Store(cfg.QueuePaused)
+		if cfg.QueuePaused {
+			log.Println("[WorkerPool] Queue dispatch is currently PAUSED (Drain Mode) based on SystemConfig.")
+		}
+	}
+}
 
 // NotifyWorker 发送唤醒信号
 func NotifyWorker() {
@@ -190,6 +221,11 @@ func EnqueueResumeTask(report models.TaskReport) error {
 
 // fetchNextPendingTask 从数据库中原子抢占并拉取一条 Pending 状态的任务
 func fetchNextPendingTask() (*Task, bool) {
+	// 【新增拦截】处于暂停/排空模式时直接返回，Worker 进入休眠等待
+	if IsQueuePaused() {
+		return nil, false
+	}
+
 	if models.DB == nil {
 		return nil, false
 	}

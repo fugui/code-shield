@@ -31,6 +31,7 @@ func GetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":                config.ID,
 		"auto_notify":       config.AutoNotify,
+		"queue_paused":      config.QueuePaused,
 		"concurrency_scale": info.EffectiveScale,
 		"throttle_mode":     info.ThrottleMode,
 		"scale_expires_at":  info.ScaleExpiresAt,
@@ -47,6 +48,7 @@ func UpdateConfig(c *gin.Context) {
 		AutoNotify       *bool    `json:"auto_notify"`
 		ConcurrencyScale *float64 `json:"concurrency_scale"`
 		DurationHours    *float64 `json:"duration_hours"`
+		QueuePaused      *bool    `json:"queue_paused"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -59,12 +61,19 @@ func UpdateConfig(c *gin.Context) {
 
 	oldBefore := map[string]interface{}{
 		"auto_notify":       config.AutoNotify,
+		"queue_paused":      config.QueuePaused,
 		"concurrency_scale": services.Dispatcher.GetThrottleInfo().EffectiveScale,
 	}
 
 	if req.AutoNotify != nil {
 		config.AutoNotify = *req.AutoNotify
 		models.DB.Save(&config)
+	}
+
+	if req.QueuePaused != nil {
+		config.QueuePaused = *req.QueuePaused
+		models.DB.Save(&config)
+		services.SetQueuePaused(*req.QueuePaused)
 	}
 
 	if req.ConcurrencyScale != nil {
@@ -79,17 +88,28 @@ func UpdateConfig(c *gin.Context) {
 
 	newAfter := map[string]interface{}{
 		"auto_notify":       config.AutoNotify,
+		"queue_paused":      config.QueuePaused,
 		"concurrency_scale": info.EffectiveScale,
 	}
 
+	auditDesc := fmt.Sprintf("修改了系统限流/通知配置 (限流倍率: %.2f)", info.EffectiveScale)
+	if req.QueuePaused != nil {
+		if *req.QueuePaused {
+			auditDesc = "暂停了任务队列派发 (进入排空模式)"
+		} else {
+			auditDesc = "恢复了任务队列正常派发"
+		}
+	}
+
 	commonAudit.SetAuditContext(c, "config", "update", models.AuditLevelP1,
-		fmt.Sprintf("修改了系统限流/通知配置 (限流倍率: %.2f)", info.EffectiveScale),
+		auditDesc,
 		"system_config", "1", "全局扫描限流配置",
 		oldBefore, newAfter)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":                config.ID,
 		"auto_notify":       config.AutoNotify,
+		"queue_paused":      config.QueuePaused,
 		"concurrency_scale": info.EffectiveScale,
 		"throttle_mode":     info.ThrottleMode,
 		"scale_expires_at":  info.ScaleExpiresAt,

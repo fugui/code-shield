@@ -26,6 +26,32 @@ func TestQueue_MaxQueueSizeLimit(t *testing.T) {
 	}
 }
 
+func TestQueue_PauseAndResume(t *testing.T) {
+	// 初始状态重置为 false
+	SetQueuePaused(false)
+	if IsQueuePaused() {
+		t.Fatalf("expected IsQueuePaused == false initially")
+	}
+
+	// 设置为暂停 (Drain) 模式
+	SetQueuePaused(true)
+	if !IsQueuePaused() {
+		t.Fatalf("expected IsQueuePaused == true after SetQueuePaused(true)")
+	}
+
+	// 暂停模式下，fetchNextPendingTask 必须直接拦截返回 nil, false
+	task, found := fetchNextPendingTask()
+	if found || task != nil {
+		t.Fatalf("expected fetchNextPendingTask to return nil, false when paused, got %v, %v", task, found)
+	}
+
+	// 恢复派发
+	SetQueuePaused(false)
+	if IsQueuePaused() {
+		t.Fatalf("expected IsQueuePaused == false after SetQueuePaused(false)")
+	}
+}
+
 func TestTaskFromExecLog_ResumeFlag(t *testing.T) {
 	resumeLog := &models.TaskExecutionLog{
 		ID:         42,
