@@ -51,7 +51,7 @@ function ScanManagement() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
   const [gapTaskTypeId, setGapTaskTypeId] = useState<string>('');
-  const [gapDays, setGapDays] = useState<number>(0);
+  const [gapDays, setGapDays] = useState<number>(7);
   const [gapServiceGroup, setGapServiceGroup] = useState<string>('');
 
   const subsystems = React.useMemo(() => {
@@ -704,11 +704,11 @@ function ScanManagement() {
                   onChange={e => setGapDays(Number(e.target.value))}
                   style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', fontSize: '0.875rem', height: '40px' }}
                 >
-                  <option value={0}>全量扫描 (不限时间)</option>
-                  <option value={3}>过去 3 天内未扫描</option>
                   <option value={7}>过去 7 天内未扫描 (一周)</option>
+                  <option value={3}>过去 3 天内未扫描</option>
                   <option value={14}>过去 14 天内未扫描 (两周)</option>
                   <option value={30}>过去 30 天内未扫描 (一月)</option>
+                  <option value={0}>全量扫描 (不限时间)</option>
                 </select>
               </div>
 
