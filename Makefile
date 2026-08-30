@@ -8,8 +8,11 @@ COMMIT          ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unkno
 BUILDTIME       ?= $(shell date -u '+%Y-%m-%d %H:%M:%S')
 LDFLAGS         := -X 'main.Version=$(VERSION)' -X 'main.CommitID=$(COMMIT)' -X 'main.BuildTime=$(BUILDTIME)'
 
+COMMON_DIR      := ../code-common/frontend/src
+COMMON_SRCS     := $(shell find $(COMMON_DIR) -type f 2>/dev/null)
+
 # 自动收集前端与后端源码依赖
-FRONTEND_SRCS   := $(shell find $(FRONTEND_DIR) -type f -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null)
+FRONTEND_SRCS   := $(shell find $(FRONTEND_DIR) -type f -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null) $(COMMON_SRCS)
 BACKEND_SRCS    := $(shell find . -type f \( -name "*.go" -o -name "go.mod" -o -name "go.sum" \) -not -path "*/$(FRONTEND_DIR)/*" -not -path "*/.git/*")
 
 .PHONY: all build install frontend backend clean run
