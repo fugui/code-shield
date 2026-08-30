@@ -16,6 +16,7 @@ server:
   idle_timeout: 180s           # keep-alive 空闲连接超时时间，默认 180s
 
 # ── 数据库 ──
+database:
   host: "127.0.0.1"              # PostgreSQL 数据库主机地址
   port: 5432                     # PostgreSQL 端口
   user: "code_shield"            # 数据库用户名
@@ -29,7 +30,8 @@ server:
 ai:
   backend: "claude"              # AI 驱动 CLI 后端：可选 claude、opencode 或 codex，默认 claude
   # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false。开启后会在报告同级目录下生成 .debug.log 文件方便定位
-  # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json，对 codex 来说是 text/json），默认 text
+  # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json；codex 的输出格式由提示词契约控制，CLI 不使用 --json），默认 text
+  # mock_on_missing_cli: true    # CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式改为 false 以避免静默"全绿"）
 
   # ── 工作时间自动限流配置 (可选) ──
   # 开启后，系统将在指定的工作日与时间段内自动降低并发（如 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速。
@@ -81,5 +83,4 @@ auth:
       employee_id: "employee_id"
       unique_id: "unique_id"
       employee_type: "employee_type"
-
 

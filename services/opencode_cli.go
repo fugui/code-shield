@@ -26,7 +26,7 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, error) {
 	args := []string{
 		"run", userPrompt,
 		"--agent", BaseScannerAgentName,
-		"--dangerously-skip-permissions",
+		"--auto",
 		"--format", formatVal,
 		"--thinking",
 	}

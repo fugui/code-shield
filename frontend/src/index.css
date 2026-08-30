@@ -25,6 +25,54 @@
   border: 1px solid var(--color-border-subtle);
 }
 
+/* ===== 交互辅助类 (Native Hover Utilities) ===== */
+.code-interactive-row {
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.code-interactive-row:hover {
+  background-color: var(--color-bg-hover) !important;
+}
+
+.code-interactive-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.code-interactive-card:hover {
+  border-color: var(--color-border-hover) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.code-interactive-btn-hover {
+  transition: var(--transition-fast);
+}
+.code-interactive-btn-hover:hover {
+  background-color: var(--color-bg-hover) !important;
+  border-color: var(--color-border-hover) !important;
+}
+
+.code-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-xs, 4px);
+  border: 1px solid var(--color-border-subtle);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.code-icon-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-hover);
+}
+
+.code-chunk-dot {
+  transition: transform 0.15s ease;
+}
+.code-chunk-dot:hover {
+  transform: scale(1.25);
+}
+
 /* ===== 侧边栏表单区块与配置 ===== */
 
 /* Section cards */

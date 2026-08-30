@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common';
 
 
@@ -24,7 +24,7 @@ function ScanManagement() {
     if (tab && tab !== activeTab) {
       setActiveTab(tab as ScanTab);
     }
-  }, [tab]);
+  }, [tab, activeTab]);
 
   const handleTabChange = (newTab: ScanTab) => {
     setActiveTab(newTab);
@@ -41,8 +41,6 @@ function ScanManagement() {
   const [filterSearch, setFilterSearch] = useState('');
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentMarkdown, setCurrentMarkdown] = useState('');
-  const [loadingMarkdown, setLoadingMarkdown] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
   const { page: currentPage, pageSize, setPage } = usePagination({ defaultPageSize: 25 });
 
@@ -59,9 +57,6 @@ function ScanManagement() {
     groups.sort((a, b) => a.localeCompare(b));
     return groups;
   }, [repos]);
-
-  // --- Invalid Reports ---
-  const [invalidReportCount, setInvalidReportCount] = useState<number | null>(null);
 
   const fetchRepos = async () => {
     try {
@@ -308,7 +303,7 @@ function ScanManagement() {
     let text = latestLog.status;
     let badgeCls = 'info';
 
-    let activeStatus = (latestLog.task_report && latestLog.task_report.status && latestLog.task_report.status !== 'pending' && latestLog.task_report.status !== 'queued')
+    const activeStatus = (latestLog.task_report && latestLog.task_report.status && latestLog.task_report.status !== 'pending' && latestLog.task_report.status !== 'queued')
       ? latestLog.task_report.status
       : latestLog.status;
 
@@ -339,11 +334,13 @@ function ScanManagement() {
         badgeCls = 'primary';
         break;
       case 'analyzing':
-        const report = latestLog.task_report;
-        if (report && report.total_chunks > 1) {
-          text = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
-        } else {
-          text = '分析中';
+        {
+          const report = latestLog.task_report;
+          if (report && report.total_chunks > 1) {
+            text = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
+          } else {
+            text = '分析中';
+          }
         }
         badgeCls = 'primary';
         break;
@@ -437,9 +434,8 @@ function ScanManagement() {
                         <div
                           key={tt.id}
                           onClick={() => handleBatchTrigger(tt.id)}
+                          className="code-interactive-btn-hover"
                           style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.825rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)' }}
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-color)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                           {tt.display_name}
@@ -450,15 +446,13 @@ function ScanManagement() {
                 )}
               </div>
               <button
-                className="btn"
+                className="btn btn-secondary btn-small"
                 onClick={handleClearInvalidReports}
                 style={{
-                  background: 'transparent', color: 'var(--danger-color)',
-                  border: '1px solid var(--danger-color)', padding: '0.4rem 0.8rem',
-                  borderRadius: '4px', cursor: 'pointer', fontSize: '0.875rem'
+                  color: 'var(--color-danger)',
+                  borderColor: 'var(--color-danger-border)',
+                  fontSize: '0.875rem'
                 }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
               >
                 清除无效报告
               </button>
@@ -533,8 +527,6 @@ function ScanManagement() {
                             target="_blank"
                             rel="noreferrer"
                             style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
-                            onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                            onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
                           >
                             {r.name}
                           </a>
@@ -544,28 +536,17 @@ function ScanManagement() {
                       </td>
                       <td>{r.department?.name || teams.find(t => t.id === r.department_id)?.name || '-'}</td>
                       <td>{r.owner?.name || r.owner_id || '-'}</td>
-                      <td style={{ color: '#64748b' }}>{r.service_group || '-'}</td>
+                      <td style={{ color: 'var(--color-text-muted)' }}>{r.service_group || '-'}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ fontWeight: 600, color: r.report_count > 0 ? 'var(--primary-color)' : '#64748b' }}>
+                          <span style={{ fontWeight: 600, color: r.report_count > 0 ? 'var(--primary-color)' : 'var(--color-text-muted)' }}>
                             {r.report_count || 0} 个
                           </span>
                           <button
                             onClick={() => navigate(appNavigatePath(`/reports/repo/${r.id}`), { state: { from: 'scan-management' } })}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'var(--primary-color)',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              padding: '2px',
-                              borderRadius: '4px',
-                              transition: 'background-color 0.2s',
-                            }}
+                            className="code-icon-btn"
+                            style={{ border: 'none', color: 'var(--primary-color)', padding: '2px' }}
                             title="查询历史报告列表"
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <circle cx="11" cy="11" r="8"></circle>
@@ -582,7 +563,7 @@ function ScanManagement() {
                               {statusInfo.isRunning && <span className="spinner-mini" />}
                             </>
                           ) : (
-                            <span style={{ color: '#94a3b8' }}>未分析</span>
+                            <span style={{ color: 'var(--color-text-muted)' }}>未分析</span>
                           )}
                         </div>
                       </td>
@@ -591,24 +572,8 @@ function ScanManagement() {
                           {statusInfo.status === 'success' && statusInfo.log.task_report && (
                             <button
                               onClick={() => handleOpenReport(statusInfo.log.task_report.id)}
-                              style={{
-                                background: 'transparent',
-                                border: '1px solid var(--primary-color)',
-                                color: 'var(--primary-color)',
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: '4px',
-                                fontSize: '0.75rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = 'var(--primary-color)';
-                                e.currentTarget.style.color = 'white';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.color = 'var(--primary-color)';
-                              }}
+                              className="btn btn-outline btn-small"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
                             >
                               查看报告
                             </button>
@@ -616,28 +581,15 @@ function ScanManagement() {
                           {canCancel && (
                             <button
                               onClick={() => deletePending(statusInfo.log.id, statusInfo.isRunning)}
+                              className="btn btn-secondary btn-small"
                               style={{
-                                background: 'transparent',
-                                border: '1px solid var(--danger-color)',
-                                color: 'var(--danger-color)',
+                                color: 'var(--color-danger)',
+                                borderColor: 'var(--color-danger-border)',
                                 padding: '0.2rem 0.4rem',
-                                borderRadius: '4px',
                                 fontSize: '0.75rem',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.2rem',
-                                transition: 'all 0.2s',
+                                gap: '0.2rem'
                               }}
                               title={statusInfo.isRunning ? "强杀进程并删除该任务" : "取消排队任务"}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = 'var(--danger-color)';
-                                e.currentTarget.style.color = 'white';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.color = 'var(--danger-color)';
-                              }}
                             >
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="3 6 5 6 21 6"></polyline>
@@ -830,19 +782,18 @@ function ScanManagement() {
                       <td style={{ padding: '1rem', textAlign: 'right', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                         <button
                           onClick={() => handleTriggerSchedule(sched.id)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--success-color)', cursor: 'pointer', borderRadius: '4px', fontWeight: 500, transition: 'all 0.15s' }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.06)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                          className="btn btn-secondary btn-small"
+                          style={{ color: 'var(--color-success)', borderColor: 'var(--color-success-border)', fontSize: '0.75rem' }}
                         >触发</button>
                         <button
                           onClick={() => { setEditingSchedule(sched); setIsSidebarOpen(true); }}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--primary-color)', cursor: 'pointer', borderRadius: '4px', fontWeight: 500, transition: 'all 0.15s' }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.06)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                          className="btn btn-secondary btn-small"
+                          style={{ color: 'var(--primary-color)', fontSize: '0.75rem' }}
                         >编辑</button>
                         <button
                           onClick={() => handleDeleteSchedule(sched.id)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer' }}
+                          className="btn btn-text btn-small"
+                          style={{ color: 'var(--color-danger)', fontSize: '0.75rem' }}
                         >删除</button>
                       </td>
                     </tr>

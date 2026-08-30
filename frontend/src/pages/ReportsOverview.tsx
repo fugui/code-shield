@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Pagination, usePagination, useConfirm, EmptyState } from '@code/common';
 
 
@@ -7,12 +7,11 @@ import { useToast } from '../components/Toast';
 import { sshToHttps } from '../utils/urlUtils';
 import ReportViewer from '../components/report/ReportViewer';
 import { TaskNavigationContext } from '../types/report';
-import { appNavigatePath, apiUrl } from '../config';
+import { apiUrl } from '../config';
 
 function ReportsOverview() {
   const { showToast } = useToast();
   const confirm = useConfirm();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Read filter state from URL search params, falling back to defaults
@@ -22,7 +21,7 @@ function ReportsOverview() {
   const filterTaskType = searchParams.get('tt') || '';
   const filterSearch = searchParams.get('search') || '';
 
-  const { page, pageSize, setPage } = usePagination({ defaultPageSize: 25 });
+  const { page, pageSize } = usePagination({ defaultPageSize: 25 });
 
   const [items, setItems] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
@@ -30,7 +29,6 @@ function ReportsOverview() {
   const [subsystems, setSubsystems] = useState<string[]>([]);
 
   const [totalItems, setTotalItems] = useState<number>(0);
-  const [totalPages, setTotalPages] = useState<number>(0);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
@@ -89,11 +87,9 @@ function ReportsOverview() {
         if (data) {
           setItems(Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []));
           setTotalItems(data.total || 0);
-          setTotalPages(data.totalPages || 0);
         } else {
           setItems([]);
           setTotalItems(0);
-          setTotalPages(0);
         }
       })
       .catch(console.error);
@@ -315,30 +311,9 @@ function ReportsOverview() {
         <div style={{ display: 'flex', alignItems: 'flex-end', height: '38px', marginTop: 'auto' }}>
           {(filterTeam || filterServiceGroup || filterOwner || filterTaskType || filterSearch) && (
             <button
-              onClick={() => {
-                setSearchParams(new URLSearchParams(), { replace: true });
-              }}
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--border-color)',
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                fontSize: '0.875rem',
-                color: '#64748b',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--primary-color)';
-                e.currentTarget.style.color = 'var(--primary-color)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--border-color)';
-                e.currentTarget.style.color = '#64748b';
-              }}
+              onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+              className="btn btn-secondary btn-small"
+              style={{ color: 'var(--color-text-muted)', gap: '0.35rem' }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
               重置筛选
@@ -373,29 +348,27 @@ function ReportsOverview() {
               />
             ) : items.map((item, idx) => (
 
-              <tr key={item.id || idx}>
+              <tr key={item.id || idx} className="code-interactive-row">
                 <td>
                   {item.status === 'success' ? (
                     <span 
                       onClick={() => handleOpenReport(item.id)}
                       style={{ color: 'var(--primary-color)', cursor: 'pointer', fontWeight: 600, fontFamily: 'monospace' }}
-                      onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                      onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
                       title="点击查看详细报告"
                     >
                       #{item.id}
                     </span>
                   ) : (
-                    <span style={{ color: '#64748b', fontFamily: 'monospace' }}>#{item.id}</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>#{item.id}</span>
                   )}
                 </td>
                 <td>
                   {item.task_type ? (
-                    <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
+                    <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'var(--color-primary-subtle)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
                       {item.task_type.display_name}
                     </span>
                   ) : (
-                    <span style={{ color: '#aaa' }}>-</span>
+                    <span style={{ color: 'var(--color-text-muted)' }}>-</span>
                   )}
                 </td>
                 <td style={{ fontWeight: 500, width: '220px', maxWidth: '220px' }}>
@@ -407,8 +380,6 @@ function ReportsOverview() {
                         target="_blank"
                         rel="noreferrer"
                         style={{ color: 'var(--primary-color)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem', overflow: 'hidden', maxWidth: '100%' }}
-                        onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                        onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
                         title={item.repo.name + (item.repo.url ? '\n' + item.repo.url : '')}
                       >
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', unicodeBidi: 'plaintext', flex: 1 }}>{shortName}</span>
@@ -419,22 +390,16 @@ function ReportsOverview() {
                     ) : (
                       <span style={{ color: 'var(--primary-color)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', unicodeBidi: 'plaintext', display: 'block' }}>{shortName}</span>
                     );
-                  })() : <span style={{ color: '#aaa' }}>已删除仓库</span>}
+                  })() : <span style={{ color: 'var(--color-text-muted)' }}>已删除仓库</span>}
                 </td>
                 <td>{item.repo?.department?.name || teams.find(t => t.id === item.repo?.department_id)?.name || '-'}</td>
                 <td>
-                  {item.repo?.owner ? (
-                    <span>
-                      <span>{item.repo.owner.name}</span>
-                      <br/>
-                      <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>{item.repo.owner.employee_id || item.repo.owner.id}</span>
-                    </span>
-                  ) : (
-                    <span style={{ color: '#94a3b8' }}>{item.repo?.owner_id || '-'}</span>
-                  )}
+                  <span style={{ color: 'var(--color-text-secondary)' }}>{item.repo?.owner?.name || item.repo?.owner?.username || '-'}</span>
                 </td>
-                <td style={{ color: '#64748b' }}>
-                  {item.created_at ? item.created_at.replace('T', ' ').substring(0, 19) : '-'}
+                <td>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                    {item.created_at ? item.created_at.replace('T', ' ').substring(0, 19) : '-'}
+                  </span>
                 </td>
 
                 <td style={{ verticalAlign: 'middle' }}>
@@ -446,7 +411,7 @@ function ReportsOverview() {
                       </div>
                     );
                   })() : item.status === 'failed' ? (
-                    <div style={{ color: 'var(--danger-color)', fontSize: '0.825rem', fontStyle: 'italic' }}>
+                    <div style={{ color: 'var(--color-danger)', fontSize: '0.825rem', fontStyle: 'italic' }}>
                       任务执行失败，AI 审计中断。
                     </div>
                   ) : (item.status === 'running' || item.status === 'cloning' || item.status === 'pre_processing' || item.status === 'analyzing' || item.status === 'post_processing' || item.status === 'merging') ? (
@@ -455,27 +420,26 @@ function ReportsOverview() {
                       <span>正在分析代码库，AI 深入审计中...</span>
                     </div>
                   ) : item.status === 'queued' ? (
-                    <div style={{ color: '#64748b', fontSize: '0.825rem', fontStyle: 'italic' }}>
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: '0.825rem', fontStyle: 'italic' }}>
                       任务已入队，等待可用运行实例...
                     </div>
                   ) : (
-                    <span style={{ color: '#aaa', fontSize: '0.825rem' }}>-</span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.825rem' }}>-</span>
                   )}
                 </td>
 
                 <td>
                   {item.status === 'success' ? (
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1rem', color: item.score >= 20 ? '#ef4444' : item.score >= 10 ? '#f59e0b' : '#22c55e' }}>
+                      <span style={{ fontWeight: 700, fontSize: '1rem', color: item.score >= 20 ? 'var(--color-danger)' : item.score >= 10 ? 'var(--color-warning)' : 'var(--color-success)' }}>
                         {item.score}
                       </span>
                       <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                         <button 
                           onClick={() => handleOpenReport(item.id)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: 'var(--primary-color)' }}
+                          className="code-icon-btn"
+                          style={{ border: 'none', color: 'var(--primary-color)' }}
                           title="查看详细报告"
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -483,10 +447,9 @@ function ReportsOverview() {
                         </button>
                         <button 
                           onClick={() => handleNotify(item.id)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#10b981' }}
+                          className="code-icon-btn"
+                          style={{ border: 'none', color: 'var(--color-success)' }}
                           title="手动发送报告通知给相关责任人"
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="2" y="4" width="20" height="16" rx="2"></rect><polyline points="2,4 12,13 22,4"></polyline>
@@ -495,10 +458,9 @@ function ReportsOverview() {
                         {item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks && (
                           <button
                             onClick={() => handleResume(item.id)}
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#f59e0b' }}
+                            className="code-icon-btn"
+                            style={{ border: 'none', color: 'var(--color-warning)' }}
                             title="恢复：重试失败的分片并重新生成报告"
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="1 4 1 10 7 10"></polyline>
@@ -509,10 +471,9 @@ function ReportsOverview() {
                         {isAdmin && (
                           <button 
                             onClick={() => handleDeleteReport(item.id)}
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#ef4444' }}
+                            className="code-icon-btn"
+                            style={{ border: 'none', color: 'var(--color-danger)' }}
                             title="永久彻底删除此报告及物理文件"
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="3 6 5 6 21 6"></polyline>
@@ -529,10 +490,9 @@ function ReportsOverview() {
                       {item.status === 'failed' && item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks ? (
                         <button
                           onClick={() => handleResume(item.id)}
-                          style={{ background: 'transparent', border: '1px solid #f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#f59e0b', fontSize: '0.8rem' }}
+                          className="btn btn-secondary btn-small"
+                          style={{ border: '1px solid var(--color-warning-border)', color: 'var(--color-warning)', fontSize: '0.8rem', gap: '0.3rem' }}
                           title="恢复：重试失败的分片并重新生成报告"
-                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="1 4 1 10 7 10"></polyline>
@@ -541,15 +501,14 @@ function ReportsOverview() {
                           恢复
                         </button>
                       ) : (
-                        <span style={{ color: '#aaa', fontSize: '0.875rem' }}>-</span>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>-</span>
                       )}
                       {isAdmin && (
                         <button 
                           onClick={() => handleDeleteReport(item.id)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#ef4444' }}
+                          className="code-icon-btn"
+                          style={{ border: 'none', color: 'var(--color-danger)' }}
                           title="永久彻底删除此报告及物理文件"
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="3 6 5 6 21 6"></polyline>

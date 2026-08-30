@@ -91,8 +91,6 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null);
   const [selectedRepoName, setSelectedRepoName] = useState('');
   
-  const [taskTypeId, setTaskTypeId] = useState<number | null>(null);
-
   // Nested Department Repos
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
   const [deptRepos, setDeptRepos] = useState<Record<string, any[]>>({});
@@ -129,8 +127,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
   // Initialize and load core resources
   useEffect(() => {
-    fetchTaskTypeId();
     fetchDepartments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch 函数为组件内普通函数，加入依赖会导致每次渲染重复拉取
   }, [campaign, taskTypeName]);
 
   // Sync content based on tab and filters
@@ -142,6 +140,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
     } else if (activeTab === 'trends') {
       fetchTrendsData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch 函数为组件内普通函数，加入依赖会导致每次渲染重复拉取
   }, [activeTab, selectedDept, sortField, sortOrder, trendScope, trendRepoId, trendDeptName, campaign]);
 
   const fetchDepartments = () => {
@@ -151,19 +150,6 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
         if (Array.isArray(data)) {
           const list = data.map(d => d.department).filter(Boolean);
           setDepartments(list);
-        }
-      })
-      .catch(console.error);
-  };
-
-  const fetchTaskTypeId = () => {
-    fetch(apiUrl('/api/task-types'))
-      .then(res => res.json())
-      .then(data => {
-        const list = Array.isArray(data) ? data : (data.items || []);
-        const targetTask = list.find((t: any) => t.name === taskTypeName);
-        if (targetTask) {
-          setTaskTypeId(targetTask.id || targetTask.ID);
         }
       })
       .catch(console.error);
@@ -239,8 +225,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   };
 
   // Sync workspace state from URL search params on mount or param changes
+  const urlRepoId = searchParams.get('repoId');
   useEffect(() => {
-    const rIdStr = searchParams.get('repoId');
+    const rIdStr = urlRepoId;
     if (rIdStr) {
       const rId = parseInt(rIdStr, 10);
       if (!isNaN(rId) && rId > 0) {
@@ -256,7 +243,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
       setSelectedRepoId(null);
       setSelectedRepoName('');
     }
-  }, [searchParams.get('repoId'), repos]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 用户手动关闭工作区不应被 URL 参数重新打开，故不将 workspaceOpen 加入依赖
+  }, [urlRepoId, repos]);
 
   // Open Workspace for a specific Repository
   const openWorkspace = (repoId: number, repoName: string) => {
@@ -341,13 +329,12 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
     },
     statusBadge: (status: string) => {
       let bg = 'var(--border-color)';
-      let label = '待处理';
       let color = 'var(--text-color)';
-      if (status === 'open') { bg = '#fee2e2'; label = '待处理'; color = '#991b1b'; }
-      else if (status === 'analyzing') { bg = '#fef3c7'; label = '问题分析'; color = '#92400e'; }
-      else if (status === 'resolved') { bg = '#d1fae5'; label = '已解决'; color = '#065f46'; }
-      else if (status === 'closed') { bg = '#f3f4f6'; label = '已关闭'; color = '#374151'; }
-      else if (status === 'invalid') { bg = '#e0f2fe'; label = '忽略/误报'; color = '#075985'; }
+      if (status === 'open') { bg = '#fee2e2'; color = '#991b1b'; }
+      else if (status === 'analyzing') { bg = '#fef3c7'; color = '#92400e'; }
+      else if (status === 'resolved') { bg = '#d1fae5'; color = '#065f46'; }
+      else if (status === 'closed') { bg = '#f3f4f6'; color = '#374151'; }
+      else if (status === 'invalid') { bg = '#e0f2fe'; color = '#075985'; }
       
       return {
         padding: '0.2rem 0.5rem',
@@ -513,7 +500,6 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const totalCritical = repos.reduce((acc, r) => acc + r.critical, 0);
 
   // Repository list pagination calculations
-  const totalRepoPages = Math.ceil(repos.length / repoPageSize) || 1;
   const startIndex = (repoPage - 1) * repoPageSize;
   const paginatedRepos = repos.slice(startIndex, startIndex + repoPageSize);
 
@@ -722,17 +708,15 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                     paginatedRepos.map((r, idx) => {
                       const rateVal = isEntityMode ? (r.pass_rate || 0) : (r.fix_rate || 0);
                       return (
-                      <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td style={{ ...styles.tableCell, color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{startIndex + idx + 1}</td>
+                      <tr key={r.repo_id} className="code-interactive-row" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ ...styles.tableCell, color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{startIndex + idx + 1}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 600 }}>
                           {r.repo_url ? (
                             <a
                               href={sshToHttps(r.repo_url)}
                               target="_blank"
                               rel="noreferrer"
-                              style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
-                              onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                              onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                              style={{ color: 'var(--primary-color)' }}
                             >
                               {r.repo_name}
                             </a>
@@ -744,18 +728,18 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                         <td style={styles.tableCell}>{r.owner_name}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 500 }}>{isEntityMode ? (r.total_entities || r.total_issues) : r.total_issues}</td>
                         {isEntityMode ? (
-                          <td style={{ ...styles.tableCell, color: '#10b981', fontWeight: 600 }}>{r.pass_count || 0}</td>
+                          <td style={{ ...styles.tableCell, color: 'var(--color-success)', fontWeight: 600 }}>{r.pass_count || 0}</td>
                         ) : (
                           <>
-                            <td style={{ ...styles.tableCell, color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
-                            <td style={{ ...styles.tableCell, color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                            <td style={{ ...styles.tableCell, color: r.blocking > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
+                            <td style={{ ...styles.tableCell, color: r.critical > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
                           </>
                         )}
                         <td style={styles.tableCell}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '110px' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: 600, width: '40px' }}>{rateVal.toFixed(0)}%</span>
-                            <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: '#e2e8f0', overflow: 'hidden' }}>
-                              <div style={{ height: '100%', borderRadius: '3px', width: `${rateVal}%`, background: rateVal >= 85 ? '#10b981' : rateVal >= 50 ? '#f59e0b' : '#ef4444' }} />
+                            <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: 'var(--color-border-subtle)', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', borderRadius: '3px', width: `${rateVal}%`, background: rateVal >= 85 ? 'var(--color-success)' : rateVal >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }} />
                             </div>
                           </div>
                         </td>
@@ -765,7 +749,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                               {r.last_scan_time.substring(0, 10)}
                             </span>
                           ) : (
-                            <span style={{ color: '#94a3b8' }}>未扫描</span>
+                            <span style={{ color: 'var(--color-text-muted)' }}>未扫描</span>
                           )}
                         </td>
                         <td style={{ ...styles.tableCell }}>
@@ -777,27 +761,12 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                   disabled={hasNotScanned}
                                   onClick={() => openWorkspace(r.repo_id, r.repo_name)}
                                   title={hasNotScanned ? "代码仓未进行首次分析，无法审计" : "问题审计"}
+                                  className="code-icon-btn"
                                   style={{
-                                    background: 'transparent',
                                     border: 'none',
-                                    color: hasNotScanned ? '#cbd5e1' : 'var(--primary-color)',
+                                    color: hasNotScanned ? 'var(--color-border-primary)' : 'var(--primary-color)',
                                     cursor: hasNotScanned ? 'not-allowed' : 'pointer',
-                                    padding: '0.4rem',
-                                    borderRadius: '50%',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    transition: 'background-color 0.2s'
-                                  }}
-                                  onMouseEnter={e => {
-                                    if (!hasNotScanned) {
-                                      e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)';
-                                    }
-                                  }}
-                                  onMouseLeave={e => {
-                                    if (!hasNotScanned) {
-                                      e.currentTarget.style.backgroundColor = 'transparent';
-                                    }
+                                    borderRadius: '50%'
                                   }}
                                 >
                                   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -847,14 +816,13 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                       <React.Fragment key={d.department}>
                         <tr 
                           onClick={() => toggleDeptExpand(d.department)}
-                          style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background 0.2s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          className="code-interactive-row"
+                          style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer' }}
                         >
                           <td style={{ ...styles.tableCell, fontWeight: 600 }}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <span style={{ display: 'inline-block', width: '20px', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>{index + 1}</span>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', transition: 'transform 0.2s', transform: expandedDepts[d.department] ? 'rotate(90deg)' : 'rotate(0deg)', color: '#64748b' }}>
+                              <span style={{ display: 'inline-block', width: '20px', color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 700 }}>{index + 1}</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', transition: 'transform 0.2s', transform: expandedDepts[d.department] ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--color-text-secondary)' }}>
                                 <ChevronRightIcon />
                               </span>
                               {d.department}
@@ -862,11 +830,11 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                           </td>
                           <td style={styles.tableCell}>{d.scanned_repos}/{d.total_repos || 0}</td>
                           <td style={styles.tableCell}>{d.total_issues}</td>
-                          <td style={{ ...styles.tableCell, color: isEntityMode ? '#10b981' : (d.open_issues > 0 ? '#ef4444' : 'inherit'), fontWeight: 600 }}>
+                          <td style={{ ...styles.tableCell, color: isEntityMode ? 'var(--color-success)' : (d.open_issues > 0 ? 'var(--color-danger)' : 'inherit'), fontWeight: 600 }}>
                             {isEntityMode ? (d.pass_count || 0) : d.open_issues}
                           </td>
                           <td style={styles.tableCell}>
-                            <span style={{ fontWeight: 700, color: rateVal >= 85 ? '#10b981' : rateVal >= 50 ? '#f59e0b' : '#ef4444' }}>
+                            <span style={{ fontWeight: 700, color: rateVal >= 85 ? 'var(--color-success)' : rateVal >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }}>
                               {rateVal.toFixed(1)}%
                             </span>
                           </td>
@@ -877,14 +845,14 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                               {deptReposLoading[d.department] ? (
                                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1.5rem' }}>
                                   <div style={{ animation: 'spin 1s linear infinite', border: '2px solid rgba(59, 130, 246, 0.1)', borderTop: '2px solid #3b82f6', borderRadius: '50%', width: '20px', height: '20px', marginRight: '0.5rem' }} />
-                                  <span style={{ fontSize: '0.85rem', color: '#64748b' }}>正在加载该部门的代码仓...</span>
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>正在加载该部门的代码仓...</span>
                                 </div>
                               ) : !deptRepos[d.department] || deptRepos[d.department].length === 0 ? (
-                                <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
                                   暂无代码仓数据
                                 </div>
                               ) : (
-                                <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                                <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', background: 'var(--card-bg)', boxShadow: 'var(--shadow-sm)' }}>
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                                     <thead>
                                       <tr style={{ background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
@@ -912,17 +880,15 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                       {deptRepos[d.department].map((r: any, idx: number) => {
                                         const rateVal = isEntityMode ? (r.pass_rate || 0) : (r.fix_rate || 0);
                                         return (
-                                        <tr key={r.repo_id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{idx + 1}</td>
+                                        <tr key={r.repo_id} className="code-interactive-row" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{idx + 1}</td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', fontWeight: 600 }}>
                                             {r.repo_url ? (
                                               <a
                                                 href={sshToHttps(r.repo_url)}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
-                                                onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                                                onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                                                style={{ color: 'var(--primary-color)' }}
                                               >
                                                 {r.repo_name}
                                               </a>
@@ -934,20 +900,20 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.total_issues}</td>
                                           {isEntityMode ? (
                                             <>
-                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: '#10b981', fontWeight: 600 }}>{r.pass_count || 0}</td>
-                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.open_issues || 0) > 0 ? '#f59e0b' : 'inherit' }}>{r.open_issues || 0}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: 'var(--color-success)', fontWeight: 600 }}>{r.pass_count || 0}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.open_issues || 0) > 0 ? 'var(--color-warning)' : 'inherit' }}>{r.open_issues || 0}</td>
                                             </>
                                           ) : (
                                             <>
-                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.blocking > 0 ? '#ef4444' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
-                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.critical > 0 ? '#f97316' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.blocking > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.critical > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
                                             </>
                                           )}
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '95px' }}>
                                               <span style={{ fontSize: '0.8rem', fontWeight: 600, width: '35px' }}>{rateVal.toFixed(0)}%</span>
-                                              <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: '#e2e8f0', overflow: 'hidden' }}>
-                                                <div style={{ height: '100%', borderRadius: '2px', width: `${rateVal}%`, background: rateVal >= 85 ? '#10b981' : rateVal >= 50 ? '#f59e0b' : '#ef4444' }} />
+                                              <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'var(--color-border-subtle)', overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', borderRadius: '2px', width: `${rateVal}%`, background: rateVal >= 85 ? 'var(--color-success)' : rateVal >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }} />
                                               </div>
                                             </div>
                                           </td>
@@ -957,7 +923,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                                 {r.last_scan_time.substring(0, 10)}
                                               </span>
                                             ) : (
-                                              <span style={{ color: '#94a3b8' }}>未扫描</span>
+                                              <span style={{ color: 'var(--color-text-muted)' }}>未扫描</span>
                                             )}
                                           </td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
@@ -971,27 +937,12 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                                     openWorkspace(r.repo_id, r.repo_name);
                                                   }}
                                                   title={hasNotScanned ? "代码仓未进行首次扫描，无法审计" : "问题审计"}
+                                                  className="code-icon-btn"
                                                   style={{
-                                                    background: 'transparent',
                                                     border: 'none',
-                                                    color: hasNotScanned ? '#cbd5e1' : 'var(--primary-color)',
+                                                    color: hasNotScanned ? 'var(--color-border-primary)' : 'var(--primary-color)',
                                                     cursor: hasNotScanned ? 'not-allowed' : 'pointer',
-                                                    padding: '0.25rem',
-                                                    borderRadius: '50%',
-                                                    display: 'inline-flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    transition: 'background-color 0.2s'
-                                                  }}
-                                                  onMouseEnter={e => {
-                                                    if (!hasNotScanned) {
-                                                      e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.08)';
-                                                    }
-                                                  }}
-                                                  onMouseLeave={e => {
-                                                    if (!hasNotScanned) {
-                                                      e.currentTarget.style.backgroundColor = 'transparent';
-                                                    }
+                                                    borderRadius: '50%'
                                                   }}
                                                 >
                                                   <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

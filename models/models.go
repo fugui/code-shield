@@ -64,7 +64,7 @@ type TaskType struct {
 	Description     string         `json:"description"`                            // 任务说明
 	EngineMode      string         `gorm:"default:single" json:"engine_mode"`      // 执行引擎模式: single, chunked
 	EngineConfig    datatypes.JSON `json:"engine_config"`                          // 引擎配置 {"max_files": 50, "depth": 2}
-	AIBackend       string         `gorm:"default:''" json:"ai_backend"`           // AI 后端: 为空时使用全局配置，可选 claude/opencode
+	AIBackend       string         `gorm:"default:''" json:"ai_backend"`           // AI 后端: 为空时使用全局配置，可选 claude/opencode/codex
 	TargetScope     string         `gorm:"default:'business'" json:"target_scope"` // 处理范围: all (全部), business (仅业务), test (仅测试)
 	NotifyTemplate  string         `json:"notify_template"`                        // 邮件主题模板
 	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"`      // score >= 此值才通知

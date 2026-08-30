@@ -6,6 +6,7 @@ import (
 	"code-shield/services"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// logTaskTypeFileErr 记录任务类型文件 I/O 错误（清理/落盘类错误不静默忽略）
+func logTaskTypeFileErr(action, path string, err error) {
+	if err != nil {
+		log.Printf("[TaskType] %s failed for %s: %v\n", action, path, err)
+	}
+}
 
 // GetTaskTypes returns all task types
 func GetTaskTypes(c *gin.Context) {
@@ -81,7 +89,7 @@ func CreateTaskType(c *gin.Context) {
 
 	// Create default files on disk using conventional paths
 	absTaskDir := models.AppConfig.GetAbsPath(req.TaskDir())
-	os.MkdirAll(absTaskDir, 0755)
+	logTaskTypeFileErr("create task dir", absTaskDir, os.MkdirAll(absTaskDir, 0755))
 
 	defaultAnalysisPrompt := "# " + req.DisplayName + " 分析指令\n\n" +
 		"你是一个软件开发经验非常丰富的顶级技术专家与安全审计专家。请对当前代码仓进行 " + req.DisplayName + " 专项分析任务。\n\n" +
@@ -142,13 +150,20 @@ echo "代码仓校验成功，开始执行扫描。"
 exit 0
 `
 
-	os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644)
-	os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644)
-	os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755)
+	logTaskTypeFileErr("write analysis prompt", req.AnalysisPromptFile(),
+		os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644))
+	logTaskTypeFileErr("write synthesis prompt", req.SynthesisPromptFile(),
+		os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644))
+	logTaskTypeFileErr("write precondition script", req.PreconditionScript(),
+		os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755))
 
 	// 写入 meta.json
-	metaBytes, _ := json.MarshalIndent(req, "", "  ")
-	os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
+	if metaBytes, err := json.MarshalIndent(req, "", "  "); err != nil {
+		logTaskTypeFileErr("marshal meta.json", absTaskDir, err)
+	} else {
+		logTaskTypeFileErr("write meta.json", filepath.Join(absTaskDir, "meta.json"),
+			os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644))
+	}
 
 	// 主动失效专项分析内存缓存
 	InvalidateCampaignCache(req.CampaignPath, req.Name)
@@ -290,9 +305,13 @@ func UpdateTaskType(c *gin.Context) {
 
 	// 将最新元数据重写回磁盘的 meta.json
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
-	_ = os.MkdirAll(absTaskDir, 0755)
-	metaBytes, _ := json.MarshalIndent(taskType, "", "  ")
-	_ = os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
+	logTaskTypeFileErr("create task dir", absTaskDir, os.MkdirAll(absTaskDir, 0755))
+	if metaBytes, err := json.MarshalIndent(taskType, "", "  "); err != nil {
+		logTaskTypeFileErr("marshal meta.json", absTaskDir, err)
+	} else {
+		logTaskTypeFileErr("write meta.json", filepath.Join(absTaskDir, "meta.json"),
+			os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644))
+	}
 
 	commonAudit.SetAuditContext(c, "task_type", "update", models.AuditLevelP0,
 		fmt.Sprintf("修改了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),
@@ -321,7 +340,7 @@ func DeleteTaskType(c *gin.Context) {
 
 	// 物理删除磁盘文件夹，防止重启后再次被扫出装载
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
-	os.RemoveAll(absTaskDir)
+	logTaskTypeFileErr("remove task dir", absTaskDir, os.RemoveAll(absTaskDir))
 
 	commonAudit.SetAuditContext(c, "task_type", "delete", models.AuditLevelP0,
 		fmt.Sprintf("删除了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),

@@ -23,7 +23,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   const { showToast } = useToast();
 
   const [totalItems, setTotalItems] = useState<number>(0);
-  const [totalPages, setTotalPages] = useState<number>(0);
 
   // AI 并发流控状态
   const [isAdmin, setIsAdmin] = useState(false);
@@ -119,7 +118,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
         setLogs(data.items || []);
         setTotalItems(data.total || 0);
         const newTotalPages = data.totalPages || 0;
-        setTotalPages(newTotalPages);
         if (newTotalPages > 0 && page > newTotalPages) {
           updateParams({ page: newTotalPages });
         }
@@ -128,23 +126,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       console.error('Failed to fetch execution logs:', err);
     }
   }, [page, pageSize, statusGroup, updateParams]);
-
-  const getPageNumbers = () => {
-    const maxVisible = 5;
-    if (totalPages <= maxVisible) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
-    let start = Math.max(1, page - 2);
-    let end = Math.min(totalPages, start + maxVisible - 1);
-    if (end - start + 1 < maxVisible) {
-      start = Math.max(1, end - maxVisible + 1);
-    }
-    const pages: number[] = [];
-    for (let i = start; i <= end; i++) {
-      pages.push(i);
-    }
-    return pages;
-  };
 
   const clearCompleted = async () => {
     if (!window.confirm('确认清除所有已完成（成功/失败/已跳过）的执行记录？进行中的任务不受影响。')) return;
@@ -369,7 +350,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
   const isThrottleActive = !!(sysConfig && sysConfig.concurrency_scale !== 1.0);
   const throttleMode = sysConfig?.throttle_mode || (isThrottleActive ? 'manual' : 'normal');
-  const isWorkHours = !!sysConfig?.is_work_hours;
   const workHoursCfg = sysConfig?.work_hours_config;
 
   return (
@@ -690,8 +670,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                           target="_blank"
                           rel="noreferrer"
                           style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
-                          onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                          onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
                           onClick={e => e.stopPropagation()}
                         >
                           {log.repo_name || `Repo ${log.repo_id}`}
@@ -765,16 +743,16 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                             {/* Score */}
                             {report.status === 'success' && (
                               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fff', border: '1px solid #47556922', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                                  <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? '#ef4444' : report.score >= 10 ? '#f59e0b' : '#22c55e' }}>{report.score ?? 0}</span>
-                                  <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.1rem' }}>风险评分</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px', boxShadow: 'var(--shadow-sm)' }}>
+                                  <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? 'var(--color-danger)' : report.score >= 10 ? 'var(--color-warning)' : 'var(--color-success)' }}>{report.score ?? 0}</span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>风险评分</span>
                                 </div>
                               </div>
                             )}
 
                             {/* AI Summary */}
                             {report.ai_summary && (
-                              <div style={{ padding: '0.75rem 1rem', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #bae6fd', color: '#0369a1', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                              <div style={{ padding: '0.75rem 1rem', background: 'var(--color-primary-subtle)', borderRadius: '6px', border: '1px solid var(--color-primary-border)', color: 'var(--color-primary)', fontSize: '0.875rem', lineHeight: 1.6 }}>
                                 <div style={{ fontWeight: 600, marginBottom: '0.2rem', fontSize: '0.8rem' }}>🤖 AI 审计摘要</div>
                                 {report.ai_summary}
                               </div>
@@ -842,6 +820,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                                           return (
                                             <div
                                               key={c.chunk_name || idx}
+                                              className="code-chunk-dot"
                                               style={{
                                                 width: '14px',
                                                 height: '14px',
@@ -849,11 +828,8 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                                                 background: isChunkFailed ? '#ef4444' : '#10b981',
                                                 border: `1px solid ${isChunkFailed ? '#dc2626' : '#059669'}`,
                                                 cursor: 'pointer',
-                                                transition: 'transform 0.15s ease',
                                               }}
                                               title={`${c.chunk_name} (耗时: ${formatDuration(c.duration_seconds)}, 状态: ${c.status === 'success' ? '成功' : '失败'})`}
-                                              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
-                                              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                                             />
                                           );
                                         })}

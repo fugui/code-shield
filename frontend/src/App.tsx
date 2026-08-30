@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { BASE_PATH, apiUrl, AUTH_TOKEN_KEY, appNavigatePath } from './config';
 import ReportsOverview from './pages/ReportsOverview';
 import RepoTaskHistory from './pages/RepoReviewHistory';
@@ -7,7 +7,6 @@ import PublicReportFindings from './pages/PublicReportFindings';
 
 import ScanManagement from './pages/ScanManagement';
 import TaskTypeManagement from './pages/TaskTypeManagement';
-import ExecutionLogs from './pages/ExecutionLogs';
 import UniversalCampaignPage from './pages/UniversalCampaignPage';
 import Workbench from './pages/Workbench';
 
@@ -21,40 +20,6 @@ setupFetchInterceptor({ appPrefix: '/shield' });
 const PrivateRoute = ({ children }: { children: JSX.Element }) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
   if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
-  return children;
-};
-
-const AdminRoute = ({ children }: { children: JSX.Element }) => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (!token) {
-      setIsAdmin(false);
-      return;
-    }
-    fetch('/api/me')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        const isShieldAdmin = data ? (Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin'))) : false;
-        setIsAdmin(isShieldAdmin);
-      })
-      .catch(() => setIsAdmin(false));
-  }, [token]);
-
-  if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
-  if (isAdmin === null) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '6rem' }}>
-        <div style={{ textAlign: 'center', color: '#64748b' }}>
-          <div style={{ animation: 'spin 1s linear infinite', border: '3px solid rgba(59, 130, 246, 0.1)', borderTop: '3px solid #3b82f6', borderRadius: '50%', width: '32px', height: '32px', margin: '0 auto 1rem' }} />
-          正在校验权限...
-        </div>
-      </div>
-    );
-  }
-  if (!isAdmin) return <Navigate to={appNavigatePath("/reports")} replace />;
-
   return children;
 };
 
@@ -198,7 +163,7 @@ function AppContent() {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    } catch (_) {}
+    } catch (_) { /* ignore cache read errors */ }
     return [];
   });
 
@@ -208,10 +173,10 @@ function AppContent() {
       .then(data => {
         if (Array.isArray(data)) {
           setTaskTypes(data);
-          try { sessionStorage.setItem('shield_task_types_cache', JSON.stringify(data)); } catch (_) {}
+          try { sessionStorage.setItem('shield_task_types_cache', JSON.stringify(data)); } catch (_) { /* ignore quota/security errors */ }
         }
       })
-      .catch(() => {});
+      .catch(() => { /* ignore load errors, keep empty list */ });
   };
 
   useEffect(() => {
@@ -292,7 +257,7 @@ interface AppProps {
 }
 
 function App({ isEmbedded = false }: AppProps) {
-  const isEmbeddedMode = isEmbedded || !!(window as any).__POWERED_BY_PORTAL__;
+  const isEmbeddedMode = isEmbedded || !!window.__POWERED_BY_PORTAL__;
 
   if (isEmbeddedMode) {
     return (

@@ -141,22 +141,10 @@ export default function Workbench() {
 	const [teamRepos, setTeamRepos] = useState<any[]>([]);
 	const [repoTasks, setRepoTasks] = useState<Record<number, any[]>>({});
 	const [reposLoading, setReposLoading] = useState(false);
-	const [repoSortOrder, setRepoSortOrder] = useState('latest_task_time_desc');
-
-	const toggleRepoSort = (field: string) => {
-		setRepoSortOrder(prev => prev === `${field}_desc` ? `${field}_asc` : `${field}_desc`);
-	};
-	const getRepoSortIcon = (field: string) => {
-		if (!repoSortOrder.startsWith(field)) return <span style={{ color: 'var(--text-secondary)', marginLeft: '3px' }}>⇅</span>;
-		return repoSortOrder.endsWith('_desc')
-			? <span style={{ marginLeft: '3px' }}>↓</span>
-			: <span style={{ marginLeft: '3px' }}>↑</span>;
-	};
+	const [repoSortOrder] = useState('latest_task_time_desc');
 
 	// Report sidebar
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [currentMarkdown, setCurrentMarkdown] = useState('');
-	const [loadingMarkdown, setLoadingMarkdown] = useState(false);
 	const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
 
 	const loadFindings = async () => {
@@ -220,6 +208,7 @@ export default function Workbench() {
 				}
 			})
 			.catch(console.error);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时初始化；loadFindings/loadTeamRepos 加入依赖会导致重复请求
 	}, []);
 
 	// Save Audit
@@ -334,22 +323,7 @@ export default function Workbench() {
 		setSidebarOpen(true);
 	};
 
-	const getScoreColor = (_score: number) => '#d97706';
-
-	const taskStatusBadge = (status: string) => {
-		switch (status) {
-			case 'success': return { label: '完成', color: '#10b981', bg: 'rgba(16,185,129,0.1)' };
-			case 'failed': return { label: '失败', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' };
-			case 'running':
-			case 'cloning':
-			case 'pre_processing':
-			case 'analyzing':
-			case 'post_processing':
-			case 'merging': return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' };
-			case 'queued': return { label: '排队中', color: '#6b7280', bg: 'rgba(107,114,128,0.1)' };
-			default: return { label: status, color: '#6b7280', bg: 'rgba(107,114,128,0.1)' };
-		}
-	};
+	const getScoreColor = () => '#d97706';
 
 	return (
 		<div className="flex-col gap-lg w-full">
@@ -561,7 +535,7 @@ export default function Workbench() {
 									const latestTime = latestTask?.created_at ? latestTask.created_at.replace('T', ' ').substring(0, 16) : null;
 									const reportCount = repo.report_count ?? tasks.filter((t: any) => t.status === 'success').length;
 									return (
-										<tr key={repo.id}>
+										<tr key={repo.id} className="code-interactive-row" style={{ borderBottom: '1px solid var(--border-color)' }}>
 											{/* 序号 */}
 											<td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: 500 }}>
 												{rowIdx + 1}
@@ -575,8 +549,6 @@ export default function Workbench() {
 													<span
 														style={{ color: 'var(--primary-color)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
 														onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`), { state: { from: 'workbench' } })}
-														onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
-														onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
 														title={repo.name}
 													>
 														{shortName}
@@ -599,7 +571,7 @@ export default function Workbench() {
 												{latestTask ? (
 													<div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
 														{latestTask.task_type?.display_name && (
-															<span style={{ fontSize: '0.78rem', padding: '0.1rem 0.45rem', background: 'rgba(59,130,246,0.08)', color: 'var(--primary-color)', borderRadius: '4px', fontWeight: 500, width: 'fit-content' }}>
+															<span style={{ fontSize: '0.78rem', padding: '0.1rem 0.45rem', background: 'var(--color-primary-subtle)', color: 'var(--primary-color)', borderRadius: '4px', fontWeight: 500, width: 'fit-content' }}>
 																{latestTask.task_type.display_name}
 															</span>
 														)}
@@ -611,13 +583,12 @@ export default function Workbench() {
 											<td style={{ textAlign: 'center' }}>
 												{latestTask?.status === 'success' && latestTask.score !== undefined ? (
 													<div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-														<span style={{ fontWeight: 800, fontSize: '1rem', color: getScoreColor(latestTask.score) }}>{latestTask.score}</span>
+														<span style={{ fontWeight: 800, fontSize: '1rem', color: getScoreColor() }}>{latestTask.score}</span>
 														<button
 															onClick={() => handleOpenReport(latestTask.id)}
 															title="查看最新报告"
-															style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--primary-color)', display: 'inline-flex', alignItems: 'center', padding: '2px 3px', borderRadius: '4px' }}
-															onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.1)'; }}
-															onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+															className="code-icon-btn"
+															style={{ border: 'none', color: 'var(--primary-color)', padding: '2px 3px' }}
 														>
 															<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 																<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -631,10 +602,9 @@ export default function Workbench() {
 											<td style={{ textAlign: 'center' }}>
 												<button
 													onClick={() => navigate(appNavigatePath(`/reports/repo/${repo.id}`), { state: { from: 'workbench' } })}
-													style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: reportCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)', padding: '3px 6px', borderRadius: '5px' }}
+													className="code-icon-btn"
+													style={{ border: 'none', gap: '0.3rem', color: reportCount > 0 ? 'var(--primary-color)' : 'var(--text-secondary)', padding: '3px 6px', borderRadius: '5px' }}
 													title="查看历史报告"
-													onMouseEnter={e => { e.currentTarget.style.background = 'rgba(37,99,235,0.08)'; }}
-													onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
 												>
 													<span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{reportCount} 个</span>
 													<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

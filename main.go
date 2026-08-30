@@ -42,6 +42,11 @@ func main() {
 		log.Fatalf("Failed to load config.yaml: %v", err)
 	}
 
+	// 校验全局 AI 后端配置（空值已在 LoadConfig 中默认 claude）
+	if !services.IsValidAIBackend(models.AppConfig.AI.Backend) {
+		log.Fatalf("Invalid ai.backend %q in config.yaml. Allowed: claude, opencode, codex", models.AppConfig.AI.Backend)
+	}
+
 	// Initialize database
 	models.InitDB()
 
@@ -60,6 +65,8 @@ func main() {
 	if err := services.EnsureBaseAgent(); err != nil {
 		log.Printf("[Server] Warning: Failed to ensure base scanner agent: %v", err)
 	}
+	// 清理旧版按任务类型生成的 opencode agent 遗留文件
+	services.CleanupLegacyTaskAgents()
 
 	// 初始化任务队列调度状态（从 DB 加载是否暂停/排空）
 	services.InitQueueState()

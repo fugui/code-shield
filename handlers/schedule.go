@@ -6,14 +6,38 @@ import (
 	"code-shield/cron_jobs"
 	"code-shield/models"
 	"code-shield/services"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+// validateRunParams 校验调度策略的运行参数覆盖（ai_backend / target_scope）
+func validateRunParams(runParams datatypes.JSON) error {
+	if len(runParams) == 0 {
+		return nil
+	}
+	var rp models.RunParams
+	if err := json.Unmarshal(runParams, &rp); err != nil {
+		return fmt.Errorf("无效的 run_params: %w", err)
+	}
+	if rp.AIBackend != nil && !services.IsValidAIBackend(*rp.AIBackend) {
+		return fmt.Errorf("无效的 AI 引擎类型，可选: claude, opencode, codex 或留空")
+	}
+	if rp.TargetScope != nil {
+		switch *rp.TargetScope {
+		case "all", "business", "test":
+		default:
+			return fmt.Errorf("无效的 target_scope: %q（可选 all/business/test）", *rp.TargetScope)
+		}
+	}
+	return nil
+}
 
 func GetSchedules(c *gin.Context) {
 	var schedules []models.ScheduleConfig
@@ -30,6 +54,11 @@ func GetScheduleCount(c *gin.Context) {
 func CreateSchedule(c *gin.Context) {
 	var req models.ScheduleConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validateRunParams(req.RunParams); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -63,6 +92,11 @@ func UpdateSchedule(c *gin.Context) {
 	id := c.Param("id")
 	var req models.ScheduleConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validateRunParams(req.RunParams); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
