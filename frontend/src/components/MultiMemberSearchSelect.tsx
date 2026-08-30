@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { MultiMemberSearchSelect as CommonMultiMemberSearchSelect, MultiMemberSearchSelectProps as CommonProps, AUTH_TOKEN_KEY } from '@code/common';
+import { MultiMemberSearchSelect as CommonMultiMemberSearchSelect, AUTH_TOKEN_KEY } from '@code/common';
 import { apiUrl } from '../config';
 
 export interface MultiMemberSearchSelectProps {
@@ -36,4 +36,3 @@ export default function MultiMemberSearchSelect({ value, onChange, style, maxSel
     />
   );
 }
-

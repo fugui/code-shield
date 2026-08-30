@@ -4,7 +4,6 @@ import {
   TaskReportSummary,
   FindingsPageResponse,
   TaskDiagnostics,
-  TaskFindingItem,
 } from '../types/report';
 
 export interface UseTaskReportReturn {

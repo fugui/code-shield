@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useConfirm, Modal, Drawer, EmptyState } from '@code/common';
+import { Modal, Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import { Code2, Settings, Trash2 } from 'lucide-react';
 
@@ -441,8 +441,8 @@ function TaskTypeManagement() {
               </select>
             </div>
           </div>
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: '#15803d' }}>
-              💡 提示词和脚本文件位于 <code style={{ background: '#dcfce7', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>tasks/{(form.name || '<标识名>').replace(/_/g, '-')}/</code> 目录下{editingId ? '，可通过「编辑脚本」修改内容' : '，创建后可通过「编辑脚本」修改内容'}。
+          <div style={{ background: 'var(--color-success-subtle)', border: '1px solid var(--color-success-border)', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
+              💡 提示词和脚本文件位于 <code style={{ background: 'var(--color-success-border)', padding: '0.1rem 0.3rem', borderRadius: '3px', color: 'var(--color-success)' }}>tasks/{(form.name || '<标识名>').replace(/_/g, '-')}/</code> 目录下{editingId ? '，可通过「编辑脚本」修改内容' : '，创建后可通过「编辑脚本」修改内容'}。
             </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>

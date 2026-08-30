@@ -53,6 +53,7 @@ type Config struct {
 		Backend           string                  `yaml:"backend"`             // CLI 后端：claude、opencode 或 codex，默认 claude
 		DebugLogs         bool                    `yaml:"debug_logs"`          // 是否输出 AI 引擎底层的 debug 级别日志
 		OutputFormat      string                  `yaml:"output_format"`       // 输出格式：text 或 json，默认 text
+		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"` // CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式关闭）
 		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"` // 工作时间自动限流配置
 		Models            []ModelConfig           `yaml:"models"`              // 多 LLM 服务器并发配置
 	} `yaml:"ai"`
@@ -165,6 +166,10 @@ func LoadConfig(filename string) error {
 	}
 	if cfg.AI.OutputFormat == "" {
 		cfg.AI.OutputFormat = "text"
+	}
+	if cfg.AI.MockOnMissingCLI == nil {
+		enabled := true
+		cfg.AI.MockOnMissingCLI = &enabled
 	}
 
 	// Server timeout defaults
@@ -298,4 +303,9 @@ func LoadConfig(filename string) error {
 
 	AppConfig = cfg
 	return nil
+}
+
+// MockOnMissingCLIEnabled 返回 CLI 未安装时是否启用模拟降级（未配置时默认 true）
+func (c *Config) MockOnMissingCLIEnabled() bool {
+	return c.AI.MockOnMissingCLI == nil || *c.AI.MockOnMissingCLI
 }

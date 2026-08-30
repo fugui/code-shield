@@ -9,8 +9,9 @@
 ### 🤖 强大的 AI 驱动代码检视
 - **三大无状态 AI 执行器支持**：原生适配 **Claude Code CLI**、**OpenCode CLI** 与 **Codex CLI**，统一无状态 Prompt 注入与多 LLM 调度模型。
   - **Claude**：支持系统提示词内联注入与流式 JSON 解析。
-  - **OpenCode**：采用轻量级全局基座 Agent + 任务规约内联注入，实现完全无状态调用。
-  - **Codex**：支持 OpenAI Codex CLI headless 免交互模式与模型动态路由。
+  - **OpenCode**：采用轻量级全局基座 Agent + 任务规约内联注入，实现完全无状态调用；权限批准使用文档化参数 `--auto`。
+  - **Codex**：支持 OpenAI Codex CLI headless 免交互模式与模型动态路由；输出通过 `--output-last-message` 由 CLI 直接落盘，兼容默认只读沙箱环境。
+  - ⚠️ **安全边界**：扫描引擎会使用 bash 工具并自动批准权限（OpenCode `--auto`），并非严格只读。对不可信代码仓库进行扫描时，请将服务部署在容器 / 低权限用户 / 无外网等进程级隔离环境中。
 - **自定义任务类型**：支持动态创建和管理多套检视策略，灵活配置 Analysis（切片分析）与 Synthesis（汇总阶段）提示词模板。
 - **动态解析与定位**：智能识别 LLM 输出的单行、连续行范围及离散行号，支持在工作台一键复制精确文件名与行号。
 
@@ -73,6 +74,7 @@ server:
   gin_log: false
 
 # ── 数据库 ──
+database:
   driver: "postgres"
   host: "127.0.0.1"
   port: 5432
@@ -86,7 +88,7 @@ server:
 
 # ── AI 引擎与限流调度 ──
 ai:
-  backend: "claude"                   # CLI 后端：claude 或 opencode
+  backend: "claude"                   # CLI 后端：claude、opencode 或 codex
   output_format: "text"               # 输出格式：text 或 json
 
   # 工作时间自动限流配置 (可选)
@@ -201,7 +203,9 @@ code-shield/
 │   ├── engine_chunked.go   # 自动切片并发分析执行引擎
 │   ├── opencode_cli.go     # OpenCode CLI 驱动适配器
 │   ├── claude_cli.go       # Claude CLI 驱动适配器
-│   ├── agent_sync.go       # OpenCode Agent 配置同步服务
+│   ├── codex_cli.go        # Codex CLI 驱动适配器（--output-last-message 落盘）
+│   ├── cli_common.go       # 通用 Prompt 组装与 CLI 进程生命周期管理
+│   ├── agent_sync.go       # OpenCode 基座 Agent 配置与遗留文件清理
 │   └── reports/            # 任务报告领域聚合与多格式导出引擎
 │       ├── report_service.go # 报告元信息/总结/问题清单/诊断核心服务
 │       ├── exporter_md.go    # Markdown 导出器

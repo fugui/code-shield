@@ -17,9 +17,8 @@ function RepoReviewHistory() {
 
   const [reviews, setReviews] = useState<any[]>([]);
   const [repoName, setRepoName] = useState<string>('');
-  const { page, pageSize } = usePagination({ defaultPageSize: 15 });
+  const { page, pageSize } = usePagination({ defaultPageSize: 25 });
   const [totalItems, setTotalItems] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | undefined>(undefined);
@@ -41,6 +40,7 @@ function RepoReviewHistory() {
 
   useEffect(() => {
     fetchReviews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchReviews 为组件内普通函数，加入依赖会导致每次渲染重复拉取
   }, [repoId, page]);
 
   const fetchReviews = async () => {
@@ -55,7 +55,6 @@ function RepoReviewHistory() {
         const data = await res.json();
         setReviews(data.items || []);
         setTotalItems(data.total || 0);
-        setTotalPages(data.totalPages || 0);
         // Get repo name from first result
         if (data.items && data.items.length > 0 && data.items[0].repo) {
           setRepoName(data.items[0].repo.name || '');
@@ -157,13 +156,8 @@ function RepoReviewHistory() {
               navigate(appNavigatePath(`/reports${returnSearch ? '?' + returnSearch : ''}`));
             }
           }}
-          style={{
-            background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '6px',
-            cursor: 'pointer', padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
-            color: 'var(--text-color)', fontSize: '0.875rem',
-          }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--primary-color)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+          className="btn btn-secondary btn-small"
+          style={{ gap: '0.4rem', color: 'var(--text-color)', fontSize: '0.875rem' }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
@@ -274,10 +268,9 @@ function RepoReviewHistory() {
                       <div style={{ display: 'flex', gap: '0.25rem' }}>
                         <button
                           onClick={() => handleOpenReport(r.id)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: 'var(--primary-color)' }}
+                          className="code-icon-btn"
+                          style={{ border: 'none', color: 'var(--primary-color)' }}
                           title="查看详细报告"
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 99, 235, 0.1)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="11" cy="11" r="8"></circle>
@@ -286,10 +279,9 @@ function RepoReviewHistory() {
                         </button>
                         <button
                           onClick={() => handleNotify(r.id)}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#10b981' }}
+                          className="code-icon-btn"
+                          style={{ border: 'none', color: 'var(--color-success)' }}
                           title="发送报告通知"
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="2" y="4" width="20" height="16" rx="2"></rect>
@@ -299,10 +291,9 @@ function RepoReviewHistory() {
                         {r.total_chunks > 0 && (r.success_chunks ?? 0) !== r.total_chunks && (
                           <button
                             onClick={() => handleResume(r.id)}
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '4px', color: '#f59e0b' }}
+                            className="code-icon-btn"
+                            style={{ border: 'none', color: 'var(--color-warning)' }}
                             title="恢复：重试失败的分片并重新生成报告"
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="1 4 1 10 7 10"></polyline>
@@ -315,10 +306,9 @@ function RepoReviewHistory() {
                     {r.status === 'failed' && r.total_chunks > 0 && (r.success_chunks ?? 0) !== r.total_chunks && (
                       <button
                         onClick={() => handleResume(r.id)}
-                        style={{ background: 'transparent', border: '1px solid #f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.5rem', borderRadius: '4px', color: '#f59e0b', fontSize: '0.8rem' }}
+                        className="btn btn-secondary btn-small"
+                        style={{ border: '1px solid var(--color-warning-border)', color: 'var(--color-warning)', fontSize: '0.8rem', gap: '0.3rem' }}
                         title="恢复：重试失败的分片并重新生成报告"
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="1 4 1 10 7 10"></polyline>
@@ -337,7 +327,7 @@ function RepoReviewHistory() {
 
       {/* Pagination */}
       {totalItems > 0 && (
-        <Pagination totalItems={totalItems} defaultPageSize={15} />
+        <Pagination totalItems={totalItems} defaultPageSize={25} />
       )}
 
       {/* Task Report Viewer (Drawer Mode) */}

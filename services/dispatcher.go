@@ -427,16 +427,21 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 		info := d.getEffectiveScaleInfoLocked(time.Now())
 		scale := info.EffectiveScale
 
-		// 2. 寻找有可用配额且支持当前后端的 LLM 配置
+		// 2. 寻找有可用配额且支持当前后端的 LLM 配置：
+		//    选择当前负载（Active）最低的服务器，避免 first-fit 打满第一台导致负载不均
 		var bestRes *ModelResource
+		bestLoad := -1
 		for _, res := range d.resources {
-			modelName := res.ModelName(backend)
-			if modelName != "" {
-				limit := calculateLimit(res.Concurrent, scale)
-				if res.Active < limit {
-					bestRes = res
-					break
-				}
+			if res.ModelName(backend) == "" {
+				continue
+			}
+			limit := calculateLimit(res.Concurrent, scale)
+			if res.Active >= limit {
+				continue
+			}
+			if bestRes == nil || res.Active < bestLoad {
+				bestRes = res
+				bestLoad = res.Active
 			}
 		}
 

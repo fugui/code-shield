@@ -18,7 +18,7 @@ type AIRequest struct {
 	PromptMsg     string          // 用户提示消息
 	InputFiles    []string        // 需要分析的文件列表（相对路径），AI 自行读取
 	OutputPath    string          // AI 输出文档的目标路径
-	TimeoutMin    int             // 执行超时（分钟），0 表示默认 30 分钟
+	TimeoutMin    int             // 执行超时（分钟），0 表示默认 60 分钟
 	ModelName     string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
 }
 
@@ -85,6 +85,7 @@ func GetAIInvoker(name string) AIInvoker {
 	var inv AIInvoker
 	var ok bool
 	if inv, ok = invokerRegistry[name]; !ok {
+		log.Printf("[AI] WARNING: AI backend %q is not registered, falling back to claude\n", name)
 		inv = invokerRegistry["claude"]
 	}
 

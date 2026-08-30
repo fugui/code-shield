@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FindingsPageResponse, TaskReportMeta, TaskFindingItem } from '../../types/report';
+import { FindingsPageResponse, TaskReportMeta } from '../../types/report';
 import FindingCard from './FindingCard';
 import ReportEmptyState from './ReportEmptyState';
 
@@ -50,7 +50,7 @@ export default function ReportFindingsTab({
   }, [isEntityMode, modeKeys]);
 
   const metrics = findingsPage?.metrics;
-  const items = findingsPage?.items || [];
+  const items = useMemo(() => findingsPage?.items || [], [findingsPage]);
   const total = findingsPage?.total || 0;
 
   // 搜索输入防抖
@@ -150,6 +150,7 @@ export default function ReportFindingsTab({
       page,
       pageSize: 50,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onFilterChange 由父组件传入，加入依赖可能导致每次渲染重复触发筛选
   }, [selectedSevs, selectedStatus, debouncedKeyword, page, isAllSelected]);
 
   // 标准 Checkbox 常识交互：点击卡片即切换当前级别的选中/取消状态
@@ -193,10 +194,10 @@ export default function ReportFindingsTab({
                 </div>
               </div>
               <div className="card-bottom-row">
-                <span className="card-count-num" style={{ color: isSelected ? c.color : '#0f172a' }}>
+                <span className="card-count-num" style={{ color: isSelected ? c.color : 'var(--color-text-primary)' }}>
                   {c.count}
                 </span>
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>个</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>个</span>
               </div>
             </div>
           );
@@ -206,7 +207,7 @@ export default function ReportFindingsTab({
       {/* 2. 独立搜索与状态过滤工具栏 */}
       <div className="findings-filter-toolbar no-print">
         <div className="filter-summary-info">
-          <span>共检索到 <strong style={{ color: '#0f172a', fontSize: '0.95rem' }}>{total}</strong> 项结果</span>
+          <span>共检索到 <strong style={{ color: 'var(--color-text-primary)', fontSize: '0.95rem' }}>{total}</strong> 项结果</span>
           {!isAllSelected && (
             <button
               type="button"

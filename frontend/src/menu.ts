@@ -41,7 +41,7 @@ const loadCachedTaskTypes = (): TaskTypeMenuMeta[] | null => {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch (_) {}
+  } catch (_) { /* ignore cache read errors */ }
   return null;
 };
 
@@ -114,7 +114,7 @@ export async function fetchShieldMenuConfig(): Promise<ModuleMenuConfig> {
   inFlightPromise = (async () => {
     try {
       // 智能探测 API 路径：微前端容器环境下优先使用 /shield/api 前缀
-      const isEmbedded = typeof window !== 'undefined' && !!(window as any).__POWERED_BY_PORTAL__;
+      const isEmbedded = typeof window !== 'undefined' && !!window.__POWERED_BY_PORTAL__;
       const primaryUrl = isEmbedded ? '/shield/api/task-types?active_only=true' : '/api/task-types?active_only=true';
 
       let res = await fetch(primaryUrl);
@@ -129,7 +129,7 @@ export async function fetchShieldMenuConfig(): Promise<ModuleMenuConfig> {
           currentTaskTypes = data;
           try {
             sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
-          } catch (_) {}
+          } catch (_) { /* ignore quota/security errors */ }
 
           const dynamicConfig: ModuleMenuConfig = {
             moduleKey: 'shield',
@@ -189,6 +189,5 @@ export const menuGroups: MenuGroup[] = shieldMenuConfig.groups;
 export const menuItems: SubMenuItem[] = shieldMenuConfig.groups.flatMap(group => group.items);
 
 export default shieldMenuConfig;
-
 
 

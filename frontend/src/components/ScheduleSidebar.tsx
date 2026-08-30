@@ -81,7 +81,6 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
   const [form, setForm] = useState<ScheduleFormData>({
     name: '', cron_expr: '0 2 * * *', task_type_id: 0, target_mode: 'all', target_values: [], auto_notify: true, is_active: true, run_params: {}
   });
-  const [closing, setClosing] = useState(false);
   const [taskTypes, setTaskTypes] = useState<any[]>([]);
   const subsystems = Array.from(new Set((repos || []).map(r => r.service_group).filter(Boolean))) as string[];
 
@@ -96,6 +95,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
         }
       })
       .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅初始化时拉取任务类型；form.task_type_id 由用户后续编辑，不应触发重置
   }, []);
 
   // Populate form when editing
@@ -123,7 +123,6 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
   };
 
   const isEditing = !!editingSchedule;
-  const activeCronPreset = CRON_PRESETS.find(p => p.value === form.cron_expr);
 
   const footerButtons = (
     <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -390,5 +389,3 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
     </Drawer>
   );
 }
-
-

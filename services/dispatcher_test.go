@@ -268,3 +268,41 @@ func TestDispatcher_CodexRouting(t *testing.T) {
 	}
 	d.Release(res, "codex")
 }
+
+func TestDispatcher_LeastLoadedSelection(t *testing.T) {
+	d := &ModelDispatcher{
+		manualScale:   1.0,
+		stopHeartbeat: make(chan struct{}),
+		enabled:       true,
+	}
+	d.cond = sync.NewCond(&d.mu)
+	d.resources = []*ModelResource{
+		{Index: 0, Claude: "server-a", Concurrent: 1},
+		{Index: 1, Claude: "server-b", Concurrent: 1},
+	}
+	Dispatcher = d
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// 两台服务器均空闲时优先第一台，第二台应落在另一台上（而非继续压在第一台）
+	res1, model1, err := d.Acquire(ctx, "claude")
+	if err != nil {
+		t.Fatalf("first Acquire failed: %v", err)
+	}
+	res2, model2, err := d.Acquire(ctx, "claude")
+	if err != nil {
+		t.Fatalf("second Acquire failed: %v", err)
+	}
+	if res1.Index == res2.Index {
+		t.Fatalf("expected least-loaded balancing across servers, got same server #%d twice", res1.Index)
+	}
+	if model1 == "" || model2 == "" {
+		t.Fatalf("expected non-empty model names, got %q / %q", model1, model2)
+	}
+	d.Release(res1, "claude")
+	d.Release(res2, "claude")
+}

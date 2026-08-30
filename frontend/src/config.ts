@@ -25,7 +25,7 @@ export { AUTH_TOKEN_KEY };
  * only when running in embedded portal mode.
  */
 export function appNavigatePath(path: string): string {
-  const isEmbeddedMode = !!(window as any).__POWERED_BY_PORTAL__;
+  const isEmbeddedMode = !!window.__POWERED_BY_PORTAL__;
   if (isEmbeddedMode) {
     return BASE_PATH + path;
   }

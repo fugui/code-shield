@@ -156,7 +156,6 @@ export default function AuditingWorkspace({
   const [workspaceFindings, setWorkspaceFindings] = useState<Finding[]>([]);
   const [workspacePage, setWorkspacePage] = useState(1);
   const [workspaceTotal, setWorkspaceTotal] = useState(0);
-  const [workspaceTotalPages, setWorkspaceTotalPages] = useState(1);
   const [severityStats, setSeverityStats] = useState<Record<string, number>>({});
   const [statusStats, setStatusStats] = useState<Record<string, number>>({});
   const [categoryStats, setCategoryStats] = useState<Record<string, number>>({});
@@ -190,7 +189,7 @@ export default function AuditingWorkspace({
     if (currentUser?.id && editingFinding && !workflowAssignee && !editingFinding.assignee_id) {
       setWorkflowAssignee(currentUser.id);
     }
-  }, [currentUser?.id, editingFinding?.id]);
+  }, [currentUser?.id, editingFinding, workflowAssignee]);
 
   useEffect(() => {
     if (isOpen && repoId) {
@@ -328,7 +327,6 @@ export default function AuditingWorkspace({
         if (data) {
           const list = data.findings || data.items || [];
           setWorkspaceFindings(list);
-          setWorkspaceTotalPages(data.totalPages || 1);
           setWorkspaceTotal(data.total !== undefined ? data.total : (data.totalPages ? data.totalPages * 10 : list.length));
           if (data.severityStats || data.severity_stats) setSeverityStats(data.severityStats || data.severity_stats || {});
           if (data.statusStats || data.status_stats) setStatusStats(data.statusStats || data.status_stats || {});
@@ -373,14 +371,8 @@ export default function AuditingWorkspace({
       }
       fetchWorkspaceFindings(repoId, 1, wsSeverity, wsStatus, wsCategory, wsKeyword, urlFindingId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchWorkspaceFindings 为组件内普通函数，加入依赖会导致每次渲染重复拉取
   }, [isOpen, repoId, wsSeverity, wsStatus, wsCategory, wsKeyword]);
-
-  // Page navigation handler
-  const handleWorkspacePageChange = (newPage: number) => {
-    if (newPage < 1 || newPage > workspaceTotalPages) return;
-    setWorkspacePage(newPage);
-    fetchWorkspaceFindings(repoId, newPage, wsSeverity, wsStatus, wsCategory, wsKeyword);
-  };
 
   // Open finding details workflow
   const startWorkflow = (finding: Finding, syncUrl = true) => {
@@ -530,7 +522,6 @@ export default function AuditingWorkspace({
     };
   };
 
-  const activeAssignee = editingFinding?.assignee;
   const isEntityMode = governanceMode === 'entity_assessment' || workspaceType === 'ut';
 
   const displayRepoName = repoName || editingFinding?.repo?.name || (repoId ? `代码仓 #${repoId}` : '');
@@ -738,18 +729,13 @@ export default function AuditingWorkspace({
                       padding: '1rem',
                       borderRadius: '6px',
                       border: activeId ? '1px solid var(--primary-color)' : '1px solid var(--border-color)',
-                      background: activeId ? 'rgba(37, 99, 235, 0.03)' : 'var(--card-bg)',
+                      background: activeId ? 'var(--color-primary-subtle)' : 'var(--card-bg)',
                       cursor: 'pointer',
                       marginBottom: '0.5rem',
                       transition: 'all 0.2s',
                       textAlign: 'left'
                     }}
-                    onMouseEnter={e => {
-                      if (!activeId) e.currentTarget.style.borderColor = '#cbd5e1';
-                    }}
-                    onMouseLeave={e => {
-                      if (!activeId) e.currentTarget.style.borderColor = 'var(--border-color)';
-                    }}
+                    className="code-interactive-card"
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                       <span style={getBadgeStyles(f.severity)}>
@@ -760,7 +746,7 @@ export default function AuditingWorkspace({
                       </span>
                     </div>
                     <h4 style={{ margin: '0.5rem 0 0.25rem 0', fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-color)' }}>{itemTitle}</h4>
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_path}:{f.line_number}</p>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_path}:{f.line_number}</p>
                     
                     {/* Assignee label */}
                     {assigneeName && (
