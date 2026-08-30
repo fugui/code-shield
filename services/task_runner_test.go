@@ -11,26 +11,22 @@ import (
 	"testing"
 	"time"
 
+	"code-common/backend/testdb"
 	"code-shield/models"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
-	dsn := os.Getenv("TEST_DB_DSN")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=postgres password=CodeShield618! dbname=code_shield sslmode=disable"
+	return testdb.SetupIsolatedDB(t, "shield_task_runner")
+}
+
+// mustMigrate 在测试库上执行 AutoMigrate，失败时立即终止测试并给出明确错误。
+func mustMigrate(t *testing.T, db *gorm.DB, models ...interface{}) {
+	t.Helper()
+	if err := db.AutoMigrate(models...); err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
 	}
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN:                  dsn,
-		PreferSimpleProtocol: true,
-	}), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
-	if err != nil {
-		t.Skipf("Skipping DB test: PostgreSQL not available (%v)", err)
-		return nil
-	}
-	return db
 }
 
 func TestFixUnescapedQuotes(t *testing.T) {
@@ -101,10 +97,7 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
-	if err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 
 	// 2. Register mock AI invoker
 	mockInvoker := &MockAIInvoker{FailInvoke: true}
@@ -262,10 +255,7 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
-	if err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 
 	// 2. Setup mock models in DB
 	ts := time.Now().Format("150405.000000")
@@ -431,10 +421,7 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
-	if err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
 
 	// 2. Register mock success AI invoker
 	mockInvoker := &MockAIInvoker{FailInvoke: false}
@@ -637,10 +624,7 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
-	if err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
 
 	// 2. Setup mock repository and git structure
 	tempDir, err := os.MkdirTemp("", "test-synthesis-repo-*")
@@ -1093,17 +1077,15 @@ func TestCampaignHooks(t *testing.T) {
 	defer func() {
 		models.DB = oldDB
 	}()
+	var err error
 
-	err := models.DB.AutoMigrate(
+	mustMigrate(t, models.DB,
 		&models.Repository{},
 		&models.TaskReport{},
 		&models.TaskType{},
 		&models.User{},
 		&models.CampaignFinding{},
 	)
-	if err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
 
 	// 注册并配置 Mock AI Backend
 	mockInvoker := &MockAIInvokerForMatch{}
@@ -1355,7 +1337,7 @@ func TestPrepareAndSync_BranchSwitching(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	_ = models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 
 	models.AppConfig.Storage.Root = filepath.Join(tempBase, "storage")
 	_ = os.MkdirAll(models.AppConfig.GetDataDir(), 0755)

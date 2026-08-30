@@ -1,16 +1,10 @@
 package services
 
 import (
+	"code-common/backend/testdb"
 	"code-shield/models"
-	"fmt"
-	"os"
-	"regexp"
-	"strings"
 	"testing"
 	"time"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func TestQueue_MaxQueueSizeLimit(t *testing.T) {
@@ -102,48 +96,8 @@ func TestTaskFromExecLog_ResumeFlag(t *testing.T) {
 }
 
 // TestQueue_ResumeTaskFlow 验证恢复任务入队后能被 Worker 原子抢占，且带 IsResume 标记。
-// 需要显式设置 TEST_DB_DSN（否则跳过）；测试会在独立的一次性数据库中运行，结束后自动删除。
 func TestQueue_ResumeTaskFlow(t *testing.T) {
-	dsn := os.Getenv("TEST_DB_DSN")
-	if dsn == "" {
-		t.Skip("Skipping DB test: TEST_DB_DSN not set")
-	}
-
-	// 1. 连接 admin 库（postgres），创建一次性测试库
-	admin, err := gorm.Open(postgres.New(postgres.Config{
-		DSN:                  withDBName(dsn, "postgres"),
-		PreferSimpleProtocol: true,
-	}), &gorm.Config{})
-	if err != nil {
-		t.Skipf("Skipping DB test: PostgreSQL not available (%v)", err)
-		return
-	}
-
-	testDBName := fmt.Sprintf("code_shield_test_%d", time.Now().UnixNano())
-	if err := admin.Exec("CREATE DATABASE " + testDBName).Error; err != nil {
-		t.Fatalf("failed to create test database: %v", err)
-	}
-
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN:                  withDBName(dsn, testDBName),
-		PreferSimpleProtocol: true,
-	}), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
-	if err != nil {
-		t.Fatalf("failed to connect to test database: %v", err)
-	}
-
-	// 测试结束后先断开连接，再删除测试库
-	t.Cleanup(func() {
-		sqlDB, _ := db.DB()
-		sqlDB.Close()
-		admin.Exec("DROP DATABASE IF EXISTS " + testDBName)
-	})
-
-	models.DB = db
-
-	// 全新空库：按外键依赖顺序逐表创建，避免 AutoMigrate 的建表顺序问题
-	m := db.Migrator()
-	for _, model := range []interface{}{
+	db := testdb.SetupIsolatedDB(t, "shield_queue",
 		&models.Department{},
 		&models.User{},
 		&models.TaskType{},
@@ -152,11 +106,12 @@ func TestQueue_ResumeTaskFlow(t *testing.T) {
 		&models.TaskTriggerLog{},
 		&models.TaskReport{},
 		&models.TaskExecutionLog{},
-	} {
-		if err := m.CreateTable(model); err != nil {
-			t.Fatalf("failed to create table for %T: %v", model, err)
-		}
+	)
+	if db == nil {
+		return
 	}
+
+	models.DB = db
 
 	// 准备测试数据（唯一名称避免重复运行冲突）
 	repo := models.Repository{
@@ -240,18 +195,4 @@ func TestQueue_ResumeTaskFlow(t *testing.T) {
 	if claimed.Status != models.StatusRunning {
 		t.Fatalf("expected log status running after fetch, got %s", claimed.Status)
 	}
-}
-
-// withDBName 返回将 DSN 中数据库名替换为 dbname 后的新 DSN（兼容 key=value 与 URL 两种形式）
-func withDBName(dsn, dbname string) string {
-	if strings.Contains(dsn, "://") {
-		slash := strings.LastIndex(dsn, "/")
-		suffix := dsn[slash+1:]
-		query := ""
-		if q := strings.Index(suffix, "?"); q >= 0 {
-			query = suffix[q:]
-		}
-		return dsn[:slash+1] + dbname + query
-	}
-	return regexp.MustCompile(`dbname=\S+`).ReplaceAllString(dsn, "dbname="+dbname)
 }
