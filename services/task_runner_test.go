@@ -101,7 +101,7 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -125,26 +125,49 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 	exec.Command("git", "-C", tempDir, "commit", "-m", "init").Run()
 
 	// 4. Setup mock models in DB
-	repo := models.Repository{
-		ID:   1,
-		Name: "test-repo",
-		URL:  "https://github.com/test/test-repo",
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "test-dept-err-agg-" + ts}
+	if err := testDB.Create(&dept).Error; err != nil {
+		t.Fatalf("failed to create department: %v", err)
 	}
-	models.DB.Create(&repo)
+	defer testDB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-user-err-agg-" + ts, Email: "test-err-agg-" + ts + "@test.com"}
+	if err := testDB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	defer testDB.Delete(&models.User{}, user.ID)
 
 	taskType := models.TaskType{
-		Name:        "code_review",
+		Name:        "code_review_error_agg_" + ts,
 		DisplayName: "代码检视",
 		EngineMode:  "chunked",
 	}
-	models.DB.Create(&taskType)
+	if err := testDB.Create(&taskType).Error; err != nil {
+		t.Fatalf("failed to create task type: %v", err)
+	}
+	defer testDB.Delete(&models.TaskType{}, taskType.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-repo-error-agg-" + ts,
+		URL:          "https://github.com/test/test-repo-error-agg",
+	}
+	if err := testDB.Create(&repo).Error; err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+	defer testDB.Delete(&models.Repository{}, repo.ID)
 
 	report := models.TaskReport{
 		RepoID:     repo.ID,
 		TaskTypeID: taskType.ID,
 		Status:     "running",
 	}
-	models.DB.Create(&report)
+	if err := models.DB.Create(&report).Error; err != nil {
+		t.Fatalf("failed to create report: %v", err)
+	}
+	defer testDB.Delete(&models.TaskReport{}, report.ID)
 
 	// 5. Setup context
 	reportPath := filepath.Join(tempDir, "report.md")
@@ -239,32 +262,55 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
 
 	// 2. Setup mock models in DB
-	repo := models.Repository{
-		ID:   1,
-		Name: "test-repo",
-		URL:  "https://invalid-url-for-test.git",
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "test-dept-early-fail-" + ts}
+	if err := models.DB.Create(&dept).Error; err != nil {
+		t.Fatalf("failed to create department: %v", err)
 	}
-	models.DB.Create(&repo)
+	defer models.DB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-user-early-fail-" + ts, Email: "test-early-fail-" + ts + "@test.com"}
+	if err := models.DB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	defer models.DB.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-early-fail-repo-" + ts,
+		URL:          "https://invalid-url-for-test.git",
+	}
+	if err := models.DB.Create(&repo).Error; err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+	defer models.DB.Delete(&models.Repository{}, repo.ID)
 
 	taskType := models.TaskType{
-		Name:        "code_review",
+		Name:        "code_review_early_fail_" + ts,
 		DisplayName: "代码检视",
 		EngineMode:  "single",
 	}
-	models.DB.Create(&taskType)
+	if err := models.DB.Create(&taskType).Error; err != nil {
+		t.Fatalf("failed to create task type: %v", err)
+	}
+	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
 	report := models.TaskReport{
 		RepoID:     repo.ID,
 		TaskTypeID: taskType.ID,
 		Status:     "running",
 	}
-	models.DB.Create(&report)
+	if err := models.DB.Create(&report).Error; err != nil {
+		t.Fatalf("failed to create report: %v", err)
+	}
+	defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
 	// 3. RunTaskSync synchronously. Because repo URL is invalid, git pull/clone will fail.
 	// But before it fails, prepareOutputPaths should be called, and markFailed should write the failure to output.txt.
@@ -385,7 +431,7 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
+	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -412,20 +458,40 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 	exec.Command("git", "-C", repoCodesPath, "commit", "-m", "init").Run()
 
 	// 4. Setup mock models in DB
-	repo := models.Repository{
-		ID:   1,
-		Name: "test-repo",
-		URL:  repoCodesPath,
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "test-dept-resume-" + ts}
+	if err := models.DB.Create(&dept).Error; err != nil {
+		t.Fatalf("failed to create department: %v", err)
 	}
-	models.DB.Create(&repo)
+	defer models.DB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-user-resume-" + ts, Email: "test-resume-" + ts + "@test.com"}
+	if err := models.DB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	defer models.DB.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-resume-repo-" + ts,
+		URL:          repoCodesPath,
+	}
+	if err := models.DB.Create(&repo).Error; err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+	defer models.DB.Delete(&models.Repository{}, repo.ID)
 
 	taskType := models.TaskType{
-		Name:        "code_review",
+		Name:        "code_review_resume_" + ts,
 		DisplayName: "代码检视",
 		EngineMode:  "chunked",
 		AIBackend:   "mock_success_backend",
 	}
-	models.DB.Create(&taskType)
+	if err := models.DB.Create(&taskType).Error; err != nil {
+		t.Fatalf("failed to create task type: %v", err)
+	}
+	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
 	// Storage config
 	models.AppConfig.Storage.Root = tempDir
@@ -435,14 +501,18 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 		TaskTypeID: taskType.ID,
 		Status:     "failed",
 	}
-	models.DB.Create(&report)
+	if err := models.DB.Create(&report).Error; err != nil {
+		t.Fatalf("failed to create report: %v", err)
+	}
+	defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
 	// Mock the JSON report path and content
 	reportsDir := filepath.Join(tempDir, "reports", taskType.Name, time.Now().Format("2006-01-02"))
 	os.MkdirAll(reportsDir, 0755)
 
-	reportPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-report-test-repo.md", report.ID))
-	jsonPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-test-repo.json", report.ID))
+	safeRepoName := strings.ReplaceAll(repo.Name, "/", "-")
+	reportPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-report-%s.md", report.ID, safeRepoName))
+	jsonPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-%s.json", report.ID, safeRepoName))
 
 	// Update DB to have these paths
 	models.DB.Model(&report).Updates(map[string]interface{}{
@@ -476,7 +546,10 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 		TaskReportID: &report.ID,
 		Status:       "failed",
 	}
-	models.DB.Create(&execLog)
+	if err := models.DB.Create(&execLog).Error; err != nil {
+		t.Fatalf("failed to create execution log: %v", err)
+	}
+	defer models.DB.Delete(&models.TaskExecutionLog{}, execLog.ID)
 
 	// 5. Run ResumeFailedChunks
 	err = ResumeFailedChunks(report.ID)
@@ -564,7 +637,7 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	err := models.DB.AutoMigrate(&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
+	err := models.DB.AutoMigrate(&models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
@@ -586,31 +659,54 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 	exec.Command("git", "-C", repoCodesPath, "add", ".").Run()
 	exec.Command("git", "-C", repoCodesPath, "commit", "-m", "init").Run()
 
-	repo := models.Repository{
-		ID:   1,
-		Name: "test-repo",
-		URL:  repoCodesPath,
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "test-dept-synthesis-" + ts}
+	if err := models.DB.Create(&dept).Error; err != nil {
+		t.Fatalf("failed to create department: %v", err)
 	}
-	models.DB.Create(&repo)
+	defer models.DB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-user-synthesis-" + ts, Email: "test-synthesis-" + ts + "@test.com"}
+	if err := models.DB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	defer models.DB.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-synthesis-repo-" + ts,
+		URL:          repoCodesPath,
+	}
+	if err := models.DB.Create(&repo).Error; err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+	defer models.DB.Delete(&models.Repository{}, repo.ID)
 
 	// Make sure storage config points to our tempDir
 	models.AppConfig.Storage.Root = tempDir
 
 	t.Run("synthesis eventually succeeds", func(t *testing.T) {
 		taskType := models.TaskType{
-			Name:        "code_review_eventual_success",
+			Name:        "code_review_eventual_success_" + ts,
 			DisplayName: "代码检视",
 			EngineMode:  "single",
 			AIBackend:   "mock_synthesis_eventual_success_backend",
 		}
-		models.DB.Create(&taskType)
+		if err := models.DB.Create(&taskType).Error; err != nil {
+			t.Fatalf("failed to create task type: %v", err)
+		}
+		defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
 		report := models.TaskReport{
 			RepoID:     repo.ID,
 			TaskTypeID: taskType.ID,
 			Status:     "running",
 		}
-		models.DB.Create(&report)
+		if err := models.DB.Create(&report).Error; err != nil {
+			t.Fatalf("failed to create report: %v", err)
+		}
+		defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 2}
 		RegisterAIInvoker(taskType.AIBackend, invoker)
@@ -641,19 +737,25 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 
 	t.Run("synthesis all attempts fail", func(t *testing.T) {
 		taskType := models.TaskType{
-			Name:        "code_review_always_fail",
+			Name:        "code_review_always_fail_" + ts,
 			DisplayName: "代码检视",
 			EngineMode:  "single",
 			AIBackend:   "mock_synthesis_always_fail_backend",
 		}
-		models.DB.Create(&taskType)
+		if err := models.DB.Create(&taskType).Error; err != nil {
+			t.Fatalf("failed to create task type: %v", err)
+		}
+		defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
 		report := models.TaskReport{
 			RepoID:     repo.ID,
 			TaskTypeID: taskType.ID,
 			Status:     "running",
 		}
-		models.DB.Create(&report)
+		if err := models.DB.Create(&report).Error; err != nil {
+			t.Fatalf("failed to create report: %v", err)
+		}
+		defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 5}
 		RegisterAIInvoker(taskType.AIBackend, invoker)
@@ -686,19 +788,25 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 
 	t.Run("synthesis generates empty file", func(t *testing.T) {
 		taskType := models.TaskType{
-			Name:        "code_review_empty_file",
+			Name:        "code_review_empty_file_" + ts,
 			DisplayName: "代码检视",
 			EngineMode:  "single",
 			AIBackend:   "mock_synthesis_empty_file_backend",
 		}
-		models.DB.Create(&taskType)
+		if err := models.DB.Create(&taskType).Error; err != nil {
+			t.Fatalf("failed to create task type: %v", err)
+		}
+		defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
 		report := models.TaskReport{
 			RepoID:     repo.ID,
 			TaskTypeID: taskType.ID,
 			Status:     "running",
 		}
-		models.DB.Create(&report)
+		if err := models.DB.Create(&report).Error; err != nil {
+			t.Fatalf("failed to create report: %v", err)
+		}
+		defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
 		invoker := &MockSynthesisAIInvoker{WriteEmpty: true}
 		RegisterAIInvoker(taskType.AIBackend, invoker)
@@ -1254,15 +1362,25 @@ func TestPrepareAndSync_BranchSwitching(t *testing.T) {
 
 	ts := time.Now().Format("150405.000000")
 	dept := models.Department{Name: "test-dept-" + ts}
-	testDB.Create(&dept)
-	user := models.User{Username: "test-user-" + ts, Email: "test@test.com"}
-	testDB.Create(&user)
+	if err := testDB.Create(&dept).Error; err != nil {
+		t.Fatalf("failed to create department: %v", err)
+	}
+	defer testDB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "test-user-" + ts, Email: "test-user-" + ts + "@test.com"}
+	if err := testDB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	defer testDB.Delete(&models.User{}, user.ID)
 
 	taskType := models.TaskType{
 		Name:        "test-type-" + ts,
 		DisplayName: "测试类型",
 	}
-	testDB.Create(&taskType)
+	if err := testDB.Create(&taskType).Error; err != nil {
+		t.Fatalf("failed to create task type: %v", err)
+	}
+	defer testDB.Delete(&models.TaskType{}, taskType.ID)
 
 	repo := models.Repository{
 		DepartmentID: dept.ID,
@@ -1271,14 +1389,20 @@ func TestPrepareAndSync_BranchSwitching(t *testing.T) {
 		URL:          "file://" + remoteRepoDir,
 		Branch:       "feature-branch",
 	}
-	testDB.Create(&repo)
+	if err := testDB.Create(&repo).Error; err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+	defer testDB.Delete(&models.Repository{}, repo.ID)
 
 	report := models.TaskReport{
 		RepoID:     repo.ID,
 		TaskTypeID: taskType.ID,
 		Status:     "pending",
 	}
-	testDB.Create(&report)
+	if err := testDB.Create(&report).Error; err != nil {
+		t.Fatalf("failed to create report: %v", err)
+	}
+	defer testDB.Delete(&models.TaskReport{}, report.ID)
 
 	taskCtx := &taskContext{
 		ctx:      context.Background(),
