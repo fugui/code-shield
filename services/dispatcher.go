@@ -50,8 +50,9 @@ type ModelDispatcher struct {
 	scaleExpiresAt     time.Time   // 手动设置失效时间
 	scaleTimer         *time.Timer // 到期自动恢复定时器
 	stopHeartbeat      chan struct{}
-	lastEffectiveScale float64 // 记录上一时刻生效的 scale
-	lastThrottleMode   string  // 记录上一时刻模式
+	unsupportedWarned  map[string]time.Time // 记录各 backend 最近一次直通降级告警时间（限频）
+	lastEffectiveScale float64              // 记录上一时刻生效的 scale
+	lastThrottleMode   string               // 记录上一时刻模式
 }
 
 // Dispatcher 为多 LLM 并发分配器的全局单例
@@ -377,7 +378,7 @@ func calculateLimit(rawConcurrent int, scale float64) int {
 
 // Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位。
 // 如果目前所有槽位已满或处于暂停状态（scale=0），则阻塞等待，直到有槽位空出、限速恢复或 Context 被取消。
-// 返回 nil, "", nil 表示调度器未启用（降级回默认全局行为）。
+// 返回 nil, "", nil 表示调度器未启用，或没有任何 server 资源支持该 backend（两种情况均降级回默认直通行为，不做并发调度）。
 func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelResource, string, error) {
 	if d == nil || !d.enabled {
 		return nil, "", nil
@@ -385,6 +386,31 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	// Context 已取消时优先返回错误（与下方循环内的检查语义一致）
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
+
+	// 检查是否有任何 resource 配置了当前请求的 backend。若没有任何 server 支持该 backend，降级回直通模式（不进行调度排队）
+	hasSupportedServer := false
+	for _, res := range d.resources {
+		if res.ModelName(backend) != "" {
+			hasSupportedServer = true
+			break
+		}
+	}
+	if !hasSupportedServer {
+		// 限频告警：直通会绕过并发限流，需要让运维感知到 backend 配置缺失
+		if last, ok := d.unsupportedWarned[backend]; !ok || time.Since(last) >= time.Minute {
+			log.Printf("[Dispatcher] WARNING: no server resource supports backend %q; falling back to passthrough (concurrency throttling bypassed)", backend)
+			if d.unsupportedWarned == nil {
+				d.unsupportedWarned = make(map[string]time.Time)
+			}
+			d.unsupportedWarned[backend] = time.Now()
+		}
+		return nil, "", nil
+	}
 
 	for {
 		// 1. 检查 Context 是否已提前取消
