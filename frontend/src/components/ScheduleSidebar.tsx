@@ -359,6 +359,7 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
                 <option value="">跟随任务类型默认</option>
                 <option value="claude">Claude</option>
                 <option value="opencode">OpenCode</option>
+                <option value="codex">Codex</option>
               </select>
 
               <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>

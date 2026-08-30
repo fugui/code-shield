@@ -14,19 +14,23 @@ type ModelResource struct {
 	Index      int
 	OpenCode   string
 	Claude     string
+	Codex      string
 	Concurrent int
 	Active     int // 当前正在运行的并发数
 }
 
 // ModelName 根据后端类型返回当前服务器映射的具体模型名
 func (r *ModelResource) ModelName(backend string) string {
-	if backend == "opencode" {
+	switch backend {
+	case "opencode":
 		return r.OpenCode
-	}
-	if backend == "claude" {
+	case "claude":
 		return r.Claude
+	case "codex":
+		return r.Codex
+	default:
+		return ""
 	}
-	return ""
 }
 
 // ThrottleInfo 封装当前流控全景状态信息
@@ -105,6 +109,7 @@ func InitModelDispatcher() {
 			Index:      i,
 			OpenCode:   mc.OpenCode,
 			Claude:     mc.Claude,
+			Codex:      mc.Codex,
 			Concurrent: concurrent,
 		})
 	}
@@ -113,7 +118,7 @@ func InitModelDispatcher() {
 		d.enabled = true
 		log.Printf("[Dispatcher] Initialized with %d custom LLM servers\n", len(d.resources))
 		for _, r := range d.resources {
-			log.Printf("  - Server #%d: opencode=%s, claude=%s, concurrent=%d\n", r.Index, r.OpenCode, r.Claude, r.Concurrent)
+			log.Printf("  - Server #%d: opencode=%s, claude=%s, codex=%s, concurrent=%d\n", r.Index, r.OpenCode, r.Claude, r.Codex, r.Concurrent)
 		}
 	} else {
 		d.enabled = false

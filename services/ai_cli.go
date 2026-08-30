@@ -39,6 +39,15 @@ func RegisterAIInvoker(name string, invoker AIInvoker) {
 	invokerRegistry[name] = invoker
 }
 
+// IsValidAIBackend 检查 backend 名称是否合法（支持空值跟随全局，或已注册的 Invoker）
+func IsValidAIBackend(name string) bool {
+	if name == "" {
+		return true
+	}
+	_, ok := invokerRegistry[name]
+	return ok
+}
+
 // DispatchingInvoker 是 AIInvoker 的代理，自动在调用前后向 ModelDispatcher 申请/释放并发槽位
 type DispatchingInvoker struct {
 	delegate AIInvoker

@@ -56,8 +56,10 @@ func main() {
 	// 初始化多 LLM 调度分配器
 	services.InitModelDispatcher()
 
-	// Sync opencode agent files with current prompt files
-	services.SyncAllAgents()
+	// Ensure opencode base scanner agent exists
+	if err := services.EnsureBaseAgent(); err != nil {
+		log.Printf("[Server] Warning: Failed to ensure base scanner agent: %v", err)
+	}
 
 	// 初始化任务队列调度状态（从 DB 加载是否暂停/排空）
 	services.InitQueueState()
