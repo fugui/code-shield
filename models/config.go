@@ -19,6 +19,7 @@ type DatabaseConfig = commonModels.DatabaseConfig
 type ModelConfig struct {
 	OpenCode   string `yaml:"opencode"`   // OpenCode 引擎对应的具体模型名
 	Claude     string `yaml:"claude"`     // Claude 引擎对应的具体模型名
+	Codex      string `yaml:"codex"`      // Codex 引擎对应的具体模型名
 	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
 }
 
@@ -49,7 +50,7 @@ type Config struct {
 	} `yaml:"storage"`
 	Database DatabaseConfig `yaml:"database"`
 	AI       struct {
-		Backend           string                  `yaml:"backend"`             // CLI 后端：claude 或 opencode，默认 claude
+		Backend           string                  `yaml:"backend"`             // CLI 后端：claude、opencode 或 codex，默认 claude
 		DebugLogs         bool                    `yaml:"debug_logs"`          // 是否输出 AI 引擎底层的 debug 级别日志
 		OutputFormat      string                  `yaml:"output_format"`       // 输出格式：text 或 json，默认 text
 		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"` // 工作时间自动限流配置

@@ -269,11 +269,13 @@ function TaskTypeManagement() {
                 </td>
                 <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
                   {tt.ai_backend === 'claude' ? (
-                    <span style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>Claude</span>
+                    <span className="code-badge code-badge-backend--claude">Claude</span>
                   ) : tt.ai_backend === 'opencode' ? (
-                    <span style={{ color: '#2563eb', background: 'rgba(37,99,237,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>OpenCode</span>
+                    <span className="code-badge code-badge-backend--opencode">OpenCode</span>
+                  ) : tt.ai_backend === 'codex' ? (
+                    <span className="code-badge code-badge-backend--codex">Codex</span>
                   ) : (
-                    <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>跟随全局</span>
+                    <span className="code-badge code-badge-backend--default">跟随全局</span>
                   )}
                 </td>
                 <td style={{ padding: '1rem' }}>{tt.timeout}</td>
@@ -422,11 +424,12 @@ function TaskTypeManagement() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
-              <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，定时策略可覆盖)</span></label>
+              <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(默认值，定时策略可覆盖)</span></label>
               <select style={fieldStyle} value={form.ai_backend} onChange={e => setForm({...form, ai_backend: e.target.value})}>
                 <option value="">跟随全局配置</option>
                 <option value="claude">Claude</option>
                 <option value="opencode">OpenCode</option>
+                <option value="codex">Codex</option>
               </select>
             </div>
             <div>

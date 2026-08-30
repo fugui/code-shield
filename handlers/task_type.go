@@ -47,6 +47,11 @@ func CreateTaskType(c *gin.Context) {
 		return
 	}
 
+	if !services.IsValidAIBackend(req.AIBackend) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 AI 引擎类型，可选: claude, opencode, codex 或留空"})
+		return
+	}
+
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
 	}
@@ -145,9 +150,6 @@ exit 0
 	metaBytes, _ := json.MarshalIndent(req, "", "  ")
 	os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644)
 
-	// 同步 opencode agent 文件
-	services.SyncTaskTypeAgents(req)
-
 	// 主动失效专项分析内存缓存
 	InvalidateCampaignCache(req.CampaignPath, req.Name)
 
@@ -190,6 +192,11 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.AIBackend != nil && !services.IsValidAIBackend(*req.AIBackend) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 AI 引擎类型，可选: claude, opencode, codex 或留空"})
 		return
 	}
 
@@ -316,9 +323,6 @@ func DeleteTaskType(c *gin.Context) {
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
 	os.RemoveAll(absTaskDir)
 
-	// 清理关联的 opencode agent 文件
-	services.RemoveTaskTypeAgents(taskType)
-
 	commonAudit.SetAuditContext(c, "task_type", "delete", models.AuditLevelP0,
 		fmt.Sprintf("删除了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),
 		"task_type", fmt.Sprintf("%d", taskType.ID), taskType.DisplayName,
@@ -405,11 +409,6 @@ func UpdateTaskTypeFile(c *gin.Context) {
 	if err := os.WriteFile(absPath, []byte(req.Content), perm); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write file"})
 		return
-	}
-
-	// 提示词文件变更时同步 opencode agent
-	if fileType == "analysis_prompt" || fileType == "synthesis_prompt" {
-		services.SyncTaskTypeAgents(taskType)
 	}
 
 	commonAudit.SetAuditContext(c, "task_type", "update_file", models.AuditLevelP0,

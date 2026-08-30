@@ -20,6 +20,7 @@ func setupTestDispatcher(rawConcurrent int) *ModelDispatcher {
 			Index:      0,
 			OpenCode:   "test-opencode",
 			Claude:     "test-claude",
+			Codex:      "test-codex",
 			Concurrent: rawConcurrent,
 			Active:     0,
 		},
@@ -247,4 +248,23 @@ func TestDispatcher_ManualOverrideWorkHours(t *testing.T) {
 		t.Fatalf("expected rollback to work_hours (0.10), got mode=%s, scale=%f",
 			infoAfterReset.ThrottleMode, infoAfterReset.EffectiveScale)
 	}
+}
+
+func TestDispatcher_CodexRouting(t *testing.T) {
+	d := setupTestDispatcher(2)
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, model, err := d.Acquire(ctx, "codex")
+	if err != nil {
+		t.Fatalf("Acquire failed for codex: %v", err)
+	}
+	if res == nil || model != "test-codex" {
+		t.Fatalf("expected model 'test-codex', got '%s'", model)
+	}
+	d.Release(res, "codex")
 }

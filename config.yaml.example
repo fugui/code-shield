@@ -27,9 +27,9 @@ server:
 
 # ── AI 引擎 ──
 ai:
-  backend: "claude"              # AI 驱动 CLI 后端：可选 claude 或 opencode，默认 claude
+  backend: "claude"              # AI 驱动 CLI 后端：可选 claude、opencode 或 codex，默认 claude
   # debug_logs: true             # 是否输出 AI 引擎底层的 debug 级别日志，默认 false。开启后会在报告同级目录下生成 .debug.log 文件方便定位
-  # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json），默认 text
+  # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json，对 codex 来说是 text/json），默认 text
 
   # ── 工作时间自动限流配置 (可选) ──
   # 开启后，系统将在指定的工作日与时间段内自动降低并发（如 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速。
@@ -43,12 +43,14 @@ ai:
   # ── 多 LLM 服务器并发配置 (可选) ──
   # 启用多 LLM 服务器配置时，全局任务并发数限制会被本配置的并发总和自动拓展，
   # 每次 AI 扫描时根据后端类型自动映射对应的模型名称，精准控制每台服务器的并发负载。
+  # 注：使用 Codex 引擎需确保环境中配置了 OPENAI_API_KEY（必需）与 OPENAI_BASE_URL（可选，用于自定义网关）。
   # models:
   #   - opencode: "models/glm5.1"
   #     claude: "glm5.1"
+  #     codex: "gpt-5.6-sol"
   #     concurrent: 5
-  #   - opencode: "models/qwen3.5"
-  #     concurrent: 2
+  #   - codex: "o3-mini"
+  #     concurrent: 3
 
 # ── 通知服务 ──
 notification:
