@@ -7,31 +7,26 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
+	"code-common/backend/testdb"
 	"code-shield/models"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
-	dsn := os.Getenv("TEST_DB_DSN")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=postgres password=CodeShield618! dbname=code_shield sslmode=disable"
-	}
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN:                  dsn,
-		PreferSimpleProtocol: true,
-	}), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
-	if err != nil {
-		t.Skipf("Skipping DB test: PostgreSQL not available (%v)", err)
-		return nil
-	}
-	return db
+	return testdb.SetupIsolatedDB(t, "shield_pagination",
+		&models.Department{},
+		&models.User{},
+		&models.Repository{},
+		&models.TaskType{},
+		&models.TaskReport{},
+		&models.TaskExecutionLog{},
+		&models.CampaignFinding{},
+	)
 }
 
 func TestGetExecutionLogsPagination(t *testing.T) {
@@ -40,17 +35,6 @@ func TestGetExecutionLogsPagination(t *testing.T) {
 		return
 	}
 	models.DB = db
-
-	for _, model := range []interface{}{
-		&models.Department{},
-		&models.User{},
-		&models.Repository{},
-		&models.TaskType{},
-		&models.TaskReport{},
-		&models.TaskExecutionLog{},
-	} {
-		_ = db.AutoMigrate(model)
-	}
 
 	// Create test department and owner to satisfy foreign key constraints
 	dept := models.Department{Name: "test-pag-dept-" + time.Now().Format("150405.000000")}
@@ -184,16 +168,6 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 	}
 	models.DB = db
 
-	for _, model := range []interface{}{
-		&models.Department{},
-		&models.User{},
-		&models.Repository{},
-		&models.TaskType{},
-		&models.CampaignFinding{},
-	} {
-		_ = db.AutoMigrate(model)
-	}
-
 	dept := models.Department{Name: "test-finding-dept-" + time.Now().Format("150405.000000")}
 	_ = db.Create(&dept).Error
 	defer db.Delete(&models.Department{}, dept.ID)
@@ -300,8 +274,6 @@ func TestUpdateDynamicCampaignFindingOperator(t *testing.T) {
 		return
 	}
 	models.DB = db
-
-	_ = db.AutoMigrate(&models.CampaignFinding{}, &models.TaskType{}, &models.Repository{}, &models.Department{}, &models.User{})
 
 	dept := models.Department{Name: "test-op-dept-" + time.Now().Format("150405.000000")}
 	_ = db.Create(&dept).Error
