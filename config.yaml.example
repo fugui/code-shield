@@ -42,35 +42,38 @@ ai:
   #   end_time: "22:00"             # 结束限流时刻 (HH:MM)
   #   scale: 0.10                   # 工作时间内的并发比例 (0.10 代表 10%，0.0 代表完全暂停)
 
-  # ── 多 LLM 服务器并发配置 (可选) ──
+  # ── 多 LLM 服务器并发配置 (可选 - 算力供给端) ──
   # 启用多 LLM 服务器配置时，全局任务并发数限制会被本配置的并发总和自动拓展，
-  # 每次 AI 扫描时根据后端类型自动映射对应的模型名称，精准控制每台服务器的并发负载。
-  # 注：使用 Codex 引擎需确保环境中配置了 OPENAI_API_KEY（必需）与 OPENAI_BASE_URL（可选，用于自定义网关）。
+  # 每次 AI 扫描时根据后端类型自动映射对应的模型名称，并按负载最低原则分发，精准控制每台服务器的并发负载。
+  # 注：使用 Codex 引擎需确保环境中配置了 OPENAI_API_KEY；使用 agy 引擎需确保环境中已安装 agy CLI。
   # models:
   #   - opencode: "models/glm5.1"
   #     claude: "glm5.1"
   #     codex: "gpt-5.6-sol"
+  #     agy: "gemini-3.7-flash"
   #     concurrent: 5
   #   - codex: "o3-mini"
+  #     agy: "gemini-3.7-pro"
   #     concurrent: 3
-
-  # ── 异构模型多阶梯资源池配置 (阶段二，可选) ──
+  #
+  # ── 异构模型多阶梯资源池配置 (可选 - 业务需求端) ──
+  # 为多智能体流水线的不同业务环节配置专门的快/强模型与独立超时时限（详见使用手册 4.6 章节）。
   # tiers:
   #   tier1_fast:                    # Tier 1 快排初筛 (高并发、低成本)
-  #     backend: "opencode"
-  #     model: "models/qwen2.5-coder-32b"
+  #     backend: "agy"               # 可选 agy / opencode / claude / codex
+  #     model: "gemini-3.7-flash"
   #     concurrent: 15
   #     timeout_seconds: 45
   #   tier2_reasoning:               # Tier 2 强推理对抗 (Challenger 辩护与 Judge 终审)
-  #     backend: "claude"
-  #     model: "claude-3-5-sonnet-20241022"
+  #     backend: "agy"
+  #     model: "gemini-3.7-pro"
   #     concurrent: 5
-  #     timeout_seconds: 90
+  #     timeout_seconds: 900
   #   tier3_synthesis:               # Tier 3 报告排版汇总
-  #     backend: "claude"
-  #     model: "claude-3-5-haiku-20241022"
+  #     backend: "agy"
+  #     model: "gemini-3.7-flash"
   #     concurrent: 2
-  #     timeout_seconds: 60
+  #     timeout_seconds: 120
 
   # ── 多智能体辩论流控制 (阶段二，可选) ──
   # debate:
