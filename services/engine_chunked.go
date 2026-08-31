@@ -233,6 +233,9 @@ loop:
 	}
 
 	// ── Phase 2: 综合阶段 ──
+	// 执行确定性严重度校准决策树，纠正大模型自由裁量与定级倒挂
+	allFindings = CalibrateFindings(allFindings)
+
 	log.Printf("[ChunkedEngine] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
 	ctx.findings = allFindings
 	return ctx.executeSynthesis(allFindings)
@@ -258,12 +261,24 @@ func fileContainsKeywords(filePath string, keywords []string) (bool, error) {
 	return false, scanner.Err()
 }
 
-// getFilteredFiles 获取过滤后的待分析源码文件列表
 func getFilteredFiles(codesPath string, cfg ChunkConfig, targetScope string) ([]string, error) {
+	var files []string
 	cmd := exec.Command("git", "-C", codesPath, "ls-files")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git ls-files failed: %w", err)
+		// 降级为物理文件遍历 (兼容非 git 仓库或单测 Mock 环境)
+		_ = filepath.Walk(codesPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			rel, relErr := filepath.Rel(codesPath, path)
+			if relErr == nil {
+				files = append(files, filepath.ToSlash(rel))
+			}
+			return nil
+		})
+	} else {
+		files = strings.Split(strings.TrimSpace(string(output)), "\n")
 	}
 
 	// 构建任务级扩展名白名单（为空时 isSourceFile 回退到全局白名单）
@@ -277,8 +292,6 @@ func getFilteredFiles(codesPath string, cfg ChunkConfig, targetScope string) ([]
 			taskExtensions[strings.ToLower(ext)] = true
 		}
 	}
-
-	files := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var filtered []string
 
 	for _, file := range files {
@@ -339,46 +352,17 @@ func getFilteredFiles(codesPath string, cfg ChunkConfig, targetScope string) ([]
 	return filtered, nil
 }
 
-// scanAndChunk 扫描 git 仓库中的文件并按目录深度分组
+// scanAndChunk 扫描 git 仓库中的文件并按目录深度及语义同名投影分组
 func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[string][]string, error) {
-	filteredFiles, err := getFilteredFiles(codesPath, cfg, targetScope)
+	bundles, err := BuildSemanticBundles(codesPath, cfg, targetScope, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	rawChunks := make(map[string][]string)
-
-	for _, file := range filteredFiles {
-		parts := strings.Split(file, string(filepath.Separator))
-		chunkName := "root"
-		if len(parts) > 1 {
-			depth := cfg.Depth
-			if depth >= len(parts) {
-				depth = len(parts) - 1
-			}
-			chunkName = filepath.Join(parts[:depth]...)
-		}
-
-		rawChunks[chunkName] = append(rawChunks[chunkName], file)
+	chunks := make(map[string][]string, len(bundles))
+	for _, b := range bundles {
+		chunks[b.Name] = b.AllFiles
 	}
-
-	// 对超过 MaxFiles 的分片进行二次拆分
-	chunks := make(map[string][]string)
-	for name, fileList := range rawChunks {
-		if cfg.MaxFiles > 0 && len(fileList) > cfg.MaxFiles {
-			for i := 0; i < len(fileList); i += cfg.MaxFiles {
-				end := i + cfg.MaxFiles
-				if end > len(fileList) {
-					end = len(fileList)
-				}
-				subName := fmt.Sprintf("%s-%d", name, i/cfg.MaxFiles+1)
-				chunks[subName] = fileList[i:end]
-			}
-		} else {
-			chunks[name] = fileList
-		}
-	}
-
 	return chunks, nil
 }
 

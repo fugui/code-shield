@@ -104,26 +104,34 @@ func GetStatusChinese(status string, isEntityMode bool) string {
 
 // ReportMetaDTO 任务报告元数据
 type ReportMetaDTO struct {
-	ID              uint      `json:"id"`
-	RepoID          uint      `json:"repo_id"`
-	RepoName        string    `json:"repo_name"`
-	RepoURL         string    `json:"repo_url"`
-	Branch          string    `json:"branch"`
-	TaskTypeID      uint      `json:"task_type_id"`
-	TaskTypeName    string    `json:"task_type_name"`
-	TaskTypeDisplay string    `json:"task_type_display"`
-	EngineMode      string    `json:"engine_mode"`
-	GovernanceMode  string    `json:"governance_mode"`
-	Status          string    `json:"status"`
-	Score           int       `json:"score"`
-	Rating          string    `json:"rating"` // 优/良/中/差
-	TotalChunks     int       `json:"total_chunks"`
-	ProcessedChunks int       `json:"processed_chunks"`
-	SuccessChunks   int       `json:"success_chunks"`
-	DurationSeconds float64   `json:"duration_seconds"`
-	BaseCommit      string    `json:"base_commit"`
-	HeadCommit      string    `json:"head_commit"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              uint    `json:"id"`
+	RepoID          uint    `json:"repo_id"`
+	RepoName        string  `json:"repo_name"`
+	RepoURL         string  `json:"repo_url"`
+	Branch          string  `json:"branch"`
+	TaskTypeID      uint    `json:"task_type_id"`
+	TaskTypeName    string  `json:"task_type_name"`
+	TaskTypeDisplay string  `json:"task_type_display"`
+	EngineMode      string  `json:"engine_mode"`
+	GovernanceMode  string  `json:"governance_mode"`
+	Status          string  `json:"status"`
+	Score           int     `json:"score"`
+	Rating          string  `json:"rating"` // 优/良/中/差
+	TotalChunks     int     `json:"total_chunks"`
+	ProcessedChunks int     `json:"processed_chunks"`
+	SuccessChunks   int     `json:"success_chunks"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	BaseCommit      string  `json:"base_commit"`
+	HeadCommit      string  `json:"head_commit"`
+
+	// ── 增量追踪与 Token 统计 ──
+	NewDefectsCount      int   `json:"new_defects_count"`
+	ExistedDefectsCount  int   `json:"existed_defects_count"`
+	ResolvedDefectsCount int   `json:"resolved_defects_count"`
+	Tier1Tokens          int64 `json:"tier1_tokens"`
+	Tier2Tokens          int64 `json:"tier2_tokens"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // KPIMetrics 统计指标
@@ -150,25 +158,35 @@ type ReportSummaryDTO struct {
 
 // FindingItemDTO 结构化问题/实体项 DTO
 type FindingItemDTO struct {
-	ID              uint       `json:"id"`
-	TaskReportID    uint       `json:"task_report_id"`
-	TaskTypeID      uint       `json:"task_type_id"`
-	RepoID          uint       `json:"repo_id"`
-	Severity        string     `json:"severity"`         // Canonical severity
-	SeverityDisplay string     `json:"severity_display"` // 中文展示
-	Category        string     `json:"category"`
-	FilePath        string     `json:"file_path"`
-	LineNumber      string     `json:"line_number"`
-	Title           string     `json:"title"`
-	Detail          string     `json:"detail"`
-	CodeSnippet     string     `json:"code_snippet,omitempty"`
-	Suggestion      string     `json:"suggestion,omitempty"`
-	Status          string     `json:"status"`
-	StatusDisplay   string     `json:"status_display"`
-	AssigneeID      *uint      `json:"assignee_id,omitempty"`
-	AssigneeName    string     `json:"assignee_name,omitempty"`
-	LatestComment   string     `json:"latest_comment,omitempty"`
-	CreatedAt       *time.Time `json:"created_at,omitempty"`
+	ID              uint   `json:"id"`
+	TaskReportID    uint   `json:"task_report_id"`
+	TaskTypeID      uint   `json:"task_type_id"`
+	RepoID          uint   `json:"repo_id"`
+	Severity        string `json:"severity"`         // Canonical severity
+	SeverityDisplay string `json:"severity_display"` // 中文展示
+	Category        string `json:"category"`
+	FilePath        string `json:"file_path"`
+	LineNumber      string `json:"line_number"`
+	Title           string `json:"title"`
+	Detail          string `json:"detail"`
+	CodeSnippet     string `json:"code_snippet,omitempty"`
+	Suggestion      string `json:"suggestion,omitempty"`
+	Status          string `json:"status"`
+	StatusDisplay   string `json:"status_display"`
+	AssigneeID      *uint  `json:"assignee_id,omitempty"`
+	AssigneeName    string `json:"assignee_name,omitempty"`
+	LatestComment   string `json:"latest_comment,omitempty"`
+
+	// ── 缺陷指纹、增量状态与智能体辩论链 ──
+	Fingerprint   string `json:"fingerprint,omitempty"`
+	DiffStatus    string `json:"diff_status,omitempty"` // NEW, EXISTED, RESOLVED, REOPENED
+	TriggerLine   string `json:"trigger_line,omitempty"`
+	ScopeSymbol   string `json:"scope_symbol,omitempty"`
+	HunterClaim   string `json:"hunter_claim,omitempty"`
+	ChallengerArg string `json:"challenger_arg,omitempty"`
+	JudgeVerdict  string `json:"judge_verdict,omitempty"`
+
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 // FindingsPageDTO 清单分页 DTO

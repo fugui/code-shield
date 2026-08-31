@@ -34,26 +34,31 @@ func BuildMetaDTO(report *models.TaskReport) ReportMetaDTO {
 	}
 
 	return ReportMetaDTO{
-		ID:              report.ID,
-		RepoID:          report.RepoID,
-		RepoName:        report.Repo.Name,
-		RepoURL:         report.Repo.URL,
-		Branch:          report.Repo.Branch,
-		TaskTypeID:      report.TaskTypeID,
-		TaskTypeName:    report.TaskType.Name,
-		TaskTypeDisplay: report.TaskType.DisplayName,
-		EngineMode:      report.TaskType.EngineMode,
-		GovernanceMode:  govMode,
-		Status:          report.Status,
-		Score:           report.Score,
-		Rating:          CalculateRating(report.Score),
-		TotalChunks:     report.TotalChunks,
-		ProcessedChunks: report.ProcessedChunks,
-		SuccessChunks:   report.SuccessChunks,
-		DurationSeconds: durationSec,
-		BaseCommit:      report.BaseCommit,
-		HeadCommit:      report.HeadCommit,
-		CreatedAt:       report.CreatedAt,
+		ID:                   report.ID,
+		RepoID:               report.RepoID,
+		RepoName:             report.Repo.Name,
+		RepoURL:              report.Repo.URL,
+		Branch:               report.Repo.Branch,
+		TaskTypeID:           report.TaskTypeID,
+		TaskTypeName:         report.TaskType.Name,
+		TaskTypeDisplay:      report.TaskType.DisplayName,
+		EngineMode:           report.TaskType.EngineMode,
+		GovernanceMode:       govMode,
+		Status:               report.Status,
+		Score:                report.Score,
+		Rating:               CalculateRating(report.Score),
+		TotalChunks:          report.TotalChunks,
+		ProcessedChunks:      report.ProcessedChunks,
+		SuccessChunks:        report.SuccessChunks,
+		DurationSeconds:      durationSec,
+		BaseCommit:           report.BaseCommit,
+		HeadCommit:           report.HeadCommit,
+		NewDefectsCount:      report.NewDefectsCount,
+		ExistedDefectsCount:  report.ExistedDefectsCount,
+		ResolvedDefectsCount: report.ResolvedDefectsCount,
+		Tier1Tokens:          report.Tier1Tokens,
+		Tier2Tokens:          report.Tier2Tokens,
+		CreatedAt:            report.CreatedAt,
 	}
 }
 
@@ -138,6 +143,15 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 		suggestion := getMapString(raw, "suggestion", "Suggestion")
 		codeSnippet := getMapString(raw, "code_snippet", "CodeSnippet")
 
+		// 智能体辩论与指纹增量字段
+		fingerprint := getMapString(raw, "fingerprint", "Fingerprint")
+		diffStatus := getMapString(raw, "diff_status", "DiffStatus")
+		triggerLine := getMapString(raw, "trigger_line", "TriggerLine")
+		scopeSymbol := getMapString(raw, "scope_symbol", "ScopeSymbol")
+		hunterClaim := getMapString(raw, "hunter_claim", "HunterClaim")
+		challengerArg := getMapString(raw, "challenger_arg", "ChallengerArg")
+		judgeVerdict := getMapString(raw, "judge_verdict", "JudgeVerdict")
+
 		canonicalSev := NormalizeSeverity(rawSev)
 		sevDisplay := GetSeverityChinese(canonicalSev)
 
@@ -198,6 +212,13 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 			AssigneeID:      assigneeID,
 			AssigneeName:    assigneeName,
 			LatestComment:   latestComment,
+			Fingerprint:     fingerprint,
+			DiffStatus:      diffStatus,
+			TriggerLine:     triggerLine,
+			ScopeSymbol:     scopeSymbol,
+			HunterClaim:     hunterClaim,
+			ChallengerArg:   challengerArg,
+			JudgeVerdict:    judgeVerdict,
 			CreatedAt:       createdAt,
 		})
 	}

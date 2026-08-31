@@ -42,6 +42,9 @@ func InitDB() {
 		&AnalysisFinding{},
 		&CampaignFinding{},
 		&SysAuditLog{},
+		&DefectFingerprintRecord{},
+		&TaskDebateLog{},
+		&RepoFeedbackRule{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)

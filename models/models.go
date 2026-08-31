@@ -71,6 +71,11 @@ type TaskType struct {
 	NotifyCc        datatypes.JSON `json:"notify_cc"`                              // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
 	Timeout         int            `gorm:"default:30" json:"timeout"`              // AI 执行超时（分钟）
 
+	// ── 智能体协同与异构调度扩展 (阶段二) ──
+	DebateEnabled        bool   `gorm:"default:true" json:"debate_enabled"`               // 是否启用三方对抗辩论流
+	TierFastBackend      string `gorm:"size:64;default:''" json:"tier_fast_backend"`      // 指定 Tier 1 初筛后端 (空则遵循全局路由)
+	TierReasoningBackend string `gorm:"size:64;default:''" json:"tier_reasoning_backend"` // 指定 Tier 2 强推理后端 (空则遵循全局路由)
+
 	// ── 专项分析元数据扩展 ──
 	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`                   // 是否启用为专项分析
 	CampaignPath   string         `gorm:"size:100;default:''" json:"campaign_path"`                 // 路由别名 (空则默认同 Name)
@@ -162,7 +167,15 @@ type TaskReport struct {
 	Metrics         datatypes.JSON `json:"metrics"` // {"blocking":0,"critical":3,...}
 	BaseCommit      string         `json:"base_commit"`
 	HeadCommit      string         `json:"head_commit"`
-	CreatedAt       time.Time      `gorm:"index" json:"created_at"`
+
+	// ── 增量追踪与 Token 消耗统计 (阶段二/三) ──
+	NewDefectsCount      int   `gorm:"default:0" json:"new_defects_count"`      // 本次新增缺陷数
+	ExistedDefectsCount  int   `gorm:"default:0" json:"existed_defects_count"`  // 历史存量缺陷数
+	ResolvedDefectsCount int   `gorm:"default:0" json:"resolved_defects_count"` // 本次已修复缺陷数
+	Tier1Tokens          int64 `gorm:"default:0" json:"tier1_tokens"`           // Tier 1 快模型 Token 开销
+	Tier2Tokens          int64 `gorm:"default:0" json:"tier2_tokens"`           // Tier 2 强推理模型 Token 开销
+
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
 }
 
 // GetAbsReportPath 返回报告文件的绝对路径（如果存储的是相对路径，则使用 server.data_dir / storage.root 拼接）
@@ -258,7 +271,18 @@ type AnalysisFinding struct {
 	Assignee     *User      `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	Feedback     string     `gorm:"type:text" json:"feedback"` // 用户反馈内容
 	FeedbackAt   *time.Time `json:"feedback_at"`               // 反馈时间
-	CreatedAt    time.Time  `json:"created_at"`
+
+	// ── 智能体辩论与增量记忆扩展 (阶段二/三) ──
+	Fingerprint     string `gorm:"size:64;index" json:"fingerprint"`               // 64位缺陷指纹 SHA-256
+	DiffStatus      string `gorm:"size:32;default:'NEW';index" json:"diff_status"` // NEW / EXISTED / RESOLVED / REOPENED
+	TriggerLine     string `gorm:"type:text" json:"trigger_line"`                  // 核心触发行（抗漂移指纹计算基准）
+	ScopeSymbol     string `gorm:"size:256" json:"scope_symbol"`                   // AST 作用域符号（函数名/类名签名）
+	HunterClaim     string `gorm:"type:text" json:"hunter_claim"`                  // 猎手初筛主张
+	ChallengerArg   string `gorm:"type:text" json:"challenger_arg"`                // 辩护人抗辩意见
+	JudgeVerdict    string `gorm:"type:text" json:"judge_verdict"`                 // 终审法官裁决
+	CalibrationRule string `gorm:"size:128" json:"calibration_rule"`               // 命中的严重度校准规则
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 const (
@@ -402,4 +426,78 @@ type CampaignFinding struct {
 	Feedback   string         `gorm:"type:text" json:"feedback"`
 	CreatedAt  time.Time      `gorm:"index" json:"created_at"`
 	UpdatedAt  time.Time      `json:"updated_at"`
+}
+
+// ── 增量比对状态常量 (DiffStatus) ──
+const (
+	DiffStatusNew      = "NEW"      // 本次新增
+	DiffStatusExisted  = "EXISTED"  // 历史存量
+	DiffStatusResolved = "RESOLVED" // 本次已修复
+	DiffStatusReopened = "REOPENED" // 历史缺陷复发
+)
+
+// ── 智能体辩论结论常量 (DebateVerdict) ──
+const (
+	DebateVerdictConfirmed   = "CONFIRMED"   // 确认存在
+	DebateVerdictRejected    = "REJECTED"    // 判定误报
+	DebateVerdictConditional = "CONDITIONAL" // 条件触发
+)
+
+// DefectFingerprintRecord 缺陷指纹持久化记录表 (SSOT 唯一真值中心)
+type DefectFingerprintRecord struct {
+	ID          uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	RepoID      uint   `gorm:"uniqueIndex:idx_repo_task_fp,priority:1;index;not null" json:"repo_id"`
+	TaskTypeID  uint   `gorm:"uniqueIndex:idx_repo_task_fp,priority:2;index;not null" json:"task_type_id"`
+	Fingerprint string `gorm:"uniqueIndex:idx_repo_task_fp,priority:3;size:64;not null" json:"fingerprint"` // SHA-256
+	FilePath    string `gorm:"size:512;not null" json:"file_path"`
+	ScopeSymbol string `gorm:"size:256" json:"scope_symbol"` // 函数/类/方法签名
+	Category    string `gorm:"size:255" json:"category"`
+	Status      string `gorm:"size:32;default:'ACTIVE';index" json:"status"` // ACTIVE, RESOLVED
+
+	// 人工反馈状态
+	FeedbackStatus string     `gorm:"size:32;default:'UNREVIEWED';index" json:"feedback_status"` // UNREVIEWED, FALSE_POSITIVE, WONT_FIX, CONFIRMED
+	FeedbackReason string     `gorm:"type:text" json:"feedback_reason"`
+	FeedbackUserID *uint      `json:"feedback_user_id"`
+	FeedbackUser   *User      `gorm:"foreignKey:FeedbackUserID" json:"feedback_user,omitempty"`
+	FeedbackAt     *time.Time `json:"feedback_at"`
+
+	FirstTaskID uint           `json:"first_task_id"` // 引入该缺陷的任务 ID
+	LastTaskID  uint           `json:"last_task_id"`  // 最近检出该缺陷的任务 ID
+	FirstSeenAt time.Time      `json:"first_seen_at"`
+	LastSeenAt  time.Time      `json:"last_seen_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// TaskDebateLog 智能体三方对抗辩论轨迹表 (支持 TTL 自动清理与合规审计)
+type TaskDebateLog struct {
+	ID               uint           `gorm:"primaryKey;autoIncrement" json:"id"`
+	TaskReportID     uint           `gorm:"index;not null" json:"task_report_id"`
+	ChunkName        string         `gorm:"size:256;not null" json:"chunk_name"`
+	CandidateID      string         `gorm:"size:64;not null" json:"candidate_id"`
+	TriggerLine      string         `gorm:"type:text" json:"trigger_line"`
+	HunterOutput     datatypes.JSON `gorm:"type:jsonb" json:"hunter_output"`
+	ChallengerOutput datatypes.JSON `gorm:"type:jsonb" json:"challenger_output"`
+	JudgeOutput      datatypes.JSON `gorm:"type:jsonb;not null" json:"judge_output"`
+	Verdict          string         `gorm:"size:32;not null;index" json:"verdict"` // CONFIRMED, REJECTED, CONDITIONAL
+	DurationMs       int            `json:"duration_ms"`
+	TokenUsage       datatypes.JSON `gorm:"type:jsonb" json:"token_usage"` // {"hunter": 1200, "challenger": 800, "judge": 950}
+	CreatedAt        time.Time      `gorm:"index" json:"created_at"`
+}
+
+// RepoFeedbackRule 代码仓人机反馈例外规则库表 (负样本沉淀知识库)
+type RepoFeedbackRule struct {
+	ID         uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	RepoID     uint       `gorm:"index:idx_fb_repo_task;not null" json:"repo_id"`
+	Repo       Repository `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskTypeID uint       `gorm:"index:idx_fb_repo_task;not null" json:"task_type_id"`
+	TaskType   TaskType   `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	ScopeType  string     `gorm:"size:32;default:'FILE'" json:"scope_type"`    // FILE (单文件), REPO (全仓), GLOBAL (全局)
+	Pattern    string     `gorm:"size:512;not null" json:"pattern"`            // 文件路径正则或符号通配符
+	RuleAction string     `gorm:"size:32;default:'IGNORE'" json:"rule_action"` // IGNORE (忽略), DOWNGRADE (降级)
+	Reason     string     `gorm:"type:text;not null" json:"reason"`            // 豁免理由
+	CreatedBy  string     `gorm:"size:64" json:"created_by"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }

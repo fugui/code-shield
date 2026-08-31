@@ -488,3 +488,69 @@ func (d *ModelDispatcher) Release(res *ModelResource, backend string) {
 		res.Index, backend, res.Active, limit, info.EffectiveScale, info.ThrottleMode, res.Concurrent)
 	d.cond.Broadcast()
 }
+
+// ── 异构模型多阶梯调度路由层 (TierRouter) ──
+
+// TierRouter 将逻辑 Tier (tier1_fast / tier2_reasoning / tier3_synthesis) 映射为底层物理 backend + model
+type TierRouter struct {
+	dispatcher *ModelDispatcher
+}
+
+// GlobalTierRouter 全局阶梯路由器实例
+var GlobalTierRouter *TierRouter
+
+// TierAcquisition 代表申请到的阶梯槽位
+type TierAcquisition struct {
+	Resource  *ModelResource
+	Backend   string
+	ModelName string
+	Release   func()
+}
+
+// GetTierRouter 获取全局阶梯路由单例
+func GetTierRouter() *TierRouter {
+	if GlobalTierRouter == nil {
+		GlobalTierRouter = &TierRouter{dispatcher: Dispatcher}
+	}
+	return GlobalTierRouter
+}
+
+// AcquireTier 申请指定阶梯的槽位资源（支持任务级 backend 覆盖与平滑回退）
+func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, overrideBackend string) (*TierAcquisition, error) {
+	tierCfg := models.AppConfig.GetTierConfig(tierName)
+	backend := tierCfg.Backend
+	if overrideBackend != "" {
+		backend = overrideBackend
+	}
+	if backend == "" {
+		backend = models.AppConfig.AI.Backend
+	}
+
+	var res *ModelResource
+	var modelName string
+	var err error
+
+	if tr != nil && tr.dispatcher != nil {
+		res, modelName, err = tr.dispatcher.Acquire(ctx, backend)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// 若配置了特定的 Tier Model 且物理槽位未给出特定映射，使用 Tier Model
+	if modelName == "" && tierCfg.Model != "" {
+		modelName = tierCfg.Model
+	}
+
+	acq := &TierAcquisition{
+		Resource:  res,
+		Backend:   backend,
+		ModelName: modelName,
+		Release: func() {
+			if tr != nil && tr.dispatcher != nil && res != nil {
+				tr.dispatcher.Release(res, backend)
+			}
+		},
+	}
+	return acq, nil
+}

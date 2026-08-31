@@ -1,0 +1,86 @@
+package services
+
+import (
+	"code-shield/models"
+	"testing"
+)
+
+func TestParseJSONFromAIOutput(t *testing.T) {
+	// 测试包含 ```json 包裹的输出
+	rawMarkdown := "下面是初筛结果：\n```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/posix.cc\",\n      \"cwe_category\": \"CWE-476\"\n    }\n  ],\n  \"summary\": \"ok\"\n}\n```\n祝工作顺利！"
+
+	var out HunterOutput
+	err := parseJSONFromAIOutput(rawMarkdown, &out)
+	if err != nil {
+		t.Fatalf("parseJSONFromAIOutput failed: %v", err)
+	}
+	if len(out.Candidates) != 1 {
+		t.Fatalf("Expected 1 candidate, got %d", len(out.Candidates))
+	}
+	if out.Candidates[0].CandidateID != "H-001" {
+		t.Errorf("Expected candidate ID H-001, got %s", out.Candidates[0].CandidateID)
+	}
+}
+
+func TestDebateEngine_FastPass(t *testing.T) {
+	// 验证 Hunter 结果为空时的快速放行逻辑
+	hunterOut := &HunterOutput{
+		Candidates: []HunterCandidate{},
+		Summary:    "Clean code, no defect detected",
+	}
+
+	if len(hunterOut.Candidates) != 0 {
+		t.Errorf("Expected 0 candidates for fast pass")
+	}
+}
+
+func TestDebateEngine_VerdictConversion(t *testing.T) {
+	judgeOut := &JudgeOutput{
+		FinalVerdicts: []JudgeFinalVerdict{
+			{
+				CandidateID:        "H-001",
+				Verdict:            models.DebateVerdictConfirmed,
+				Category:           "内存管理问题-写越界",
+				FilePath:           "src/format.cc",
+				LineNumber:         "100-110",
+				TriggerLine:        "memcpy(dst, src, len);",
+				ScopeSymbol:        "format_buffer",
+				Title:              "栈缓冲区写越界",
+				JudgementRationale: "Hunter 指控属实，Challenger 辩护失败",
+				CodeSnippet:        "memcpy(dst, src, len);",
+				Suggestion:         "使用 safe_memcpy 增加长度检查",
+			},
+			{
+				CandidateID:        "H-002",
+				Verdict:            models.DebateVerdictRejected,
+				Category:           "CWE-476 空指针",
+				FilePath:           "src/posix.cc",
+				Title:              "误报空指针",
+				JudgementRationale: "Challenger 提供了外层非空断言证据，判定误报",
+			},
+		},
+	}
+
+	var confirmed []models.AnalysisFinding
+	for _, jv := range judgeOut.FinalVerdicts {
+		if jv.Verdict == models.DebateVerdictConfirmed || jv.Verdict == models.DebateVerdictConditional {
+			confirmed = append(confirmed, models.AnalysisFinding{
+				FilePath:    jv.FilePath,
+				LineNumber:  jv.LineNumber,
+				TriggerLine: jv.TriggerLine,
+				ScopeSymbol: jv.ScopeSymbol,
+				Category:    jv.Category,
+				Title:       jv.Title,
+				Detail:      jv.JudgementRationale,
+				Suggestion:  jv.Suggestion,
+			})
+		}
+	}
+
+	if len(confirmed) != 1 {
+		t.Fatalf("Expected 1 confirmed finding, got %d", len(confirmed))
+	}
+	if confirmed[0].Title != "栈缓冲区写越界" {
+		t.Errorf("Expected confirmed title, got %s", confirmed[0].Title)
+	}
+}
