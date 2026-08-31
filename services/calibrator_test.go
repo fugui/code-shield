@@ -27,7 +27,7 @@ func TestCalibrateSeverityDeterministically(t *testing.T) {
 			category:     "CWE-787: Out-of-bounds Write / 堆栈写越界",
 			verdict:      models.DebateVerdictConfirmed,
 			codeSnippet:  "void write_data(char* dst) { memcpy(dst, src, len); }",
-			expectedSev:  "严重",
+			expectedSev:  "致命",
 			expectedRule: "RULE_MEM_CORRUPTION_DEFAULT_REACHABLE",
 		},
 		{
@@ -35,7 +35,7 @@ func TestCalibrateSeverityDeterministically(t *testing.T) {
 			category:     "CWE-125: Out-of-bounds Read / 词法分析读越界",
 			verdict:      models.DebateVerdictConfirmed,
 			codeSnippet:  "do { c = *++it; } while (it != end);",
-			expectedSev:  "高",
+			expectedSev:  "严重",
 			expectedRule: "RULE_CRASH_DETERMINISTIC",
 		},
 		{
@@ -43,7 +43,7 @@ func TestCalibrateSeverityDeterministically(t *testing.T) {
 			category:     "CWE-476: NULL Pointer Dereference / 空指针解引用",
 			verdict:      models.DebateVerdictConfirmed,
 			codeSnippet:  "int fd = file_->fileno();",
-			expectedSev:  "高",
+			expectedSev:  "严重",
 			expectedRule: "RULE_CRASH_DETERMINISTIC",
 		},
 		{
@@ -103,10 +103,10 @@ func TestCalibrateFindings(t *testing.T) {
 	if len(calibrated) != 2 {
 		t.Fatalf("Expected 2 findings, got %d", len(calibrated))
 	}
-	if calibrated[0].Severity != "严重" {
-		t.Errorf("Finding[0] expected 严重, got %s", calibrated[0].Severity)
+	if calibrated[0].Severity != "致命" {
+		t.Errorf("Finding[0] expected 致命, got %s", calibrated[0].Severity)
 	}
-	if calibrated[1].Severity != "高" {
-		t.Errorf("Finding[1] expected 高, got %s", calibrated[1].Severity)
+	if calibrated[1].Severity != "严重" {
+		t.Errorf("Finding[1] expected 严重, got %s", calibrated[1].Severity)
 	}
 }
