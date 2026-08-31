@@ -9,6 +9,7 @@
 ```
 docs/
 ├── README.md                                          # 本文档：文档中心首页索引
+├── CodeShield-智能扫描引擎与任务配置使用手册.md         # 📖【用户操作指南】5大执行模式选型、JSON配置模版与FAQ
 └── agentic-scanner-architecture/                      # 【专题】基于多 Agent 协同与异构调度的下一代扫描架构
     ├── README.md                                      # 架构方案总览与导航
     ├── 与AI结对架构设计实战指南-CodeShield案例复盘.md    # 🌟【培训复盘】如何与 AI 深度结对完成系统级架构设计的实战方法论
@@ -23,7 +24,9 @@ docs/
 
 ---
 
-## 🚀 核心架构演进专题导读
+## 🚀 核心文档直达
 
-关于 Code-Shield 多 Agent 对抗辩论、异构模型阶梯调度及多任务治理记忆闭环的完整方案，请直接阅读：
-👉 **[下一代 Agent 扫描架构方案总览 (agentic-scanner-architecture/README.md)](agentic-scanner-architecture/README.md)**
+1. 📖 **[Code-Shield 智能扫描引擎与任务配置使用手册](CodeShield-智能扫描引擎与任务配置使用手册.md)**
+   涵盖 5 大执行模式（`debate_full`、`debate_selective`、`chunked_fast`、`chunked`、`single`）选型决策、`engine_config` 增量配置模版库、Tier 模型分层调度与研发反馈沉淀指南。
+2. 🛡️ **[下一代 Agent 扫描架构设计总览 (agentic-scanner-architecture/README.md)](agentic-scanner-architecture/README.md)**
+   收录完整的系统架构方案演进、学术级设计规范（01~07）与 AI 结对工程复盘。
