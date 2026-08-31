@@ -13,6 +13,7 @@ function TaskTypeManagement() {
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
     ai_backend: '', target_scope: 'business',
+    tier_fast_backend: '', tier_reasoning_backend: '',
     notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 60, is_active: true,
     is_campaign: false, campaign_path: '', governance_mode: 'defect_tracking', campaign_icon: '', campaign_config: ''
   });
@@ -38,7 +39,9 @@ function TaskTypeManagement() {
   const resetForm = () => {
     setForm({
       name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
-      ai_backend: '', target_scope: 'business', notify_template: '', notify_threshold: 0,
+      ai_backend: '', target_scope: 'business',
+      tier_fast_backend: '', tier_reasoning_backend: '',
+      notify_template: '', notify_threshold: 0,
       notify_cc: [], timeout: 60, is_active: true,
       is_campaign: false, campaign_path: '', governance_mode: 'defect_tracking', campaign_icon: '', campaign_config: ''
     });
@@ -63,6 +66,8 @@ function TaskTypeManagement() {
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
       ai_backend: tt.ai_backend || '', target_scope: tt.target_scope || 'business',
+      tier_fast_backend: tt.tier_fast_backend || '',
+      tier_reasoning_backend: tt.tier_reasoning_backend || '',
       notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 60, is_active: tt.is_active,
       is_campaign: !!tt.is_campaign,
@@ -261,7 +266,13 @@ function TaskTypeManagement() {
                 </td>
                 <td style={{ padding: '1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{tt.name}</td>
                 <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
-                  {tt.engine_mode === 'chunked' ? (
+                  {tt.engine_mode === 'debate_full' ? (
+                    <span style={{ color: '#7c3aed', background: 'rgba(124,58,237,0.1)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>全量对抗辩论</span>
+                  ) : tt.engine_mode === 'debate_selective' ? (
+                    <span style={{ color: '#2563eb', background: 'rgba(37,99,235,0.1)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>选择性辩论</span>
+                  ) : tt.engine_mode === 'chunked_fast' ? (
+                    <span style={{ color: '#0d9488', background: 'rgba(13,148,136,0.1)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>分片快扫</span>
+                  ) : tt.engine_mode === 'chunked' ? (
                     <span style={{ color: '#0284c7', background: 'rgba(2,132,199,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>分片引擎</span>
                   ) : (
                     <span style={{ color: '#64748b', background: 'rgba(100,116,139,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>单引擎</span>
@@ -408,8 +419,11 @@ function TaskTypeManagement() {
             <div>
               <label style={labelStyle}>执行模式</label>
               <select style={fieldStyle} value={form.engine_mode} onChange={e => setForm({...form, engine_mode: e.target.value})}>
-                <option value="single">单引擎 (single)</option>
-                <option value="chunked">分片引擎 (chunked)</option>
+                <option value="debate_full">🤖 全量多智能体辩论 (debate_full - 猎手+辩护人+法官)</option>
+                <option value="debate_selective">⚖️ 选择性智能体辩论 (debate_selective - 疑点仲裁)</option>
+                <option value="chunked_fast">⚡ 语义分片快扫 (chunked_fast - 规则极速初筛)</option>
+                <option value="chunked">📦 经典分片引擎 (chunked - 目录并发扫描)</option>
+                <option value="single">📄 单次全仓引擎 (single - 单次整仓检视)</option>
               </select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -418,10 +432,32 @@ function TaskTypeManagement() {
                 style={{...fieldStyle, minHeight: '60px', resize: 'vertical', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '0.8rem'}}
                 value={form.engine_config}
                 onChange={e => setForm({...form, engine_config: e.target.value})}
-                placeholder={'{\n  "max_files": 50,\n  "depth": 1\n}'}
+                placeholder={'{\n  "max_files": 20,\n  "depth": 1,\n  "concurrency": 6\n}'}
               />
             </div>
           </div>
+          {(form.engine_mode === 'debate_full' || form.engine_mode === 'debate_selective') && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: 'rgba(124,58,237,0.04)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(124,58,237,0.15)' }}>
+              <div>
+                <label style={labelStyle}>Tier-1 初筛猎手模型 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(快模型)</span></label>
+                <select style={fieldStyle} value={form.tier_fast_backend} onChange={e => setForm({...form, tier_fast_backend: e.target.value})}>
+                  <option value="">跟随全局 Tier-1 配置</option>
+                  <option value="opencode">OpenCode</option>
+                  <option value="claude">Claude</option>
+                  <option value="codex">Codex</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Tier-2 辩论与法官模型 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(深度推理)</span></label>
+                <select style={fieldStyle} value={form.tier_reasoning_backend} onChange={e => setForm({...form, tier_reasoning_backend: e.target.value})}>
+                  <option value="">跟随全局 Tier-2 配置</option>
+                  <option value="claude">Claude</option>
+                  <option value="opencode">OpenCode</option>
+                  <option value="codex">Codex</option>
+                </select>
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(默认值，定时策略可覆盖)</span></label>
