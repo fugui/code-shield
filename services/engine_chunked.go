@@ -23,6 +23,8 @@ type ChunkConfig struct {
 	MaxFiles        int      `json:"max_files"`
 	Depth           int      `json:"depth"`
 	Concurrency     int      `json:"concurrency"`
+	SinceDays       int      `json:"since_days"`       // 增量检视：仅检视最近 N 天内有提交的文件 (例如 7 天)
+	DiffBase        string   `json:"diff_base"`        // 增量检视：仅检视与基准 commit/分支有 diff 的文件 (例如 origin/main)
 	FileExtensions  []string `json:"file_extensions"`  // 任务级文件扩展名白名单，为空时使用全局 sourceExtensions
 	ContentKeywords []string `json:"content_keywords"` // 任务级文件内容关键字白名单，只有当文件内容包含其中任意关键字时才进行分析
 	ExcludePaths    []string `json:"exclude_paths"`    // 任务级忽略路径
@@ -270,22 +272,61 @@ func fileContainsKeywords(filePath string, keywords []string) (bool, error) {
 
 func getFilteredFiles(codesPath string, cfg ChunkConfig, targetScope string) ([]string, error) {
 	var files []string
-	cmd := exec.Command("git", "-C", codesPath, "ls-files")
-	output, err := cmd.Output()
-	if err != nil {
-		// 降级为物理文件遍历 (兼容非 git 仓库或单测 Mock 环境)
-		_ = filepath.Walk(codesPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
+
+	// 1. 若配置了 SinceDays，仅提取最近 N 天提交发生变动的文件
+	if cfg.SinceDays > 0 {
+		sinceArg := fmt.Sprintf("--since=%d days ago", cfg.SinceDays)
+		cmd := exec.Command("git", "-C", codesPath, "log", sinceArg, "--name-only", "--pretty=format:")
+		if out, err := cmd.Output(); err == nil {
+			rawLines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			seen := make(map[string]bool)
+			for _, line := range rawLines {
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" && !seen[trimmed] {
+					seen[trimmed] = true
+					if _, statErr := os.Stat(filepath.Join(codesPath, trimmed)); statErr == nil {
+						files = append(files, filepath.ToSlash(trimmed))
+					}
+				}
+			}
+			log.Printf("[IncrementalChunk] Found %d changed files in the last %d days", len(files), cfg.SinceDays)
+		}
+	} else if cfg.DiffBase != "" {
+		// 2. 若配置了 DiffBase，提取与基线分支/commit 发生 diff 的文件
+		cmd := exec.Command("git", "-C", codesPath, "diff", "--name-only", cfg.DiffBase)
+		if out, err := cmd.Output(); err == nil {
+			rawLines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			for _, line := range rawLines {
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" {
+					if _, statErr := os.Stat(filepath.Join(codesPath, trimmed)); statErr == nil {
+						files = append(files, filepath.ToSlash(trimmed))
+					}
+				}
+			}
+			log.Printf("[IncrementalChunk] Found %d diff files against base %s", len(files), cfg.DiffBase)
+		}
+	}
+
+	// 3. 默认全量模式：提取全仓 git ls-files
+	if len(files) == 0 && cfg.SinceDays == 0 && cfg.DiffBase == "" {
+		cmd := exec.Command("git", "-C", codesPath, "ls-files")
+		output, err := cmd.Output()
+		if err != nil {
+			// 降级为物理文件遍历 (兼容非 git 仓库或单测 Mock 环境)
+			_ = filepath.Walk(codesPath, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				rel, relErr := filepath.Rel(codesPath, path)
+				if relErr == nil {
+					files = append(files, filepath.ToSlash(rel))
+				}
 				return nil
-			}
-			rel, relErr := filepath.Rel(codesPath, path)
-			if relErr == nil {
-				files = append(files, filepath.ToSlash(rel))
-			}
-			return nil
-		})
-	} else {
-		files = strings.Split(strings.TrimSpace(string(output)), "\n")
+			})
+		} else {
+			files = strings.Split(strings.TrimSpace(string(output)), "\n")
+		}
 	}
 
 	// 构建任务级扩展名白名单（为空时 isSourceFile 回退到全局白名单）

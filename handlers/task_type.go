@@ -188,19 +188,19 @@ func UpdateTaskType(c *gin.Context) {
 	oldTaskType := taskType
 
 	var req struct {
-		DisplayName     *string          `json:"display_name"`
-		Description     *string          `json:"description"`
-		EngineMode      *string          `json:"engine_mode"`
-		EngineConfig    *json.RawMessage `json:"engine_config"`
-		AIBackend       *string          `json:"ai_backend"`
-		TargetScope     *string          `json:"target_scope"`
-		NotifyTemplate  *string          `json:"notify_template"`
-		NotifyThreshold *int             `json:"notify_threshold"`
-		NotifyCc        *json.RawMessage `json:"notify_cc"`
-		Timeout         *int             `json:"timeout"`
-		IsActive        *bool            `json:"is_active"`
-		IsCampaign      *bool            `json:"is_campaign"`
-		CampaignPath    *string          `json:"campaign_path"`
+		DisplayName          *string          `json:"display_name"`
+		Description          *string          `json:"description"`
+		EngineMode           *string          `json:"engine_mode"`
+		EngineConfig         *json.RawMessage `json:"engine_config"`
+		AIBackend            *string          `json:"ai_backend"`
+		TargetScope          *string          `json:"target_scope"`
+		NotifyTemplate       *string          `json:"notify_template"`
+		NotifyThreshold      *int             `json:"notify_threshold"`
+		NotifyCc             *json.RawMessage `json:"notify_cc"`
+		Timeout              *int             `json:"timeout"`
+		IsActive             *bool            `json:"is_active"`
+		IsCampaign           *bool            `json:"is_campaign"`
+		CampaignPath         *string          `json:"campaign_path"`
 		GovernanceMode       *string          `json:"governance_mode"`
 		CampaignIcon         *string          `json:"campaign_icon"`
 		CampaignConfig       *json.RawMessage `json:"campaign_config"`
