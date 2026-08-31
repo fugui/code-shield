@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TaskFindingItem, GovernanceMode } from '../../types/report';
 import { getSeverityMeta, getRepoSourceUrl, copyToClipboardWithFallback, extractFirstLineNumber } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
+import DebateVerdictView from './DebateVerdictView';
 
 interface FindingCardProps {
   finding: TaskFindingItem;
@@ -248,8 +249,8 @@ export default function FindingCard({
 
       {/* 详细描述 */}
       {finding.detail && (
-        <div style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary, #334155)', margin: '0.85rem 0', lineHeight: 1.65 }}>
-          {finding.detail}
+        <div style={{ margin: '0.85rem 0' }}>
+          <DebateVerdictView detail={finding.detail} title={finding.title} />
         </div>
       )}
 

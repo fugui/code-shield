@@ -6,6 +6,7 @@ import { useToast } from './Toast';
 import MemberSearchSelect from './MemberSearchSelect';
 import { sshToHttps } from '../utils/urlUtils';
 import { extractFirstLineNumber } from '../utils/reportUtils';
+import DebateVerdictView from './report/DebateVerdictView';
 
 export interface WorkspaceRepoDetails {
   id: number;
@@ -849,9 +850,7 @@ export default function AuditingWorkspace({
                 <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', fontWeight: 600, textAlign: 'left', color: 'var(--text-color)' }}>
                   {workspaceType === 'ut' ? '评估详情描述' : '缺陷详情'}
                 </h4>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-color)', textAlign: 'left', lineHeight: 1.5, background: 'rgba(239, 68, 68, 0.03)', border: '1px solid rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '6px' }}>
-                  {editingFinding.detail}
-                </p>
+                <DebateVerdictView detail={editingFinding.detail} title={editingFinding.title} />
               </div>
 
               {/* Code Snippet */}
