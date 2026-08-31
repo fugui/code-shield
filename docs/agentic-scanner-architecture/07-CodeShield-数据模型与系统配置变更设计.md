@@ -133,6 +133,7 @@ CREATE TABLE task_debate_logs (
     judge_output JSONB NOT NULL,
     verdict VARCHAR(32) NOT NULL,                 -- 'CONFIRMED', 'REJECTED', 'CONDITIONAL'
     duration_ms INT NOT NULL,
+    token_usage JSONB,                           -- 各阶段 Token 消耗记录 {"hunter": 1200, "challenger": 800, "judge": 950}
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -142,6 +143,10 @@ CREATE INDEX idx_debate_created_at ON task_debate_logs (created_at); -- 支持�
 
 > 💡 **日志生命周期策略 (Data Retention Policy)**：
 > 鉴于高频扫描下多 Agent JSONB 日志体积庞大，系统默认保留 **30 天**内的全量辩论日志（由 `ai.debate.log_retention_days` 控制），后台 Cron 任务定期自动归档或清理过期冷数据，防止数据库存储无序膨胀。
+
+> ⚠️ **合规与隐私提示**：辩论日志中的 `hunter_output`、`challenger_output`、`judge_output` JSONB 字段可能包含源码片段。对于有严格数据合规要求的企业部署，建议：
+> - 通过 `ai.debate.log_redaction_enabled` 配置开关启用日志脱敏（仅保留 verdict + rationale，剥离完整代码片段）；
+> - 除定时 TTL 清理外，额外提供手动清理 API 端点（如 `DELETE /api/admin/debate-logs?before=<date>`）供合规审计调用。
 
 #### 3. 代码仓人机反馈例外规则库表 (`repo_feedback_rules`)
 用于沉淀代码仓专属的负样本知识库：
@@ -171,6 +176,8 @@ CREATE INDEX idx_feedback_rules_lookup ON repo_feedback_rules (repo_id, task_typ
 ```sql
 ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS fingerprint VARCHAR(64);
 ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS diff_status VARCHAR(32) DEFAULT 'NEW';
+ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS trigger_line TEXT;
+ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS scope_symbol VARCHAR(256);
 ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS hunter_claim TEXT;
 ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS challenger_arg TEXT;
 ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS judge_verdict TEXT;
@@ -179,6 +186,22 @@ ALTER TABLE analysis_findings ADD COLUMN IF NOT EXISTS calibration_rule VARCHAR(
 CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON analysis_findings (fingerprint);
 CREATE INDEX IF NOT EXISTS idx_findings_diff_status ON analysis_findings (task_report_id, diff_status);
 ```
+
+**对应 Go GORM 结构体扩展**（在 `models/models.go` 的 `AnalysisFinding` 中新增字段）：
+
+```go
+// ── 新增字段（阶段二/三） ──
+Fingerprint     string `gorm:"size:64;index" json:"fingerprint"`                  // 64位缺陷指纹 SHA-256
+DiffStatus      string `gorm:"size:32;default:'NEW';index" json:"diff_status"`     // NEW/EXISTED/RESOLVED/REOPENED
+TriggerLine     string `gorm:"type:text" json:"trigger_line"`                     // 核心触发行（用于指纹计算，由 Hunter/Judge 输出）
+ScopeSymbol     string `gorm:"size:256" json:"scope_symbol"`                      // AST 作用域符号（函数/类签名）
+HunterClaim     string `gorm:"type:text" json:"hunter_claim"`                     // 猎手初筛主张
+ChallengerArg   string `gorm:"type:text" json:"challenger_arg"`                   // 辩护人抗辩意见
+JudgeVerdict    string `gorm:"type:text" json:"judge_verdict"`                    // 终审法官裁决
+CalibrationRule string `gorm:"size:128" json:"calibration_rule"`                  // 命中的校准规则标识
+```
+
+> 💡 **说明**：`EnrichedFinding`（doc-06 §6.1）为增量比对阶段的**内存中间计算结构体**，不直接入库。上述字段为 `AnalysisFinding` 的持久化扩展，在 `DiffAndEnrichFindings` 完成后回写至数据库。
 
 #### 2. 扩展任务报告表 (`task_reports`)
 ```sql
@@ -262,6 +285,9 @@ ai:
     max_candidates_per_chunk: 10   # 单分片进入辩论的候选点上限 (防异常爆炸)
     stage_timeout_seconds: 90      # 单个辩论阶段硬超时限制
     log_retention_days: 30         # 辩论轨迹 JSON 日志保留天数 (超过自动清理)
+    backpressure_threshold: 30     # 跨 Tier 背压触发积压阈值
+    backpressure_timeout_seconds: 120 # 背压超时兜底（秒），超时后降级为 Hunter 直出
+    log_redaction_enabled: false   # 是否启用辩论日志脱敏（合规场景开启）
 
   # ── 工作时间自动限流配置 (既有配置，完全兼容) ──
   work_hours_throttle:
@@ -291,14 +317,12 @@ auth:
 
 ## 四、 Go 配置结构体映射 (`models/config.go`)
 
-在 `models/config.go` 中，新增结构体并挂载到全局 `AppConfig`：
+在 `models/config.go` 中，**基于现有内联匿名结构体的代码风格**，新增以下独立配置结构体并挂载到全局 `AppConfig`。以下仅展示**新增/变更部分**，现有字段保持不变：
 
 ```go
 package models
 
-import "time"
-
-// TierConfig 单个阶梯模型的资源配置
+// TierConfig 单个阶梯模型的资源配置（新增）
 type TierConfig struct {
 	Backend        string `yaml:"backend" json:"backend"`                 // claude / opencode / codex
 	Model          string `yaml:"model" json:"model"`                     // 具体模型名称
@@ -306,16 +330,19 @@ type TierConfig struct {
 	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"` // 超时时限
 }
 
-// DebateFlowConfig 辩论流水线流控配置
+// DebateFlowConfig 辩论流水线流控配置（新增）
 type DebateFlowConfig struct {
-	Enabled               bool `yaml:"enabled" json:"enabled"`
-	FastPassEnabled       bool `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
-	MaxCandidatesPerChunk int  `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
-	StageTimeoutSeconds   int  `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
-	LogRetentionDays      int  `yaml:"log_retention_days" json:"log_retention_days"`
+	Enabled                    bool `yaml:"enabled" json:"enabled"`
+	FastPassEnabled            bool `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
+	MaxCandidatesPerChunk      int  `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
+	StageTimeoutSeconds        int  `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
+	LogRetentionDays           int  `yaml:"log_retention_days" json:"log_retention_days"`
+	BackpressureThreshold      int  `yaml:"backpressure_threshold" json:"backpressure_threshold"`             // 背压触发阈值，默认 30
+	BackpressureTimeoutSeconds int  `yaml:"backpressure_timeout_seconds" json:"backpressure_timeout_seconds"` // 背压超时兜底（秒），默认 120
+	LogRedactionEnabled        bool `yaml:"log_redaction_enabled" json:"log_redaction_enabled"`               // 日志脱敏开关（合规场景）
 }
 
-// GovernanceSystemConfig 企业治理与记忆配置
+// GovernanceSystemConfig 企业治理与记忆配置（新增）
 type GovernanceSystemConfig struct {
 	FingerprintEnabled bool `yaml:"fingerprint_enabled" json:"fingerprint_enabled"`
 	ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`
@@ -324,37 +351,22 @@ type GovernanceSystemConfig struct {
 	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`
 }
 
-// 扩展后的 Config 根结构体
-type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Storage  StorageConfig  `yaml:"storage"`
-	Database DatabaseConfig `yaml:"database"`
-	
-	AI struct {
-		Backend           string                  `yaml:"backend"`
-		DebugLogs         bool                    `yaml:"debug_logs"`
-		OutputFormat      string                  `yaml:"output_format"`
-		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"`
-		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"`
-		Models            []ModelConfig           `yaml:"models"`
-		
-		// ── 新增配置段 ──
-		Tiers struct {
-			Tier1Fast      TierConfig `yaml:"tier1_fast"`
-			Tier2Reasoning TierConfig `yaml:"tier2_reasoning"`
-			Tier3Synthesis TierConfig `yaml:"tier3_synthesis"`
-		} `yaml:"tiers"`
-		
-		Debate DebateFlowConfig `yaml:"debate"`
-	} `yaml:"ai"`
+// ── 以下字段追加到现有 Config.AI 内联结构体中 ──
+// Tiers struct {
+//     Tier1Fast      TierConfig `yaml:"tier1_fast"`
+//     Tier2Reasoning TierConfig `yaml:"tier2_reasoning"`
+//     Tier3Synthesis TierConfig `yaml:"tier3_synthesis"`
+// } `yaml:"tiers"`
+//
+// Debate DebateFlowConfig `yaml:"debate"`
 
-	// ── 新增企业治理配置段 ──
-	Governance GovernanceSystemConfig `yaml:"governance"`
+// ── 以下字段追加到现有 Config 根结构体中 ──
+// Governance GovernanceSystemConfig `yaml:"governance"`
+```
 
-	Notification NotificationConfig `yaml:"notification"`
-	Auth         AuthConfig         `yaml:"auth"`
-}
+> 💡 **说明**：现有 `Config` 采用内联匿名结构体风格（如 `Server struct { ... } \`yaml:"server"\``），上述新增配置以注释形式标注插入位置，避免与现有代码风格冲突。实际落地时直接在 `config.go` 的对应位置追加即可。
 
+```go
 // GetTierConfig 智能获取指定 Tier 的配置（带平滑回退兜底）
 func (c *Config) GetTierConfig(tier string) TierConfig {
 	switch tier {

@@ -202,6 +202,8 @@ flowchart TD
       "category": "内存管理问题-越界访问/缓冲区溢出",
       "file_path": "include/fmt/format.h",
       "line_number": "1915-1919",
+      "trigger_line": "c = *++it;",
+      "scope_symbol": "parse_arg_id<char>",
       "title": "parse_arg_id 先自增后解引用导致畸形格式串堆越界读 1 字节",
       "judgement_rationale": "Hunter 指控属实。do-while 循环逻辑中先执行 ++it 再判断 it != end，在以参数名截断的格式串场景下会越过 end 边界读取 1 字节堆内存。Challenger 抗辩未能找到任何前置长度保护。",
       "code_snippet": "  auto it = begin;\n  do {\n    c = *++it;\n  } while (it != end && (is_name_start(c) || ('0' <= c && c <= '9')));\n  handler(basic_string_view<Char>(begin, to_unsigned(it - begin)));",
@@ -310,6 +312,7 @@ type ChallengerDefenseCase struct {
 // ChallengerOutput 辩护阶段产物
 type ChallengerOutput struct {
 	DefenseCases []ChallengerDefenseCase `json:"defense_cases"`
+	Summary      string                  `json:"summary"` // 辩护阶段总结摘要（降级时由引擎注入提示信息）
 }
 
 // JudgeFinalVerdict 法官最终裁决
@@ -320,6 +323,8 @@ type JudgeFinalVerdict struct {
 	Category            string `json:"category"`
 	FilePath            string `json:"file_path"`
 	LineNumber          string `json:"line_number"`
+	TriggerLine         string `json:"trigger_line"`  // 核心引发风险的关键单一语句行（用于指纹计算）
+	ScopeSymbol         string `json:"scope_symbol"` // AST 作用域符号（函数名/类名签名，如 buffered_file::fileno）
 	Title               string `json:"title"`
 	JudgementRationale  string `json:"judgement_rationale"`
 	CodeSnippet         string `json:"code_snippet"`
@@ -420,6 +425,31 @@ func (e *DebateEngine) ProcessChunk(ctx context.Context, bundle SemanticBundle, 
 }
 ```
 
+```go
+// CalibrateSeverityDeterministically 依据确定性规则矩阵校准严重度，剥夺大模型自由裁量权
+// 决策逻辑参见 doc-02 §3.4 的流程图
+func CalibrateSeverityDeterministically(category string, verdict string, codeSnippet string) string {
+	// 条件性缺陷一律降为 "一般"
+	if verdict == "CONDITIONAL" {
+		return "一般"
+	}
+	// 内存破坏类（写越界/UAF/栈破坏）= P0 严重
+	if isMemoryCorruption(category) {
+		return "严重"
+	}
+	// 确定性崩溃（空指针/读越界/未捕获异常）= P1 高
+	if isDeterministicCrash(category) {
+		return "高"
+	}
+	// 资源耗尽/DoS/Flaky = P2 一般
+	if isResourceExhaustion(category) {
+		return "一般"
+	}
+	// 其余 = P3 建议
+	return "建议"
+}
+```
+
 ---
 
 ## 六、 阶段二关键技术指标与收益预测
@@ -431,3 +461,17 @@ func (e *DebateEngine) ProcessChunk(ctx context.Context, bundle SemanticBundle, 
 | **综合 Token 成本** | 100% 全量顶配大模型消耗 | **Tier 1 (80%) + Tier 2 (20%)** | **算力成本降低 40% ~ 55%** |
 | **扫描吞吐量与耗时** | 串行重推理，速度缓慢 | **快排初筛并发流转 + 靶向辩论** | **全仓扫描提速 2.5 倍** |
 | **结论证据链透明度** | 仅有单方结论，研发难以信服 | **包含完整的质询辩驳与法官裁决书** | 研发人员采纳与修复意愿大幅提升 |
+
+### 6.1 可观测性与指标采集
+
+为量化验证上述收益指标，辩论引擎内建以下可观测性能力：
+
+| 指标名称 | 采集方式 | 用途 |
+| :--- | :--- | :--- |
+| `debate_duration_seconds` | 按 Chunk 粒度记录辩论全流程耗时 | 辩论耗时分布分析 |
+| `tier_slot_utilization` | Dispatcher 定期上报各 Tier 槽位占用率 | 容量规划与成本核算 |
+| `backpressure_trigger_count` | 背压触发时计数器递增 | 流控健康度监控 |
+| `fingerprint_match_rate` | 增量比对阶段统计 L1/L2 命中率 | 指纹算法稳定性验证 |
+| `debate_token_usage` | 辩论日志中记录 Hunter/Challenger/Judge 各阶段 Token 消耗 | 成本精细化核算 |
+
+建议后续通过 Prometheus + Grafana 构建实时看板，或在现有 `task_debate_logs` 表中增加 `token_usage` JSONB 字段实现轻量化记录。
