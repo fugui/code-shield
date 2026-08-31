@@ -44,7 +44,7 @@ func main() {
 
 	// 校验全局 AI 后端配置（空值已在 LoadConfig 中默认 claude）
 	if !services.IsValidAIBackend(models.AppConfig.AI.Backend) {
-		log.Fatalf("Invalid ai.backend %q in config.yaml. Allowed: claude, opencode, codex", models.AppConfig.AI.Backend)
+		log.Fatalf("Invalid ai.backend %q in config.yaml. Allowed: claude, opencode, codex, agy", models.AppConfig.AI.Backend)
 	}
 
 	// Initialize database
