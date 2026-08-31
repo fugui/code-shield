@@ -256,3 +256,54 @@ func TestFinalizeCodexOutput(t *testing.T) {
 		t.Fatalf("expected error when no output available")
 	}
 }
+
+func TestMergeEnv(t *testing.T) {
+	base := []string{"FOO=1", "BAR=2", "BAZ=3"}
+	overrides := []string{"BAR=override", "QUX=4"}
+	result := mergeEnv(base, overrides)
+
+	resultMap := make(map[string]string)
+	for _, e := range result {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			resultMap[parts[0]] = parts[1]
+		}
+	}
+
+	if resultMap["FOO"] != "1" {
+		t.Errorf("expected FOO=1, got %s", resultMap["FOO"])
+	}
+	if resultMap["BAR"] != "override" {
+		t.Errorf("expected BAR=override, got %s", resultMap["BAR"])
+	}
+	if resultMap["BAZ"] != "3" {
+		t.Errorf("expected BAZ=3, got %s", resultMap["BAZ"])
+	}
+	if resultMap["QUX"] != "4" {
+		t.Errorf("expected QUX=4, got %s", resultMap["QUX"])
+	}
+}
+
+func TestRunCLIProcess_CustomEnv(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "output.txt")
+	script := `echo "MY_VAR=$CUSTOM_VAR_TEST" > "$1"`
+	err := RunCLIProcess("sh", []string{"-c", script, "sh", outPath}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+		Env:        []string{"CUSTOM_VAR_TEST=hello_shield"},
+	}, "模拟报告")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+	if !strings.Contains(string(content), "MY_VAR=hello_shield") {
+		t.Fatalf("expected output to contain custom env var, got %s", string(content))
+	}
+}

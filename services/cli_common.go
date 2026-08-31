@@ -81,6 +81,31 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen] + " ...[truncated]"
 }
 
+// mergeEnv 将 overrides 覆盖合并到 base 环境变量列表中
+func mergeEnv(base []string, overrides []string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+	overrideKeys := make(map[string]struct{}, len(overrides))
+	for _, e := range overrides {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) > 0 {
+			overrideKeys[parts[0]] = struct{}{}
+		}
+	}
+	var res []string
+	for _, e := range base {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) > 0 {
+			if _, ok := overrideKeys[parts[0]]; !ok {
+				res = append(res, e)
+			}
+		}
+	}
+	res = append(res, overrides...)
+	return res
+}
+
 // RunCLIProcess 统一管理所有 AI CLI 的执行、超时、进程组治理与 Mock 降级。
 // 进程治理：Setpgid + Kill(-pgid) + Pdeathsig；stdin 固定为空 Reader（立即 EOF），
 // 避免 codex/opencode 在非 TTY stdin 上等待 EOF 造成挂起。
@@ -113,6 +138,9 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid:   true,
 		Pdeathsig: syscall.SIGKILL,
+	}
+	if len(req.Env) > 0 {
+		cmd.Env = mergeEnv(os.Environ(), req.Env)
 	}
 
 	var stderrBuf strings.Builder

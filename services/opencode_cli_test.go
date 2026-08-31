@@ -118,3 +118,41 @@ func TestCleanupLegacyTaskAgents(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareIsolatedDataDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+
+	// 模拟已存在的 ~/.local/share/opencode/auth.json
+	authDir := filepath.Join(home, ".local", "share", "opencode")
+	if err := os.MkdirAll(authDir, 0755); err != nil {
+		t.Fatalf("failed to create auth dir: %v", err)
+	}
+	authContent := `{"test_provider":{"key":"test_key_123"}}`
+	if err := os.WriteFile(filepath.Join(authDir, "auth.json"), []byte(authContent), 0600); err != nil {
+		t.Fatalf("failed to write auth.json: %v", err)
+	}
+
+	dataDir, cleanup, err := prepareIsolatedDataDir()
+	if err != nil {
+		t.Fatalf("prepareIsolatedDataDir failed: %v", err)
+	}
+	defer cleanup()
+
+	// 检查目录结构
+	isolatedAuthPath := filepath.Join(dataDir, "opencode", "auth.json")
+	content, err := os.ReadFile(isolatedAuthPath)
+	if err != nil {
+		t.Fatalf("failed to read isolated auth.json: %v", err)
+	}
+	if string(content) != authContent {
+		t.Fatalf("auth.json content mismatch: got %s, want %s", string(content), authContent)
+	}
+
+	// 验证 cleanup 后临时目录被删除
+	cleanup()
+	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
+		t.Fatalf("expected dataDir to be deleted after cleanup, got err=%v", err)
+	}
+}
