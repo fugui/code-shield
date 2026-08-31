@@ -201,9 +201,11 @@ func UpdateTaskType(c *gin.Context) {
 		IsActive        *bool            `json:"is_active"`
 		IsCampaign      *bool            `json:"is_campaign"`
 		CampaignPath    *string          `json:"campaign_path"`
-		GovernanceMode  *string          `json:"governance_mode"`
-		CampaignIcon    *string          `json:"campaign_icon"`
-		CampaignConfig  *json.RawMessage `json:"campaign_config"`
+		GovernanceMode       *string          `json:"governance_mode"`
+		CampaignIcon         *string          `json:"campaign_icon"`
+		CampaignConfig       *json.RawMessage `json:"campaign_config"`
+		TierFastBackend      *string          `json:"tier_fast_backend"`
+		TierReasoningBackend *string          `json:"tier_reasoning_backend"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -233,6 +235,12 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.TargetScope != nil {
 		updates["target_scope"] = *req.TargetScope
+	}
+	if req.TierFastBackend != nil {
+		updates["tier_fast_backend"] = *req.TierFastBackend
+	}
+	if req.TierReasoningBackend != nil {
+		updates["tier_reasoning_backend"] = *req.TierReasoningBackend
 	}
 	if req.NotifyTemplate != nil {
 		updates["notify_template"] = *req.NotifyTemplate
