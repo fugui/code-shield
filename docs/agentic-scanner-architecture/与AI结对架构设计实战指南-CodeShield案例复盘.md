@@ -99,19 +99,19 @@ flowchart TD
 ```mermaid
 mindmap
   root((AI 结对设计四大心法))
-    实证第一 (Evidence First)
+    实证驱动
       拒绝空谈设想
       提供真实数据与日志
       用可执行代码/PoC实测
-    多轮对抗 (Adversarial Prompting)
+    多轮对抗
       引入三方角色制衡
       设定明确的对立立场
       严禁盲从与合谋
-    价值拷问 (Value Pruning)
+    价值拷问
       全场景任务透视
       砍掉低ROI伪需求
       优先做通用闭环
-    代码级可落地 (Production Ready)
+    工程落地
       拒绝伪代码草图
       输出完整DDL与Schema
       设计向前兼容与降级路径
