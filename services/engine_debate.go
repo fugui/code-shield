@@ -396,7 +396,8 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle) (
 	defer acq.Release()
 
 	prompt := buildHunterPrompt(ctx, bundle)
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath)
+	tierCfg := models.AppConfig.GetTierConfig("tier1_fast")
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, tierCfg.TimeoutSeconds)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -420,7 +421,8 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 	defer acq.Release()
 
 	prompt := buildChallengerPrompt(ctx, bundle, hunterOut)
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath)
+	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, tierCfg.TimeoutSeconds)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -442,7 +444,8 @@ func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hu
 	defer acq.Release()
 
 	prompt := buildJudgePrompt(ctx, bundle, hunterOut, challengerOut)
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath)
+	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, tierCfg.TimeoutSeconds)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -588,7 +591,7 @@ func parseJSONFromAIOutput(output string, target interface{}) error {
 }
 
 // callAITier 底层调用指定后端和模型的 AI Invoker 工具
-func callAITier(ctx context.Context, backend string, modelName string, prompt string, workDir string) (string, int64, error) {
+func callAITier(ctx context.Context, backend string, modelName string, prompt string, workDir string, timeoutSeconds int) (string, int64, error) {
 	if backend == "" {
 		backend = models.AppConfig.AI.Backend
 	}
@@ -607,12 +610,19 @@ func callAITier(ctx context.Context, backend string, modelName string, prompt st
 	tmpFile.Close()
 	defer os.Remove(outputPath)
 
+	timeoutMin := 30
+	if timeoutSeconds > 0 {
+		timeoutMin = (timeoutSeconds + 59) / 60
+	} else if models.AppConfig.AI.Debate.StageTimeoutSeconds > 0 {
+		timeoutMin = (models.AppConfig.AI.Debate.StageTimeoutSeconds + 59) / 60
+	}
+
 	req := AIRequest{
 		ParentContext: ctx,
 		WorkDir:       workDir,
 		PromptMsg:     prompt,
 		OutputPath:    outputPath,
-		TimeoutMin:    30,
+		TimeoutMin:    timeoutMin,
 		ModelName:     modelName,
 	}
 

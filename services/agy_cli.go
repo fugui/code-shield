@@ -2,6 +2,7 @@ package services
 
 import (
 	"code-shield/models"
+	"fmt"
 )
 
 // AgyInvoker 使用 Antigravity CLI (agy) 执行 AI 任务
@@ -21,11 +22,17 @@ func (a *AgyInvoker) buildArgs(req AIRequest) ([]string, error) {
 		formatVal = "json"
 	}
 
+	timeoutMin := req.TimeoutMin
+	if timeoutMin <= 0 {
+		timeoutMin = 60
+	}
+
 	args := []string{
 		"-p", userPrompt,
 		"--dangerously-skip-permissions",
 		"--disable-slash-commands",
 		"--output-format", formatVal,
+		"--print-timeout", fmt.Sprintf("%dm", timeoutMin),
 	}
 
 	if req.ModelName != "" {
