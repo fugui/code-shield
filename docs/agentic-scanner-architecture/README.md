@@ -1,14 +1,14 @@
-# Code-Shield 架构分析与下一代系统设计文档库
+# Code-Shield 智能体协同与异构调度扫描架构设计文档库
 
-本目录（`/home/fugui/codes/code-docs`）收录了针对 Code-Shield 代码安全检视平台的深度实证分析、AI 分析引擎（AI Engine）演进设计、异构模型调度器（Dispatcher & Scheduler）设计及工程落地路线图。
+本专题收录了针对 Code-Shield 平台的深度实证分析、下一代 AI 扫描引擎（AI Engine）演进设计、异构模型调度器（Dispatcher & Scheduler）设计及工程落地路线图。
 
 ---
 
 ## 📚 文档目录索引与导读
 
 ```
-code-docs/
-├── README.md                                          # 本文档：文档库导航与核心摘要
+agentic-scanner-architecture/
+├── README.md                                          # 本文档：专题导航与核心摘要
 ├── 01-fmt扫描实证比对与缺陷复盘报告.md                  # 两次扫描报告深度比对、8大缺陷源码核查与 ASan 实测
 ├── 02-CodeShield-下一代AI引擎架构设计.md               # 语义分片、任务自适应路由、多 Agent 辩论与定级校准
 ├── 03-CodeShield-异构模型流水线与DAG调度器设计.md       # 异构模型阶梯调度、动态 DAG 任务拓扑与 SSOT 指纹记忆

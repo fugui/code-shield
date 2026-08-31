@@ -9,8 +9,8 @@
 ```
 docs/
 ├── README.md                                          # 本文档：文档中心首页索引
-└── architecture-evolution/                            # 【专题】下一代 AI 引擎与异构调度架构演进方案
-    ├── README.md                                      # 演进方案总览与导航
+└── agentic-scanner-architecture/                      # 【专题】基于多 Agent 协同与异构调度的下一代扫描架构
+    ├── README.md                                      # 架构方案总览与导航
     ├── 01-fmt扫描实证比对与缺陷复盘报告.md              # 真实扫描比对、8大缺陷源码核实与 ASan 实测
     ├── 02-CodeShield-下一代AI引擎架构设计.md           # 语义分片、任务自适应路由、三方辩论与定级校准
     ├── 03-CodeShield-异构模型流水线与DAG调度器设计.md   # 异构模型阶梯调度、动态 DAG 任务拓扑与 SSOT 指纹记忆
@@ -24,5 +24,5 @@ docs/
 
 ## 🚀 核心架构演进专题导读
 
-关于 Code-Shield 下一代 AI 引擎、智能体三方辩论、异构模型阶梯调度及多任务治理记忆闭环的完整方案，请直接阅读：
-👉 **[下一代架构演进方案总览 (architecture-evolution/README.md)](architecture-evolution/README.md)**
+关于 Code-Shield 多 Agent 对抗辩论、异构模型阶梯调度及多任务治理记忆闭环的完整方案，请直接阅读：
+👉 **[下一代 Agent 扫描架构方案总览 (agentic-scanner-architecture/README.md)](agentic-scanner-architecture/README.md)**
