@@ -24,7 +24,7 @@ func CalibrateSeverityDeterministically(category string, verdict string, codeSni
 		if hasMacroGuard {
 			return "一般", "RULE_MEM_CORRUPTION_MACRO_GUARDED"
 		}
-		return "严重", "RULE_MEM_CORRUPTION_DEFAULT_REACHABLE"
+		return "致命", "RULE_MEM_CORRUPTION_DEFAULT_REACHABLE"
 	}
 
 	// 4. 确定性崩溃/段错误/致命逻辑（空指针解引用、堆栈读越界、未捕获异常、测试无效断言）
@@ -32,7 +32,7 @@ func CalibrateSeverityDeterministically(category string, verdict string, codeSni
 		if hasMacroGuard {
 			return "建议", "RULE_CRASH_MACRO_GUARDED"
 		}
-		return "高", "RULE_CRASH_DETERMINISTIC"
+		return "严重", "RULE_CRASH_DETERMINISTIC"
 	}
 
 	// 5. 资源耗尽 / DoS / 性能隐患 / Flaky Test（未受限大内存分配、死循环、并发锁竞争）
