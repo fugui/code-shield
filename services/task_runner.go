@@ -205,6 +205,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	}
 
 	// 6. Post-process: run postprocess script on final report
+	updateTaskStatus(ctx.report.ID, models.StatusPostProcessing)
 	result := ctx.runPostProcess()
 
 	// 7. Finalize: save result to DB and trigger notification

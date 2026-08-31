@@ -336,24 +336,29 @@ function ScanManagement() {
       case 'analyzing':
         {
           const report = latestLog.task_report;
+          const isDebate = ['debate_full', 'debate_selective'].includes(latestLog.engine_mode || '');
           if (report && report.total_chunks > 0) {
-            text = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
+            if (report.processed_chunks >= report.total_chunks) {
+              text = '全仓总结中 (AI生成)';
+            } else {
+              text = isDebate ? `辩论中 (${report.processed_chunks}/${report.total_chunks})` : `分析中 (${report.processed_chunks}/${report.total_chunks})`;
+            }
           } else {
-            text = '分析中';
+            text = isDebate ? '对抗辩论中' : 'AI检视中';
           }
         }
         badgeCls = 'primary';
         break;
       case 'synthesis':
-        text = '报告总结中';
+        text = '全仓总结中 (AI生成)';
         badgeCls = 'primary';
         break;
       case 'post_processing':
-        text = '结果分析';
+        text = '状态同步中';
         badgeCls = 'primary';
         break;
       case 'merging':
-        text = '问题归并';
+        text = '问题归并与闭环';
         badgeCls = 'primary';
         break;
     }
