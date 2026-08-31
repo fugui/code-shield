@@ -236,6 +236,13 @@ loop:
 	// 执行确定性严重度校准决策树，纠正大模型自由裁量与定级倒挂
 	allFindings = CalibrateFindings(allFindings)
 
+	// 执行跨任务缺陷增量比对状态机与范围守卫打标
+	var scannedFiles []string
+	for _, fList := range chunks {
+		scannedFiles = append(scannedFiles, fList...)
+	}
+	allFindings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, scannedFiles, allFindings)
+
 	log.Printf("[ChunkedEngine] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
 	ctx.findings = allFindings
 	return ctx.executeSynthesis(allFindings)

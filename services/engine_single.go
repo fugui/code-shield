@@ -111,6 +111,11 @@ func (e *SingleEngine) Run(ctx *taskContext) error {
 	// Save task summary report
 	ctx.writeSummaryReport()
 
+	// ── 严重度校准与增量比对打标 ──
+	findings = CalibrateFindings(findings)
+	findings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, fileList, findings)
+	ctx.findings = findings
+
 	// Phase 2: 综合阶段 — 基于 JSON 生成最终 Markdown 报告
 	return ctx.executeSynthesis(findings)
 }
