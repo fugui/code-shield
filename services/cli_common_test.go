@@ -307,3 +307,58 @@ func TestRunCLIProcess_CustomEnv(t *testing.T) {
 		t.Fatalf("expected output to contain custom env var, got %s", string(content))
 	}
 }
+
+func TestSummarizeCLIArgs(t *testing.T) {
+	multilinePrompt := `# C/C++ Coredump 风险报告生成指令
+你是一个资深代码审计专家。
+请仔细检查以下文件是否存在内存越界、空指针等缺陷。
+` + strings.Repeat("int a = 0;\n", 100)
+
+	args := []string{
+		"run",
+		multilinePrompt,
+		"--agent",
+		"shield-base-scanner",
+		"--auto",
+		"--format",
+		"json",
+		"--model",
+		"deepseek-v4-flash",
+	}
+
+	summary := summarizeCLIArgs(args)
+
+	// 验证结果是单行，不含换行符
+	if strings.Contains(summary, "\n") {
+		t.Fatalf("summarizeCLIArgs should return single-line summary, got: %s", summary)
+	}
+	// 验证首行标题被保留
+	if !strings.Contains(summary, "# C/C++ Coredump 风险报告生成指令") {
+		t.Errorf("expected summary to contain prompt first line title, got: %s", summary)
+	}
+	// 验证包含数据大小标记
+	if !strings.Contains(summary, "KB") && !strings.Contains(summary, "B") {
+		t.Errorf("expected summary to contain byte size, got: %s", summary)
+	}
+	// 验证普通参数保留完整
+	if !strings.Contains(summary, `"shield-base-scanner"`) || !strings.Contains(summary, `"deepseek-v4-flash"`) {
+		t.Errorf("expected summary to preserve standard arguments, got: %s", summary)
+	}
+}
+
+func TestFormatByteSize(t *testing.T) {
+	tests := []struct {
+		bytes int
+		want  string
+	}{
+		{500, "500B"},
+		{1024, "1.0KB"},
+		{2560, "2.5KB"},
+	}
+	for _, tt := range tests {
+		got := formatByteSize(tt.bytes)
+		if got != tt.want {
+			t.Errorf("formatByteSize(%d) = %s, want %s", tt.bytes, got, tt.want)
+		}
+	}
+}

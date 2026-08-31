@@ -106,6 +106,42 @@ func mergeEnv(base []string, overrides []string) []string {
 	return res
 }
 
+// summarizeCLIArgs 将命令行参数格式化为单行紧凑摘要，截断多行提示词及超长文本，保持终端输出清爽
+func summarizeCLIArgs(args []string) string {
+	parts := make([]string, 0, len(args))
+	for _, arg := range args {
+		trimmed := strings.TrimSpace(arg)
+		// 如果包含换行符或长度超过 60 字符，进行单行精简提炼
+		if strings.Contains(trimmed, "\n") || len([]rune(trimmed)) > 60 {
+			firstLine := trimmed
+			if idx := strings.Index(trimmed, "\n"); idx != -1 {
+				firstLine = strings.TrimSpace(trimmed[:idx])
+			}
+			runes := []rune(firstLine)
+			if len(runes) > 40 {
+				firstLine = string(runes[:40]) + "..."
+			}
+			sizeStr := formatByteSize(len(arg))
+			if firstLine != "" {
+				parts = append(parts, fmt.Sprintf("%q... (%s)", firstLine, sizeStr))
+			} else {
+				parts = append(parts, fmt.Sprintf("<payload %s>", sizeStr))
+			}
+		} else {
+			parts = append(parts, fmt.Sprintf("%q", trimmed))
+		}
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// formatByteSize 格式化字节大小为可读字符串 (如 8.5KB)
+func formatByteSize(bytes int) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	return fmt.Sprintf("%.1fKB", float64(bytes)/1024.0)
+}
+
 // RunCLIProcess 统一管理所有 AI CLI 的执行、超时、进程组治理与 Mock 降级。
 // 进程治理：Setpgid + Kill(-pgid) + Pdeathsig；stdin 固定为空 Reader（立即 EOF），
 // 避免 codex/opencode 在非 TTY stdin 上等待 EOF 造成挂起。
@@ -129,7 +165,7 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 	}
 	defer metaFile.Close()
 
-	log.Printf("[%s] WorkDir: %s, Args: %v\n", cliName, req.WorkDir, args)
+	log.Printf("[%s] WorkDir: %s, Args: %s\n", cliName, req.WorkDir, summarizeCLIArgs(args))
 
 	cmd := exec.Command(cliName, args...)
 	cmd.Dir = req.WorkDir
