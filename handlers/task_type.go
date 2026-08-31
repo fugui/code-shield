@@ -356,6 +356,10 @@ func DeleteTaskType(c *gin.Context) {
 			if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.TaskDebateLog{}).Error; err != nil {
 				return err
 			}
+			// 清理关联的 KeyIssue
+			if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.KeyIssue{}).Error; err != nil {
+				return err
+			}
 			// 删除 TaskReport
 			if err := tx.Where("id IN ?", reportIDs).Delete(&models.TaskReport{}).Error; err != nil {
 				return err
@@ -373,11 +377,8 @@ func DeleteTaskType(c *gin.Context) {
 			return err
 		}
 
-		// 3. 清理专项分析与闭环治理历史数据
+		// 3. 清理专项分析历史数据
 		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.CampaignFinding{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.KeyIssue{}).Error; err != nil {
 			return err
 		}
 
