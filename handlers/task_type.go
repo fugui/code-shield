@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // logTaskTypeFileErr 记录任务类型文件 I/O 错误（清理/落盘类错误不静默忽略）
@@ -329,7 +330,7 @@ func UpdateTaskType(c *gin.Context) {
 	c.JSON(http.StatusOK, taskType)
 }
 
-// DeleteTaskType deletes a task type
+// DeleteTaskType deletes a task type and cleans up associated reports, schedules, and memory records
 func DeleteTaskType(c *gin.Context) {
 	id := c.Param("id")
 	var taskType models.TaskType
@@ -338,8 +339,65 @@ func DeleteTaskType(c *gin.Context) {
 		return
 	}
 
-	if err := models.DB.Delete(&taskType).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task type"})
+	// 开启事务级联清理所有关联实体
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		// 1. 获取关联的全部 TaskReport ID
+		var reportIDs []uint
+		if err := tx.Model(&models.TaskReport{}).Where("task_type_id = ?", taskType.ID).Pluck("id", &reportIDs).Error; err != nil {
+			return err
+		}
+
+		if len(reportIDs) > 0 {
+			// 清理关联的 AnalysisFinding
+			if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.AnalysisFinding{}).Error; err != nil {
+				return err
+			}
+			// 清理关联的 TaskDebateLog
+			if err := tx.Where("task_report_id IN ?", reportIDs).Delete(&models.TaskDebateLog{}).Error; err != nil {
+				return err
+			}
+			// 删除 TaskReport
+			if err := tx.Where("id IN ?", reportIDs).Delete(&models.TaskReport{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// 2. 清理关联的定时任务与触发日志
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.ScheduleConfig{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.TaskTriggerLog{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.TaskExecutionLog{}).Error; err != nil {
+			return err
+		}
+
+		// 3. 清理专项分析与闭环治理历史数据
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.CampaignFinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.KeyIssue{}).Error; err != nil {
+			return err
+		}
+
+		// 4. 清理缺陷指纹真值表与人机负样本规则
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.DefectFingerprintRecord{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.RepoFeedbackRule{}).Error; err != nil {
+			return err
+		}
+
+		// 5. 删除 TaskType 自身
+		if err := tx.Delete(&taskType).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task type: " + err.Error()})
 		return
 	}
 
