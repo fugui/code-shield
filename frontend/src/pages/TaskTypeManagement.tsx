@@ -445,6 +445,7 @@ function TaskTypeManagement() {
                   <option value="opencode">OpenCode</option>
                   <option value="claude">Claude</option>
                   <option value="codex">Codex</option>
+                  <option value="agy">Antigravity (agy)</option>
                 </select>
               </div>
               <div>
@@ -454,6 +455,7 @@ function TaskTypeManagement() {
                   <option value="claude">Claude</option>
                   <option value="opencode">OpenCode</option>
                   <option value="codex">Codex</option>
+                  <option value="agy">Antigravity (agy)</option>
                 </select>
               </div>
             </div>
@@ -466,6 +468,7 @@ function TaskTypeManagement() {
                 <option value="claude">Claude</option>
                 <option value="opencode">OpenCode</option>
                 <option value="codex">Codex</option>
+                <option value="agy">Antigravity (agy)</option>
               </select>
             </div>
             <div>

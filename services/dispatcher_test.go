@@ -21,6 +21,7 @@ func setupTestDispatcher(rawConcurrent int) *ModelDispatcher {
 			OpenCode:   "test-opencode",
 			Claude:     "test-claude",
 			Codex:      "test-codex",
+			Agy:        "test-agy",
 			Concurrent: rawConcurrent,
 			Active:     0,
 		},
@@ -305,4 +306,23 @@ func TestDispatcher_LeastLoadedSelection(t *testing.T) {
 	}
 	d.Release(res1, "claude")
 	d.Release(res2, "claude")
+}
+
+func TestDispatcher_AgyRouting(t *testing.T) {
+	d := setupTestDispatcher(2)
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, model, err := d.Acquire(ctx, "agy")
+	if err != nil {
+		t.Fatalf("Acquire failed for agy: %v", err)
+	}
+	if res == nil || model != "test-agy" {
+		t.Fatalf("expected model 'test-agy', got '%s'", model)
+	}
+	d.Release(res, "agy")
 }

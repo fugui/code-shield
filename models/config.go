@@ -20,6 +20,7 @@ type ModelConfig struct {
 	OpenCode   string `yaml:"opencode"`   // OpenCode 引擎对应的具体模型名
 	Claude     string `yaml:"claude"`     // Claude 引擎对应的具体模型名
 	Codex      string `yaml:"codex"`      // Codex 引擎对应的具体模型名
+	Agy        string `yaml:"agy"`        // Antigravity (agy) 引擎对应的具体模型名（可选）
 	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
 }
 
@@ -33,7 +34,7 @@ type WorkHoursThrottleConfig struct {
 
 // TierConfig 单个阶梯模型的资源配置
 type TierConfig struct {
-	Backend        string `yaml:"backend" json:"backend"`                 // claude / opencode / codex
+	Backend        string `yaml:"backend" json:"backend"`                 // claude / opencode / codex / agy
 	Model          string `yaml:"model" json:"model"`                     // 具体模型名称
 	Concurrent     int    `yaml:"concurrent" json:"concurrent"`           // 该阶梯并发槽位
 	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"` // 超时时限 (秒)
@@ -79,7 +80,7 @@ type Config struct {
 	} `yaml:"storage"`
 	Database DatabaseConfig `yaml:"database"`
 	AI       struct {
-		Backend           string                  `yaml:"backend"`             // CLI 后端：claude、opencode 或 codex，默认 claude
+		Backend           string                  `yaml:"backend"`             // CLI 后端：claude、opencode、codex 或 agy，默认 claude
 		DebugLogs         bool                    `yaml:"debug_logs"`          // 是否输出 AI 引擎底层的 debug 级别日志
 		OutputFormat      string                  `yaml:"output_format"`       // 输出格式：text 或 json，默认 text
 		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"` // CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式关闭）
