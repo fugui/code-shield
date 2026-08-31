@@ -689,9 +689,27 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: log.engine_mode === 'chunked' ? 'rgba(168, 85, 247, 0.08)' : 'var(--bg-color)', border: '1px solid ' + (log.engine_mode === 'chunked' ? 'rgba(168, 85, 247, 0.2)' : 'var(--border-color)'), fontSize: '0.75rem', color: log.engine_mode === 'chunked' ? '#7c3aed' : '#64748b' }}>
-                        {log.engine_mode === 'chunked' ? '分片模式' : '单次模式'}
-                      </span>
+                      {log.engine_mode === 'debate_full' ? (
+                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(124, 58, 237, 0.1)', border: '1px solid rgba(124, 58, 237, 0.25)', fontSize: '0.75rem', color: '#7c3aed', fontWeight: 600 }}>
+                          全量对抗辩论
+                        </span>
+                      ) : log.engine_mode === 'debate_selective' ? (
+                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.1)', border: '1px solid rgba(37, 99, 235, 0.25)', fontSize: '0.75rem', color: '#2563eb', fontWeight: 600 }}>
+                          选择性辩论
+                        </span>
+                      ) : log.engine_mode === 'chunked_fast' ? (
+                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(13, 148, 136, 0.1)', border: '1px solid rgba(13, 148, 136, 0.25)', fontSize: '0.75rem', color: '#0d9488', fontWeight: 600 }}>
+                          分片快扫
+                        </span>
+                      ) : log.engine_mode === 'chunked' ? (
+                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)', fontSize: '0.75rem', color: '#7c3aed' }}>
+                          分片模式
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', fontSize: '0.75rem', color: '#64748b' }}>
+                          单次模式
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>{formatDate(log.start_time)}</td>
                     <td style={{ padding: '1rem', color: '#64748b' }}>{calcDuration(log.start_time, log.end_time)}</td>

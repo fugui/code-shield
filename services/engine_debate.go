@@ -30,6 +30,9 @@ func init() {
 
 // Run 启动辩论引擎任务流
 func (e *DebateEngine) Run(ctx *taskContext) error {
+	// 推进任务状态为静态分析中
+	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
+
 	cfg := ChunkConfig{MaxFiles: 20, Depth: 1, Concurrency: 6}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
