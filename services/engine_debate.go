@@ -76,12 +76,16 @@ func (e *DebateEngine) Run(ctx *taskContext) error {
 	semaphore := make(chan struct{}, cfg.Concurrency)
 	totalChunks := len(bundles)
 	chunkIndex := 0
+	overallStartTime := time.Now()
 
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("total_chunks", totalChunks)
 
+	chunkDetailsList := make([]ChunkDetails, totalChunks)
+
+bundleLoop:
 	for _, b := range bundles {
 		if ctx.ctx.Err() != nil {
-			break
+			break bundleLoop
 		}
 
 		chunkIndex++
@@ -92,8 +96,17 @@ func (e *DebateEngine) Run(ctx *taskContext) error {
 		select {
 		case <-ctx.ctx.Done():
 			wg.Done()
-			break
+			break bundleLoop
 		case semaphore <- struct{}{}:
+		}
+
+		if ctx.ctx.Err() != nil {
+			select {
+			case <-semaphore:
+			default:
+			}
+			wg.Done()
+			break bundleLoop
 		}
 
 		go func(bnd SemanticBundle, idx int) {
@@ -107,14 +120,33 @@ func (e *DebateEngine) Run(ctx *taskContext) error {
 
 			log.Printf("[DebateEngine] Processing bundle %d/%d [%s] (Files: %d)\n", idx, totalChunks, bnd.Name, len(bnd.AllFiles))
 
+			bundleStartTime := time.Now()
 			findings, debateLogs, err := e.ProcessBundle(ctx, bnd, idx, chunkDir)
+			bundleEndTime := time.Now()
+
+			details := ChunkDetails{
+				ChunkName:       bnd.Name,
+				Files:           bnd.AllFiles,
+				Attempts:        1,
+				StartTime:       bundleStartTime,
+				EndTime:         bundleEndTime,
+				DurationSeconds: bundleEndTime.Sub(bundleStartTime).Seconds(),
+			}
+
 			if err != nil {
 				log.Printf("[DebateEngine] Bundle [%s] debate failed: %v\n", bnd.Name, err)
 				errMu.Lock()
 				chunkErrors = append(chunkErrors, fmt.Sprintf("Bundle [%s] failed: %v", bnd.Name, err))
 				errMu.Unlock()
+
+				details.Status = "failed"
+				details.ErrorMessage = err.Error()
+				chunkDetailsList[idx-1] = details
 				return
 			}
+
+			details.Status = "success"
+			chunkDetailsList[idx-1] = details
 
 			// 保存辩论日志到数据库
 			if len(debateLogs) > 0 && models.DB != nil {
@@ -133,6 +165,43 @@ func (e *DebateEngine) Run(ctx *taskContext) error {
 	}
 
 	wg.Wait()
+
+	overallEndTime := time.Now()
+	successfulChunks := 0
+	failedChunks := 0
+	for _, details := range chunkDetailsList {
+		if details.Status == "success" {
+			successfulChunks++
+		} else {
+			failedChunks++
+		}
+	}
+
+	// 记录成功分片数
+	if models.DB != nil {
+		models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("success_chunks", successfulChunks)
+	}
+
+	// 填充 Summary 轨迹诊断数据
+	ctx.Summary.Analysis.StartTime = overallStartTime
+	ctx.Summary.Analysis.EndTime = overallEndTime
+	ctx.Summary.Analysis.DurationSeconds = overallEndTime.Sub(overallStartTime).Seconds()
+	ctx.Summary.Analysis.TotalChunks = totalChunks
+	ctx.Summary.Analysis.SuccessChunks = successfulChunks
+	ctx.Summary.Analysis.FailedChunks = failedChunks
+	ctx.Summary.Analysis.TotalFindings = len(allFindings)
+	ctx.Summary.Analysis.Chunks = chunkDetailsList
+
+	if failedChunks > 0 {
+		ctx.Summary.Analysis.Status = "failed"
+		ctx.hasFailedChunks = true
+	} else {
+		ctx.Summary.Analysis.Status = "success"
+		ctx.hasFailedChunks = false
+	}
+
+	// 保存任务汇总报告文件
+	ctx.writeSummaryReport()
 
 	if len(chunkErrors) > 0 {
 		if len(allFindings) == 0 {

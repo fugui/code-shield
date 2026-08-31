@@ -3,6 +3,7 @@ package services
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -214,6 +215,9 @@ func extractGlobalMacros(codesPath string) map[string]string {
 				macros[m[1]] = val
 			}
 		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			log.Printf("[SemanticChunker] Warning scanning %s for macros: %v", cand, scanErr)
+		}
 		f.Close()
 	}
 
@@ -249,19 +253,23 @@ func extractHeaderOutline(codesPath string, files []string) string {
 		}
 
 		content := string(data)
-		outlineBuilder.WriteString(fmt.Sprintf("// --- Header Outline: %s ---\n", f))
+		outlineBuilder.WriteString("// --- Header Outline: ")
+		outlineBuilder.WriteString(f)
+		outlineBuilder.WriteString(" ---\n")
 
 		// 提取类与结构体声明
 		classes := reDeclaration.FindAllString(content, 10)
 		for _, c := range classes {
-			outlineBuilder.WriteString(strings.TrimSpace(c) + " { ... };\n")
+			outlineBuilder.WriteString(strings.TrimSpace(c))
+			outlineBuilder.WriteString(" { ... };\n")
 			outlineCount++
 		}
 
 		// 提取核心方法声明
 		funcs := reFuncSig.FindAllString(content, 15)
 		for _, fn := range funcs {
-			outlineBuilder.WriteString(strings.TrimSpace(fn) + "\n")
+			outlineBuilder.WriteString(strings.TrimSpace(fn))
+			outlineBuilder.WriteString("\n")
 			outlineCount++
 		}
 

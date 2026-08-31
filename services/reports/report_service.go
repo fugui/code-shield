@@ -465,10 +465,19 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 			}
 
 			// 构建时序步骤 (完全基于实际执行记录，杜绝硬编码虚构耗时)
+			step1Name := "代码静态分析"
+			if report.TaskType.EngineMode == "debate_full" {
+				step1Name = "智能体对抗辩论 (Hunter ➜ Challenger ➜ Judge)"
+			} else if report.TaskType.EngineMode == "debate_selective" {
+				step1Name = "选择性智能体辩论初筛与仲裁"
+			} else if report.TaskType.EngineMode == "chunked_fast" {
+				step1Name = "语义分片与确定性规则初筛"
+			}
+
 			dto.PipelineSteps = []PipelineStep{
-				{Name: "代码静态分析", Status: getStepStatus(summaryMap, "analysis"), DurationSeconds: dto.AnalysisDuration},
-				{Name: "综合报告生成", Status: getStepStatus(summaryMap, "synthesis"), DurationSeconds: getStepDuration(summaryMap, "synthesis")},
-				{Name: "缺陷归并与入库", Status: getStepStatus(summaryMap, "merging"), DurationSeconds: getStepDuration(summaryMap, "merging")},
+				{Name: step1Name, Status: getStepStatus(summaryMap, "analysis"), DurationSeconds: dto.AnalysisDuration},
+				{Name: "确定性校准与综合报告生成", Status: getStepStatus(summaryMap, "synthesis"), DurationSeconds: getStepDuration(summaryMap, "synthesis")},
+				{Name: "缺陷指纹对比与闭环入库", Status: getStepStatus(summaryMap, "merging"), DurationSeconds: getStepDuration(summaryMap, "merging")},
 			}
 		}
 	}
