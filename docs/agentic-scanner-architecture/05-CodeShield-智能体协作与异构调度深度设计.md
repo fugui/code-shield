@@ -253,9 +253,11 @@ flowchart TD
 
 1. **零候选快速放行 (Zero-Candidate Fast Pass)**：
    * 若 Tier 1 初筛未发现任何疑点，分片直接以 `PASS` 状态归档，完全不触发后续昂贵的 Tier 2 强推理模型调用（**为代码仓节省 75% 以上的无谓辩论开销**）。
-2. **单分片候选数上限限流 (Max Candidates Cap)**：
+2. **异步管道与背压保护 (Pipeline Backpressure Queue)**：
+   * Tier 1 初筛与 Tier 2 辩论通过 Channel 异步解耦，当待辩论池积压超过上限时自动对 Tier 1 限速，杜绝跨 Tier 资源争抢与调度死锁。
+3. **单分片候选数上限限流 (Max Candidates Cap)**：
    * 单个分片若检出超过 10 个候选点，自动聚类合并同类项，最多提取 Top-5 核心可疑点进入辩论，防止个别异常宏展开导致辩论爆炸。
-3. **辩论超时熔断与保底降级 (Timeout Circuit Breaker)**：
+4. **辩论超时熔断与保底降级 (Timeout Circuit Breaker)**：
    * Challenger 或 Judge 单次调用时限严格控制在 90 秒内；若超时，自动降级为保留 Hunter 原始判定并附带 `[Unchallenged Warning]` 标记。
 
 ---
@@ -277,6 +279,7 @@ type HunterCandidate struct {
 	CandidateID      string `json:"candidate_id"`
 	FilePath         string `json:"file_path"`
 	LineRange        string `json:"line_range"`
+	TriggerLine      string `json:"trigger_line"`      // 核心引发风险的关键单一语句 (用于抗漂移强指纹计算)
 	CodeSnippet      string `json:"code_snippet"`
 	CWECategory      string `json:"cwe_category"`
 	AttackHypothesis string `json:"attack_hypothesis"`

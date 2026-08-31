@@ -28,7 +28,8 @@ gantt
 *   **核心目标**：在不大幅重构底层调用的前提下，迅速消除分片上下文割裂，统一缺陷严重等级标准。
 *   **具体实施项**：
     1.  **重构分片器 (`services/engine_chunked.go`)**：
-        *   改造 `scanAndChunk` 函数，实现头文件与实现文件（`.h` + `.cc` / `.cpp`）强制绑定归入同一 chunk。
+        *   改造 `scanAndChunk` 函数，实现跨目录同名投影（`include/` 与 `src/` 配对绑定归入同一 chunk）。
+        *   对全仓基础核心头文件（如 `core.h`）提取轻量接口声明摘要（Header Outline）注入分片，消除上下文盲区同时节约 Token。
         *   提取关键构建宏定义（如 `CMakeLists.txt` 中的编译定义），注入分片 Prompt 前缀中。
     2.  **落地定级校准中间件 (`services/calibrator.go`)**：
         *   在 `executeSynthesis` 之前拦截所有 `AnalysisFinding`，依据 CWE 类型、宏开关条件与内存破坏属性重新计算 `severity`。
@@ -53,10 +54,11 @@ gantt
     2.  **升级模型调度器 (`services/dispatcher.go`)**：
         *   在 `config.yaml` 中支持按阶梯（`tier_fast`, `tier_reasoning`, `tier_synthesis`）配置不同的后端模型。
         *   初筛阶段优先调用高吞吐快模型，辩论阶段调度高算力强推理模型。
+        *   引入异步管道与背压流控机制（Backpressure Queue），防止跨 Tier 资源死锁与任务饿死。
 *   **交付产物**：
     *   `services/engine_debate.go`
     *   升级版 `services/dispatcher.go`
-    *   辩论记录结构体与持久化支持。
+    *   辩论记录结构体与日志 TTL 生命周期管理。
 
 ---
 
@@ -67,8 +69,8 @@ gantt
 *   **核心目标**：覆盖全量 10 类任务类型（架构治理、单测质量、逻辑隐患、内存安全等），构建跨任务的增量追踪、存量治理与人机反馈知识沉淀闭环。
 *   **具体实施项**：
     1.  **通用代码仓缺陷指纹库 (`models/defect_fingerprint.go`)**：
-        *   基于多语言 AST 规范化与上下文 Token 哈希生成稳定指纹，不依赖物理编译。
-        *   在全量 10 类任务的历次扫描报告间自动计算增量差异（Diff），精准识别“本次新增”、“历史存量”与“已修复”。
+        *   基于核心触发行规范化与 AST 作用域符号生成抗抖动强指纹，辅以作用域弱指纹容错。
+        *   在历次扫描报告间自动计算增量差异（Diff），内置扫描覆盖范围守卫（Scan Scope Guard），杜绝局部扫描引发假修复误判。
     2.  **人机协同认知沉淀与负样本库 (`services/feedback_memory.go`)**：
         *   收集研发人员在 Web 界面上的操作（标记误报、填写忽略理由、指派负责人）。
         *   自动沉淀为代码仓专有的“例外规则库与负样本知识”，在下次 Hunter/Challenger 分析中自动注入作为前置过滤。

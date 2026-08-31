@@ -119,7 +119,7 @@ CREATE INDEX idx_fp_status ON defect_fingerprints (repo_id, status);
 ```
 
 #### 2. 智能体辩论轨迹表 (`task_debate_logs`)
-用于审计与调优多 Agent 对抗事实链：
+用于审计与调优多 Agent 对抗事实链（支持 TTL 生命周期管理与自动清理）：
 
 ```sql
 CREATE TABLE task_debate_logs (
@@ -127,6 +127,7 @@ CREATE TABLE task_debate_logs (
     task_report_id BIGINT NOT NULL,
     chunk_name VARCHAR(256) NOT NULL,
     candidate_id VARCHAR(64) NOT NULL,
+    trigger_line TEXT,                            -- 核心触发语句行
     hunter_output JSONB NOT NULL,
     challenger_output JSONB,
     judge_output JSONB NOT NULL,
@@ -136,7 +137,11 @@ CREATE TABLE task_debate_logs (
 );
 
 CREATE INDEX idx_debate_report_id ON task_debate_logs (task_report_id);
+CREATE INDEX idx_debate_created_at ON task_debate_logs (created_at); -- 支持按时间 TTL 清理历史日志
 ```
+
+> 💡 **日志生命周期策略 (Data Retention Policy)**：
+> 鉴于高频扫描下多 Agent JSONB 日志体积庞大，系统默认保留 **30 天**内的全量辩论日志（由 `ai.debate.log_retention_days` 控制），后台 Cron 任务定期自动归档或清理过期冷数据，防止数据库存储无序膨胀。
 
 #### 3. 代码仓人机反馈例外规则库表 (`repo_feedback_rules`)
 用于沉淀代码仓专属的负样本知识库：
@@ -256,6 +261,7 @@ ai:
     fast_pass_enabled: true        # 开启零候选快速放行 (无疑点直接跳过辩论，节省算力)
     max_candidates_per_chunk: 10   # 单分片进入辩论的候选点上限 (防异常爆炸)
     stage_timeout_seconds: 90      # 单个辩论阶段硬超时限制
+    log_retention_days: 30         # 辩论轨迹 JSON 日志保留天数 (超过自动清理)
 
   # ── 工作时间自动限流配置 (既有配置，完全兼容) ──
   work_hours_throttle:
@@ -268,6 +274,7 @@ ai:
 # ── 新增: 企业级多任务治理与历史记忆配置 ──
 governance:
   fingerprint_enabled: true        # 是否启用跨扫描缺陷指纹计算
+  scope_guard_enabled: true        # 启用扫描范围守卫 (仅在文件成功被扫描时才允许自动标记 RESOLVED)
   auto_resolve_missing: true       # 本次未出现的历史存量缺陷自动标记为已修复 (RESOLVED)
   feedback_injection: true         # 是否将已标记误报/不予修复的知识自动注入下次 Prompt
   diff_gate_strict: true           # PR 门禁模式下是否仅阻断 [NEW] 增量缺陷
@@ -305,11 +312,13 @@ type DebateFlowConfig struct {
 	FastPassEnabled       bool `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
 	MaxCandidatesPerChunk int  `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
 	StageTimeoutSeconds   int  `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
+	LogRetentionDays      int  `yaml:"log_retention_days" json:"log_retention_days"`
 }
 
 // GovernanceSystemConfig 企业治理与记忆配置
 type GovernanceSystemConfig struct {
 	FingerprintEnabled bool `yaml:"fingerprint_enabled" json:"fingerprint_enabled"`
+	ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`
 	AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
 	FeedbackInjection  bool `yaml:"feedback_injection" json:"feedback_injection"`
 	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`

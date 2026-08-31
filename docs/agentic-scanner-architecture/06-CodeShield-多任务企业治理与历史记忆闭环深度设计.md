@@ -52,27 +52,37 @@ flowchart LR
     Extractor --> F1["1. 规范化相对路径 (Normalized Path)"]
     Extractor --> F2["2. 任务与CWE分类 (TaskType + CWE)"]
     Extractor --> F3["3. AST 作用域符号 (AST Function/Scope Symbol)"]
-    Extractor --> F4["4. 规范化代码Token哈希 (Token-Normalized Hash)"]
+    Extractor --> F4["4. 核心触发行规范化哈希 (TriggerLine-Normalized Hash)"]
     
     F1 & F2 & F3 & F4 --> Hasher["SHA-256 指纹聚合计算"]
     Hasher --> Fingerprint["64位 唯一缺陷指纹 (Defect Fingerprint)"]
 ```
 
 #### 2.2.1 规范化计算公式 (SSOT 唯一标准)
-$$\text{DefectFingerprint} = \text{SHA256}(\text{RepoID} + \text{TaskTypeID} + \text{NormalizedPath} + \text{ScopeSymbol} + \text{NormalizedTokens})$$
+$$\text{DefectFingerprint} = \text{SHA256}(\text{RepoID} + \text{TaskTypeID} + \text{NormalizedPath} + \text{ScopeSymbol} + \text{NormalizedTriggerLine})$$
 
 *   **RepoID（仓库数字主键）**：保证代码仓在改名或转移组织后，历史指纹依然保持稳定不裂化。
 *   **TaskTypeID（任务类型标识）**：隔离不同扫描任务的指纹空间（如 `coredump-risk` 关注崩溃行，`ut-quality` 关注测试用例），避免跨任务干扰。
 *   **ScopeSymbol（作用域符号）**：提取缺陷所在函数名、类名或方法签名（如 `buffered_file::fileno`），抵御函数外部增删空行/注释造成的行号漂移。
-*   **NormalizedTokens（规范化 Token）**：去除所有空白符、制表符、单双引号及代码注释，提取语法核心序列。
+*   **NormalizedTriggerLine（核心触发行规范化）**：**仅提取引发风险的关键单一语句行**（而非多行不确定长度的 CodeSnippet），去除所有空白符、制表符、单双引号及代码注释，彻底解决大模型提取代码片段行数抖动导致的哈希断裂问题。
 
-### 2.3 边界案例与跨语言规范
+### 2.3 边界案例与双层容错匹配机制
+
+```mermaid
+flowchart TD
+    Candidate["当前检出缺陷"] --> Match_L1{"L1: 强指纹完全匹配 (SHA256)?"}
+    Match_L1 -->|命中| Found_Exact["精准匹配历史记录: 状态打标"]
+    Match_L1 -->|未命中| Match_L2{"L2: 弱指纹容错匹配<br>(同Repo + 同TaskType + 同Path + 同Scope + 同Category)?"}
+    Match_L2 -->|命中| Found_Scope["判定为同一缺陷轻微重构: 继承历史反馈与生命周期"]
+    Match_L2 -->|未命中| Found_New["判定为全新缺陷 [NEW]"]
+```
 
 | 场景 / 边界案例 | 指纹系统预期行为与设计意图 | 说明与处理策略 |
 | :--- | :--- | :--- |
+| **代码片段提取行数抖动** | L1 强指纹稳定命中 | 基于单一 `NormalizedTriggerLine`，不受前后附带上下文行数变化影响。 |
+| **函数内增删空行/注释** | L1 强指纹稳定命中 | 行号虽变，但作用域 `ScopeSymbol` 与触发行 Token 不变。 |
+| **函数内部语句微调** | L2 作用域弱指纹命中 | 触发行发生微调时通过作用域与分类继承历史反馈，防止误判为全新引入。 |
 | **函数重命名 (Rename Refactoring)** | 指纹断裂（旧指纹标记为 `RESOLVED`，新指纹标记为 `NEW`） | **符合预期**。重构通常伴随调用方契约变更，作为新发现重新进入审计流。 |
-| **代码添加判空修复 (Minor Fix)** | 旧指纹消失（标记为 `RESOLVED`） | **符合预期**。添加判空后旧缺陷被成功解决，自动统计为团队修复战报。 |
-| **`change-review` 增量审查** | 与 `deep-review` 历史指纹库联合比对 | 变更检视仅针对本次 Diff 行，但其指纹可直接继承全量扫描的历史误报与反馈。 |
 | **多语言作用域提取** | Go: `func (s *S) Method`<br>Java: `@Test MethodName`<br>Py: `def func_name`<br>C++: `Namespace::Class::Method` | 调度器根据文件后缀分发给对应的轻量正则表达式或 AST 提取器。 |
 
 ---
@@ -86,22 +96,26 @@ stateDiagram-v2
     [*] --> NEW: 本次扫描新检出该指纹
     
     NEW --> EXISTED: 下次扫描仍存在该指纹
-    NEW --> RESOLVED: 代码修改后指纹消失
+    NEW --> RESOLVED: 经范围守卫校验后指纹消失
     
     EXISTED --> EXISTED: 持续存在 (计入技术债看板)
-    EXISTED --> RESOLVED: 代码修复后指纹消失
+    EXISTED --> RESOLVED: 经范围守卫校验后指纹消失
     
     RESOLVED --> REOPENED: 历史缺陷被再次引入
     REOPENED --> RESOLVED: 重新修复
 ```
 
-### 3.2 增量比对结果四元分类
+### 3.2 增量比对结果四元分类与扫描范围守卫 (Scan Scope Guard)
+
+> ⚠️ **关键防护规则（杜绝假修复误判）**：
+> 只有当历史缺陷所在的**文件属于本次成功扫描的有效覆盖文件集（`ScannedFiles`）**时，且本次扫描未再检出该指纹，才允许将其标记为 `RESOLVED`。
+> 若本次扫描为局部定向扫描（如仅扫描业务目录 `target_scope="business"` 忽略了测试目录）或个别分片分析失败，未被覆盖文件的存量缺陷**严格保持原状态，绝不误判为已修复**。
 
 | 缺陷状态标记 | 判定逻辑 | 业务处理策略 (Business Actions) |
 | :---: | :--- | :--- |
 | **`NEW` (本次新增)** | 当前报告包含，上一版本基线报告中不存在。 | **PR 门禁阻断 (Gate Blocker)**：通知提交人必须修复或说明。 |
 | **`EXISTED` (历史存量)** | 当前报告与基线报告均包含该指纹。 | **技术债治理 (Technical Debt)**：不阻断主干，归入存量治理计划。 |
-| **`RESOLVED` (本次已修复)** | 基线报告包含，当前报告中该指纹已消失。 | **自动闭环 (Auto-Closed)**：更新治理进度，向修复人发送致谢/统计。 |
+| **`RESOLVED` (本次已修复)** | 基线报告包含，且所在文件被成功扫描，但当前报告中该指纹已消失。 | **自动闭环 (Auto-Closed)**：更新治理进度，向修复人发送致谢/统计。 |
 | **`REOPENED` (复发激活)** | 历史已被关闭的指纹再次被扫描检出。 | **高危回退预警 (Regression Alert)**：警示可能存在功能回退。 |
 
 ### 3.3 与既有 `AnalysisFinding` / `CampaignFinding` 的数据流向与协同关系
@@ -183,22 +197,22 @@ import (
 
 // DefectFingerprintRecord 缺陷指纹持久化记录表
 type DefectFingerprintRecord struct {
-	ID          int64          `gorm:"primaryKey;autoIncrement" json:"id"`
-	RepoID      int64          `gorm:"index:idx_repo_fp,unique;not null" json:"repo_id"`
+	ID          uint           `gorm:"primaryKey;autoIncrement" json:"id"`
+	RepoID      uint           `gorm:"index:idx_repo_fp,unique;not null" json:"repo_id"`
 	Fingerprint string         `gorm:"size:64;index:idx_repo_fp,unique;not null" json:"fingerprint"` // SHA-256 哈希
-	TaskTypeID  int64          `gorm:"index;not null" json:"task_type_id"`
+	TaskTypeID  uint           `gorm:"index;not null" json:"task_type_id"`
 	FilePath    string         `gorm:"size:512;not null" json:"file_path"`
 	ScopeSymbol string         `gorm:"size:256" json:"scope_symbol"` // 函数/类/作用域签名
 	FirstSeenAt time.Time      `json:"first_seen_at"`                 // 首次检出时间
 	LastSeenAt  time.Time      `json:"last_seen_at"`                  // 最近一次检出时间
-	FirstTaskID int64          `json:"first_task_id"`                 // 引入该缺陷的任务ID
-	LastTaskID  int64          `json:"last_task_id"`                  // 最近检出该缺陷的任务ID
+	FirstTaskID uint           `json:"first_task_id"`                 // 引入该缺陷的任务ID
+	LastTaskID  uint           `json:"last_task_id"`                  // 最近检出该缺陷的任务ID
 	Status      string         `gorm:"size:32;default:'ACTIVE'" json:"status"` // ACTIVE (存量), RESOLVED (已修复)
 	
 	// 人工反馈状态
 	FeedbackStatus string      `gorm:"size:32;default:'UNREVIEWED'" json:"feedback_status"` // UNREVIEWED, FALSE_POSITIVE, WONT_FIX, CONFIRMED
 	FeedbackReason string      `gorm:"type:text" json:"feedback_reason"`
-	FeedbackUserID *int64      `json:"feedback_user_id"`
+	FeedbackUserID *uint       `json:"feedback_user_id"`
 	FeedbackAt     *time.Time  `json:"feedback_at"`
 	
 	CreatedAt   time.Time      `json:"created_at"`
@@ -236,34 +250,41 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 )
 
-// CalculateDefectFingerprint 计算抗行号漂移的通用缺陷指纹
-func CalculateDefectFingerprint(repoID int64, taskTypeID int64, filePath string, snippet string, scope string) string {
+// CalculateDefectFingerprint 计算抗代码行数抖动的通用缺陷强指纹
+func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scope string) string {
 	// 1. 规范化文件路径 (小写 + 正斜杠)
 	normPath := strings.ToLower(filepath.ToSlash(filePath))
 	
-	// 2. 清理代码片段中的空白字符、制表符与注释 (Token Normalization)
+	// 2. 清理核心触发行中的空白字符与注释 (Token Normalization)
 	reComments := regexp.MustCompile(`(//.*?$|/\*.*?\*/)`)
-	cleanSnippet := reComments.ReplaceAllString(snippet, "")
+	cleanLine := reComments.ReplaceAllString(triggerLine, "")
 	reWhitespace := regexp.MustCompile(`\s+`)
-	normSnippet := reWhitespace.ReplaceAllString(cleanSnippet, "")
+	normTrigger := reWhitespace.ReplaceAllString(cleanLine, "")
 
 	// 3. 组合特征计算 SHA-256
-	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|token:%s", 
-		repoID, taskTypeID, normPath, scope, normSnippet)
+	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|trigger:%s", 
+		repoID, taskTypeID, normPath, scope, normTrigger)
 	
 	hash := sha256.Sum256([]byte(rawKey))
 	return hex.EncodeToString(hash[:])
 }
 
-// DiffAndEnrichFindings 执行跨任务增量比对，并写入/更新记忆库
-func DiffAndEnrichFindings(repoID int64, taskID int64, taskTypeID int64, findings []models.AnalysisFinding) ([]models.EnrichedFinding, error) {
+// DiffAndEnrichFindings 执行跨任务增量比对（带扫描覆盖范围守卫，杜绝误判修复）
+func DiffAndEnrichFindings(repoID uint, taskID uint, taskTypeID uint, scannedFiles []string, findings []models.AnalysisFinding) ([]models.EnrichedFinding, error) {
 	now := time.Now()
 	var enrichedList []models.EnrichedFinding
+
+	// 构建本次有效成功扫描的文件集合（用于范围守卫）
+	scannedFileSet := make(map[string]bool, len(scannedFiles))
+	for _, f := range scannedFiles {
+		scannedFileSet[strings.ToLower(filepath.ToSlash(f))] = true
+	}
 
 	// 1. 查询当前仓库在历史任务中的全部活跃指纹记录
 	var existingRecords []models.DefectFingerprintRecord
@@ -328,9 +349,10 @@ func DiffAndEnrichFindings(repoID int64, taskID int64, taskTypeID int64, finding
 		enrichedList = append(enrichedList, enriched)
 	}
 
-	// 3. 识别已修复缺陷 (本次未出现的历史活跃缺陷)
+	// 3. 识别已修复缺陷 (【范围守卫】: 仅当该文件被本次成功扫描过且未检出时，才标记为已修复)
 	for fp, record := range recordMap {
-		if !seenInThisScan[fp] && record.Status == "ACTIVE" {
+		normRecordPath := strings.ToLower(filepath.ToSlash(record.FilePath))
+		if !seenInThisScan[fp] && record.Status == "ACTIVE" && scannedFileSet[normRecordPath] {
 			models.DB.Model(record).Updates(map[string]interface{}{
 				"status": "RESOLVED",
 			})
