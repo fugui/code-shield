@@ -338,7 +338,8 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     };
     const s = map[activeStatus] || { cls: 'warning', label: activeStatus };
 
-    if (log.engine_mode === 'chunked' && activeStatus === 'analyzing' && log.task_report) {
+    const isChunkedMode = ['chunked', 'chunked_fast', 'debate_full', 'debate_selective'].includes(log.engine_mode || '');
+    if ((isChunkedMode || (log.task_report?.total_chunks ?? 0) > 0) && activeStatus === 'analyzing' && log.task_report) {
       const { processed_chunks, total_chunks } = log.task_report;
       if (total_chunks > 0) {
         return <span className={`badge ${s.cls}`}>{`AI 检视中 (${processed_chunks}/${total_chunks})...`}</span>;
@@ -869,7 +870,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
                                   )}
                                 </div>
                               );
-                            })() : (log.engine_mode === 'chunked' && (isRunning || isPending)) ? (
+                            })() : ((['chunked', 'chunked_fast', 'debate_full', 'debate_selective'].includes(log.engine_mode || '') || (report?.total_chunks ?? 0) > 0) && (isRunning || isPending)) ? (
                               <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', color: '#475569', padding: '0.5rem 0' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ fontWeight: 500, color: '#475569', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
