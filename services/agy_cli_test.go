@@ -57,6 +57,9 @@ func TestAgyInvoker_BuildArgs(t *testing.T) {
 	if !strings.Contains(argsStr, "--output-format json") {
 		t.Fatalf("expected --output-format json flag in args, got %v", args)
 	}
+	if !strings.Contains(argsStr, "--print-timeout 60m") {
+		t.Fatalf("expected --print-timeout flag in args, got %v", args)
+	}
 	if !strings.Contains(argsStr, "# Test Antigravity Prompt") {
 		t.Fatalf("expected prompt file content in args, got %v", args)
 	}
