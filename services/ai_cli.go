@@ -20,6 +20,7 @@ type AIRequest struct {
 	OutputPath    string          // AI 输出文档的目标路径
 	TimeoutMin    int             // 执行超时（分钟），0 表示默认 60 分钟
 	ModelName     string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
+	Env           []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
 }
 
 // AIInvoker 定义了 AI CLI 调用的统一接口。
