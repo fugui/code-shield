@@ -9,6 +9,7 @@
 ```
 agentic-scanner-architecture/
 ├── README.md                                          # 本文档：专题导航与核心摘要
+├── 与AI结对架构设计实战指南-CodeShield案例复盘.md          # 🌟【培训复盘】如何与 AI 深度结对完成系统级架构设计的实战方法论
 ├── 01-fmt扫描实证比对与缺陷复盘报告.md                  # 两次扫描报告深度比对、8大缺陷源码核查与 ASan 实测
 ├── 02-CodeShield-下一代AI引擎架构设计.md               # 语义分片、任务自适应路由、多 Agent 辩论与定级校准
 ├── 03-CodeShield-异构模型流水线与DAG调度器设计.md       # 异构模型阶梯调度、动态 DAG 任务拓扑与 SSOT 指纹记忆
