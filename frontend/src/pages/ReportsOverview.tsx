@@ -213,15 +213,21 @@ function ReportsOverview() {
         const m = typeof item.metrics === 'string' ? JSON.parse(item.metrics) : item.metrics;
         const parts: string[] = [];
         
-        if (m.blocking > 0) parts.push(`致命:${m.blocking}个`);
-        if (m.critical > 0) parts.push(`严重:${m.critical}个`);
-        const totalMinor = (m.minor || 0) + (m.major || 0) + (m.hint || 0);
-        if (totalMinor > 0) parts.push(`一般:${totalMinor}个`);
-        if (m.suggestion > 0) parts.push(`建议:${m.suggestion}个`);
+        const blocking = (m.blocking || 0) + (m['致命'] || 0) + (m.fatal || 0);
+        const critical = (m.critical || 0) + (m['严重'] || 0);
+        const highRisk = (m.high_risk || 0) + (m['高'] || 0) + (m['高危'] || 0) + (m['高风险'] || 0) + (m.high || 0);
+        const mediumRisk = (m.medium_risk || 0) + (m['中'] || 0) + (m['中危'] || 0) + (m['中风险'] || 0) + (m.medium || 0);
+        const totalMinor = (m.minor || 0) + (m.major || 0) + (m.hint || 0) + (m['一般'] || 0);
+        const lowRisk = (m.low_risk || 0) + (m['低'] || 0) + (m['低危'] || 0) + (m['低风险'] || 0) + (m.low || 0);
+        const suggestion = (m.suggestion || 0) + (m['建议'] || 0) + (m['提示'] || 0);
 
-        if (m.high_risk > 0) parts.push(`高风险:${m.high_risk}个`);
-        if (m.medium_risk > 0) parts.push(`中风险:${m.medium_risk}个`);
-        if (m.low_risk > 0) parts.push(`低风险:${m.low_risk}个`);
+        if (blocking > 0) parts.push(`致命:${blocking}个`);
+        if (critical > 0) parts.push(`严重:${critical}个`);
+        if (highRisk > 0) parts.push(`高风险:${highRisk}个`);
+        if (mediumRisk > 0) parts.push(`中风险:${mediumRisk}个`);
+        if (totalMinor > 0) parts.push(`一般:${totalMinor}个`);
+        if (lowRisk > 0) parts.push(`低风险:${lowRisk}个`);
+        if (suggestion > 0) parts.push(`建议:${suggestion}个`);
 
         if (parts.length > 0) {
           return parts.join('，');
