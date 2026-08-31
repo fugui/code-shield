@@ -404,12 +404,19 @@ func fallbackJudgeFromHunter(hunterOut *HunterOutput) *JudgeOutput {
 	return &JudgeOutput{FinalVerdicts: verdicts}
 }
 
-// ── 提示词组装函数 ──
-
 func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
 	var sb strings.Builder
 	sb.WriteString("# Role: Code-Shield 漏洞挖掘猎手 (Hunter Agent)\n\n")
-	sb.WriteString("## 任务目标\n在所提供的代码分片中尽可能多地发掘可能导致崩溃、越界、空指针、内存破坏或安全隐患的缺陷。秉持零信任原则，最大化召回率。\n\n")
+
+	// 1. 优先注入该任务类型的专属分析指令与领域规则 (Domain Guidelines)
+	analysisPromptPath := models.AppConfig.GetAbsPath(ctx.taskType.AnalysisPromptFile())
+	if promptBytes, err := os.ReadFile(analysisPromptPath); err == nil && len(promptBytes) > 0 {
+		sb.WriteString("## 专项检视领域规范与任务指令 (Domain Guidelines):\n")
+		sb.WriteString(string(promptBytes))
+		sb.WriteString("\n\n---\n\n")
+	}
+
+	sb.WriteString("## 猎手挖掘原则与任务目标\n请在所提供的代码分片中尽可能多地发掘符合上述专项规范、可能导致崩溃、越界、空指针、内存破坏、并发竞争或安全隐患的缺陷。秉持零信任原则，最大化召回率。\n\n")
 
 	if len(bundle.MacroContext) > 0 {
 		sb.WriteString("### 环境变量与构建宏定义 (Macro Context):\n")
