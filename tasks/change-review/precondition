@@ -16,9 +16,9 @@ if [ ! -d "$CODES_PATH/.git" ]; then
     exit 2
 fi
 
-RECENT=$(git -C "$CODES_PATH" log --since="20 days ago" --oneline 2>/dev/null)
+RECENT=$(git -C "$CODES_PATH" log --since="7 days ago" --oneline 2>/dev/null)
 if [ -z "$RECENT" ]; then
-    echo "过去 20 天内无代码提交，已完成确认，无需执行任务。"
+    echo "过去 7 天内无代码提交，已完成确认，无需执行任务。"
     exit 1
 fi
 
