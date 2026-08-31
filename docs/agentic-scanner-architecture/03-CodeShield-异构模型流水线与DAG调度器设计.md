@@ -36,6 +36,11 @@ flowchart TD
 * **`ai.models` 是物理实例池**：定义各个物理服务器节点的 IP 与最大承受并发。
 * **向后兼容机制**：若系统未配置 `ai.tiers`，调度器自动降级使用 `ai.models` 或全局 `ai.backend`，平滑兼容既有部署环境。
 
+### 2.3 异步阶段管道与背压流控机制 (Pipelined Queue & Backpressure)
+为防范海量分片在 Tier 1 极速初筛产生过多候选点而压垮 Tier 2，调度器采用**异步管道与滑动窗口背压**设计：
+1. **阶段解耦队列**：Tier 1 与 Tier 2 之间通过带缓冲 Channel（`DebateTicketQueue`）解耦，初筛与辩论异步流水线并发推进；
+2. **动态背压流控 (Dynamic Backpressure)**：当 `DebateTicketQueue` 积压达到阈值（如 > 30 个待辩论点）时，自动挂起 Tier 1 新分片的投递，直至 Tier 2 消耗降至安全水位，彻底避免跨 Tier 内存堆积与资源死锁。
+
 ---
 
 ## 三、 动态有向无环图 (Dynamic DAG) 任务调度引擎
@@ -43,7 +48,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start(["任务启动 Task ID"]) --> Node_Checkout["代码同步与检出"]
-    Node_Checkout --> Node_Chunk["语义感知分片 (同名头实现配对)"]
+    Node_Checkout --> Node_Chunk["语义感知分片 (跨目录投影与摘要)"]
     
     Node_Chunk --> Node_Route{"任务类型与引擎模式路由"}
     
@@ -76,16 +81,19 @@ flowchart TD
 
 ## 四、 跨任务缺陷指纹库与历史记忆系统 (Memory Graph)
 
-### 4.1 统一缺陷指纹算法 (SSOT 标准定义)
-为抵御“代码行号因增删注释/空行而漂移”的问题，指纹统一基于多语言 AST 作用域与 Token 规范化哈希：
+### 4.1 统一缺陷指纹算法 (SSOT 标准定义与抗抖动设计)
+为抵御“代码行号因增删注释/空行而漂移”以及“大模型提取代码片段长短不一导致的哈希断裂”，指纹算法确立为**两级抗抖动匹配标准**：
 
-$$\text{DefectFingerprint} = \text{SHA256}(\text{RepoID} + \text{TaskTypeID} + \text{NormalizedPath} + \text{ScopeSymbol} + \text{NormalizedTokens})$$
+$$\text{DefectFingerprint} = \text{SHA256}(\text{RepoID} + \text{TaskTypeID} + \text{NormalizedPath} + \text{ScopeSymbol} + \text{NormalizedTriggerLine})$$
 
 * **字段设计理由**：
   * **RepoID**：使用数据库数字仓 ID，避免代码仓改名导致历史指纹断裂；
-  * **TaskTypeID**：不同任务类型关注维度完全不同（如 `coredump-risk` 关注崩溃语句，`ut-quality` 关注单测断言），隔离不同任务的指纹命名空间；
+  * **TaskTypeID**：隔离不同扫描任务的指纹命名空间；
   * **ScopeSymbol**：提取函数名/类名/测试方法名（如 `buffered_file::fileno`），抵御函数上方增删行引起的偏移；
-  * **NormalizedTokens**：清除空格、换行、注释后的核心代码 Token 序列。
+  * **NormalizedTriggerLine**：**仅针对核心引发崩溃/违规的单一语句行（而非多行不确定长度的 CodeSnippet）**清理空白与注释后哈希，彻底解决 LLM 返回行数抖动问题。
+* **双层容错匹配机制**：
+  * **L1 强指纹精准匹配**：全量哈希完全命中（100% 确定为同一缺陷）；
+  * **L2 作用域回退匹配 (Fallback)**：若代码发生微调使得 TriggerLine 哈希变化，但处于同一 `(RepoID, TaskTypeID, NormalizedPath, ScopeSymbol)` 且问题类别（Category）一致，自动归入同一缺陷演进链，防止误判为全新引入。
 
 ---
 

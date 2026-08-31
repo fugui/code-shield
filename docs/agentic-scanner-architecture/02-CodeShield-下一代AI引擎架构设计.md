@@ -57,8 +57,9 @@ flowchart TD
 目前的 `scanAndChunk` 仅根据物理文件数量线性切割，导致 `src/posix.cc` 与 `include/fmt/posix.h` 被分配到不同分片，AI 无法在分析实现函数时看到类的完整定义与生命周期。
 
 #### 3.1.2 语义切片分步演进方案
-1. **阶段一落地 (v1 轻量版：无外部重量级依赖)**：
-   * **同名头实现强制绑定 (Header-Source Collocation)**：扫描文件树时，自动将 `foo.cc`/`foo.cpp` 与 `foo.h`/`foo-inl.h` 组合打入同一分片。
+1. **阶段一落地 (v1 轻量版：跨目录投影与声明摘要)**：
+   * **跨目录同名投影映射 (Cross-Directory Projection)**：针对 C/C++ 常见的 `include/` 与 `src/` 分立架构（如 `src/posix.cc` 与 `include/fmt/posix.h`），自动通过基名与命名空间投影规则进行精准配对打包，打破物理目录割裂。
+   * **公用核心头文件轻量声明摘要 (Header Interface Summary)**：对于被多个实现文件引用的核心基础头文件（如 `core.h`），避免无脑全量打包引发 Token 浪费与重复上下文，改用正则/轻量 AST 提取**类定义与方法签名摘要（Header Outline，约 30~50 行）**作为辅助上下文注入分片。
    * **构建宏提取**：读取根目录 `CMakeLists.txt` 或全局配置文件，提取关键宏定义（如 `#define FMT_USE_GRISU 0`），作为 Prompt 前缀注入。
 2. **阶段二演进 (v2 增强版：符号依赖分析)**：
    * 引入轻量符号提取器，提取跨文件调用的核心数据结构定义注入上下文。
