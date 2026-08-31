@@ -3,6 +3,7 @@ import { Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import MemberSearchSelect from '../components/MemberSearchSelect';
 import ReportViewer from '../components/report/ReportViewer';
+import DebateVerdictView from '../components/report/DebateVerdictView';
 import { sshToHttps } from '../utils/urlUtils';
 import { extractFirstLineNumber } from '../utils/reportUtils';
 import { useNavigate } from 'react-router-dom';
@@ -663,9 +664,7 @@ export default function Workbench() {
 						{/* Detail */}
 						<div>
 							<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left' }}>缺陷描述</h4>
-							<div style={{ padding: '0.75rem', background: 'var(--bg-color)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, textAlign: 'left', whiteSpace: 'pre-wrap' }}>
-								{selectedFinding.detail}
-							</div>
+							<DebateVerdictView detail={selectedFinding.detail} title={selectedFinding.title} />
 						</div>
 
 						{/* Code snippet */}

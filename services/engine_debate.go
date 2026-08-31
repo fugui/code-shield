@@ -550,8 +550,17 @@ func buildJudgePrompt(ctx *taskContext, bundle SemanticBundle, hunterOut *Hunter
 	sb.WriteString("### Challenger 抗辩列表:\n```json\n")
 	sb.WriteString(string(cJSON))
 	sb.WriteString("\n```\n\n")
+	sb.WriteString("## 裁决词撰写规约 (judgement_rationale 结构化要求)\n")
+	sb.WriteString("请在 judgement_rationale 中按段落清晰使用以下标签书写（方便系统结构化展示）：\n")
+	sb.WriteString("- 【综合裁决】：总结结论（裁决结果如 CONFIRMED / CONDITIONAL / REJECTED，初步定级与影响综述）\n")
+	sb.WriteString("- 【源码事实】：具体文件行号路径、参数传递与校验缺失事实\n")
+	sb.WriteString("- 【实测验证】：复现/PoC 触发表现、信号或异常分析\n")
+	sb.WriteString("- 【决定性证据】：契约、官方测试用例或规范依据\n")
+	sb.WriteString("- 【对照参考实现】：与标准库/参照组实现的对比差异\n")
+	sb.WriteString("- 【抗辩响应】：对辩护人抗辩主张的审理与判定\n")
+	sb.WriteString("- 【缓和因素】：触发前提约束与影响范围限制\n\n")
 	sb.WriteString("### 输出格式规范 (JSON Only):\n")
-	sb.WriteString("```json\n{\n  \"final_verdicts\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"verdict\": \"CONFIRMED\",\n      \"severity_preliminary\": \"高\",\n      \"category\": \"内存管理问题-越界访问\",\n      \"file_path\": \"src/file.cc\",\n      \"line_number\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"title\": \"精确漏洞标题\",\n      \"judgement_rationale\": \"裁决法理与事实依据\",\n      \"code_snippet\": \"...\",\n      \"suggestion\": \"修复建议代码\"\n    }\n  ]\n}\n```\n")
+	sb.WriteString("```json\n{\n  \"final_verdicts\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"verdict\": \"CONFIRMED\",\n      \"severity_preliminary\": \"高\",\n      \"category\": \"内存管理问题-越界访问\",\n      \"file_path\": \"src/file.cc\",\n      \"line_number\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"title\": \"精确漏洞标题\",\n      \"judgement_rationale\": \"【综合裁决】: ...\\n\\n【源码事实】: ...\\n\\n【实测验证】: ...\\n\\n【决定性证据】: ...\\n\\n【抗辩响应】: ...\\n\\n【缓和因素】: ...\",\n      \"code_snippet\": \"...\",\n      \"suggestion\": \"修复建议代码\"\n    }\n  ]\n}\n```\n")
 
 	return sb.String()
 }
