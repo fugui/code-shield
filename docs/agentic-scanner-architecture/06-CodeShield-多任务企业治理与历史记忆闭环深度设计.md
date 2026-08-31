@@ -200,7 +200,7 @@ type DefectFingerprintRecord struct {
 	ID          uint           `gorm:"primaryKey;autoIncrement" json:"id"`
 	RepoID      uint           `gorm:"index:idx_repo_fp,unique;not null" json:"repo_id"`
 	Fingerprint string         `gorm:"size:64;index:idx_repo_fp,unique;not null" json:"fingerprint"` // SHA-256 哈希
-	TaskTypeID  uint           `gorm:"index;not null" json:"task_type_id"`
+	TaskTypeID  uint           `gorm:"index:idx_repo_fp,unique;not null" json:"task_type_id"`
 	FilePath    string         `gorm:"size:512;not null" json:"file_path"`
 	ScopeSymbol string         `gorm:"size:256" json:"scope_symbol"` // 函数/类/作用域签名
 	FirstSeenAt time.Time      `json:"first_seen_at"`                 // 首次检出时间
@@ -230,7 +230,8 @@ const (
 	DiffReopened DiffClassification = "REOPENED" // 复发
 )
 
-// EnrichedFinding 带增量标记与历史记忆的最终分析结果
+// EnrichedFinding 是增量比对阶段的内存中间计算结构体（不直接入库）。
+// 持久化字段通过 AnalysisFinding 的扩展字段（fingerprint、diff_status 等）落库（详见 doc-07）。
 type EnrichedFinding struct {
 	AnalysisFinding
 	Fingerprint    string             `json:"fingerprint"`
@@ -298,8 +299,11 @@ func DiffAndEnrichFindings(repoID uint, taskID uint, taskTypeID uint, scannedFil
 	seenInThisScan := make(map[string]bool)
 
 	// 2. 遍历本次检出的 Findings 进行增量打标
+	// 注意：f.TriggerLine 与 f.ScopeSymbol 由 Hunter/Judge 阶段的 Output Schema 显式输出，
+	// 已在 AnalysisFinding 模型中新增对应字段（详见 doc-07）。
+	// 严禁使用 f.CodeSnippet 或 f.Title 替代，否则会导致指纹哈希断裂。
 	for _, f := range findings {
-		fp := CalculateDefectFingerprint(repoID, taskTypeID, f.FilePath, f.CodeSnippet, f.Title)
+		fp := CalculateDefectFingerprint(repoID, taskTypeID, f.FilePath, f.TriggerLine, f.ScopeSymbol)
 		seenInThisScan[fp] = true
 
 		enriched := models.EnrichedFinding{

@@ -39,43 +39,38 @@ flowchart TD
 ### 2.3 异步阶段管道与背压流控机制 (Pipelined Queue & Backpressure)
 为防范海量分片在 Tier 1 极速初筛产生过多候选点而压垮 Tier 2，调度器采用**异步管道与滑动窗口背压**设计：
 1. **阶段解耦队列**：Tier 1 与 Tier 2 之间通过带缓冲 Channel（`DebateTicketQueue`）解耦，初筛与辩论异步流水线并发推进；
-2. **动态背压流控 (Dynamic Backpressure)**：当 `DebateTicketQueue` 积压达到阈值（如 > 30 个待辩论点）时，自动挂起 Tier 1 新分片的投递，直至 Tier 2 消耗降至安全水位，彻底避免跨 Tier 内存堆积与资源死锁。
+2. **动态背压流控 (Dynamic Backpressure)**：背压阈值为可配置项（通过 `ai.debate.backpressure_threshold` 配置，默认 30），当 `DebateTicketQueue` 积压达到阈值时自动挂起 Tier 1 新分片投递。
+3. **超时兜底降级策略**：增加 Tier 2 全不可用时的超时兜底策略，当等待背压释放超过 `ai.debate.backpressure_timeout_seconds`（默认 120 秒）后自动跳过辩论，降级为 Hunter 直出 + `[Unchallenged Warning]` 标记，防止永久阻塞。
 
 ---
 
-## 三、 动态有向无环图 (Dynamic DAG) 任务调度引擎
+## 三、 阶段管道 (Stage Pipeline) 任务调度引擎
+
+当前阶段采用更轻量的阶段管道模式（Hunter Stage → Filter → Debate Stage → Synthesis Stage），每个 Stage 内部并发、Stage 间串行。通用 DAG 引擎作为远期演进目标保留（如后续引入跨仓关联扫描等复杂拓扑时再落地）。
 
 ```mermaid
 flowchart TD
-    Start(["任务启动 Task ID"]) --> Node_Checkout["代码同步与检出"]
-    Node_Checkout --> Node_Chunk["语义感知分片 (跨目录投影与摘要)"]
+    Start(["任务启动 Task ID"]) --> Stage_Init["Init Stage: 代码同步与检出分片"]
     
-    Node_Chunk --> Node_Route{"任务类型与引擎模式路由"}
+    Stage_Init --> Stage_Hunter["Hunter Stage: Tier 1 并发初筛 (Stage内并发)"]
     
-    Node_Route -->|确定性规则任务| Node_FastScan["Tier 1 快速单次扫描"]
-    Node_Route -->|深度推理/内存任务| Node_Tier1_Map["Tier 1 并发初筛 (Hunter)"]
+    Stage_Hunter --> Stage_Filter["Filter Stage: 候选缺陷过滤"]
     
-    Node_Tier1_Map --> Condition_HasCandidates{"是否发现候选缺陷?"}
+    Stage_Filter -->|存在可疑点| Stage_Debate["Debate Stage: Tier 2 多Agent对抗辩论"]
+    Stage_Filter -->|无候选点| Stage_Synthesis
     
-    Condition_HasCandidates -->|零候选| Node_FastPass["快速放行 (Pass)"]
-    Condition_HasCandidates -->|存在可疑点| Node_Debate["Tier 2 多 Agent 对抗辩论 (Challenger & Judge)"]
+    Stage_Debate --> Stage_Synthesis["Synthesis Stage: 指纹比对与总结归档"]
     
-    Node_FastPass --> Node_MemoryDiff
-    Node_FastScan --> Node_MemoryDiff
-    Node_Debate --> Node_MemoryDiff["跨任务指纹库比对 (Diff vs 历史)"]
-    
-    Node_MemoryDiff --> Node_Calibrate["确定性严重度决策树校准"]
-    Node_Calibrate --> Node_Synthesis["Tier 3 报告总结与归档 (Synthesis)"]
-    Node_Synthesis --> EndNode(["任务完成"])
+    Stage_Synthesis --> EndNode(["任务完成"])
 ```
 
-### 3.1 DAG 节点容错与重试机制
+### 3.1 阶段管道容错与重试机制
 1. **分片级指数退避重试 (Per-Chunk Exponential Backoff)**：
-   * 单个分片若由于 LLM 超时或网络抖动失败，仅重试该分片对应的 DAG 子节点，最大重试 3 次，不影响其它已成功分片。
+   * 单个分片若由于 LLM 超时或网络抖动失败，仅在当前 Stage 内部重试该分片，最大重试 3 次，不影响其它已成功分片。
 2. **后端自动降级熔断 (Backend Circuit Breaker)**：
-   * 若当前配置的物理 LLM 节点持续报错或物理宕机，DAG 引擎自动将后续节点调度降级至备用 Provider（如从 `claude` 降级为 `opencode`）。
+   * 若当前配置的物理 LLM 节点持续报错或物理宕机，Pipeline 引擎自动将后续分片调度降级至备用 Provider（如从 `claude` 降级为 `opencode`）。
 3. **部分成功降级合成 (Partial Success Synthesis)**：
-   * 若大仓中 95% 以上分片分析成功，仅极个别非核心目录超时，允许系统在报告中添加 `[Warning: 部分目录未完成扫描]` 标记，并继续推进总结阶段，避免任务全盘作废。
+   * 若大仓中 95% 以上分片分析成功，仅极个别非核心目录超时，允许系统在报告中添加 `[Warning: 部分目录未完成扫描]` 标记，并继续推进下一 Stage，避免任务全盘作废。
 
 ---
 
@@ -132,8 +127,8 @@ type NextGenDispatcher interface {
 	// ReleaseSlot 归还槽位
 	ReleaseSlot(slot *ResourceSlot)
 	
-	// ExecuteDAG 执行一个编排好的 DAG 任务图
-	ExecuteDAG(ctx context.Context, graph *DAGGraph) error
+	// ExecutePipeline 执行一个编排好的 Pipeline 阶段流水线
+	ExecutePipeline(ctx context.Context, stages []PipelineStage) error
 	
 	// QueryDefectMemory 查询历史指纹记忆与负样本规则
 	QueryDefectMemory(repoID int64, taskTypeID int64, fingerprint string) (*HistoricalDefectRecord, bool)
