@@ -336,7 +336,7 @@ function ScanManagement() {
       case 'analyzing':
         {
           const report = latestLog.task_report;
-          if (report && report.total_chunks > 1) {
+          if (report && report.total_chunks > 0) {
             text = `分析中 (${report.processed_chunks}/${report.total_chunks})`;
           } else {
             text = '分析中';
