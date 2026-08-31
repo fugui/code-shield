@@ -235,6 +235,8 @@ loop:
 	}
 
 	// ── Phase 2: 综合阶段 ──
+	updateTaskStatus(ctx.report.ID, models.StatusSynthesis)
+
 	// 执行确定性严重度校准决策树，纠正大模型自由裁量与定级倒挂
 	allFindings = CalibrateFindings(allFindings)
 

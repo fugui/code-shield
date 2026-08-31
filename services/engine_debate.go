@@ -214,6 +214,9 @@ bundleLoop:
 			len(chunkErrors), len(allFindings))
 	}
 
+	// 推进任务状态为报告总结/综合中
+	updateTaskStatus(ctx.report.ID, models.StatusSynthesis)
+
 	// 4. 确定性严重度校准
 	allFindings = CalibrateFindings(allFindings)
 
