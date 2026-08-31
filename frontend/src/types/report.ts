@@ -1,6 +1,9 @@
 // 规范化严重级别定义 (Canonical Severity)
 export type CanonicalSeverity = 'fatal' | 'critical' | 'major' | 'minor' | 'suggestion' | 'pass';
 
+// 增量生命周期状态 (DiffStatus)
+export type DiffStatus = 'NEW' | 'EXISTED' | 'RESOLVED' | 'REOPENED';
+
 // 治理模式
 export type GovernanceMode = 'defect_tracking' | 'entity_assessment';
 
@@ -23,7 +26,7 @@ export interface TaskReportMeta {
   task_type_id: number;
   task_type_name: string;
   task_type_display: string;
-  engine_mode: 'single' | 'chunked';
+  engine_mode: 'single' | 'chunked' | 'debate_full' | 'debate_selective' | 'chunked_fast';
   governance_mode: GovernanceMode;
   status: 'pending' | 'queued' | 'running' | 'cloning' | 'pre_processing' | 'analyzing' | 'synthesis' | 'post_processing' | 'merging' | 'success' | 'failed' | 'skipped';
   score: number;
@@ -34,6 +37,14 @@ export interface TaskReportMeta {
   duration_seconds?: number;
   base_commit?: string;
   head_commit?: string;
+
+  // ── 阶段二/三 增量与 Token 统计 ──
+  new_defects_count?: number;
+  existed_defects_count?: number;
+  resolved_defects_count?: number;
+  tier1_tokens?: number;
+  tier2_tokens?: number;
+
   created_at: string;
 }
 
@@ -73,13 +84,56 @@ export interface TaskFindingItem {
   title: string;
   detail: string;
   code_snippet?: string;
-  suggestion?: string; // 缺陷攻关模式下的修复建议
+  suggestion?: string; // 修复建议
   status: string;      // open, analyzing, resolved, closed, pass, fail, invalid
   status_display: string;
   assignee_id?: number | null;
   assignee_name?: string;
   latest_comment?: string;
+
+  // ── 阶段二/三: 缺陷指纹与智能体辩论链 ──
+  fingerprint?: string;
+  diff_status?: DiffStatus;
+  trigger_line?: string;
+  scope_symbol?: string;
+  hunter_claim?: string;
+  challenger_arg?: string;
+  judge_verdict?: string;
+
   created_at?: string;
+}
+
+// 智能体三方对抗辩论轨迹
+export interface TaskDebateLog {
+  id: number;
+  task_report_id: number;
+  chunk_name: string;
+  candidate_id: string;
+  trigger_line: string;
+  hunter_output: Record<string, unknown>;
+  challenger_output?: Record<string, unknown>;
+  judge_output: Record<string, unknown>;
+  verdict: 'CONFIRMED' | 'REJECTED' | 'CONDITIONAL';
+  duration_ms: number;
+  token_usage?: {
+    hunter_tokens?: number;
+    challenger_tokens?: number;
+    judge_tokens?: number;
+  };
+  created_at: string;
+}
+
+// 代码仓人机反馈例外规则
+export interface RepoFeedbackRule {
+  id: number;
+  repo_id: number;
+  task_type_id: number;
+  scope_type: 'FILE' | 'REPO' | 'GLOBAL';
+  pattern: string;
+  rule_action: 'IGNORE' | 'DOWNGRADE';
+  reason: string;
+  created_by: string;
+  created_at: string;
 }
 
 // 清单分页响应

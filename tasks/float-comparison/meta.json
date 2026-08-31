@@ -3,7 +3,7 @@
   "name": "float_comparison",
   "display_name": "浮点数比较分析",
   "description": "专项分析 Python、C/C++ 代码中由于浮点数（float、double 等）直接进行等值 (==)、不等 (!=) 或边界 (<=, >=) 比较导致的精度与逻辑缺陷风险",
-  "engine_mode": "chunked",
+  "engine_mode": "chunked_fast",
   "engine_config": {
     "file_extensions": [
       ".c",

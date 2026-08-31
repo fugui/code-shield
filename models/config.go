@@ -31,6 +31,35 @@ type WorkHoursThrottleConfig struct {
 	Scale     float64 `yaml:"scale" json:"scale"`           // 工作时间内的并发比例 (0.0~1.0, 如 0.1 代表 10%)
 }
 
+// TierConfig 单个阶梯模型的资源配置
+type TierConfig struct {
+	Backend        string `yaml:"backend" json:"backend"`                 // claude / opencode / codex
+	Model          string `yaml:"model" json:"model"`                     // 具体模型名称
+	Concurrent     int    `yaml:"concurrent" json:"concurrent"`           // 该阶梯并发槽位
+	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"` // 超时时限 (秒)
+}
+
+// DebateFlowConfig 辩论流水线流控与背压配置
+type DebateFlowConfig struct {
+	Enabled                    bool `yaml:"enabled" json:"enabled"`
+	FastPassEnabled            bool `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
+	MaxCandidatesPerChunk      int  `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
+	StageTimeoutSeconds        int  `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
+	LogRetentionDays           int  `yaml:"log_retention_days" json:"log_retention_days"`
+	BackpressureThreshold      int  `yaml:"backpressure_threshold" json:"backpressure_threshold"`             // 背压触发积压阈值 (默认 30)
+	BackpressureTimeoutSeconds int  `yaml:"backpressure_timeout_seconds" json:"backpressure_timeout_seconds"` // 背压超时兜底 (秒，默认 120)
+	LogRedactionEnabled        bool `yaml:"log_redaction_enabled" json:"log_redaction_enabled"`               // 日志脱敏开关
+}
+
+// GovernanceSystemConfig 企业多任务治理与历史记忆闭环配置
+type GovernanceSystemConfig struct {
+	FingerprintEnabled bool `yaml:"fingerprint_enabled" json:"fingerprint_enabled"`   // 是否启用跨扫描缺陷指纹计算
+	ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`   // 启用扫描范围守卫 (杜绝局部扫描假修复)
+	AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"` // 守卫范围内指纹消失自动标记 RESOLVED
+	FeedbackInjection  bool `yaml:"feedback_injection" json:"feedback_injection"`     // 是否将负样本知识注入 Prompt
+	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`         // PR 门禁模式下是否仅阻断 NEW 增量缺陷
+}
+
 type Config struct {
 	Server struct {
 		Port              string        `yaml:"port"`
@@ -56,7 +85,21 @@ type Config struct {
 		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"` // CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式关闭）
 		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"` // 工作时间自动限流配置
 		Models            []ModelConfig           `yaml:"models"`              // 多 LLM 服务器并发配置
+
+		// ── 异构模型多阶梯资源池配置 (阶段二) ──
+		Tiers struct {
+			Tier1Fast      TierConfig `yaml:"tier1_fast" json:"tier1_fast"`           // Tier 1 快模型初筛
+			Tier2Reasoning TierConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"` // Tier 2 强推理辩论与仲裁
+			Tier3Synthesis TierConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"` // Tier 3 报告排版与汇总
+		} `yaml:"tiers" json:"tiers"`
+
+		// ── 多智能体对抗辩论配置 (阶段二) ──
+		Debate DebateFlowConfig `yaml:"debate" json:"debate"`
 	} `yaml:"ai"`
+
+	// ── 企业多任务治理与历史记忆闭环配置 (阶段三) ──
+	Governance GovernanceSystemConfig `yaml:"governance" json:"governance"`
+
 	Notification struct {
 		Webhook string `yaml:"webhook"` // 通知回调地址
 	} `yaml:"notification"`
@@ -69,6 +112,35 @@ type Config struct {
 }
 
 var AppConfig Config
+
+// GetTierConfig 智能获取指定 Tier 的配置（具备向后兼容的平滑回退兜底）
+func (c *Config) GetTierConfig(tier string) TierConfig {
+	switch tier {
+	case "tier1_fast":
+		if c.AI.Tiers.Tier1Fast.Backend != "" {
+			return c.AI.Tiers.Tier1Fast
+		}
+	case "tier2_reasoning":
+		if c.AI.Tiers.Tier2Reasoning.Backend != "" {
+			return c.AI.Tiers.Tier2Reasoning
+		}
+	case "tier3_synthesis":
+		if c.AI.Tiers.Tier3Synthesis.Backend != "" {
+			return c.AI.Tiers.Tier3Synthesis
+		}
+	}
+
+	// 回退到全局默认 AI 后端配置
+	concurrent := c.Server.WorkerCount
+	if concurrent <= 0 {
+		concurrent = 5
+	}
+	return TierConfig{
+		Backend:        c.AI.Backend,
+		Concurrent:     concurrent,
+		TimeoutSeconds: 60,
+	}
+}
 
 // GetAppBaseDir 获取应用程序基准目录（用于定位 tasks/ 等内置资产模版）
 // 依次查找：

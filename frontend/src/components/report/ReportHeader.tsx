@@ -81,6 +81,33 @@ export default function ReportHeader({
             风险分: {meta.score} 分 (估值)
           </span>
         )}
+        {meta?.new_defects_count !== undefined && (meta.new_defects_count > 0 || (meta.existed_defects_count || 0) > 0) && (
+          <span
+            style={{
+              fontSize: '0.75rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              background: 'rgba(59, 130, 246, 0.08)',
+              color: '#2563eb',
+              padding: '0.2rem 0.55rem',
+              borderRadius: '6px',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              fontWeight: 600,
+            }}
+            title="生命周期增量追踪: [NEW] 本次新增 / [EXISTED] 历史存量 / [RESOLVED] 已修复"
+          >
+            <span>增量: +{meta.new_defects_count || 0}</span>
+            <span>|</span>
+            <span>存量: {meta.existed_defects_count || 0}</span>
+            {(meta.resolved_defects_count || 0) > 0 && (
+              <>
+                <span>|</span>
+                <span style={{ color: '#16a34a' }}>已修复: {meta.resolved_defects_count}</span>
+              </>
+            )}
+          </span>
+        )}
       </div>
 
       {/* 右侧操作栏 */}

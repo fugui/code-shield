@@ -2,7 +2,7 @@
   "name": "unordered_collection",
   "display_name": "无序集合导出缺陷扫描",
   "description": "针对 map 和 set 等无序集合，检测因直接迭代、导出为数组并依赖其内部排列顺序而导致的数据不稳定或计算一致性风险",
-  "engine_mode": "chunked",
+  "engine_mode": "debate_selective",
   "engine_config": {
     "file_extensions": [
       ".go",

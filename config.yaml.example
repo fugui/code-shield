@@ -54,6 +54,43 @@ ai:
   #   - codex: "o3-mini"
   #     concurrent: 3
 
+  # ── 异构模型多阶梯资源池配置 (阶段二，可选) ──
+  # tiers:
+  #   tier1_fast:                    # Tier 1 快排初筛 (高并发、低成本)
+  #     backend: "opencode"
+  #     model: "models/qwen2.5-coder-32b"
+  #     concurrent: 15
+  #     timeout_seconds: 45
+  #   tier2_reasoning:               # Tier 2 强推理对抗 (Challenger 辩护与 Judge 终审)
+  #     backend: "claude"
+  #     model: "claude-3-5-sonnet-20241022"
+  #     concurrent: 5
+  #     timeout_seconds: 90
+  #   tier3_synthesis:               # Tier 3 报告排版汇总
+  #     backend: "claude"
+  #     model: "claude-3-5-haiku-20241022"
+  #     concurrent: 2
+  #     timeout_seconds: 60
+
+  # ── 多智能体辩论流控制 (阶段二，可选) ──
+  # debate:
+  #   enabled: true                  # 是否开启三方交叉辩论流水线
+  #   fast_pass_enabled: true        # 开启零候选快速放行 (无疑点直接跳过辩论，节省算力)
+  #   max_candidates_per_chunk: 10   # 单分片进入辩论的候选点上限 (防异常爆炸)
+  #   stage_timeout_seconds: 90      # 单个辩论阶段硬超时限制
+  #   log_retention_days: 30         # 辩论轨迹 JSON 日志保留天数
+  #   backpressure_threshold: 30     # 跨 Tier 背压触发积压阈值
+  #   backpressure_timeout_seconds: 120 # 背压超时兜底（秒），超时后降级为 Hunter 直出
+  #   log_redaction_enabled: false   # 是否启用辩论日志脱敏
+
+# ── 企业多任务治理与历史记忆闭环配置 (阶段三，可选) ──
+# governance:
+#   fingerprint_enabled: true        # 是否启用跨扫描缺陷指纹计算
+#   scope_guard_enabled: true        # 启用扫描范围守卫 (仅在文件成功被扫描时才允许自动标记 RESOLVED)
+#   auto_resolve_missing: true       # 本次未出现的历史存量缺陷自动标记为已修复 (RESOLVED)
+#   feedback_injection: true         # 是否将已标记误报/不予修复的知识自动注入下次 Prompt
+#   diff_gate_strict: true           # PR 门禁模式下是否仅阻断 [NEW] 增量缺陷
+
 # ── 通知服务 ──
 notification:
   webhook: "http://127.0.0.1:8081/api/notify/email"  # 分析完毕后发送报告卡片通知的回调地址

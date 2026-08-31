@@ -2,7 +2,7 @@
   "name": "deep_review",
   "display_name": "深度代码检视",
   "description": "对整个代码仓进行深度的架构审计与全量存量代码安全质量评估，扫描隐藏的系统性风险",
-  "engine_mode": "chunked",
+  "engine_mode": "debate_full",
   "engine_config": {
     "exclude_paths": [
       "thirdparts"

@@ -153,6 +153,12 @@ func main() {
 				api.GET("/tasks/:id/summary", handlers.GetReportDiagnosticsHandler) // 兼容历史别名
 				api.GET("/tasks/:id/report/aggregate", handlers.GetReportAggregateHandler)
 				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
+				api.GET("/tasks/:id/debate-logs", handlers.GetTaskDebateLogsHandler) // 智能体对抗辩论轨迹
+
+				// 人机反馈与知识沉淀闭环路由
+				api.POST("/findings/:id/feedback", handlers.SubmitFindingFeedbackHandler)
+				api.GET("/repos/:id/feedback-rules", handlers.GetRepoFeedbackRulesHandler)
+				api.DELETE("/feedback-rules/:rule_id", handlers.DeleteFeedbackRuleHandler)
 
 				// Task type management (read-only for normal users)
 				api.GET("/task-types", handlers.GetTaskTypes)
