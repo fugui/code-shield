@@ -1045,64 +1045,75 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	// 1. Load all findings for this report from the database to calculate score and metrics
 	findings := ctx.findings
 	severityWeight := map[string]int{
-		"致命":          4,
-		"fatal":       4,
-		"blocker":     4,
-		"阻塞":          4,
-		"blocking":    4,
-		"严重":          3,
-		"critical":    3,
-		"major_error": 3,
-		"error":       3,
-		"一般":          2,
-		"minor":       2,
-		"warning":     2,
-		"主要":          2,
-		"major":       2,
-		"提示":          2,
-		"info":        2,
-		"hint":        2,
-		"建议":          1,
-		"suggestion":  1,
-		"comment":     1,
-		"合格":          0,
-		"pass":        0,
+		"fatal":       5,
+		"致命":          5,
+		"blocker":     5,
+		"阻塞":          5,
+		"blocking":    5,
+		"p0":          5,
+		"critical":    4,
+		"严重":          4,
+		"major_error": 4,
+		"error":       4,
+		"高":           4,
+		"高危":          4,
 		"高风险":         4,
 		"high":        4,
 		"high_risk":   4,
+		"p1":          4,
+		"major":       3,
+		"主要":          3,
+		"minor":       2,
+		"一般":          2,
+		"warning":     2,
+		"中":           2,
+		"中危":          2,
 		"中风险":         2,
 		"medium":      2,
 		"medium_risk": 2,
+		"p2":          2,
 		"low":         1,
+		"低":           1,
+		"低危":          1,
 		"低风险":         1,
 		"low_risk":    1,
+		"hint":        1,
+		"p3":          1,
+		"suggestion":  0,
+		"建议":          0,
+		"info":        0,
+		"提示":          0,
+		"comment":     0,
+		"合格":          0,
+		"pass":        0,
+		"p4":          0,
 	}
 
 	metrics := map[string]int{}
 	score := 0
 	for _, f := range findings {
-		sev := strings.ToLower(f.Severity)
+		sev := strings.ToLower(strings.TrimSpace(f.Severity))
 		weight := severityWeight[sev]
 		score += weight
 
 		key := sev
 		switch sev {
-		case "致命", "fatal", "blocker", "阻塞", "blocking":
+		case "致命", "fatal", "blocker", "阻塞", "blocking", "p0":
 			key = "blocking"
-		case "严重", "critical", "major_error", "error":
+		case "严重", "critical", "major_error", "error", "p1":
 			key = "critical"
-		case "一般", "minor", "warning", "主要", "major", "提示", "info", "hint":
+		case "高", "高危", "高风险", "high", "high_risk":
+			key = "high_risk"
+		case "中", "中危", "中风险", "medium", "medium_risk", "p2":
+			key = "medium_risk"
+		case "一般", "minor", "warning", "主要", "major":
 			key = "minor"
-		case "建议", "suggestion", "comment":
+		case "低", "低危", "低风险", "low", "low_risk", "p3":
+			key = "low_risk"
+		case "建议", "suggestion", "comment", "提示", "info", "hint", "p4":
 			key = "suggestion"
 		case "合格", "pass":
 			key = "pass"
-		case "高风险", "high", "high_risk":
-			key = "high_risk"
-		case "中风险", "medium", "medium_risk":
-			key = "medium_risk"
-		case "低风险", "low", "low_risk":
-			key = "low_risk"
 		}
 		metrics[key]++
 	}
@@ -1117,21 +1128,21 @@ func (ctx *taskContext) runPostProcess() TaskResult {
 	if result.Metrics["critical"] > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("严重：%d个", result.Metrics["critical"]))
 	}
-	totalMinor := result.Metrics["minor"] + result.Metrics["major"] + result.Metrics["hint"]
-	if totalMinor > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("一般：%d个", totalMinor))
-	}
-	if result.Metrics["suggestion"] > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("建议：%d个", result.Metrics["suggestion"]))
-	}
 	if result.Metrics["high_risk"] > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("高风险：%d个", result.Metrics["high_risk"]))
 	}
 	if result.Metrics["medium_risk"] > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("中风险：%d个", result.Metrics["medium_risk"]))
 	}
+	totalMinor := result.Metrics["minor"] + result.Metrics["major"] + result.Metrics["hint"]
+	if totalMinor > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("一般：%d个", totalMinor))
+	}
 	if result.Metrics["low_risk"] > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("低风险：%d个", result.Metrics["low_risk"]))
+	}
+	if result.Metrics["suggestion"] > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("建议：%d个", result.Metrics["suggestion"]))
 	}
 
 	if len(summaryParts) == 0 {
