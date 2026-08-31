@@ -83,8 +83,16 @@ export default function ReportDiagnosticsTab({
           <span className="kpi-title">
             🧩 执行引擎模式
           </span>
-          <span className="kpi-number" style={{ fontSize: '1.25rem', color: '#2563eb' }}>
-            {isSingleEngine ? '单仓全量分析 (Single)' : `分片并发分析 (${diagnostics?.chunks?.length || 0} 片)`}
+          <span className="kpi-number" style={{ fontSize: '1.15rem', color: '#2563eb' }}>
+            {meta?.engine_mode === 'debate_full'
+              ? `🤖 全量对抗辩论 (${diagnostics?.chunks?.length || meta?.total_chunks || 0} 个语义分片)`
+              : meta?.engine_mode === 'debate_selective'
+              ? `⚖️ 选择性辩论 (${diagnostics?.chunks?.length || meta?.total_chunks || 0} 个语义分片)`
+              : meta?.engine_mode === 'chunked_fast'
+              ? `⚡ 语义分片快扫 (${diagnostics?.chunks?.length || meta?.total_chunks || 0} 片)`
+              : isSingleEngine
+              ? '📄 单仓全量分析 (Single)'
+              : `📦 经典分片分析 (${diagnostics?.chunks?.length || meta?.total_chunks || 0} 片)`}
           </span>
         </div>
       </div>
