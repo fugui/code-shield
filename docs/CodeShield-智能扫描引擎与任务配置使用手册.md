@@ -336,7 +336,7 @@ ai:
   debate:
     enabled: true                  # 全局是否开启三方对抗辩论
     fast_pass_enabled: true        # 零候选快速放行 (无疑点分片毫秒级放行，节省 80%+ 算力)
-    max_candidates_per_chunk: 8    # 单分片进入辩论的最大候选点上限 (防异常 Prompt 爆炸)
+    max_candidates_per_chunk: 20   # 单分片进入辩论的最大候选点上限 (防异常 Prompt 爆炸)
     stage_timeout_seconds: 1800    # 单阶段全局硬超时兜底 (秒，如 1800 代表 30 分钟)
     backpressure_threshold: 30     # 跨 Tier 调度积压阈值 (超过后触发背压)
     backpressure_timeout_seconds: 120 # 背压超时兜底：超时后平滑降级为 Hunter 初筛直出
