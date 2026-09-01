@@ -115,6 +115,15 @@ export default function ReportDebateTab({
     };
   }, [debateLogs]);
 
+  // 计算全局流水号索引映射 (全局自增 #1, #2...)
+  const indexMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (debateLogs || []).forEach((l, idx) => {
+      map.set(l.id, idx + 1);
+    });
+    return map;
+  }, [debateLogs]);
+
   // 过滤后的辩论记录
   const filteredLogs = useMemo(() => {
     if (!debateLogs) return [];
@@ -135,8 +144,9 @@ export default function ReportDebateTab({
         const kw = searchKeyword.trim().toLowerCase();
         const hunter = (log.hunter_output || {}) as HunterCandidateData;
         const judge = (log.judge_output || {}) as JudgeVerdictData;
+        const seq = indexMap.get(log.id) || 0;
 
-        const matchCandidateId = (log.candidate_id || '').toLowerCase().includes(kw);
+        const matchSeq = seq.toString() === kw || `#${seq}` === kw;
         const matchChunk = (log.chunk_name || '').toLowerCase().includes(kw);
         const matchFile = (hunter.file_path || judge.file_path || '').toLowerCase().includes(kw);
         const matchSymbol = (hunter.scope_symbol || judge.scope_symbol || '').toLowerCase().includes(kw);
@@ -144,23 +154,23 @@ export default function ReportDebateTab({
         const matchRationale = (judge.judgement_rationale || '').toLowerCase().includes(kw);
         const matchTitle = (judge.title || '').toLowerCase().includes(kw);
 
-        if (!matchCandidateId && !matchChunk && !matchFile && !matchSymbol && !matchHypothesis && !matchRationale && !matchTitle) {
+        if (!matchSeq && !matchChunk && !matchFile && !matchSymbol && !matchHypothesis && !matchRationale && !matchTitle) {
           return false;
         }
       }
 
       return true;
     });
-  }, [debateLogs, verdictFilter, chunkFilter, searchKeyword]);
+  }, [debateLogs, verdictFilter, chunkFilter, searchKeyword, indexMap]);
 
   // 复制单条辩论记录为 Markdown 格式
-  const handleCopyDebateMarkdown = async (log: TaskDebateLog) => {
+  const handleCopyDebateMarkdown = async (log: TaskDebateLog, seq: number) => {
     const hunter = (log.hunter_output || {}) as HunterCandidateData;
     const chall = (log.challenger_output || {}) as ChallengerDefenseData;
     const judge = (log.judge_output || {}) as JudgeVerdictData;
 
     const md = [
-      `### ⚔️ 多智能体辩论轨迹 [${log.candidate_id}] - ${judge.verdict || log.verdict}`,
+      `### ⚔️ 多智能体辩论轨迹 [#${seq}] - ${judge.verdict || log.verdict}`,
       `- **目标分片**: \`${log.chunk_name}\``,
       `- **代码定位**: \`${hunter.file_path || judge.file_path || ''}:${hunter.line_range || judge.line_number || ''}\``,
       `- **作用域符号**: \`${hunter.scope_symbol || judge.scope_symbol || '-'}\``,
@@ -186,7 +196,7 @@ export default function ReportDebateTab({
 
     const ok = await copyToClipboardWithFallback(md);
     if (ok) {
-      showToast(`已复制候选 ${log.candidate_id} 辩论轨迹 Markdown`, 'success');
+      showToast(`已复制第 #${seq} 项辩论轨迹 Markdown`, 'success');
     } else {
       showToast('复制失败', 'error');
     }
@@ -338,7 +348,7 @@ export default function ReportDebateTab({
           <input
             type="text"
             className="report-debate-search-input"
-            placeholder="搜索候选 ID / 文件路径 / 函数名 / 触发诱因 / 裁决词..."
+            placeholder="搜索序号 (#1) / 文件路径 / 函数名 / 触发诱因 / 裁决词..."
             value={searchKeyword}
             onChange={e => setSearchKeyword(e.target.value)}
           />
@@ -373,6 +383,8 @@ export default function ReportDebateTab({
             const triggerLine = log.trigger_line || hunter.trigger_line || judge.trigger_line || '';
             const codeSnippet = hunter.code_snippet || judge.code_snippet || '';
 
+            const seq = indexMap.get(log.id) || 1;
+
             return (
               <div
                 key={log.id}
@@ -382,7 +394,7 @@ export default function ReportDebateTab({
                 <div className="report-debate-card-header">
                   <div className="report-debate-header-left">
                     <span className="report-debate-candidate-id">
-                      {log.candidate_id || `H-${log.id}`}
+                      #{seq}
                     </span>
                     <span className="report-debate-chunk-badge">
                       📦 {log.chunk_name}
@@ -419,7 +431,7 @@ export default function ReportDebateTab({
                       type="button"
                       className="report-debate-action-btn"
                       title="复制本条辩论 Markdown"
-                      onClick={() => handleCopyDebateMarkdown(log)}
+                      onClick={() => handleCopyDebateMarkdown(log, seq)}
                     >
                       📋 复制
                     </button>
