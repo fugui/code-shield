@@ -262,18 +262,18 @@ ai:
     tier1_fast:                    # Tier 1：高并发初筛猎手 (Hunter)
       backend: "agy"               # 推荐轻量快模型，高并发快速发散筛选疑点
       model: "gemini-3.7-flash"
-      concurrent: 16               # 16 高并发，秒级完成大仓分片初筛
-      timeout_seconds: 45          # 快速初筛阶段单片超时时限（秒）
+      concurrent: 5                # 并发槽位数
+      timeout_seconds: 1200        # 快速初筛阶段单片超时时限 (秒，如 1200 代表 20 分钟)
     tier2_reasoning:               # Tier 2：深度推理对抗 (Challenger 抗辩与 Judge 终审)
       backend: "agy"               # 推荐最强深度推理模型，用于事实链推演与反向仲裁
       model: "gemini-3.7-pro"
-      concurrent: 4                # 4 并发精细化推演，算力聚焦在可疑候选争议仲裁
-      timeout_seconds: 900         # 辩论与裁决阶段单片超时时限（秒）
+      concurrent: 3                # 精细化推演槽位
+      timeout_seconds: 1800        # 辩论与裁决阶段单片超时时限 (秒，如 1800 代表 30 分钟)
     tier3_synthesis:               # Tier 3：综合报告排版与汇总 (Synthesis)
       backend: "agy"               # 具备超大上下文与高格式化排版能力
       model: "gemini-3.7-flash"
-      concurrent: 2                # 2 并发全仓总结
-      timeout_seconds: 120         # 综合阶段超时时限（秒）
+      concurrent: 2                # 全仓总结并发槽位
+      timeout_seconds: 900         # 综合阶段超时时限 (秒，如 900 代表 15 分钟)
 ```
 
 ---
@@ -336,8 +336,8 @@ ai:
   debate:
     enabled: true                  # 全局是否开启三方对抗辩论
     fast_pass_enabled: true        # 零候选快速放行 (无疑点分片毫秒级放行，节省 80%+ 算力)
-    max_candidates_per_chunk: 10   # 单分片进入辩论的最大候选点上限 (防异常 Prompt 爆炸)
-    stage_timeout_seconds: 90      # 单个辩论阶段硬超时限制
+    max_candidates_per_chunk: 8    # 单分片进入辩论的最大候选点上限 (防异常 Prompt 爆炸)
+    stage_timeout_seconds: 1800    # 单阶段全局硬超时兜底 (秒，如 1800 代表 30 分钟)
     backpressure_threshold: 30     # 跨 Tier 调度积压阈值 (超过后触发背压)
     backpressure_timeout_seconds: 120 # 背压超时兜底：超时后平滑降级为 Hunter 初筛直出
     log_retention_days: 30         # 辩论轨迹 JSON 审计日志保留天数

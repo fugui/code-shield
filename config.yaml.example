@@ -62,25 +62,25 @@ ai:
   #   tier1_fast:                    # Tier 1 快排初筛 (高并发、低成本)
   #     backend: "agy"               # 可选 agy / opencode / claude / codex
   #     model: "gemini-3.7-flash"
-  #     concurrent: 15
-  #     timeout_seconds: 45
+  #     concurrent: 5
+  #     timeout_seconds: 1200        # 初筛阶段单片超时时限 (秒，如 1200 代表 20 分钟)
   #   tier2_reasoning:               # Tier 2 强推理对抗 (Challenger 辩护与 Judge 终审)
   #     backend: "agy"
   #     model: "gemini-3.7-pro"
-  #     concurrent: 5
-  #     timeout_seconds: 900
+  #     concurrent: 3
+  #     timeout_seconds: 1800        # 辩论与裁决阶段单片超时时限 (秒，如 1800 代表 30 分钟)
   #   tier3_synthesis:               # Tier 3 报告排版汇总
   #     backend: "agy"
   #     model: "gemini-3.7-flash"
   #     concurrent: 2
-  #     timeout_seconds: 120
-
-  # ── 多智能体辩论流控制 (阶段二，可选) ──
+  #     timeout_seconds: 900         # 报告汇总阶段超时时限 (秒，如 900 代表 15 分钟)
+  #
+  # ── 多智能体对抗辩论与流水线流控配置 (可选) ──
   # debate:
   #   enabled: true                  # 是否开启三方交叉辩论流水线
   #   fast_pass_enabled: true        # 开启零候选快速放行 (无疑点直接跳过辩论，节省算力)
-  #   max_candidates_per_chunk: 10   # 单分片进入辩论的候选点上限 (防异常爆炸)
-  #   stage_timeout_seconds: 90      # 单个辩论阶段硬超时限制
+  #   max_candidates_per_chunk: 8    # 单分片进入辩论的候选点上限 (防异常爆炸)
+  #   stage_timeout_seconds: 1800    # 单阶段全局硬超时兜底 (秒，如 1800 代表 30 分钟)
   #   log_retention_days: 30         # 辩论轨迹 JSON 日志保留天数
   #   backpressure_threshold: 30     # 跨 Tier 背压触发积压阈值
   #   backpressure_timeout_seconds: 120 # 背压超时兜底（秒），超时后降级为 Hunter 直出
