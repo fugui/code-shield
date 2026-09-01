@@ -230,26 +230,32 @@ func TestExportDynamicCampaignDepartments(t *testing.T) {
 
 	sheetList := excelFile.GetSheetList()
 	assert.Contains(t, sheetList, "部门治理排行榜")
-	assert.Contains(t, sheetList, "各部门代码仓明细")
+	assert.Len(t, sheetList, 1, "应该只生成单个二层可折叠的 Sheet")
 
-	// 验证 Sheet 1 部门排行榜第一行和数据行
-	deptRows, err := excelFile.GetRows("部门治理排行榜")
+	// 验证 Sheet 部门治理排行榜表头、部门行、子代码仓行
+	rows, err := excelFile.GetRows("部门治理排行榜")
 	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, len(deptRows), 2)
-	assert.Equal(t, "排名", deptRows[0][0])
-	assert.Equal(t, "部门", deptRows[0][1])
-	assert.Equal(t, dept.Name, deptRows[1][1])
+	assert.GreaterOrEqual(t, len(rows), 3)
 
-	// 验证 Sheet 2 部门代码仓明细第一行和数据行
-	repoRows, err := excelFile.GetRows("各部门代码仓明细")
-	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, len(repoRows), 2)
-	assert.Equal(t, "序号", repoRows[0][0])
-	assert.Equal(t, "归属部门", repoRows[0][1])
-	assert.Equal(t, "代码仓", repoRows[0][2])
-	assert.Equal(t, "cloud-server", repoRows[1][2])
-	assert.Equal(t, "李四", repoRows[1][3])
-	assert.Equal(t, "1", repoRows[1][4]) // 跟踪缺陷数(未关闭)
-	assert.Equal(t, "1", repoRows[1][5]) // 致命(未关闭)
-	assert.Equal(t, "0", repoRows[1][6]) // 严重(未关闭)
+	// 表头
+	assert.Equal(t, "序号/排名", rows[0][0])
+	assert.Equal(t, "部门 / 代码仓", rows[0][1])
+	assert.Equal(t, "负责人 / 覆盖仓", rows[0][2])
+	assert.Equal(t, "跟踪缺陷数(未关闭)", rows[0][3])
+
+	// 一级部门行
+	assert.Equal(t, "1", rows[1][0])
+	assert.Equal(t, dept.Name, rows[1][1])
+	assert.Equal(t, "1/1 仓", rows[1][2])
+	assert.Equal(t, "1", rows[1][3]) // 未整改缺陷
+	assert.Equal(t, "1", rows[1][4]) // 部门未关闭致命
+	assert.Equal(t, "0", rows[1][5]) // 部门未关闭严重
+
+	// 二级子代码仓行 (大纲级别 1)
+	assert.Equal(t, "1.1", rows[2][0])
+	assert.Contains(t, rows[2][1], "cloud-server")
+	assert.Equal(t, "李四", rows[2][2])
+	assert.Equal(t, "1", rows[2][3]) // 跟踪缺陷数(未关闭)
+	assert.Equal(t, "1", rows[2][4]) // 致命(未关闭)
+	assert.Equal(t, "0", rows[2][5]) // 严重(未关闭)
 }

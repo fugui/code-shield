@@ -152,7 +152,7 @@ func generateCampaignExcel(c *gin.Context, repoName, campaignTitle string, items
 	}
 }
 
-// ExportDynamicCampaignDepartments 导出部门排行榜及各部门下属代码仓二层表格至 Excel
+// ExportDynamicCampaignDepartments 导出部门排行榜与下属代码仓单 Sheet 二层可折叠 Excel 数据表
 func ExportDynamicCampaignDepartments(c *gin.Context) {
 	taskTypeVal, exists := c.Get("taskType")
 	if !exists {
@@ -180,43 +180,37 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 		return deptSummaries[i].FixRate < deptSummaries[j].FixRate
 	})
 
-	// 2. 获取全量代码仓明细数据
+	// 2. 获取全量代码仓明细数据并按部门组织
 	repoSummaries, err := FetchCampaignRepoSummaries(tt, "", "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch repo summaries: " + err.Error()})
 		return
 	}
 
-	// 将代码仓按部门归类组织（保持部门排序）
-	deptOrderMap := make(map[string]int)
-	for idx, d := range deptSummaries {
-		deptOrderMap[d.Department] = idx
+	deptReposMap := make(map[string][]DynamicCampaignRepoSummary)
+	for _, r := range repoSummaries {
+		deptReposMap[r.Department] = append(deptReposMap[r.Department], r)
 	}
 
-	sort.Slice(repoSummaries, func(i, j int) bool {
-		orderI, okI := deptOrderMap[repoSummaries[i].Department]
-		if !okI {
-			orderI = 9999
-		}
-		orderJ, okJ := deptOrderMap[repoSummaries[j].Department]
-		if !okJ {
-			orderJ = 9999
-		}
-		if orderI != orderJ {
-			return orderI < orderJ
-		}
-		if isEntityMode {
-			return repoSummaries[i].PassRate > repoSummaries[j].PassRate
-		}
-		if repoSummaries[i].OpenIssues != repoSummaries[j].OpenIssues {
-			return repoSummaries[i].OpenIssues > repoSummaries[j].OpenIssues
-		}
-		return repoSummaries[i].FixRate < repoSummaries[j].FixRate
-	})
+	// 对各部门下属代码仓排序
+	for deptName := range deptReposMap {
+		list := deptReposMap[deptName]
+		sort.Slice(list, func(i, j int) bool {
+			if isEntityMode {
+				return list[i].PassRate > list[j].PassRate
+			}
+			if list[i].OpenIssues != list[j].OpenIssues {
+				return list[i].OpenIssues > list[j].OpenIssues
+			}
+			return list[i].FixRate < list[j].FixRate
+		})
+		deptReposMap[deptName] = list
+	}
 
 	f := excelize.NewFile()
 	defer func() { _ = f.Close() }()
 
+	// 表头深色商务风格
 	headerStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Color: "FFFFFF", Size: 11},
 		Fill:      excelize.Fill{Type: "pattern", Color: []string{"1E293B"}, Pattern: 1},
@@ -229,9 +223,35 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 		},
 	})
 
-	dataStyle, _ := f.NewStyle(&excelize.Style{
+	// 一级部门行样式 (淡灰背景、加粗文本)
+	deptRowStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Color: "0F172A", Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"F1F5F9"}, Pattern: 1},
+		Alignment: &excelize.Alignment{Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "CBD5E1", Style: 1},
+			{Type: "top", Color: "CBD5E1", Style: 1},
+			{Type: "bottom", Color: "CBD5E1", Style: 1},
+			{Type: "right", Color: "CBD5E1", Style: 1},
+		},
+	})
+
+	deptCenterStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Color: "0F172A", Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"F1F5F9"}, Pattern: 1},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "CBD5E1", Style: 1},
+			{Type: "top", Color: "CBD5E1", Style: 1},
+			{Type: "bottom", Color: "CBD5E1", Style: 1},
+			{Type: "right", Color: "CBD5E1", Style: 1},
+		},
+	})
+
+	// 二级代码仓行普通样式 (纯白背景、细字)
+	repoRowStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Color: "334155", Size: 10},
-		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+		Alignment: &excelize.Alignment{Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "left", Color: "E2E8F0", Style: 1},
 			{Type: "top", Color: "E2E8F0", Style: 1},
@@ -240,9 +260,9 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 		},
 	})
 
-	centerDataStyle, _ := f.NewStyle(&excelize.Style{
+	repoCenterStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Color: "334155", Size: 10},
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 		Border: []excelize.Border{
 			{Type: "left", Color: "E2E8F0", Style: 1},
 			{Type: "top", Color: "E2E8F0", Style: 1},
@@ -251,109 +271,150 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 		},
 	})
 
-	// ----------------------------------------------------
-	// Sheet 1: 部门排行榜 (一级汇总表)
-	// ----------------------------------------------------
+	repoDangerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Color: "DC2626", Size: 10},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "E2E8F0", Style: 1},
+			{Type: "top", Color: "E2E8F0", Style: 1},
+			{Type: "bottom", Color: "E2E8F0", Style: 1},
+			{Type: "right", Color: "E2E8F0", Style: 1},
+		},
+	})
+
+	repoWarningStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Color: "EA580C", Size: 10},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "E2E8F0", Style: 1},
+			{Type: "top", Color: "E2E8F0", Style: 1},
+			{Type: "bottom", Color: "E2E8F0", Style: 1},
+			{Type: "right", Color: "E2E8F0", Style: 1},
+		},
+	})
+
 	sheet1 := "部门治理排行榜"
 	if isEntityMode {
 		sheet1 = "部门评估排行榜"
 	}
 	sheet1Index, _ := f.NewSheet(sheet1)
 
-	var deptHeaders []string
+	// 配置大纲属性：折叠按钮置于父汇总行（上方）
+	falseVal := false
+	_ = f.SetSheetProps(sheet1, &excelize.SheetPropsOptions{
+		OutlineSummaryBelow: &falseVal,
+	})
+
+	headers := []string{"序号/排名", "部门 / 代码仓", "负责人 / 覆盖仓", "跟踪缺陷数(未关闭)", "致命(未关闭)", "严重(未关闭)", "修复进度 / 整改率", "最近扫描"}
 	if isEntityMode {
-		deptHeaders = []string{"排名", "部门", "覆盖代码仓", "总评估用例数", "合格用例数", "用例合格率"}
-	} else {
-		deptHeaders = []string{"排名", "部门", "覆盖代码仓", "总累计缺陷数", "未整改缺陷", "缺陷整改率"}
+		headers = []string{"序号/排名", "部门 / 代码仓", "负责人 / 覆盖仓", "用例总数", "合格用例", "待优化", "用例合格率", "最近扫描"}
 	}
 
-	for colIdx, h := range deptHeaders {
-		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
+	curRow := 1
+	for colIdx, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(colIdx+1, curRow)
 		_ = f.SetCellValue(sheet1, cell, h)
 	}
-	_ = f.SetRowStyle(sheet1, 1, 1, headerStyle)
-	_ = f.SetRowHeight(sheet1, 1, 26)
+	_ = f.SetRowStyle(sheet1, curRow, curRow, headerStyle)
+	_ = f.SetRowHeight(sheet1, curRow, 26)
 
-	for rowIdx, d := range deptSummaries {
-		r := rowIdx + 2
-		_ = f.SetRowHeight(sheet1, r, 22)
-		_ = f.SetRowStyle(sheet1, r, r, dataStyle)
+	for deptIdx, d := range deptSummaries {
+		curRow++
+		deptRow := curRow
+		_ = f.SetRowHeight(sheet1, deptRow, 24)
+
+		subRepos := deptReposMap[d.Department]
+
+		deptBlocking := 0
+		deptCritical := 0
+		for _, sr := range subRepos {
+			deptBlocking += sr.Blocking
+			deptCritical += sr.Critical
+		}
 
 		rateVal := d.FixRate
 		if isEntityMode {
 			rateVal = d.PassRate
 		}
 
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", r), rowIdx+1)
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", r), d.Department)
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("C%d", r), fmt.Sprintf("%d/%d", d.ScannedRepos, d.TotalRepos))
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", r), d.TotalIssues)
+		_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", deptRow), deptIdx+1)
+		_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", deptRow), d.Department)
+		_ = f.SetCellValue(sheet1, fmt.Sprintf("C%d", deptRow), fmt.Sprintf("%d/%d 仓", d.ScannedRepos, d.TotalRepos))
 		if isEntityMode {
-			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", r), d.PassCount)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", deptRow), d.TotalIssues)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", deptRow), d.PassCount)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", deptRow), d.OpenIssues)
 		} else {
-			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", r), d.OpenIssues)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", deptRow), d.OpenIssues)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", deptRow), deptBlocking)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", deptRow), deptCritical)
 		}
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", r), fmt.Sprintf("%.1f%%", rateVal))
-		_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", r), fmt.Sprintf("A%d", r), centerDataStyle)
-		_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", r), fmt.Sprintf("F%d", r), centerDataStyle)
-	}
-	adjustCampaignColWidth(f, sheet1, len(deptHeaders))
+		_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", deptRow), fmt.Sprintf("%.1f%%", rateVal))
+		_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", deptRow), "-")
 
-	// ----------------------------------------------------
-	// Sheet 2: 各部门代码仓明细 (二级明细表)
-	// ----------------------------------------------------
-	sheet2 := "各部门代码仓明细"
-	f.NewSheet(sheet2)
+		_ = f.SetRowStyle(sheet1, deptRow, deptRow, deptRowStyle)
+		_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", deptRow), fmt.Sprintf("A%d", deptRow), deptCenterStyle)
+		_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", deptRow), fmt.Sprintf("H%d", deptRow), deptCenterStyle)
 
-	var repoHeaders []string
-	if isEntityMode {
-		repoHeaders = []string{"序号", "归属部门", "代码仓", "负责人", "用例总数", "合格用例", "待优化", "合格率", "最近扫描"}
-	} else {
-		repoHeaders = []string{"序号", "归属部门", "代码仓", "负责人", "跟踪缺陷数", "致命", "严重", "修复进度", "最近扫描"}
-	}
-
-	for colIdx, h := range repoHeaders {
-		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
-		_ = f.SetCellValue(sheet2, cell, h)
-	}
-	_ = f.SetRowStyle(sheet2, 1, 1, headerStyle)
-	_ = f.SetRowHeight(sheet2, 1, 26)
-
-	for rowIdx, rItem := range repoSummaries {
-		r := rowIdx + 2
-		_ = f.SetRowHeight(sheet2, r, 22)
-		_ = f.SetRowStyle(sheet2, r, r, dataStyle)
-
-		rateVal := rItem.FixRate
-		if isEntityMode {
-			rateVal = rItem.PassRate
-		}
-
-		lastScanStr := "未扫描"
-		if !rItem.LastScanTime.IsZero() && rItem.LastScanTime.Year() > 2000 {
-			lastScanStr = rItem.LastScanTime.Format("2006-01-02 15:04")
-		}
-
-		_ = f.SetCellValue(sheet2, fmt.Sprintf("A%d", r), rowIdx+1)
-		_ = f.SetCellValue(sheet2, fmt.Sprintf("B%d", r), rItem.Department)
-		_ = f.SetCellValue(sheet2, fmt.Sprintf("C%d", r), rItem.RepoName)
-		_ = f.SetCellValue(sheet2, fmt.Sprintf("D%d", r), rItem.OwnerName)
-		if isEntityMode {
-			_ = f.SetCellValue(sheet2, fmt.Sprintf("E%d", r), rItem.TotalEntities)
-			_ = f.SetCellValue(sheet2, fmt.Sprintf("F%d", r), rItem.PassCount)
-			_ = f.SetCellValue(sheet2, fmt.Sprintf("G%d", r), rItem.OpenIssues)
+		// 填充二级子代码仓（设置大纲层级为 1）
+		if len(subRepos) == 0 {
+			curRow++
+			_ = f.SetRowHeight(sheet1, curRow, 20)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", curRow), fmt.Sprintf("%d.1", deptIdx+1))
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", curRow), "    (暂无代码仓数据)")
+			_ = f.SetRowStyle(sheet1, curRow, curRow, repoRowStyle)
+			_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", curRow), fmt.Sprintf("H%d", curRow), repoCenterStyle)
+			_ = f.SetRowOutlineLevel(sheet1, curRow, 1)
 		} else {
-			_ = f.SetCellValue(sheet2, fmt.Sprintf("E%d", r), rItem.OpenIssues)
-			_ = f.SetCellValue(sheet2, fmt.Sprintf("F%d", r), rItem.Blocking)
-			_ = f.SetCellValue(sheet2, fmt.Sprintf("G%d", r), rItem.Critical)
-		}
-		_ = f.SetCellValue(sheet2, fmt.Sprintf("H%d", r), fmt.Sprintf("%.0f%%", rateVal))
-		_ = f.SetCellValue(sheet2, fmt.Sprintf("I%d", r), lastScanStr)
+			for subIdx, rItem := range subRepos {
+				curRow++
+				subRow := curRow
+				_ = f.SetRowHeight(sheet1, subRow, 20)
 
-		_ = f.SetCellStyle(sheet2, fmt.Sprintf("A%d", r), fmt.Sprintf("A%d", r), centerDataStyle)
-		_ = f.SetCellStyle(sheet2, fmt.Sprintf("E%d", r), fmt.Sprintf("I%d", r), centerDataStyle)
+				rRateVal := rItem.FixRate
+				if isEntityMode {
+					rRateVal = rItem.PassRate
+				}
+
+				lastScanStr := "未扫描"
+				if !rItem.LastScanTime.IsZero() && rItem.LastScanTime.Year() > 2000 {
+					lastScanStr = rItem.LastScanTime.Format("2006-01-02 15:04")
+				}
+
+				_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", subRow), fmt.Sprintf("%d.%d", deptIdx+1, subIdx+1))
+				_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", subRow), "    "+rItem.RepoName)
+				_ = f.SetCellValue(sheet1, fmt.Sprintf("C%d", subRow), rItem.OwnerName)
+				if isEntityMode {
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", subRow), rItem.TotalEntities)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", subRow), rItem.PassCount)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", subRow), rItem.OpenIssues)
+				} else {
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", subRow), rItem.OpenIssues)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", subRow), rItem.Blocking)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", subRow), rItem.Critical)
+				}
+				_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", subRow), fmt.Sprintf("%.0f%%", rRateVal))
+				_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", subRow), lastScanStr)
+
+				_ = f.SetRowStyle(sheet1, subRow, subRow, repoRowStyle)
+				_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", subRow), fmt.Sprintf("A%d", subRow), repoCenterStyle)
+				_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", subRow), fmt.Sprintf("H%d", subRow), repoCenterStyle)
+				if !isEntityMode {
+					if rItem.Blocking > 0 {
+						_ = f.SetCellStyle(sheet1, fmt.Sprintf("E%d", subRow), fmt.Sprintf("E%d", subRow), repoDangerStyle)
+					}
+					if rItem.Critical > 0 {
+						_ = f.SetCellStyle(sheet1, fmt.Sprintf("F%d", subRow), fmt.Sprintf("F%d", subRow), repoWarningStyle)
+					}
+				}
+
+				// 设置 Excel 行大纲折叠级别为 1
+				_ = f.SetRowOutlineLevel(sheet1, subRow, 1)
+			}
+		}
 	}
-	adjustCampaignColWidth(f, sheet2, len(repoHeaders))
+
+	adjustCampaignColWidth(f, sheet1, len(headers))
 
 	f.DeleteSheet("Sheet1")
 	f.SetActiveSheet(sheet1Index)
