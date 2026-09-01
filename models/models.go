@@ -152,14 +152,14 @@ type TaskReport struct {
 	ID              uint           `gorm:"primaryKey" json:"id"`
 	RepoID          uint           `gorm:"index" json:"repo_id"`
 	Repo            Repository     `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskTypeID      uint           `gorm:"index" json:"task_type_id"`
+	TaskTypeID      uint           `gorm:"index:idx_task_reports_type_status_created,priority:1;index" json:"task_type_id"`
 	TaskType        TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
 	ParentID        uint           `gorm:"default:0;index" json:"parent_id"` // 0 if it is a parent or independent task
 	ChunkName       string         `gorm:"default:''" json:"chunk_name"`     // Name of the directory or file group
 	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`
 	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`
 	SuccessChunks   int            `gorm:"default:0" json:"success_chunks"`
-	Status          string         `gorm:"default:pending;index" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
+	Status          string         `gorm:"default:pending;index:idx_task_reports_type_status_created,priority:2;index" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
 	CloneStatus     string         `gorm:"default:pending" json:"clone_status"`
 	AISummary       string         `json:"ai_summary"`
 	ReportPath      string         `json:"report_path"`
@@ -175,7 +175,7 @@ type TaskReport struct {
 	Tier1Tokens          int64 `gorm:"default:0" json:"tier1_tokens"`           // Tier 1 快模型 Token 开销
 	Tier2Tokens          int64 `gorm:"default:0" json:"tier2_tokens"`           // Tier 2 强推理模型 Token 开销
 
-	CreatedAt time.Time `gorm:"index" json:"created_at"`
+	CreatedAt time.Time `gorm:"index:idx_task_reports_type_status_created,priority:3;index" json:"created_at"`
 }
 
 // GetAbsReportPath 返回报告文件的绝对路径（如果存储的是相对路径，则使用 server.data_dir / storage.root 拼接）
@@ -402,9 +402,9 @@ func GetStatusPriority(status string) int {
 // CampaignFinding 统一专项分析缺陷与实体评估记录模型（替代原 7 张独立分表）
 type CampaignFinding struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`
-	TaskTypeID   uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index;not null" json:"task_type_id"`
+	TaskTypeID   uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index:idx_camp_finding_repo_status,priority:2;index;not null" json:"task_type_id"`
 	TaskType     TaskType   `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	RepoID       uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index;not null" json:"repo_id"`
+	RepoID       uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index:idx_camp_finding_repo_status,priority:1;index;not null" json:"repo_id"`
 	Repo         Repository `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint       `gorm:"index" json:"task_report_id"`
 
@@ -419,7 +419,7 @@ type CampaignFinding struct {
 	Suggestion  string `gorm:"type:text" json:"suggestion"`
 
 	// 治理状态与审计跟踪
-	Status     string         `gorm:"default:'open';size:50;index" json:"status"` // open, analyzing, resolved, closed, invalid
+	Status     string         `gorm:"default:'open';size:50;index:idx_camp_finding_repo_status,priority:3;index" json:"status"` // open, analyzing, resolved, closed, invalid
 	AssigneeID *uint          `json:"assignee_id"`
 	Assignee   *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog  datatypes.JSON `json:"status_log"` // [{"status":"open","time":"...","user":"xxx","reason":"..."}]

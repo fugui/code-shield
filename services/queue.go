@@ -531,3 +531,73 @@ func CleanReportFiles(taskTypeName string, reportID uint) {
 		return nil
 	})
 }
+
+// CleanExpiredTempArtifacts 递归遍历数据目录，清理超过 retentionDays 天数的中间临时分片目录（chunks-*/debate-chunks-*）与临时辅助文件
+func CleanExpiredTempArtifacts(retentionDays int) {
+	if retentionDays <= 0 {
+		retentionDays = 7
+	}
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	reportsBaseDir := filepath.Join(models.AppConfig.GetDataDir(), "reports")
+	tmpBaseDir := filepath.Join(models.AppConfig.GetDataDir(), "tmp")
+
+	log.Printf("[DiskGC] Starting temp artifacts cleanup (cutoff: %s, retention: %d days)...\n",
+		cutoff.Format("2006-01-02 15:04:05"), retentionDays)
+
+	cleanedDirs := 0
+	cleanedFiles := 0
+
+	// 1. 清理 tmp/ 临时目录
+	if _, err := os.Stat(tmpBaseDir); err == nil {
+		filepath.Walk(tmpBaseDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || path == tmpBaseDir {
+				return nil
+			}
+			if info.ModTime().Before(cutoff) {
+				if info.IsDir() {
+					os.RemoveAll(path)
+					cleanedDirs++
+					return filepath.SkipDir
+				}
+				os.Remove(path)
+				cleanedFiles++
+			}
+			return nil
+		})
+	}
+
+	// 2. 清理 reports/ 下过期的分片中间目录及 raw 临时文件
+	if _, err := os.Stat(reportsBaseDir); err == nil {
+		filepath.Walk(reportsBaseDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || path == reportsBaseDir {
+				return nil
+			}
+
+			name := info.Name()
+
+			// 处理分片临时目录 chunks-* 或 debate-chunks-*
+			if info.IsDir() && (strings.HasPrefix(name, "chunks-") || strings.HasPrefix(name, "debate-chunks-")) {
+				if info.ModTime().Before(cutoff) {
+					os.RemoveAll(path)
+					cleanedDirs++
+					return filepath.SkipDir
+				}
+			}
+
+			// 处理临时文件：.raw / .fixed.json / .output.txt / .debug.log
+			if !info.IsDir() && (strings.HasSuffix(name, ".raw") ||
+				strings.HasSuffix(name, ".fixed.json") ||
+				strings.HasSuffix(name, ".debug.log")) {
+				if info.ModTime().Before(cutoff) {
+					os.Remove(path)
+					cleanedFiles++
+				}
+			}
+
+			return nil
+		})
+	}
+
+	log.Printf("[DiskGC] Cleanup completed: removed %d temp directories and %d temp files.\n",
+		cleanedDirs, cleanedFiles)
+}

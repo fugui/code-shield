@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { Pagination, usePagination } from '@code/common';
 import { useToast } from '../components/Toast';
 import ReportViewer from '../components/report/ReportViewer';
-import { sshToHttps } from '../utils/urlUtils';
+import { ThrottleControlCard } from '../components/execution/ThrottleControlCard';
+import { ExecutionLogItem } from '../components/execution/ExecutionLogItem';
 import { apiUrl } from '../config';
 
 interface ExecutionLogsProps {
@@ -27,10 +28,13 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
   // AI 并发流控状态
   const [isAdmin, setIsAdmin] = useState(false);
   const [sysConfig, setSysConfig] = useState<any>(null);
-  const [selectedScale, setSelectedScale] = useState<number>(1.0);
-  const [durationHours, setDurationHours] = useState<number>(2);
   const [applyingConfig, setApplyingConfig] = useState(false);
   const [togglingQueue, setTogglingQueue] = useState(false);
+
+  // 批量选中与诊断状态
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [summaries, setSummaries] = useState<Record<number, any>>({});
+  const [loadingSummaries, setLoadingSummaries] = useState<Record<number, boolean>>({});
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -38,9 +42,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       if (res.ok) {
         const data = await res.json();
         setSysConfig(data);
-        if (data.concurrency_scale !== undefined) {
-          setSelectedScale(data.concurrency_scale);
-        }
       }
     } catch (err) {
       console.error('Failed to fetch config:', err);
@@ -53,12 +54,12 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       const res = await fetch('/api/config', {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           concurrency_scale: scale,
-          duration_hours: duration
-        })
+          duration_hours: duration,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -81,11 +82,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       const res = await fetch('/api/config', {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          queue_paused: paused
-        })
+          queue_paused: paused,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -102,12 +103,11 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     }
   };
 
-
   const fetchLogs = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        pageSize: pageSize.toString()
+        pageSize: pageSize.toString(),
       });
       if (statusGroup !== 'all') {
         params.append('status_group', statusGroup);
@@ -158,8 +158,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       const data = await res.json();
       if (res.ok) {
         showToast(data.message || '任务已删除', 'success');
-        // 乐观 UI：从本地 state 中移除，避免每次删除都触发全量重查询。
-        // 已有的 5 秒自动刷新会自然同步完整数据。
         setLogs(prev => prev.filter(l => l.id !== logId));
       } else {
         showToast(data.error || '删除失败', 'error');
@@ -168,9 +166,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       showToast('网络异常，删除失败', 'error');
     }
   };
-
-  // 批量选中状态
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
@@ -243,9 +238,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     }
   };
 
-  const [summaries, setSummaries] = useState<Record<number, any>>({});
-  const [loadingSummaries, setLoadingSummaries] = useState<Record<number, boolean>>({});
-
   const fetchSummary = async (reportId: number) => {
     setLoadingSummaries(prev => ({ ...prev, [reportId]: true }));
     try {
@@ -278,7 +270,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
   useEffect(() => {
     fetch('/api/me')
-      .then(res => res.ok ? res.json() : null)
+      .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (data) {
           const isShieldAdmin = Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin'));
@@ -299,500 +291,40 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     };
   }, [fetchLogs, fetchConfig]);
 
-  const formatDuration = (seconds: number) => {
-    if (seconds == null) return '-';
-    const s = Math.round(seconds);
-    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-  };
-
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '-';
-    const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? '-' : d.toLocaleString();
-  };
-
-  const calcDuration = (startStr: string, endStr: string) => {
-    if (!startStr || !endStr) return '-';
-    const diff = Math.floor((new Date(endStr).getTime() - new Date(startStr).getTime()) / 1000);
-    if (isNaN(diff)) return '-';
-    return diff < 60 ? `${diff}s` : `${Math.floor(diff / 60)}m ${diff % 60}s`;
-  };
-
-  const statusBadge = (log: any) => {
-    const activeStatus = log.task_report?.status && log.task_report.status !== 'queued' && log.task_report.status !== 'pending'
-      ? log.task_report.status
-      : log.status;
-
-    const isDebateMode = ['debate_full', 'debate_selective'].includes(log.engine_mode || '');
-    const isChunkedMode = ['chunked', 'chunked_fast', 'debate_full', 'debate_selective'].includes(log.engine_mode || '') || (log.task_report?.total_chunks ?? 0) > 0;
-
-    const map: Record<string, { cls: string; label: string }> = {
-      success: { cls: 'success', label: '执行成功' },
-      failed:  { cls: 'danger',  label: '执行失败' },
-      running: { cls: 'primary', label: '运行中...' },
-      skipped: { cls: 'info',    label: '已跳过' },
-      pending: { cls: 'warning', label: '排队中' },
-      cloning: { cls: 'primary', label: '代码克隆中...' },
-      pre_processing: { cls: 'primary', label: '前置检查中...' },
-      analyzing: { cls: 'primary', label: isDebateMode ? '对抗辩论中...' : '分片检视中...' },
-      synthesis: { cls: 'primary', label: '全仓报告总结中 (AI 排版生成)...' },
-      post_processing: { cls: 'primary', label: '缺陷状态同步中...' },
-      merging: { cls: 'primary', label: '问题归并与闭环中...' },
-    };
-    const s = map[activeStatus] || { cls: 'warning', label: activeStatus };
-
-    if (isChunkedMode && activeStatus === 'analyzing' && log.task_report) {
-      const { processed_chunks, total_chunks } = log.task_report;
-      if (total_chunks > 0) {
-        if (processed_chunks >= total_chunks) {
-          return <span className={`badge ${s.cls}`}>全仓报告总结中 (AI 排版生成)...</span>;
-        }
-        const actionText = isDebateMode ? '对抗辩论中' : '分片检视中';
-        return <span className={`badge ${s.cls}`}>{`${actionText} (${processed_chunks}/${total_chunks})...`}</span>;
-      }
-    }
-
-    return <span className={`badge ${s.cls}`}>{s.label}</span>;
-  };
-
-  const renderPipelineStepper = (log: any, report: any) => {
-    const activeStatus = report?.status && report.status !== 'queued' && report.status !== 'pending'
-      ? report.status
-      : log.status;
-    const isDebate = ['debate_full', 'debate_selective'].includes(log.engine_mode || '');
-    const totalChunks = report?.total_chunks ?? 0;
-    const processedChunks = report?.processed_chunks ?? 0;
-
-    type StepStatus = 'completed' | 'current' | 'upcoming' | 'failed';
-
-    let step1: StepStatus = 'upcoming'; // 代码准备
-    let step2: StepStatus = 'upcoming'; // 语义分片与辩论
-    let step3: StepStatus = 'upcoming'; // 规则校准与增量
-    let step4: StepStatus = 'upcoming'; // 全仓报告综合
-    let step5: StepStatus = 'upcoming'; // 缺陷同步与归档
-
-    if (activeStatus === 'failed') {
-      if (log.status === 'cloning' || log.status === 'pre_processing') {
-        step1 = 'failed';
-      } else if (log.status === 'analyzing') {
-        step1 = 'completed';
-        step2 = 'failed';
-      } else if (log.status === 'synthesis') {
-        step1 = 'completed';
-        step2 = 'completed';
-        step3 = 'completed';
-        step4 = 'failed';
-      } else {
-        step1 = 'completed';
-        step2 = 'completed';
-        step3 = 'completed';
-        step4 = 'completed';
-        step5 = 'failed';
-      }
-    } else if (activeStatus === 'success') {
-      step1 = 'completed';
-      step2 = 'completed';
-      step3 = 'completed';
-      step4 = 'completed';
-      step5 = 'completed';
-    } else if (activeStatus === 'cloning' || activeStatus === 'pre_processing') {
-      step1 = 'current';
-    } else if (activeStatus === 'analyzing') {
-      step1 = 'completed';
-      if (totalChunks > 0 && processedChunks >= totalChunks) {
-        step2 = 'completed';
-        step3 = 'current';
-      } else {
-        step2 = 'current';
-      }
-    } else if (activeStatus === 'synthesis') {
-      step1 = 'completed';
-      step2 = 'completed';
-      step3 = 'completed';
-      step4 = 'current';
-    } else if (activeStatus === 'post_processing' || activeStatus === 'merging') {
-      step1 = 'completed';
-      step2 = 'completed';
-      step3 = 'completed';
-      step4 = 'completed';
-      step5 = 'current';
-    }
-
-    const steps = [
-      {
-        title: '代码准备',
-        desc: '拉取与环境预检',
-        status: step1,
-      },
-      {
-        title: isDebate ? '分片对抗辩论' : '分片检视',
-        desc: totalChunks > 0 ? `${processedChunks}/${totalChunks} 分片完成` : (isDebate ? '三方对抗与仲裁' : '并发静态扫描'),
-        status: step2,
-      },
-      {
-        title: '校准与增量比对',
-        desc: '确定性严重度校准',
-        status: step3,
-      },
-      {
-        title: 'AI 全仓报告综合',
-        desc: 'Tier 3 报告排版生成',
-        status: step4,
-      },
-      {
-        title: '缺陷同步与归档',
-        desc: '状态闭环与通知推送',
-        status: step5,
-      },
-    ];
-
-    return (
-      <div style={{
-        width: '100%',
-        marginBottom: '1rem',
-        padding: '0.85rem 1.1rem',
-        background: 'var(--color-bg-surface, #ffffff)',
-        border: '1px solid var(--color-border-primary, #e2e8f0)',
-        borderRadius: '8px',
-        boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04))',
-      }}>
-        <div style={{
-          fontSize: '0.8rem',
-          fontWeight: 600,
-          color: 'var(--color-text-secondary, #64748b)',
-          marginBottom: '0.65rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <span>🚦 任务流水线执行进度</span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted, #94a3b8)' }}>
-            {isDebate ? '多智能体三方对抗架构' : '语义感知分片架构'}
-          </span>
-        </div>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-          gap: '0.65rem',
-        }}>
-          {steps.map((step, idx) => {
-            const isDone = step.status === 'completed';
-            const isCurr = step.status === 'current';
-            const isFail = step.status === 'failed';
-
-            let iconBg = 'var(--color-bg-muted, #f1f5f9)';
-            let iconColor = 'var(--color-text-muted, #94a3b8)';
-            let borderColor = 'var(--color-border-primary, #e2e8f0)';
-            let titleColor = 'var(--color-text-muted, #94a3b8)';
-
-            if (isDone) {
-              iconBg = 'rgba(16, 185, 129, 0.12)';
-              iconColor = '#10b981';
-              borderColor = 'rgba(16, 185, 129, 0.3)';
-              titleColor = 'var(--color-text-primary, #0f172a)';
-            } else if (isCurr) {
-              iconBg = 'rgba(37, 99, 235, 0.12)';
-              iconColor = 'var(--color-primary, #2563eb)';
-              borderColor = 'var(--color-primary, #2563eb)';
-              titleColor = 'var(--color-primary, #2563eb)';
-            } else if (isFail) {
-              iconBg = 'rgba(239, 68, 68, 0.12)';
-              iconColor = '#ef4444';
-              borderColor = 'rgba(239, 68, 68, 0.3)';
-              titleColor = '#ef4444';
-            }
-
-            return (
-              <div
-                key={idx}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '0.55rem',
-                  padding: '0.45rem 0.6rem',
-                  borderRadius: '6px',
-                  background: isCurr ? 'var(--color-bg-muted, rgba(248, 250, 252, 0.8))' : 'transparent',
-                  border: `1px solid ${borderColor}`,
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <div style={{
-                  width: '22px',
-                  height: '22px',
-                  borderRadius: '50%',
-                  background: iconBg,
-                  color: iconColor,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  flexShrink: 0,
-                  marginTop: '1px',
-                }}>
-                  {isDone ? '✓' : isFail ? '✕' : isCurr ? '●' : idx + 1}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: isCurr ? 700 : 600, color: titleColor, lineHeight: 1.3 }}>
-                    {step.title}
-                  </span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted, #64748b)', marginTop: '2px', lineHeight: 1.2 }}>
-                    {step.desc}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const isThrottleActive = !!(sysConfig && sysConfig.concurrency_scale !== 1.0);
-  const throttleMode = sysConfig?.throttle_mode || (isThrottleActive ? 'manual' : 'normal');
-  const workHoursCfg = sysConfig?.work_hours_config;
-
   return (
     <div>
-      {/* AI 并发流控卡片 */}
-      <div style={{
-        background: 'var(--card-bg, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
-        borderRadius: '12px',
-        padding: '1.25rem',
-        marginBottom: '1.5rem',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: '1rem'
-      }}>
-        {/* 左侧状态显示 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '300px', flex: '1 1 auto' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '8px',
-            background: isThrottleActive
-              ? (sysConfig.concurrency_scale === 0 ? 'rgba(239, 68, 68, 0.1)' : (sysConfig.concurrency_scale < 1 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)'))
-              : 'rgba(59, 130, 246, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: isThrottleActive
-              ? (sysConfig.concurrency_scale === 0 ? '#ef4444' : (sysConfig.concurrency_scale < 1 ? '#f59e0b' : '#10b981'))
-              : '#2563eb',
-            flexShrink: 0
-          }}>
-            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
-              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>AI 扫描并发流控</h4>
-              {throttleMode === 'work_hours' ? (
-                sysConfig.concurrency_scale === 0 ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>工作时间暂停中</span>
-                ) : (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>工作时间限速中 {Math.round(sysConfig.concurrency_scale * 100)}%</span>
-                )
-              ) : throttleMode === 'manual' ? (
-                sysConfig.concurrency_scale === 0 ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>临时暂停中 (手动)</span>
-                ) : sysConfig.concurrency_scale < 1 ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>手动限速中 {Math.round(sysConfig.concurrency_scale * 100)}%</span>
-                ) : (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#d1fae5', color: '#059669', fontWeight: 600 }}>手动加速中 {Math.round(sysConfig.concurrency_scale * 100)}%</span>
-                )
-              ) : (
-                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>正常速度运行 (100%)</span>
-              )}
+      {/* AI 并发流控与排空模式卡片组件 */}
+      <ThrottleControlCard
+        sysConfig={sysConfig}
+        isAdmin={isAdmin}
+        onApplyScale={handleApplyConfig}
+        onToggleQueue={handleToggleQueue}
+        applyingConfig={applyingConfig}
+        togglingQueue={togglingQueue}
+      />
 
-              {/* 队列调度状态与控制 (紧跟在并发流控后方) */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.75rem', paddingLeft: '0.75rem', borderLeft: '1px solid var(--color-border-primary, #e2e8f0)' }}>
-                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>队列调度</h4>
-                {sysConfig == null ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#f1f5f9', color: '#64748b', fontWeight: 600 }}>加载中…</span>
-                ) : sysConfig.queue_paused ? (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fee2e2', color: '#ef4444', fontWeight: 600 }}>
-                    已暂停 (排空模式)
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>
-                    正常分发中
-                  </span>
-                )}
-                {isAdmin && (
-                  <button
-                    className="btn"
-                    disabled={togglingQueue || !sysConfig}
-                    onClick={() => sysConfig && handleToggleQueue(!sysConfig.queue_paused)}
-                    style={{
-                      height: '24px',
-                      padding: '0 0.5rem',
-                      fontSize: '0.75rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      background: sysConfig?.queue_paused ? 'var(--color-primary, #3b82f6)' : 'transparent',
-                      color: sysConfig?.queue_paused ? '#ffffff' : 'var(--color-text-primary, #1e293b)',
-                      border: sysConfig?.queue_paused ? '1px solid transparent' : '1px solid var(--color-border-primary, #e2e8f0)'
-                    }}
-                  >
-                    {togglingQueue ? '切换中...' : (sysConfig?.queue_paused ? '恢复派发' : '暂停派发')}
-                  </button>
-                )}
-              </div>
-            </div>
-            <p style={{ margin: 0, fontSize: '0.825rem', color: '#64748b', lineHeight: '1.3' }}>
-              {throttleMode === 'work_hours' ? (
-                <>
-                  当前处于工作时间窗口（{workHoursCfg?.start_time || '09:00'} ~ {workHoursCfg?.end_time || '22:00'}），已自动限制并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>，夜间将自动恢复满速。
-                </>
-              ) : throttleMode === 'manual' ? (
-                sysConfig.scale_expires_at ? (
-                  <>
-                    管理员临时调整并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>，预计于 <strong>{new Date(sysConfig.scale_expires_at).toLocaleTimeString()}</strong> 自动恢复计划模式。
-                  </>
-                ) : (
-                  <>
-                    管理员手动常驻调整并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>。
-                  </>
-                )
-              ) : (
-                '非工作时间/夜间满速运行，使用系统配置文件中预设的并发配额处理扫描任务。'
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* 右侧控制栏 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {isAdmin ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#64748b' }}>并发速度：</span>
-                <select
-                  value={selectedScale}
-                  onChange={e => setSelectedScale(parseFloat(e.target.value))}
-                  style={{
-                    padding: '0.35rem 0.5rem',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    outline: 'none',
-                    fontSize: '0.875rem',
-                    background: 'var(--bg-color)',
-                    color: 'var(--text-color)',
-                    cursor: 'pointer',
-                    height: '32px'
-                  }}
-                >
-                  <option value={0}>0% (临时暂停所有扫描)</option>
-                  <option value={0.25}>25% (极度限速)</option>
-                  <option value={0.5}>50% (半速运行)</option>
-                  <option value={0.75}>75% (微调限速)</option>
-                  <option value={1.0}>100% (恢复默认速度)</option>
-                  <option value={1.25}>125% (微调加速)</option>
-                  <option value={1.5}>150% (快速运行)</option>
-                  <option value={2.0}>200% (双倍加速 - 高物理负载)</option>
-                </select>
-              </div>
-
-              {selectedScale !== 1.0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <span style={{ fontSize: '0.825rem', fontWeight: 600, color: '#64748b' }}>持续时间：</span>
-                  <select
-                    value={durationHours}
-                    onChange={e => setDurationHours(parseFloat(e.target.value))}
-                    style={{
-                      padding: '0.35rem 0.5rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      outline: 'none',
-                      fontSize: '0.875rem',
-                      background: 'var(--bg-color)',
-                      color: 'var(--text-color)',
-                      cursor: 'pointer',
-                      height: '32px'
-                    }}
-                  >
-                    <option value={0.5}>0.5 小时 (30分钟)</option>
-                    <option value={1}>1 小时</option>
-                    <option value={2}>2 小时</option>
-                    <option value={4}>4 小时</option>
-                    <option value={8}>8 小时</option>
-                    <option value={12}>12 小时</option>
-                    <option value={24}>24 小时</option>
-                  </select>
-                </div>
-              )}
-
-              <button
-                className="btn"
-                disabled={applyingConfig}
-                onClick={() => handleApplyConfig(selectedScale, selectedScale === 1.0 ? 0 : durationHours)}
-                style={{
-                  height: '32px',
-                  padding: '0 0.75rem',
-                  fontSize: '0.825rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  background: selectedScale === 1.0 ? 'transparent' : 'var(--primary-color)',
-                  color: selectedScale === 1.0 ? 'var(--text-color)' : 'white',
-                  border: selectedScale === 1.0 ? '1px solid var(--border-color)' : '1px solid transparent'
-                }}
-              >
-                {applyingConfig ? '应用中...' : (selectedScale === 1.0 ? '重置速度' : '应用调节')}
-              </button>
-            </>
-          ) : (
-            <span style={{ fontSize: '0.825rem', color: '#94a3b8', fontStyle: 'italic' }}>
-              * 仅系统管理员拥有流控调节权限。
-            </span>
-          )}
-        </div>
-      </div>
-
-      {!embedded ? (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ margin: 0 }}>执行日志</h2>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none', whiteSpace: 'nowrap' }}>状态</label>
-              <select
-                value={statusGroup}
-                onChange={e => updateParams({ status_group: e.target.value, page: 1 })}
-                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer', height: '32px' }}
-              >
-                <option value="all">全部</option>
-                <option value="running">执行中</option>
-                <option value="pending">排队中</option>
-                <option value="completed">已完成</option>
-              </select>
-            </div>
-            <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
-              刷新列表
-            </button>
-            {selectedIds.size > 0 && (
-              <button className="btn" onClick={batchDelete} style={{ background: 'var(--danger-color)', color: 'white', border: '1px solid var(--danger-color)' }}>
-                批量删除 ({selectedIds.size})
-              </button>
-            )}
-            <button className="btn" onClick={clearCompleted} style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>
-              清除已完成
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+      {/* 顶部标题与操作栏 */}
+      <div style={{ display: 'flex', justifyContent: embedded ? 'flex-end' : 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        {!embedded && <h2 style={{ margin: 0, color: 'var(--color-text-primary, #0f172a)' }}>执行日志</h2>}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.5rem' }}>
-            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem', userSelect: 'none', whiteSpace: 'nowrap' }}>状态</label>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)', marginRight: '0.25rem', userSelect: 'none', whiteSpace: 'nowrap' }}>
+              状态
+            </label>
             <select
               value={statusGroup}
               onChange={e => updateParams({ status_group: e.target.value, page: 1 })}
-              style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', outline: 'none', fontSize: '0.875rem', background: 'var(--bg-color)', color: 'var(--text-color)', cursor: 'pointer', height: '32px' }}
+              style={{
+                padding: '0.35rem 0.5rem',
+                borderRadius: '6px',
+                border: '1px solid var(--color-border-primary, #e2e8f0)',
+                outline: 'none',
+                fontSize: '0.875rem',
+                background: 'var(--color-bg-input, #ffffff)',
+                color: 'var(--color-text-primary, #0f172a)',
+                cursor: 'pointer',
+                height: '32px',
+              }}
             >
               <option value="all">全部</option>
               <option value="running">执行中</option>
@@ -800,27 +332,58 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               <option value="completed">已完成</option>
             </select>
           </div>
-          <button className="btn" onClick={fetchLogs} style={{ background: 'transparent', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
+          <button
+            className="btn"
+            onClick={fetchLogs}
+            style={{
+              background: 'transparent',
+              color: 'var(--color-text-primary, #0f172a)',
+              border: '1px solid var(--color-border-primary, #e2e8f0)',
+            }}
+          >
             刷新列表
           </button>
           {selectedIds.size > 0 && (
-            <button className="btn" onClick={batchDelete} style={{ background: 'var(--danger-color)', color: 'white', border: '1px solid var(--danger-color)' }}>
+            <button
+              className="btn"
+              onClick={batchDelete}
+              style={{
+                background: 'var(--color-danger, #ef4444)',
+                color: '#ffffff',
+                border: '1px solid var(--color-danger, #ef4444)',
+              }}
+            >
               批量删除 ({selectedIds.size})
             </button>
           )}
-          <button className="btn" onClick={clearCompleted} style={{ background: 'transparent', color: 'var(--danger-color)', border: '1px solid var(--danger-color)' }}>
+          <button
+            className="btn"
+            onClick={clearCompleted}
+            style={{
+              background: 'transparent',
+              color: 'var(--color-danger, #ef4444)',
+              border: '1px solid var(--color-danger, #ef4444)',
+            }}
+          >
             清除已完成
           </button>
         </div>
-      )}
+      </div>
 
-      <div className="card" style={{ padding: '0', overflowX: 'auto' }}>
+      {/* 日志表格 */}
+      <div className="card" style={{ padding: '0', overflowX: 'auto', background: 'var(--color-bg-surface, #ffffff)', border: '1px solid var(--color-border-primary, #e2e8f0)' }}>
         <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--border-color)', color: '#64748b', fontSize: '0.875rem', textAlign: 'left', background: 'var(--bg-color)' }}>
+            <tr style={{ borderBottom: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)', fontSize: '0.875rem', textAlign: 'left', background: 'var(--color-bg-muted, #f8fafc)' }}>
               <th style={{ padding: '1rem', fontWeight: 600, width: '2rem' }}>
                 {selectableIds.length > 0 && (
-                  <input type="checkbox" checked={selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id))} onChange={toggleSelectAll} style={{ cursor: 'pointer', accentColor: 'var(--primary-color)' }} title="全选/取消全选" />
+                  <input
+                    type="checkbox"
+                    checked={selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id))}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer', accentColor: 'var(--color-primary, #2563eb)' }}
+                    title="全选/取消全选"
+                  />
                 )}
               </th>
               <th style={{ padding: '1rem', fontWeight: 600, width: '2rem' }}></th>
@@ -838,295 +401,45 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
           <tbody>
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={11} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#64748b' }}>暂无任何任务执行记录。</td>
+                <td colSpan={11} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--color-text-muted, #64748b)' }}>
+                  暂无任何任务执行记录。
+                </td>
               </tr>
-            ) : logs.map(log => {
-              const expanded = expandedIds.has(log.id);
-              const report = log.task_report;
-              const hasReport = !!report;
-              const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(log.status);
-              const isPending = log.status === 'pending' || log.status === 'queued';
-              const canCancel = isRunning || isPending;
+            ) : (
+              logs.map(log => {
+                const expanded = expandedIds.has(log.id);
+                const hasReport = !!log.task_report;
+                const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(log.status);
+                const isPending = log.status === 'pending' || log.status === 'queued';
+                const canCancel = isRunning || isPending;
+                const reportId = log.task_report?.id;
 
-              return (
-                <React.Fragment key={log.id}>
-                  <tr
-                    style={{ borderBottom: expanded ? 'none' : '1px solid var(--border-color)', fontSize: '0.875rem', cursor: hasReport ? 'pointer' : 'default', background: expanded ? 'var(--bg-color)' : 'transparent' }}
-                    onClick={() => hasReport && toggleExpand(log.id)}
-                  >
-                    <td style={{ padding: '1rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                      {canCancel && (
-                        <input type="checkbox" checked={selectedIds.has(log.id)} onChange={() => toggleSelect(log.id)} style={{ cursor: 'pointer', accentColor: 'var(--primary-color)' }} />
-                      )}
-                    </td>
-                    <td style={{ padding: '1rem', color: '#94a3b8', textAlign: 'center' }}>
-                      {hasReport ? (expanded ? '▼' : '▶') : ''}
-                    </td>
-                    <td style={{ padding: '1rem', color: '#64748b' }}>#{log.id}</td>
-                    <td style={{ padding: '1rem', fontWeight: 500 }}>
-                      {log.repo_url ? (
-                        <a
-                          href={sshToHttps(log.repo_url)}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: 'var(--primary-color)', textDecoration: 'none' }}
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {log.repo_name || `Repo ${log.repo_id}`}
-                        </a>
-                      ) : (
-                        log.repo_name || `Repo ${log.repo_id}`
-                      )}
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: 'var(--primary-color)', fontSize: '0.75rem', fontWeight: 500 }}>
-                        {log.task_type_name || '-'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      <span style={{ textTransform: 'capitalize', display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
-                        {log.trigger_type}
-                      </span>
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      {log.engine_mode === 'debate_full' ? (
-                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(124, 58, 237, 0.1)', border: '1px solid rgba(124, 58, 237, 0.25)', fontSize: '0.75rem', color: '#7c3aed', fontWeight: 600 }}>
-                          全量对抗辩论
-                        </span>
-                      ) : log.engine_mode === 'debate_selective' ? (
-                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.1)', border: '1px solid rgba(37, 99, 235, 0.25)', fontSize: '0.75rem', color: '#2563eb', fontWeight: 600 }}>
-                          选择性辩论
-                        </span>
-                      ) : log.engine_mode === 'chunked_fast' ? (
-                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(13, 148, 136, 0.1)', border: '1px solid rgba(13, 148, 136, 0.25)', fontSize: '0.75rem', color: '#0d9488', fontWeight: 600 }}>
-                          分片快扫
-                        </span>
-                      ) : log.engine_mode === 'chunked' ? (
-                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)', fontSize: '0.75rem', color: '#7c3aed' }}>
-                          分片模式
-                        </span>
-                      ) : (
-                        <span style={{ display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--bg-color)', border: '1px solid var(--border-color)', fontSize: '0.75rem', color: '#64748b' }}>
-                          单次模式
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '1rem', color: '#64748b' }}>{formatDate(log.start_time)}</td>
-                    <td style={{ padding: '1rem', color: '#64748b' }}>{calcDuration(log.start_time, log.end_time)}</td>
-                    <td style={{ padding: '1rem' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        {statusBadge(log)}
-                        {log.status === 'failed' && log.error_message && (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--danger-color)', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={log.error_message}>
-                            {log.error_message}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      {canCancel && (
-                        <button
-                          className="btn"
-                          onClick={e => { e.stopPropagation(); deletePending(log.id, isRunning); }}
-                          style={{
-                            background: 'transparent',
-                            color: 'var(--danger-color)',
-                            border: '1px solid var(--danger-color)',
-                            padding: '0.35rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                          }}
-                          title={isRunning ? "强杀并删除该运行中的任务" : "删除该排队任务"}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                          </svg>
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-
-                  {expanded && hasReport && (
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td colSpan={11} style={{ padding: '1.25rem 1.5rem 1.5rem 3.5rem', background: 'var(--bg-color)' }}>
-                        {renderPipelineStepper(log, report)}
-                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-                          
-                          {/* Left Panel: Score, Summary & Buttons */}
-                          <div style={{ flex: '1.2', minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            {/* Score */}
-                            {report.status === 'success' && (
-                              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)', borderRadius: '8px', padding: '0.5rem 1rem', minWidth: '80px', boxShadow: 'var(--shadow-sm)' }}>
-                                  <span style={{ fontSize: '1.25rem', fontWeight: 700, color: report.score >= 20 ? 'var(--color-danger)' : report.score >= 10 ? 'var(--color-warning)' : 'var(--color-success)' }}>{report.score ?? 0}</span>
-                                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>风险评分</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* AI Summary */}
-                            {report.ai_summary && (
-                              <div style={{ padding: '0.75rem 1rem', background: 'var(--color-primary-subtle)', borderRadius: '6px', border: '1px solid var(--color-primary-border)', color: 'var(--color-primary)', fontSize: '0.875rem', lineHeight: 1.6 }}>
-                                <div style={{ fontWeight: 600, marginBottom: '0.2rem', fontSize: '0.8rem' }}>🤖 AI 审计摘要</div>
-                                {report.ai_summary}
-                              </div>
-                            )}
-
-                            {/* Action buttons */}
-                            {report.status === 'success' && (
-                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                                <button
-                                  className="btn"
-                                  onClick={e => { e.stopPropagation(); handleNotify(report.id); }}
-                                  style={{ background: 'transparent', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', fontSize: '0.85rem' }}
-                                >
-                                  通知责任人
-                                </button>
-                                <button
-                                  className="btn"
-                                  onClick={e => { e.stopPropagation(); handleOpenReport(report.id); }}
-                                  style={{ background: 'var(--success-color)', borderColor: 'var(--success-color)', fontSize: '0.85rem' }}
-                                >
-                                  查看报告
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Right Panel: Diagnostics Snapshot */}
-                          <div style={{ flex: '1', minWidth: '300px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                            <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-color)', display: 'flex', alignItems: 'center', gap: '0.35rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', fontWeight: 600 }}>
-                              🔬 运行轨迹与诊断快照
-                            </h4>
-                            {loadingSummaries[report.id] ? (
-                              <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.8rem' }}>
-                                <span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(100,116,139,0.3)', borderRadius: '50%', borderTopColor: 'var(--primary-color, #2563eb)', verticalAlign: 'middle', marginRight: '6px' }} />
-                                正在获取运行轨迹...
-                              </div>
-                            ) : summaries[report.id] ? (() => {
-                              const s = summaries[report.id];
-                              const chunks = s.chunks || s.analysis?.chunks || [];
-                              const failedChunk = chunks.find((c: any) => c.status === 'failed');
-                              const analysisDur = s.analysis_duration ?? s.analysis?.duration_seconds ?? 0;
-                              const totalDur = s.total_duration ?? s.duration_seconds ?? 0;
-                              const successChunks = chunks.filter((c: any) => c.status === 'success').length;
-                              return (
-                                <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', color: '#475569' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>⏱️ 静态分析耗时:</span>
-                                    <strong style={{ color: '#0f172a' }}>{formatDuration(analysisDur)}</strong>
-                                  </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>⌛ 任务总体耗时:</span>
-                                    <strong style={{ color: '#0f172a' }}>{formatDuration(totalDur)}</strong>
-                                  </div>
-                                  {chunks.length > 0 && (
-                                    <div>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                                        <span>🧩 分片扫描进度:</span>
-                                        <strong>{successChunks} / {chunks.length} 成功</strong>
-                                      </div>
-                                      
-                                      {/* Mini Chunk Color Grid */}
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', background: '#f8fafc', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                                        {chunks.map((c: any, idx: number) => {
-                                          const isChunkFailed = c.status === 'failed';
-                                          return (
-                                            <div
-                                              key={c.chunk_name || idx}
-                                              className="code-chunk-dot"
-                                              style={{
-                                                width: '14px',
-                                                height: '14px',
-                                                borderRadius: '3px',
-                                                background: isChunkFailed ? '#ef4444' : '#10b981',
-                                                border: `1px solid ${isChunkFailed ? '#dc2626' : '#059669'}`,
-                                                cursor: 'pointer',
-                                              }}
-                                              title={`${c.chunk_name} (耗时: ${formatDuration(c.duration_seconds)}, 状态: ${c.status === 'success' ? '成功' : '失败'})`}
-                                            />
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Error diagnosis box */}
-                                  {failedChunk && (
-                                    <div style={{ marginTop: '0.25rem', background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '0.6rem 0.75rem', borderRadius: '6px', fontSize: '0.75rem', lineHeight: '1.4' }}>
-                                      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.2rem' }}>
-                                        <span>🚨 故障分片:</span>
-                                        <span style={{ fontFamily: 'monospace' }}>{failedChunk.chunk_name}</span>
-                                      </div>
-                                      <div style={{ fontFamily: 'monospace', wordBreak: 'break-all', maxHeight: '60px', overflowY: 'auto', background: 'rgba(255,255,255,0.4)', padding: '0.3rem', borderRadius: '4px' }}>
-                                        {failedChunk.error_message}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })() : ((['chunked', 'chunked_fast', 'debate_full', 'debate_selective'].includes(log.engine_mode || '') || (report?.total_chunks ?? 0) > 0) && (isRunning || isPending)) ? (
-                              <div style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', color: '#475569', padding: '0.5rem 0' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontWeight: 500, color: '#475569', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    🧩 分片扫描进度
-                                  </span>
-                                  {report.total_chunks > 0 ? (
-                                    <strong style={{ color: 'var(--primary-color)', fontSize: '0.875rem' }}>
-                                      {report.processed_chunks} / {report.total_chunks} 已处理
-                                    </strong>
-                                  ) : (
-                                    <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>准备中...</span>
-                                  )}
-                                </div>
-
-                                <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                                  <div style={{
-                                    width: report.total_chunks > 0 ? `${Math.min(100, (report.processed_chunks / report.total_chunks) * 100)}%` : '0%',
-                                    height: '100%',
-                                    background: 'linear-gradient(90deg, var(--primary-color) 0%, #60a5fa 100%)',
-                                    borderRadius: '999px',
-                                    transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                                  }} />
-                                </div>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-                                  <span>
-                                    {report.total_chunks > 0
-                                      ? "正在执行分片并发扫描..."
-                                      : "正在初始化代码仓或分析范围..."}
-                                  </span>
-                                  <span>
-                                    {report.total_chunks > 0 && `${Math.round((report.processed_chunks / report.total_chunks) * 100)}%`}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : (
-                              <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic', textAlign: 'center', padding: '1rem 0' }}>
-                                无分片诊断数据 (单次任务模式)
-                              </div>
-                            )}
-                          </div>
-
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
+                return (
+                  <ExecutionLogItem
+                    key={log.id}
+                    log={log}
+                    expanded={expanded}
+                    selected={selectedIds.has(log.id)}
+                    canCancel={canCancel}
+                    summary={reportId ? summaries[reportId] : null}
+                    loadingSummary={reportId ? !!loadingSummaries[reportId] : false}
+                    onToggleExpand={toggleExpand}
+                    onToggleSelect={toggleSelect}
+                    onDeletePending={deletePending}
+                    onNotify={handleNotify}
+                    onOpenReport={handleOpenReport}
+                  />
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination Controls */}
+      {/* 分页控制栏 */}
       {totalItems > 0 && <Pagination totalItems={totalItems} />}
 
+      {/* 报告查看抽屉 */}
       <ReportViewer
         taskId={currentReportId}
         open={sidebarOpen}

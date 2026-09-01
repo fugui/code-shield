@@ -421,6 +421,19 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 		return nil, "", nil
 	}
 
+	// 启动单次监听协程响应 Context 取消以唤醒 Wait
+	waitDone := make(chan struct{})
+	defer close(waitDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			d.mu.Lock()
+			d.cond.Broadcast() // 唤醒 Wait 使其感知 ctx.Err()
+			d.mu.Unlock()
+		case <-waitDone:
+		}
+	}()
+
 	for {
 		// 1. 检查 Context 是否已提前取消
 		if err := ctx.Err(); err != nil {
@@ -457,20 +470,8 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 			return bestRes, bestRes.ModelName(backend), nil
 		}
 
-		// 3. 阻塞等待空闲。安全启动监听协程响应 Context 取消以唤醒 Wait
-		waitDone := make(chan struct{})
-		go func() {
-			select {
-			case <-ctx.Done():
-				d.mu.Lock()
-				d.cond.Broadcast() // 唤醒 Wait 使其感知 ctx.Err()
-				d.mu.Unlock()
-			case <-waitDone:
-			}
-		}()
-
+		// 3. 阻塞等待空闲槽位释放或流控状态切换唤醒
 		d.cond.Wait()
-		close(waitDone)
 	}
 }
 
