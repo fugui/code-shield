@@ -79,7 +79,7 @@ ai:
   # debate:
   #   enabled: true                  # 是否开启三方交叉辩论流水线
   #   fast_pass_enabled: true        # 开启零候选快速放行 (无疑点直接跳过辩论，节省算力)
-  #   max_candidates_per_chunk: 8    # 单分片进入辩论的候选点上限 (防异常爆炸)
+  #   max_candidates_per_chunk: 20   # 单分片进入辩论的候选点上限 (防异常爆炸)
   #   stage_timeout_seconds: 1800    # 单阶段全局硬超时兜底 (秒，如 1800 代表 30 分钟)
   #   log_retention_days: 30         # 辩论轨迹 JSON 日志保留天数
   #   backpressure_threshold: 30     # 跨 Tier 背压触发积压阈值

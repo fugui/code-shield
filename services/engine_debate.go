@@ -279,8 +279,8 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 		return fastFindings, nil, nil
 	}
 
-	// 单分片候选数上限限流截断 (防异常爆炸，最多取 Top 5 核心疑点辩论)
-	maxCap := 5
+	// 单分片候选数上限限流截断 (防异常爆炸，最多取 Top 20 核心疑点辩论)
+	maxCap := 20
 	if models.AppConfig.AI.Debate.MaxCandidatesPerChunk > 0 {
 		maxCap = models.AppConfig.AI.Debate.MaxCandidatesPerChunk
 	}
