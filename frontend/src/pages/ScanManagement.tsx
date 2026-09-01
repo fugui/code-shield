@@ -111,7 +111,7 @@ function ScanManagement() {
   useEffect(() => {
     if (activeTab === 'trigger') {
       fetchRecentLogs();
-      const interval = setInterval(fetchRecentLogs, 5000);
+      const interval = setInterval(fetchRecentLogs, 15000);
       return () => clearInterval(interval);
     }
   }, [activeTab]);
