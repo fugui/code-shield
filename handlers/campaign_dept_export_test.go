@@ -241,21 +241,26 @@ func TestExportDynamicCampaignDepartments(t *testing.T) {
 	assert.Equal(t, "序号/排名", rows[0][0])
 	assert.Equal(t, "部门 / 代码仓", rows[0][1])
 	assert.Equal(t, "负责人 / 覆盖仓", rows[0][2])
-	assert.Equal(t, "跟踪缺陷数(未关闭)", rows[0][3])
+	assert.Equal(t, "审计缺陷数", rows[0][3])
+	assert.Equal(t, "未关闭缺陷数", rows[0][4])
+	assert.Equal(t, "致命(未关闭)", rows[0][5])
+	assert.Equal(t, "严重(未关闭)", rows[0][6])
 
 	// 一级部门行
 	assert.Equal(t, "1", rows[1][0])
 	assert.Equal(t, dept.Name, rows[1][1])
 	assert.Equal(t, "1/1 仓", rows[1][2])
-	assert.Equal(t, "1", rows[1][3]) // 未整改缺陷
-	assert.Equal(t, "1", rows[1][4]) // 部门未关闭致命
-	assert.Equal(t, "0", rows[1][5]) // 部门未关闭严重
+	assert.Equal(t, "1", rows[1][3]) // 部门总累计缺陷(审计缺陷数)
+	assert.Equal(t, "1", rows[1][4]) // 部门未关闭缺陷数
+	assert.Equal(t, "1", rows[1][5]) // 部门未关闭致命
+	assert.Equal(t, "0", rows[1][6]) // 部门未关闭严重
 
 	// 二级子代码仓行 (大纲级别 1)
 	assert.Equal(t, "1.1", rows[2][0])
 	assert.Contains(t, rows[2][1], "cloud-server")
 	assert.Equal(t, "李四", rows[2][2])
-	assert.Equal(t, "1", rows[2][3]) // 跟踪缺陷数(未关闭)
-	assert.Equal(t, "1", rows[2][4]) // 致命(未关闭)
-	assert.Equal(t, "0", rows[2][5]) // 严重(未关闭)
+	assert.Equal(t, "1", rows[2][3]) // 代码仓审计缺陷数
+	assert.Equal(t, "1", rows[2][4]) // 代码仓未关闭缺陷数
+	assert.Equal(t, "1", rows[2][5]) // 致命(未关闭)
+	assert.Equal(t, "0", rows[2][6]) // 严重(未关闭)
 }
