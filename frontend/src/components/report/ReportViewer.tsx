@@ -8,6 +8,7 @@ import ReportHeader from './ReportHeader';
 import ReportSummaryTab from './ReportSummaryTab';
 import ReportFindingsTab from './ReportFindingsTab';
 import ReportDiagnosticsTab from './ReportDiagnosticsTab';
+import ReportDebateTab from './ReportDebateTab';
 import './report.css';
 
 export interface ReportViewerProps {
@@ -29,11 +30,11 @@ export default function ReportViewer({
 }: ReportViewerProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab');
-  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary')
-    ? (rawTab as 'summary' | 'findings' | 'diagnostics')
+  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate')
+    ? (rawTab as 'summary' | 'findings' | 'diagnostics' | 'debate')
     : undefined;
 
-  const [activeTab, setActiveTab] = useState<'summary' | 'findings' | 'diagnostics'>(urlTab || 'summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'findings' | 'diagnostics' | 'debate'>(urlTab || 'summary');
   const [isFullscreen, setIsFullscreen] = useState(mode === 'fullpage');
 
   const {
@@ -46,6 +47,9 @@ export default function ReportViewer({
     diagnostics,
     loadingDiagnostics,
     loadDiagnostics,
+    debateLogs,
+    loadingDebateLogs,
+    loadDebateLogs,
     resetState,
   } = useTaskReport();
 
@@ -62,9 +66,19 @@ export default function ReportViewer({
         loadFindings(taskId);
       } else if (currentTab === 'diagnostics') {
         loadDiagnostics(taskId);
+      } else if (currentTab === 'debate') {
+        loadDebateLogs(taskId);
       }
     }
-  }, [taskId, open, resetState, loadSummary, loadFindings, loadDiagnostics, urlTab]);
+  }, [taskId, open, resetState, loadSummary, loadFindings, loadDiagnostics, loadDebateLogs, urlTab]);
+
+  // 当 summary 加载完成后，如果是辩论引擎且未加载辩论日志，预先检测/加载辩论日志数量
+  const isDebateEngine = summary?.meta?.engine_mode === 'debate_full' || summary?.meta?.engine_mode === 'debate_selective';
+  useEffect(() => {
+    if (open && taskId && isDebateEngine && !debateLogs && !loadingDebateLogs) {
+      loadDebateLogs(taskId);
+    }
+  }, [open, taskId, isDebateEngine, debateLogs, loadingDebateLogs, loadDebateLogs]);
 
   // 当 summary 加载完成后，如果任务是失败状态且未显式指定 tab，自动定位到 diagnostics
   useEffect(() => {
@@ -75,7 +89,7 @@ export default function ReportViewer({
   }, [summary?.meta?.status, taskId, loadDiagnostics, urlTab]);
 
   // Tab 切换时按需加载并同步 URL 参数
-  const handleTabClick = (tab: 'summary' | 'findings' | 'diagnostics') => {
+  const handleTabClick = (tab: 'summary' | 'findings' | 'diagnostics' | 'debate') => {
     setActiveTab(tab);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
@@ -93,6 +107,8 @@ export default function ReportViewer({
       loadFindings(taskId);
     } else if (tab === 'diagnostics' && !diagnostics) {
       loadDiagnostics(taskId);
+    } else if (tab === 'debate' && !debateLogs) {
+      loadDebateLogs(taskId);
     }
   };
 
@@ -116,6 +132,7 @@ export default function ReportViewer({
 
   const meta = summary?.meta;
   const totalFindingsCount = summary?.metrics?.total_findings ?? findingsPage?.total ?? 0;
+  const showDebateTab = isDebateEngine || (debateLogs && debateLogs.length > 0);
 
   const content = (
     <div className="report-viewer-container">
@@ -164,6 +181,21 @@ export default function ReportViewer({
             </span>
           )}
         </div>
+
+        {/* 智能体三方对抗辩论轨迹 TAB */}
+        {showDebateTab && (
+          <div
+            className={`report-tab-item cs-report-tab-item ${activeTab === 'debate' ? 'active' : ''}`}
+            onClick={() => handleTabClick('debate')}
+          >
+            <span>⚔️ 对抗辩论轨迹</span>
+            {debateLogs && debateLogs.length > 0 && (
+              <span className="tab-badge cs-tab-badge">
+                {debateLogs.length}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 内容主体 (充沛页边距 + 浅灰底色衬托) */}
@@ -186,6 +218,13 @@ export default function ReportViewer({
               diagnostics={diagnostics}
               loading={loadingDiagnostics}
               onResume={handleResumeClick}
+            />
+          )}
+          {activeTab === 'debate' && (
+            <ReportDebateTab
+              meta={meta}
+              debateLogs={debateLogs}
+              loading={loadingDebateLogs}
             />
           )}
         </div>

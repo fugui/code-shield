@@ -1111,8 +1111,656 @@
     border: 1px solid #86efac !important;
     color: #166534 !important;
     page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    break-inside: auto !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+}
+
+/* ==========================================================================
+   多智能体对抗辩论轨迹 (Debate Trajectory) 专属视觉系统 (Design Tokens 规范)
+   ========================================================================== */
+
+.report-debate-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+/* 顶层 KPI 看板网格 */
+.report-debate-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.report-debate-kpi-card {
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 10px;
+  padding: 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.report-debate-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07);
+}
+
+.report-debate-kpi-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.report-debate-kpi-icon {
+  font-size: 1.1rem;
+}
+
+.report-debate-kpi-value {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.report-debate-kpi-unit {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.report-debate-kpi-sub {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.report-debate-kpi-card.kpi-card-rejected {
+  border-top: 3px solid #10b981;
+}
+
+.report-debate-kpi-card.kpi-card-confirmed {
+  border-top: 3px solid #ef4444;
+}
+
+.report-debate-kpi-card.kpi-card-conditional {
+  border-top: 3px solid #f59e0b;
+}
+
+.text-success {
+  color: #10b981 !important;
+}
+
+.text-danger {
+  color: #ef4444 !important;
+}
+
+.text-warning {
+  color: #f59e0b !important;
+}
+
+.text-primary {
+  color: var(--color-primary, #2563eb) !important;
+}
+
+/* 工具栏与筛选区域 */
+.report-debate-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 8px;
+}
+
+.report-debate-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.report-debate-segmented {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-bg-muted, #f1f5f9);
+  padding: 0.2rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  gap: 0.2rem;
+}
+
+.report-debate-seg-btn {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.report-debate-seg-btn:hover {
+  color: var(--color-text-primary, #0f172a);
+}
+
+.report-debate-seg-btn.active {
+  background: var(--color-bg-surface, #ffffff);
+  color: var(--color-text-primary, #0f172a);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.report-debate-seg-btn.active-rejected {
+  color: #059669 !important;
+}
+
+.report-debate-seg-btn.active-confirmed {
+  color: #dc2626 !important;
+}
+
+.report-debate-seg-btn.active-conditional {
+  color: #d97706 !important;
+}
+
+.report-debate-select {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-primary, #cbd5e1);
+  background: var(--color-bg-input, #ffffff);
+  color: var(--color-text-primary, #0f172a);
+  cursor: pointer;
+  outline: none;
+}
+
+.report-debate-select:focus {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.report-debate-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  position: relative;
+  min-width: 280px;
+  flex: 1 1 300px;
+  max-width: 480px;
+}
+
+.report-debate-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #94a3b8);
+  pointer-events: none;
+}
+
+.report-debate-search-input {
+  width: 100%;
+  padding: 0.42rem 2rem 0.42rem 2.2rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-primary, #cbd5e1);
+  background: var(--color-bg-input, #ffffff);
+  color: var(--color-text-primary, #0f172a);
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.report-debate-search-input:focus {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.report-debate-search-clear {
+  position: absolute;
+  right: 0.65rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #94a3b8);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.2rem;
+}
+
+.report-debate-search-clear:hover {
+  color: var(--color-text-primary, #0f172a);
+}
+
+/* 卡片列表 */
+.report-debate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.report-debate-card {
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.report-debate-card--rejected {
+  border-left: 4.5px solid #10b981;
+}
+
+.report-debate-card--confirmed {
+  border-left: 4.5px solid #ef4444;
+}
+
+.report-debate-card--conditional {
+  border-left: 4.5px solid #f59e0b;
+}
+
+/* 卡片头部 */
+.report-debate-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--color-bg-muted, #f8fafc);
+  border-bottom: 1px solid var(--color-border-primary, #f1f5f9);
+  flex-wrap: wrap;
+}
+
+.report-debate-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.report-debate-candidate-id {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-primary, #2563eb);
+  background: rgba(37, 99, 235, 0.08);
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.report-debate-chunk-badge {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary, #475569);
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.report-debate-location {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #475569);
+}
+
+.report-debate-location code {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.report-debate-scope {
+  font-size: 0.8rem;
+  color: #8b5cf6;
+}
+
+.report-debate-scope code {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
+.report-debate-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.report-debate-meta-pill {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #64748b);
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.report-debate-verdict-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.report-debate-verdict-badge.badge-rejected {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.report-debate-verdict-badge.badge-confirmed {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.report-debate-verdict-badge.badge-conditional {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.report-debate-action-btn {
+  border: 1px solid var(--color-border-primary, #cbd5e1);
+  background: var(--color-bg-surface, #ffffff);
+  color: var(--color-text-secondary, #475569);
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.report-debate-action-btn:hover {
+  background: var(--color-bg-muted, #f1f5f9);
+  color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+}
+
+/* 核心触发行警告条 */
+.report-debate-trigger-box {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 1.25rem;
+  background: rgba(245, 158, 11, 0.06);
+  border-bottom: 1px dashed rgba(245, 158, 11, 0.2);
+  font-size: 0.8rem;
+}
+
+.report-debate-trigger-label {
+  font-weight: 600;
+  color: #b45309;
+  flex-shrink: 0;
+}
+
+.report-debate-trigger-code {
+  font-family: 'JetBrains Mono', monospace;
+  color: #9a3412;
+  background: rgba(245, 158, 11, 0.12);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+/* 三方对抗阶段列 (Hunter vs Challenger vs Judge) */
+.report-debate-stages-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+@media (max-width: 1024px) {
+  .report-debate-stages-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.report-debate-stage-col {
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.report-debate-stage-col.stage-hunter {
+  background: rgba(239, 68, 68, 0.03);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.report-debate-stage-col.stage-challenger {
+  background: rgba(37, 99, 235, 0.03);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+}
+
+.report-debate-stage-col.stage-judge {
+  background: rgba(139, 92, 246, 0.03);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+}
+
+.report-debate-stage-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border-primary, rgba(0, 0, 0, 0.06));
+}
+
+.stage-icon {
+  font-size: 0.95rem;
+}
+
+.stage-role {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.cwe-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.defense-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
+.defense-pill.pill-defense_successful {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.defense-pill.pill-defense_partial {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.defense-pill.pill-challenge_failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.judge-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+}
+
+.judge-pill.pill-rejected {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.judge-pill.pill-confirmed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.judge-pill.pill-conditional {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.report-debate-stage-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  font-size: 0.825rem;
+  line-height: 1.55;
+  color: var(--color-text-primary, #1e293b);
+}
+
+.stage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stage-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.stage-section-title {
+  font-weight: 600;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.stage-section-text {
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.stage-section-text.judge-rationale {
+  font-size: 0.83rem;
+  line-height: 1.6;
+}
+
+.stage-section-text.stage-suggestion {
+  background: rgba(16, 185, 129, 0.08);
+  border-left: 3px solid #10b981;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0 4px 4px 0;
+  color: #065f46;
+}
+
+.defense-args-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.defense-args-list li {
+  font-size: 0.8rem;
+}
+
+.arg-dimension {
+  font-weight: 600;
+  color: var(--color-primary, #2563eb);
+}
+
+/* 源代码折叠区 */
+.report-debate-snippet-wrapper {
+  border-top: 1px solid var(--color-border-primary, #f1f5f9);
+  padding: 0.6rem 1.25rem;
+  background: var(--color-bg-muted, #f8fafc);
+}
+
+.report-debate-snippet-toggle {
+  border: none;
+  background: transparent;
+  color: var(--color-primary, #2563eb);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+
+.report-debate-snippet-toggle:hover {
+  text-decoration: underline;
+}
+
+.report-debate-code-block {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg-input, #0f172a);
+  color: var(--color-text-primary, #f8fafc);
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  max-height: 300px;
+}
+
+/* 空状态 */
+.report-debate-empty {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.report-debate-empty-icon {
+  font-size: 2.5rem;
+}
+
+.report-debate-empty-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.report-debate-empty-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #64748b);
+  max-width: 500px;
+  line-height: 1.6;
+}
+
+.report-debate-no-match {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px dashed var(--color-border-primary, #cbd5e1);
+  border-radius: 8px;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.88rem;
 }

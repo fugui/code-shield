@@ -4,6 +4,7 @@ import {
   TaskReportSummary,
   FindingsPageResponse,
   TaskDiagnostics,
+  TaskDebateLog,
 } from '../types/report';
 
 export interface UseTaskReportReturn {
@@ -22,6 +23,11 @@ export interface UseTaskReportReturn {
   diagnosticsError: string | null;
   loadDiagnostics: (taskId: number) => Promise<void>;
 
+  debateLogs: TaskDebateLog[] | null;
+  loadingDebateLogs: boolean;
+  debateLogsError: string | null;
+  loadDebateLogs: (taskId: number) => Promise<void>;
+
   resetState: () => void;
 }
 
@@ -38,6 +44,10 @@ export function useTaskReport(): UseTaskReportReturn {
   const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
 
+  const [debateLogs, setDebateLogs] = useState<TaskDebateLog[] | null>(null);
+  const [loadingDebateLogs, setLoadingDebateLogs] = useState(false);
+  const [debateLogsError, setDebateLogsError] = useState<string | null>(null);
+
   const currentTaskIdRef = useRef<number | null>(null);
 
   const resetState = useCallback(() => {
@@ -47,6 +57,8 @@ export function useTaskReport(): UseTaskReportReturn {
     setFindingsError(null);
     setDiagnostics(null);
     setDiagnosticsError(null);
+    setDebateLogs(null);
+    setDebateLogsError(null);
     currentTaskIdRef.current = null;
   }, []);
 
@@ -145,6 +157,33 @@ export function useTaskReport(): UseTaskReportReturn {
     }
   }, []);
 
+  // 4. 多智能体三方对抗辩论轨迹加载 (带竞态保护)
+  const loadDebateLogs = useCallback(async (taskId: number) => {
+    if (!taskId) return;
+    currentTaskIdRef.current = taskId;
+    setLoadingDebateLogs(true);
+    setDebateLogsError(null);
+    try {
+      const res = await fetch(apiUrl(`/api/tasks/${taskId}/debate-logs`));
+      if (currentTaskIdRef.current !== taskId) return;
+
+      if (!res.ok) {
+        throw new Error('无法加载智能体对抗辩论轨迹');
+      }
+      const data = await res.json();
+      if (currentTaskIdRef.current !== taskId) return;
+      setDebateLogs(data.items || []);
+    } catch (err: any) {
+      if (currentTaskIdRef.current === taskId) {
+        setDebateLogsError(err.message || '加载辩论轨迹失败');
+      }
+    } finally {
+      if (currentTaskIdRef.current === taskId) {
+        setLoadingDebateLogs(false);
+      }
+    }
+  }, []);
+
   return {
     summary,
     loadingSummary,
@@ -160,6 +199,11 @@ export function useTaskReport(): UseTaskReportReturn {
     loadingDiagnostics,
     diagnosticsError,
     loadDiagnostics,
+
+    debateLogs,
+    loadingDebateLogs,
+    debateLogsError,
+    loadDebateLogs,
 
     resetState,
   };
