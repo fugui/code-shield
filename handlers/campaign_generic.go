@@ -99,13 +99,14 @@ type DynamicCampaignRepoSummary struct {
 	RepoURL        string    `json:"repo_url"`
 	Department     string    `json:"department"`
 	OwnerName      string    `json:"owner_name"`
-	TotalIssues    int       `json:"total_issues"`
+	TotalIssues    int       `json:"total_issues"`   // 实体模式下为用例总数，缺陷模式下为未关闭跟踪缺陷数 (open_issues)
+	TotalDefects   int       `json:"total_defects"`  // 累计发现缺陷总数 (open + resolved)
 	TotalEntities  int       `json:"total_entities"` // 实体总数 (UT等模式)
 	PassCount      int       `json:"pass_count"`     // 合格数 (UT等模式)
 	PassRate       float64   `json:"pass_rate"`      // 合格率 (UT等模式)
-	Blocking       int       `json:"blocking"`
-	Critical       int       `json:"critical"`
-	Major          int       `json:"major"`
+	Blocking       int       `json:"blocking"`       // 未关闭致命/阻塞数
+	Critical       int       `json:"critical"`       // 未关闭严重数
+	Major          int       `json:"major"`          // 未关闭一般/主要数
 	Hint           int       `json:"hint"`
 	Suggestion     int       `json:"suggestion"`
 	OpenIssues     int       `json:"open_issues"`
@@ -132,26 +133,78 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 	keyword := c.Query("keyword")
 	department := c.Query("department")
 
+	summaries, err := FetchCampaignRepoSummaries(tt, keyword, department)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch repository summaries: " + err.Error()})
+		return
+	}
+
+	// Sort results
+	sort.Slice(summaries, func(i, j int) bool {
+		asc := sortOrder == "asc"
+		var cmp bool
+
+		switch sortBy {
+		case "name":
+			cmp = strings.ToLower(summaries[i].RepoName) < strings.ToLower(summaries[j].RepoName)
+		case "pass_rate":
+			cmp = summaries[i].PassRate < summaries[j].PassRate
+		case "pass_count":
+			cmp = summaries[i].PassCount < summaries[j].PassCount
+		case "total_issues", "total_entities":
+			cmp = summaries[i].TotalIssues < summaries[j].TotalIssues
+		case "blocking":
+			cmp = summaries[i].Blocking < summaries[j].Blocking
+		case "critical":
+			cmp = summaries[i].Critical < summaries[j].Critical
+		case "open_issues":
+			cmp = summaries[i].OpenIssues < summaries[j].OpenIssues
+		case "last_scan_time":
+			cmp = summaries[i].LastScanTime.Before(summaries[j].LastScanTime)
+		case "fix_rate":
+			fallthrough
+		default:
+			if isEntityMode {
+				cmp = summaries[i].PassRate < summaries[j].PassRate
+			} else {
+				cmp = summaries[i].FixRate < summaries[j].FixRate
+			}
+		}
+
+		if asc {
+			return cmp
+		}
+		return !cmp
+	})
+
+	c.JSON(http.StatusOK, summaries)
+}
+
+// FetchCampaignRepoSummaries 获取指定专项下的所有代码仓指标聚合列表
+func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string) ([]DynamicCampaignRepoSummary, error) {
+	isEntityMode := tt.GovernanceMode == models.GovernanceModeEntityAssessment
+
 	// 1. Fetch repositories
 	var repos []models.Repository
 	query := models.DB.Preload("Owner").Preload("Department")
 	if err := query.Find(&repos).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch repositories"})
-		return
+		return nil, err
 	}
 
-	// 2. Fetch campaign findings severity stats
+	// 2. Fetch campaign findings severity stats (缺陷模式下仅统计未关闭缺陷)
 	type DbSeverityStat struct {
 		RepoID   uint   `gorm:"column:repo_id"`
 		Severity string `gorm:"column:severity"`
 		Count    int    `gorm:"column:count"`
 	}
 	var severityStats []DbSeverityStat
-	models.DB.Model(&models.CampaignFinding{}).
+	sevQuery := models.DB.Model(&models.CampaignFinding{}).
 		Select("repo_id, severity, count(*) as count").
-		Where("task_type_id = ?", tt.ID).
-		Group("repo_id, severity").
-		Scan(&severityStats)
+		Where("task_type_id = ?", tt.ID)
+	if !isEntityMode {
+		sevQuery = sevQuery.Where("status IN ?", []string{"open", "analyzing"})
+	}
+	sevQuery.Group("repo_id, severity").Scan(&severityStats)
 
 	severityMap := make(map[uint]map[string]int)
 	for _, stat := range severityStats {
@@ -261,7 +314,7 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 			ownerName = "已离职/未知"
 		}
 
-		displayTotalIssues := totalDefects
+		displayTotalIssues := openCount
 		if isEntityMode {
 			displayTotalIssues = totalEntities
 		}
@@ -273,6 +326,7 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 			Department:     repoDept,
 			OwnerName:      ownerName,
 			TotalIssues:    displayTotalIssues,
+			TotalDefects:   totalDefects,
 			TotalEntities:  totalEntities,
 			PassCount:      passCount,
 			PassRate:       passRate,
@@ -287,46 +341,7 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 			LastScanTime:   scanTimeMap[repo.ID],
 		})
 	}
-
-	// 7. Sort results
-	sort.Slice(summaries, func(i, j int) bool {
-		asc := sortOrder == "asc"
-		var cmp bool
-
-		switch sortBy {
-		case "name":
-			cmp = strings.ToLower(summaries[i].RepoName) < strings.ToLower(summaries[j].RepoName)
-		case "pass_rate":
-			cmp = summaries[i].PassRate < summaries[j].PassRate
-		case "pass_count":
-			cmp = summaries[i].PassCount < summaries[j].PassCount
-		case "total_issues", "total_entities":
-			cmp = summaries[i].TotalIssues < summaries[j].TotalIssues
-		case "blocking":
-			cmp = summaries[i].Blocking < summaries[j].Blocking
-		case "critical":
-			cmp = summaries[i].Critical < summaries[j].Critical
-		case "open_issues":
-			cmp = summaries[i].OpenIssues < summaries[j].OpenIssues
-		case "last_scan_time":
-			cmp = summaries[i].LastScanTime.Before(summaries[j].LastScanTime)
-		case "fix_rate":
-			fallthrough
-		default:
-			if isEntityMode {
-				cmp = summaries[i].PassRate < summaries[j].PassRate
-			} else {
-				cmp = summaries[i].FixRate < summaries[j].FixRate
-			}
-		}
-
-		if asc {
-			return cmp
-		}
-		return !cmp
-	})
-
-	c.JSON(http.StatusOK, summaries)
+	return summaries, nil
 }
 
 // GetDynamicCampaignFindings 通用专项缺陷与实体列表查询（支持分页）
@@ -709,6 +724,19 @@ func ExportDynamicCampaignFindings(c *gin.Context) {
 	generateCampaignExcel(c, repo.Name, tt.DisplayName, items, isEntityMode)
 }
 
+// DynamicCampaignDeptSummary 部门维度专项汇总结构
+type DynamicCampaignDeptSummary struct {
+	Department     string  `json:"department"`
+	ScannedRepos   int     `json:"scanned_repos"`
+	TotalRepos     int     `json:"total_repos"`
+	TotalIssues    int     `json:"total_issues"`
+	OpenIssues     int     `json:"open_issues"`
+	ResolvedIssues int     `json:"resolved_issues"`
+	PassCount      int     `json:"pass_count"`
+	PassRate       float64 `json:"pass_rate"`
+	FixRate        float64 `json:"fix_rate"`
+}
+
 // GetDynamicCampaignDepartments 部门维度专项指标汇总
 func GetDynamicCampaignDepartments(c *gin.Context) {
 	taskTypeVal, exists := c.Get("taskType")
@@ -725,87 +753,10 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 	}
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 
-	var depts []models.Department
-	if err := models.DB.Find(&depts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch departments"})
+	summaries, err := FetchCampaignDeptSummaries(tt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch department summaries: " + err.Error()})
 		return
-	}
-
-	type DeptMetrics struct {
-		DepartmentID   uint
-		TotalRepos     int
-		ScannedRepos   int
-		TotalIssues    int
-		OpenIssues     int
-		ResolvedIssues int
-		PassCount      int
-	}
-
-	query := `
-		SELECT
-			r.department_id,
-			COUNT(DISTINCT r.id) AS total_repos,
-			COUNT(DISTINCT cf.repo_id) AS scanned_repos,
-			COUNT(cf.id) AS total_issues,
-			COUNT(CASE WHEN cf.status IN ('open', 'analyzing') THEN 1 END) AS open_issues,
-			COUNT(CASE WHEN cf.status IN ('resolved', 'closed', 'invalid') THEN 1 END) AS resolved_issues,
-			COUNT(CASE WHEN cf.severity = '合格' THEN 1 END) AS pass_count
-		FROM repositories r
-		LEFT JOIN campaign_findings cf ON cf.repo_id = r.id AND cf.task_type_id = ?
-		WHERE r.department_id IS NOT NULL
-		GROUP BY r.department_id
-	`
-	var metrics []DeptMetrics
-	if err := models.DB.Raw(query, tt.ID).Scan(&metrics).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch metrics"})
-		return
-	}
-
-	metricsMap := make(map[uint]DeptMetrics)
-	for _, m := range metrics {
-		metricsMap[m.DepartmentID] = m
-	}
-
-	type DeptSummary struct {
-		Department     string  `json:"department"`
-		ScannedRepos   int     `json:"scanned_repos"`
-		TotalRepos     int     `json:"total_repos"`
-		TotalIssues    int     `json:"total_issues"`
-		OpenIssues     int     `json:"open_issues"`
-		ResolvedIssues int     `json:"resolved_issues"`
-		PassCount      int     `json:"pass_count"`
-		PassRate       float64 `json:"pass_rate"`
-		FixRate        float64 `json:"fix_rate"`
-	}
-
-	var summaries []DeptSummary
-	for _, dept := range depts {
-		m, ok := metricsMap[dept.ID]
-		if !ok || m.TotalRepos == 0 {
-			continue
-		}
-
-		fixRate := 100.0
-		if m.TotalIssues > 0 {
-			fixRate = (float64(m.ResolvedIssues) / float64(m.TotalIssues)) * 100.0
-		}
-
-		passRate := 100.0
-		if m.TotalIssues > 0 {
-			passRate = (float64(m.PassCount) / float64(m.TotalIssues)) * 100.0
-		}
-
-		summaries = append(summaries, DeptSummary{
-			Department:     dept.Name,
-			ScannedRepos:   m.ScannedRepos,
-			TotalRepos:     m.TotalRepos,
-			TotalIssues:    m.TotalIssues,
-			OpenIssues:     m.OpenIssues,
-			ResolvedIssues: m.ResolvedIssues,
-			PassCount:      m.PassCount,
-			PassRate:       passRate,
-			FixRate:        fixRate,
-		})
 	}
 
 	sort.Slice(summaries, func(i, j int) bool {
@@ -839,6 +790,79 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, summaries)
+}
+
+// FetchCampaignDeptSummaries 获取指定专项下的所有部门指标汇总列表
+func FetchCampaignDeptSummaries(tt *models.TaskType) ([]DynamicCampaignDeptSummary, error) {
+	var depts []models.Department
+	if err := models.DB.Find(&depts).Error; err != nil {
+		return nil, err
+	}
+
+	type DeptMetrics struct {
+		DepartmentID   uint
+		TotalRepos     int
+		ScannedRepos   int
+		TotalIssues    int
+		OpenIssues     int
+		ResolvedIssues int
+		PassCount      int
+	}
+
+	query := `
+		SELECT
+			r.department_id,
+			COUNT(DISTINCT r.id) AS total_repos,
+			COUNT(DISTINCT cf.repo_id) AS scanned_repos,
+			COUNT(cf.id) AS total_issues,
+			COUNT(CASE WHEN cf.status IN ('open', 'analyzing') THEN 1 END) AS open_issues,
+			COUNT(CASE WHEN cf.status IN ('resolved', 'closed', 'invalid') THEN 1 END) AS resolved_issues,
+			COUNT(CASE WHEN cf.severity = '合格' THEN 1 END) AS pass_count
+		FROM repositories r
+		LEFT JOIN campaign_findings cf ON cf.repo_id = r.id AND cf.task_type_id = ?
+		WHERE r.department_id IS NOT NULL
+		GROUP BY r.department_id
+	`
+	var metrics []DeptMetrics
+	if err := models.DB.Raw(query, tt.ID).Scan(&metrics).Error; err != nil {
+		return nil, err
+	}
+
+	metricsMap := make(map[uint]DeptMetrics)
+	for _, m := range metrics {
+		metricsMap[m.DepartmentID] = m
+	}
+
+	var summaries []DynamicCampaignDeptSummary
+	for _, dept := range depts {
+		m, ok := metricsMap[dept.ID]
+		if !ok || m.TotalRepos == 0 {
+			continue
+		}
+
+		fixRate := 100.0
+		if m.TotalIssues > 0 {
+			fixRate = (float64(m.ResolvedIssues) / float64(m.TotalIssues)) * 100.0
+		}
+
+		passRate := 100.0
+		if m.TotalIssues > 0 {
+			passRate = (float64(m.PassCount) / float64(m.TotalIssues)) * 100.0
+		}
+
+		summaries = append(summaries, DynamicCampaignDeptSummary{
+			Department:     dept.Name,
+			ScannedRepos:   m.ScannedRepos,
+			TotalRepos:     m.TotalRepos,
+			TotalIssues:    m.TotalIssues,
+			OpenIssues:     m.OpenIssues,
+			ResolvedIssues: m.ResolvedIssues,
+			PassCount:      m.PassCount,
+			PassRate:       passRate,
+			FixRate:        fixRate,
+		})
+	}
+	return summaries, nil
 }
 
 // GetDynamicCampaignTrends 通用专项 30 天收敛趋势统计 (高性能优化版)

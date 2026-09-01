@@ -179,6 +179,7 @@ func main() {
 					campaignGroup.GET("/findings/export", handlers.ExportDynamicCampaignFindings)
 					campaignGroup.PATCH("/findings/:id", handlers.UpdateDynamicCampaignFinding)
 					campaignGroup.GET("/departments", handlers.GetDynamicCampaignDepartments)
+					campaignGroup.GET("/departments/export", handlers.ExportDynamicCampaignDepartments)
 					campaignGroup.GET("/trends", handlers.GetDynamicCampaignTrends)
 				}
 

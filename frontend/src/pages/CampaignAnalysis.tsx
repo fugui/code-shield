@@ -47,6 +47,14 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
+const DownloadIcon = () => (
+  <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+    <polyline points="7 10 12 15 17 10"></polyline>
+    <line x1="12" y1="15" x2="12" y2="3"></line>
+  </svg>
+);
+
 interface CampaignAnalysisProps {
   campaign: string;
   title: string;
@@ -95,6 +103,50 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
   const [deptRepos, setDeptRepos] = useState<Record<string, any[]>>({});
   const [deptReposLoading, setDeptReposLoading] = useState<Record<string, boolean>>({});
+  const [exportingDepts, setExportingDepts] = useState(false);
+
+  const exportDeptsExcel = async () => {
+    if (exportingDepts) return;
+    setExportingDepts(true);
+    try {
+      const url = apiUrl(`/api/analysis/${campaign}/departments/export`);
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        showToast(`导出失败: ${errData.error || '服务器处理异常'}`, 'error');
+        return;
+      }
+
+      const disposition = res.headers.get('Content-Disposition') || '';
+      let filename = `专项治理_部门排行榜_${campaign}.xlsx`;
+      const matchUtf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (matchUtf8 && matchUtf8[1]) {
+        filename = decodeURIComponent(matchUtf8[1]);
+      } else {
+        const matchNorm = disposition.match(/filename="?([^";]+)"?/i);
+        if (matchNorm && matchNorm[1]) {
+          filename = matchNorm[1];
+        }
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+
+      showToast(`已成功导出 ${filename}`, 'success');
+    } catch (err) {
+      console.error('Export departments failed:', err);
+      showToast('导出部门排行榜异常，请稍后重试', 'error');
+    } finally {
+      setExportingDepts(false);
+    }
+  };
 
   const toggleDeptExpand = (deptName: string) => {
     const isExpanding = !expandedDepts[deptName];
@@ -364,113 +416,92 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
   // Render SVG charts dynamically based on trends data
   const renderTrendChart = () => {
-    if (trends.length === 0) {
+    if (!trends || trends.length === 0) {
       return (
-        <div style={{ padding: '4rem 1rem', textAlign: 'center', color: '#94a3b8' }}>
-          暂无足够的历史扫描数据来绘制缺陷走势。请在完成扫描任务后查看。
+        <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+          暂无历史治理趋势数据，请在扫描任务完成后查看。
         </div>
       );
     }
 
     const width = 800;
-    const height = 300;
+    const height = 260;
     const paddingLeft = 50;
-    const paddingRight = 20;
-    const paddingTop = 30;
+    const paddingRight = 30;
+    const paddingTop = 20;
     const paddingBottom = 40;
-
     const chartWidth = width - paddingLeft - paddingRight;
     const chartHeight = height - paddingTop - paddingBottom;
 
-    // Resolve max values
-    const maxIssues = isEntityMode ? 100 : Math.max(...trends.map(t => t.total_issues), 10);
-    const themeColor = isEntityMode ? '#10b981' : '#ef4444';
+    const maxIssues = Math.max(...trends.map(t => isEntityMode ? (t.pass_rate || 0) : t.open_issues), 10);
+    const themeColor = '#3b82f6';
 
-    // Compute SVG path string
-    let linePath = '';
-    let areaPath = '';
-    
-    trends.forEach((t, i) => {
-      const val = isEntityMode ? (t.pass_rate || 0) : t.total_issues;
+    const points = trends.map((t, i) => {
+      const val = isEntityMode ? (t.pass_rate || 0) : t.open_issues;
       const x = paddingLeft + (i * chartWidth) / (trends.length - 1 || 1);
       const y = paddingTop + chartHeight - (val * chartHeight) / maxIssues;
-      
-      if (i === 0) {
-        linePath = `M ${x} ${y}`;
-        areaPath = `M ${x} ${paddingTop + chartHeight} L ${x} ${y}`;
-      } else {
-        linePath += ` L ${x} ${y}`;
-        areaPath += ` L ${x} ${y}`;
-      }
-      
-      if (i === trends.length - 1) {
-        areaPath += ` L ${x} ${paddingTop + chartHeight} Z`;
-      }
-    });
+      return `${x},${y}`;
+    }).join(' ');
 
     return (
-      <div style={{ background: 'var(--card-bg)', padding: '1.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative' }}>
+      <div style={{ padding: '1.5rem', background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', alignItems: 'center' }}>
           <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>
             {title} {isEntityMode ? '实体评估合格率趋势 (过去30天)' : '存量缺陷收敛趋势 (过去30天)'}
           </h4>
           <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ width: '12px', height: '12px', borderRadius: '2px', background: isEntityMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', border: `2px solid ${themeColor}`, display: 'inline-block' }} />
+              <span style={{ width: '12px', height: '12px', borderRadius: '2px', background: 'rgba(59, 130, 246, 0.2)', border: '2px solid #3b82f6', display: 'inline-block' }} />
               {isEntityMode ? '用例/实体合格率 (%)' : '未整改缺陷数'}
             </span>
           </div>
         </div>
-
         <div style={{ overflowX: 'auto' }}>
-          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="320" style={{ overflow: 'visible' }}>
-            <defs>
-              <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={themeColor} stopOpacity="0.25"/>
-                <stop offset="100%" stopColor={themeColor} stopOpacity="0.0"/>
-              </linearGradient>
-            </defs>
-
-            {/* Horizontal Grid lines */}
-            {[0, 25, 50, 75, 100].map((percent) => {
-              const val = isEntityMode ? `${percent}%` : Math.round((percent * maxIssues) / 100);
-              const y = paddingTop + chartHeight - (percent * chartHeight) / 100;
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', minWidth: '600px', height: 'auto', display: 'block' }}>
+            {/* Grid lines */}
+            {[0, 0.25, 0.5, 0.75, 1].map((p, idx) => {
+              const y = paddingTop + chartHeight * p;
+              const val = Math.round(maxIssues * (1 - p));
               return (
-                <g key={percent}>
-                  <line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke="var(--border-color)" strokeWidth="1" strokeDasharray="4 4" />
-                  <text x={paddingLeft - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">{val}</text>
+                <g key={idx}>
+                  <line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke="var(--border-color)" strokeDasharray="4 4" />
+                  <text x={paddingLeft - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">
+                    {isEntityMode ? `${val}%` : val}
+                  </text>
                 </g>
               );
             })}
 
-            {/* Area under line */}
+            {/* Path */}
+            <polyline fill="none" stroke={themeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
+
+            {/* Gradient Fill under line */}
             {trends.length > 1 && (
-              <path d={areaPath} fill="url(#trendGradient)" />
+              <polygon
+                fill={`url(#gradient-${campaign})`}
+                opacity="0.15"
+                points={`${paddingLeft},${paddingTop + chartHeight} ${points} ${width - paddingRight},${paddingTop + chartHeight}`}
+              />
             )}
 
-            {/* Trend Line */}
-            {trends.length > 1 && (
-              <path d={linePath} fill="none" stroke={themeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            )}
+            <defs>
+              <linearGradient id={`gradient-${campaign}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={themeColor} />
+                <stop offset="100%" stopColor="transparent" />
+              </linearGradient>
+            </defs>
 
-            {/* Circular points */}
+            {/* Data points */}
             {trends.map((t, i) => {
-              const val = isEntityMode ? (t.pass_rate || 0) : t.total_issues;
+              const val = isEntityMode ? (t.pass_rate || 0) : t.open_issues;
               const x = paddingLeft + (i * chartWidth) / (trends.length - 1 || 1);
               const y = paddingTop + chartHeight - (val * chartHeight) / maxIssues;
 
               return (
                 <g key={i}>
-                  <circle cx={x} cy={y} r="5" fill={themeColor} stroke="white" strokeWidth="2" />
-                  {/* Date labels */}
-                  {i % Math.max(Math.round(trends.length / 6), 1) === 0 && (
-                    <text x={x} y={height - 12} textAnchor="middle" fontSize="10" fill="#64748b" transform={`rotate(-15, ${x}, ${height - 12})`}>
-                      {t.date.substring(5)}
-                    </text>
-                  )}
-                  {/* Values */}
-                  <text x={x} y={y - 12} textAnchor="middle" fontSize="9" fontWeight="600" fill={themeColor}>
-                    {isEntityMode ? `${val.toFixed(0)}%` : val}
+                  <circle cx={x} cy={y} r="4" fill="white" stroke={themeColor} strokeWidth="2" />
+                  <text x={x} y={height - 10} textAnchor="middle" fontSize="10" fill="#64748b" transform={`rotate(-15, ${x}, ${height - 10})`}>
+                    {t.date.substring(5)}
                   </text>
                 </g>
               );
@@ -482,7 +513,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   };
 
   // KPIs Calculations
-  const totalIssuesCount = repos.reduce((acc, r) => acc + (isEntityMode ? (r.total_entities || r.total_issues) : r.total_issues), 0);
+  const totalIssuesCount = repos.reduce((acc, r) => acc + (isEntityMode ? (r.total_entities || r.total_issues) : (r.total_defects || ((r.open_issues || 0) + (r.resolved_issues || 0)) || r.total_issues)), 0);
   const totalOpenCount = repos.reduce((acc, r) => acc + r.open_issues, 0);
   const totalResolvedCount = repos.reduce((acc, r) => acc + r.resolved_issues, 0);
   const totalPassCount = repos.reduce((acc, r) => acc + (r.pass_count || 0), 0);
@@ -644,6 +675,27 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
               style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
             >
               查询
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'depts' && (
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={exportDeptsExcel}
+              disabled={exportingDepts}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.4rem 0.85rem',
+                fontSize: '0.85rem',
+                cursor: exportingDepts ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <DownloadIcon />
+              {exportingDepts ? '正在导出...' : '导出 Excel'}
             </button>
           </div>
         )}
