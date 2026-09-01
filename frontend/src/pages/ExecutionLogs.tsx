@@ -408,7 +408,6 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
             ) : (
               logs.map(log => {
                 const expanded = expandedIds.has(log.id);
-                const hasReport = !!log.task_report;
                 const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'post_processing', 'merging'].includes(log.status);
                 const isPending = log.status === 'pending' || log.status === 'queued';
                 const canCancel = isRunning || isPending;
