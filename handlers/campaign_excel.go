@@ -305,7 +305,7 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 		OutlineSummaryBelow: &falseVal,
 	})
 
-	headers := []string{"序号/排名", "部门 / 代码仓", "负责人 / 覆盖仓", "跟踪缺陷数(未关闭)", "致命(未关闭)", "严重(未关闭)", "修复进度 / 整改率", "最近扫描"}
+	headers := []string{"序号/排名", "部门 / 代码仓", "负责人 / 覆盖仓", "审计缺陷数", "未关闭缺陷数", "致命(未关闭)", "严重(未关闭)", "修复进度 / 整改率", "最近扫描"}
 	if isEntityMode {
 		headers = []string{"序号/排名", "部门 / 代码仓", "负责人 / 覆盖仓", "用例总数", "合格用例", "待优化", "用例合格率", "最近扫描"}
 	}
@@ -344,17 +344,21 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", deptRow), d.TotalIssues)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", deptRow), d.PassCount)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", deptRow), d.OpenIssues)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", deptRow), fmt.Sprintf("%.1f%%", rateVal))
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", deptRow), "-")
+			_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", deptRow), fmt.Sprintf("H%d", deptRow), deptCenterStyle)
 		} else {
-			_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", deptRow), d.OpenIssues)
-			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", deptRow), deptBlocking)
-			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", deptRow), deptCritical)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", deptRow), d.TotalIssues)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", deptRow), d.OpenIssues)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", deptRow), deptBlocking)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", deptRow), deptCritical)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", deptRow), fmt.Sprintf("%.1f%%", rateVal))
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("I%d", deptRow), "-")
+			_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", deptRow), fmt.Sprintf("I%d", deptRow), deptCenterStyle)
 		}
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", deptRow), fmt.Sprintf("%.1f%%", rateVal))
-		_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", deptRow), "-")
 
 		_ = f.SetRowStyle(sheet1, deptRow, deptRow, deptRowStyle)
 		_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", deptRow), fmt.Sprintf("A%d", deptRow), deptCenterStyle)
-		_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", deptRow), fmt.Sprintf("H%d", deptRow), deptCenterStyle)
 
 		// 填充二级子代码仓（设置大纲层级为 1）
 		if len(subRepos) == 0 {
@@ -363,7 +367,11 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("A%d", curRow), fmt.Sprintf("%d.1", deptIdx+1))
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("B%d", curRow), "    (暂无代码仓数据)")
 			_ = f.SetRowStyle(sheet1, curRow, curRow, repoRowStyle)
-			_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", curRow), fmt.Sprintf("H%d", curRow), repoCenterStyle)
+			endCol := "I"
+			if isEntityMode {
+				endCol = "H"
+			}
+			_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", curRow), fmt.Sprintf("%s%d", endCol, curRow), repoCenterStyle)
 			_ = f.SetRowOutlineLevel(sheet1, curRow, 1)
 		} else {
 			for subIdx, rItem := range subRepos {
@@ -388,25 +396,36 @@ func ExportDynamicCampaignDepartments(c *gin.Context) {
 					_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", subRow), rItem.TotalEntities)
 					_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", subRow), rItem.PassCount)
 					_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", subRow), rItem.OpenIssues)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", subRow), fmt.Sprintf("%.0f%%", rRateVal))
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", subRow), lastScanStr)
+					_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", subRow), fmt.Sprintf("H%d", subRow), repoCenterStyle)
 				} else {
-					_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", subRow), rItem.OpenIssues)
-					_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", subRow), rItem.Blocking)
-					_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", subRow), rItem.Critical)
+					auditDefects := rItem.TotalDefects
+					if auditDefects == 0 && (rItem.OpenIssues+rItem.ResolvedIssues) > 0 {
+						auditDefects = rItem.OpenIssues + rItem.ResolvedIssues
+					}
+					if auditDefects == 0 {
+						auditDefects = rItem.TotalIssues
+					}
+
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", subRow), auditDefects)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", subRow), rItem.OpenIssues)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", subRow), rItem.Blocking)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", subRow), rItem.Critical)
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", subRow), fmt.Sprintf("%.0f%%", rRateVal))
+					_ = f.SetCellValue(sheet1, fmt.Sprintf("I%d", subRow), lastScanStr)
+					_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", subRow), fmt.Sprintf("I%d", subRow), repoCenterStyle)
+
+					if rItem.Blocking > 0 {
+						_ = f.SetCellStyle(sheet1, fmt.Sprintf("F%d", subRow), fmt.Sprintf("F%d", subRow), repoDangerStyle)
+					}
+					if rItem.Critical > 0 {
+						_ = f.SetCellStyle(sheet1, fmt.Sprintf("G%d", subRow), fmt.Sprintf("G%d", subRow), repoWarningStyle)
+					}
 				}
-				_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", subRow), fmt.Sprintf("%.0f%%", rRateVal))
-				_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", subRow), lastScanStr)
 
 				_ = f.SetRowStyle(sheet1, subRow, subRow, repoRowStyle)
 				_ = f.SetCellStyle(sheet1, fmt.Sprintf("A%d", subRow), fmt.Sprintf("A%d", subRow), repoCenterStyle)
-				_ = f.SetCellStyle(sheet1, fmt.Sprintf("C%d", subRow), fmt.Sprintf("H%d", subRow), repoCenterStyle)
-				if !isEntityMode {
-					if rItem.Blocking > 0 {
-						_ = f.SetCellStyle(sheet1, fmt.Sprintf("E%d", subRow), fmt.Sprintf("E%d", subRow), repoDangerStyle)
-					}
-					if rItem.Critical > 0 {
-						_ = f.SetCellStyle(sheet1, fmt.Sprintf("F%d", subRow), fmt.Sprintf("F%d", subRow), repoWarningStyle)
-					}
-				}
 
 				// 设置 Excel 行大纲折叠级别为 1
 				_ = f.SetRowOutlineLevel(sheet1, subRow, 1)

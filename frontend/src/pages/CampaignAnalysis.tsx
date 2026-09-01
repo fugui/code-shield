@@ -724,7 +724,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                     <th style={styles.tableHeader}>归属部门</th>
                     <th style={styles.tableHeader}>负责人</th>
                     <th onClick={() => handleSort(isEntityMode ? 'total_entities' : 'total_issues')} style={styles.tableHeader}>
-                      {isEntityMode ? '用例总数' : '跟踪缺陷数'} {(sortField === 'total_entities' || sortField === 'total_issues') && (sortOrder === 'asc' ? '↑' : '↓')}
+                      {isEntityMode ? '用例总数' : '未关闭缺陷数'} {(sortField === 'total_entities' || sortField === 'total_issues') && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
                     {isEntityMode ? (
                       <th onClick={() => handleSort('pass_count')} style={styles.tableHeader}>
@@ -911,14 +911,16 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)', width: '60px' }}>序号</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>代码仓</th>
                                         <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>负责人</th>
-                                        <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>{isEntityMode ? '用例总数' : '跟踪缺陷数'}</th>
                                         {isEntityMode ? (
                                           <>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>用例总数</th>
                                             <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>合格用例</th>
                                             <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>待优化</th>
                                           </>
                                         ) : (
                                           <>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>审计缺陷数</th>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>未关闭缺陷数</th>
                                             <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>致命</th>
                                             <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>严重</th>
                                           </>
@@ -931,6 +933,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                     <tbody>
                                       {deptRepos[d.department].map((r: any, idx: number) => {
                                         const rateVal = isEntityMode ? (r.pass_rate || 0) : (r.fix_rate || 0);
+                                        const auditDefects = r.total_defects || ((r.open_issues || 0) + (r.resolved_issues || 0)) || r.total_issues;
                                         return (
                                         <tr key={r.repo_id} className="code-interactive-row" style={{ borderBottom: '1px solid var(--border-color)' }}>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 500, width: '60px' }}>{idx + 1}</td>
@@ -949,14 +952,18 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                             )}
                                           </td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.owner_name}</td>
-                                          <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.total_issues}</td>
                                           {isEntityMode ? (
                                             <>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.total_entities || r.total_issues}</td>
                                               <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: 'var(--color-success)', fontWeight: 600 }}>{r.pass_count || 0}</td>
                                               <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.open_issues || 0) > 0 ? 'var(--color-warning)' : 'inherit' }}>{r.open_issues || 0}</td>
                                             </>
                                           ) : (
                                             <>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{auditDefects}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.open_issues ?? r.total_issues) > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: (r.open_issues ?? r.total_issues) > 0 ? 600 : 'normal' }}>
+                                                {r.open_issues ?? r.total_issues}
+                                              </td>
                                               <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.blocking > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
                                               <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: r.critical > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
                                             </>
