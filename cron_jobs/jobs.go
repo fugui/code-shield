@@ -12,26 +12,44 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-var globalCron *cron.Cron
+var (
+	globalCron       *cron.Cron
+	scheduleEntryIDs []cron.EntryID
+)
 
 func StartCronJobs() {
 	globalCron = cron.New()
 	globalCron.Start()
 	log.Println("[Cron] Cron scheduler started.")
 
+	// 注册每天凌晨 03:30 自动执行的磁盘临时文件 GC 清理任务
+	_, err := globalCron.AddFunc("30 3 * * *", func() {
+		retentionDays := models.AppConfig.AI.Debate.LogRetentionDays
+		if retentionDays <= 0 {
+			retentionDays = 7
+		}
+		services.CleanExpiredTempArtifacts(retentionDays)
+	})
+	if err != nil {
+		log.Printf("[Cron] Failed to register disk GC cron job: %v\n", err)
+	} else {
+		log.Println("[Cron] Registered daily temp artifact disk GC cron (03:30 AM).")
+	}
+
 	SyncSchedules()
 }
 
-// SyncSchedules clears existing jobs and reloads them from the database
+// SyncSchedules clears existing dynamic jobs and reloads them from the database
 func SyncSchedules() {
 	if globalCron == nil {
 		return
 	}
 
-	// Remove all existing jobs
-	for _, entry := range globalCron.Entries() {
-		globalCron.Remove(entry.ID)
+	// Remove all previous user-defined schedule jobs
+	for _, entryID := range scheduleEntryIDs {
+		globalCron.Remove(entryID)
 	}
+	scheduleEntryIDs = nil
 
 	var schedules []models.ScheduleConfig
 	if err := models.DB.Where("is_active = ?", true).Find(&schedules).Error; err != nil {
@@ -43,14 +61,15 @@ func SyncSchedules() {
 		// Create a copy of the schedule for the closure
 		sched := schedule
 
-		_, err := globalCron.AddFunc(sched.CronExpr, func() {
+		entryID, err := globalCron.AddFunc(sched.CronExpr, func() {
 			ExecuteScheduleContext(sched.ID, "cron")
 		})
 
 		if err != nil {
 			log.Printf("[Cron] Failed to schedule %s (%s): %v\n", sched.Name, sched.CronExpr, err)
 		} else {
-			log.Printf("[Cron] Scheduled %s: %s\n", sched.Name, sched.CronExpr)
+			scheduleEntryIDs = append(scheduleEntryIDs, entryID)
+			log.Printf("[Cron] Scheduled %s: %s (EntryID: %d)\n", sched.Name, sched.CronExpr, entryID)
 		}
 	}
 }
