@@ -104,26 +104,41 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 	ext := filepath.Ext(jsonFilePath)
 	fixedPath := strings.TrimSuffix(jsonFilePath, ext) + ".fixed" + ext
 
-	log.Printf("[AI] Invoking AI to repair JSON: %s\n", jsonFilePath)
-
-	repairMsg := "你是一个 JSON 修复工具。请读取指定的 JSON 文件，修复其中的所有语法错误（如未转义的引号、尾部多余逗号、缺失的括号等），然后输出修复后的合法 JSON。" +
-		"只输出纯 JSON，不要添加 Markdown 代码块标记，不要添加任何解释文字，保持原始数据结构和内容不变，只修复语法错误"
-
-	backend := aiBackend
+	// 1. 确定后端：优先使用 ToolBackends 配置，若无效则回退至参数或全局配置
+	backend := models.AppConfig.AI.ToolBackends.RepairJSON
 	if backend == "" {
-		backend = models.AppConfig.AI.Backend
+		backend = "native"
+	}
+	if !IsValidAIBackend(backend) {
+		backend = aiBackend
+		if backend == "" {
+			backend = models.AppConfig.AI.Backend
+		}
 	}
 
 	invoker := GetAIInvoker(backend)
-	if err := invoker.Invoke(AIRequest{
+	log.Printf("[AI] Invoking %s to repair JSON: %s\n", invoker.Name(), jsonFilePath)
+
+	rawContent, err := os.ReadFile(jsonFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read malformed JSON: %w", err)
+	}
+
+	repairMsg := "你是一个 JSON 语法修复工具。请修复以下内容中的语法错误（未转义引号、多余逗号、括号缺失等）。" +
+		"只输出纯 JSON，不要 Markdown 代码块标记，不要任何解释文字，保持原始数据结构不变。"
+
+	req := AIRequest{
 		WorkDir:    workDir,
-		PromptMsg:  repairMsg,
+		PromptMsg:  repairMsg + "\n\n" + string(rawContent),
 		InputFiles: []string{jsonFilePath},
 		OutputPath: fixedPath,
-		TimeoutMin: 30,
-	}); err != nil {
+		TimeoutMin: 2,
+	}
+
+	if err := invoker.Invoke(req); err != nil {
 		return nil, fmt.Errorf("AI repair invocation failed: %w", err)
 	}
+	defer os.Remove(fixedPath)
 
 	fixed, err := os.ReadFile(fixedPath)
 	if err != nil {

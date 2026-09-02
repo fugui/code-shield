@@ -1007,12 +1007,42 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 }
 
 func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPrompt string) error {
+	tierCfg := models.AppConfig.GetTierConfig("tier3_synthesis")
+	backend := tierCfg.Backend
+	if ctx.runParams.AIBackend != nil && *ctx.runParams.AIBackend != "" {
+		backend = *ctx.runParams.AIBackend
+	}
+	if backend == "" {
+		backend = models.AppConfig.AI.Backend
+	}
+
 	promptMsg := "请基于以下 JSON 分析发现，生成综合 Markdown 报告"
 	if suffixPrompt != "" {
 		promptMsg += "\n\n" + suffixPrompt
 	}
-	// Call AI with synthesis prompt, passing the JSON file as input
-	if err := ctx.executeAI([]string{synthesisInputPath}, promptMsg, ctx.taskType.SynthesisPromptFile(), ctx.reportPath); err != nil {
+
+	absPrompt := models.AppConfig.GetAbsPath(ctx.taskType.SynthesisPromptFile())
+	invoker := GetAIInvoker(backend)
+	log.Printf("[TaskRunner] Invoking Synthesis via %s (Model: %s, ReportID: %d, Output: %s)\n",
+		invoker.Name(), tierCfg.Model, ctx.report.ID, ctx.reportPath)
+
+	timeoutMin := ctx.taskType.Timeout
+	if tierCfg.TimeoutSeconds > 0 {
+		timeoutMin = (tierCfg.TimeoutSeconds + 59) / 60
+	}
+
+	req := AIRequest{
+		ParentContext: ctx.ctx,
+		WorkDir:       ctx.codesPath,
+		PromptFile:    absPrompt,
+		PromptMsg:     promptMsg,
+		InputFiles:    []string{synthesisInputPath},
+		OutputPath:    ctx.reportPath,
+		TimeoutMin:    timeoutMin,
+		ModelName:     tierCfg.Model,
+	}
+
+	if err := invoker.Invoke(req); err != nil {
 		return err
 	}
 

@@ -33,6 +33,40 @@ ai:
   # output_format: "text"        # AI 输出的格式：text 或 json（对 claude 来说是 text/stream-json，对 opencode 来说是 default/json；codex 的输出格式由提示词契约控制，CLI 不使用 --json），默认 text
   # mock_on_missing_cli: true    # CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式改为 false 以避免静默"全绿"）
 
+  # ── 原生轻量大模型引擎配置 (Thin LLM Engine) ──
+  # 支持 OpenAI 兼容规范的标准 REST API 直接通信，毫秒级连接复用，专用于确定性单轮推理
+  native:
+    base_url: "http://192.168.56.18:8000/v1/chat/completions" # 原生兼容 REST API 地址
+    api_key: "sk-code-shield-internal"                       # API Key (或通过环境变量 CODE_SHIELD_AI_NATIVE_API_KEY 注入)
+    default_model: "glm-4-flash"                             # 默认模型
+    temperature: 0.1
+    max_tokens: 4096
+    response_format_json: true
+    max_retries: 3
+    retry_backoff_ms: 500
+
+    # 支持多异构算力端点集群 (可选，配置后将自动进行节点负载与故障转移)
+    # endpoints:
+    #   - name: "local-vllm-primary"
+    #     base_url: "http://192.168.56.18:8000/v1/chat/completions"
+    #     api_key: "sk-token-primary"
+    #     model: "glm-4-flash"
+    #     concurrent: 30
+    #     weight: 80
+    #   - name: "local-vllm-backup"
+    #     base_url: "http://192.168.56.19:8000/v1/chat/completions"
+    #     api_key: "sk-token-backup"
+    #     model: "qwen-2.5-72b-instruct"
+    #     concurrent: 15
+    #     weight: 20
+
+  # ── 场景级内嵌工具专有后端路由 (Tool Backends) ──
+  # 为轻量级确定性工具指定独立的 AI 执行后端 (默认 native)
+  tool_backends:
+    repair_json: "native"           # JSON 语法修复工具
+    finding_match: "native"         # 缺陷指纹跨周期语义比对
+    feedback_extraction: "native"   # 误报特征知识提炼
+
   # ── 工作时间自动限流配置 (可选) ──
   # 开启后，系统将在指定的工作日与时间段内自动降低并发（如 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速。
   # work_hours_throttle:
