@@ -2,7 +2,11 @@ package services
 
 import (
 	"code-shield/models"
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParseJSONFromAIOutput(t *testing.T) {
@@ -82,5 +86,47 @@ func TestDebateEngine_VerdictConversion(t *testing.T) {
 	}
 	if confirmed[0].Title != "栈缓冲区写越界" {
 		t.Errorf("Expected confirmed title, got %s", confirmed[0].Title)
+	}
+}
+
+func TestCallAITier_ChunkDirPersistence(t *testing.T) {
+	tempDir := t.TempDir()
+	chunkDir := filepath.Join(tempDir, "debate-chunks-1-test")
+	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+		t.Fatalf("failed to create chunkDir: %v", err)
+	}
+
+	mockBackend := "mock-debate-persist"
+	mockInv := &MockInvoker{}
+	RegisterAIInvoker(mockBackend, mockInv)
+
+	targetOutPath := filepath.Join(chunkDir, "chunk-1-src_main-1-hunter.json")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	outStr, tokens, err := callAITier(ctx, mockBackend, "", "test hunter prompt", tempDir, targetOutPath, 1)
+	if err != nil {
+		t.Fatalf("callAITier failed: %v", err)
+	}
+
+	if tokens <= 0 {
+		t.Errorf("expected tokens > 0, got %d", tokens)
+	}
+	if outStr == "" {
+		t.Errorf("expected non-empty outStr")
+	}
+
+	// 关键断言：文件必须持久化存在于 chunkDir 中，不能被作为 /tmp 临时文件删除
+	if _, err := os.Stat(targetOutPath); os.IsNotExist(err) {
+		t.Fatalf("expected output file to persist at %s, but file not found", targetOutPath)
+	}
+
+	content, err := os.ReadFile(targetOutPath)
+	if err != nil {
+		t.Fatalf("failed to read persisted chunk file: %v", err)
+	}
+	if len(content) == 0 {
+		t.Fatalf("persisted chunk file is empty")
 	}
 }

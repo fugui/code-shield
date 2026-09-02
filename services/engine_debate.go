@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -235,12 +236,30 @@ bundleLoop:
 	return ctx.executeSynthesis(allFindings)
 }
 
+// sanitizeDebateChunkName 将分片名转换为安全的文件名
+func sanitizeDebateChunkName(name string) string {
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_\-]+`)
+	safe := reg.ReplaceAllString(name, "_")
+	if len(safe) > 40 {
+		safe = safe[:40]
+	}
+	return safe
+}
+
 // ProcessBundle 对单个分片执行完整的智能体协作流
 func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, chunkIdx int, chunkDir string) ([]models.AnalysisFinding, []models.TaskDebateLog, error) {
 	startTime := time.Now()
+	safeName := sanitizeDebateChunkName(bundle.Name)
+
+	var hunterOutPath, challOutPath, judgeOutPath string
+	if chunkDir != "" {
+		hunterOutPath = filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s-1-hunter.json", chunkIdx, safeName))
+		challOutPath = filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s-2-challenger.json", chunkIdx, safeName))
+		judgeOutPath = filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s-3-judge.json", chunkIdx, safeName))
+	}
 
 	// ── 步骤 1: 调度 Tier 1 快模型执行 Hunter 初筛 ──
-	hunterOut, hunterTokens, err := e.runHunterStage(ctx, bundle)
+	hunterOut, hunterTokens, err := e.runHunterStage(ctx, bundle, hunterOutPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("hunter stage failed: %w", err)
 	}
@@ -291,7 +310,7 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 	}
 
 	// ── 步骤 2: 调度 Tier 2 强推理模型执行 Challenger 对抗辩护 ──
-	challengerOut, challTokens, err := e.runChallengerStage(ctx, bundle, hunterOut)
+	challengerOut, challTokens, err := e.runChallengerStage(ctx, bundle, hunterOut, challOutPath)
 	if err != nil {
 		log.Printf("[DebateEngine] Warning: Challenger failed (%v), proceeding with degraded Challenger note", err)
 		challengerOut = &ChallengerOutput{
@@ -300,7 +319,7 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 	}
 
 	// ── 步骤 3: 调度 Tier 2 强推理模型执行 Judge 终审仲裁 ──
-	judgeOut, judgeTokens, err := e.runJudgeStage(ctx, bundle, hunterOut, challengerOut)
+	judgeOut, judgeTokens, err := e.runJudgeStage(ctx, bundle, hunterOut, challengerOut, judgeOutPath)
 	if err != nil {
 		log.Printf("[DebateEngine] Warning: Judge failed (%v), fallback to Hunter claims", err)
 		judgeOut = fallbackJudgeFromHunter(hunterOut)
@@ -390,7 +409,7 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 }
 
 // runHunterStage 运行猎手初筛阶段 (Tier 1 快模型)
-func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle) (*HunterOutput, int64, error) {
+func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle, outPath string) (*HunterOutput, int64, error) {
 	router := GetTierRouter()
 	acq, err := router.AcquireTier(ctx.ctx, "tier1_fast", ctx.taskType.TierFastBackend)
 	if err != nil {
@@ -400,7 +419,7 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle) (
 
 	prompt := buildHunterPrompt(ctx, bundle)
 	tierCfg := models.AppConfig.GetTierConfig("tier1_fast")
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, tierCfg.TimeoutSeconds)
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -415,7 +434,7 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle) (
 }
 
 // runChallengerStage 运行辩护人对抗阶段 (Tier 2 强推理模型)
-func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput) (*ChallengerOutput, int64, error) {
+func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, outPath string) (*ChallengerOutput, int64, error) {
 	router := GetTierRouter()
 	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", ctx.taskType.TierReasoningBackend)
 	if err != nil {
@@ -425,7 +444,7 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 
 	prompt := buildChallengerPrompt(ctx, bundle, hunterOut)
 	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, tierCfg.TimeoutSeconds)
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -438,7 +457,7 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 }
 
 // runJudgeStage 运行终审法官阶段 (Tier 2 强推理模型)
-func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, challengerOut *ChallengerOutput) (*JudgeOutput, int64, error) {
+func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, challengerOut *ChallengerOutput, outPath string) (*JudgeOutput, int64, error) {
 	router := GetTierRouter()
 	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", ctx.taskType.TierReasoningBackend)
 	if err != nil {
@@ -448,7 +467,7 @@ func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hu
 
 	prompt := buildJudgePrompt(ctx, bundle, hunterOut, challengerOut)
 	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, tierCfg.TimeoutSeconds)
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -596,7 +615,7 @@ func parseJSONFromAIOutput(output string, target interface{}) error {
 }
 
 // callAITier 底层调用指定后端和模型的 AI Invoker 工具
-func callAITier(ctx context.Context, backend string, modelName string, prompt string, workDir string, timeoutSeconds int) (string, int64, error) {
+func callAITier(ctx context.Context, backend string, modelName string, prompt string, workDir string, outPath string, timeoutSeconds int) (string, int64, error) {
 	if backend == "" {
 		backend = models.AppConfig.AI.Backend
 	}
@@ -606,14 +625,21 @@ func callAITier(ctx context.Context, backend string, modelName string, prompt st
 		return "", 0, fmt.Errorf("unsupported AI backend: %s", backend)
 	}
 
-	// 创建临时输出文件
-	tmpFile, err := os.CreateTemp("", "debate-stage-output-*.json")
-	if err != nil {
-		return "", 0, err
+	outputPath := outPath
+	shouldCleanup := false
+	if outputPath == "" {
+		// 未指定目标目录时回退到临时文件
+		tmpFile, err := os.CreateTemp("", "debate-stage-output-*.json")
+		if err != nil {
+			return "", 0, err
+		}
+		outputPath = tmpFile.Name()
+		tmpFile.Close()
+		shouldCleanup = true
 	}
-	outputPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(outputPath)
+	if shouldCleanup {
+		defer os.Remove(outputPath)
+	}
 
 	timeoutMin := 30
 	if timeoutSeconds > 0 {
