@@ -19,7 +19,8 @@ docs/
     ├── 04-CodeShield-架构演进与落地实施路线图.md        # 三阶段落地规划、实施甘特图与基准测试 KPI 体系
     ├── 05-CodeShield-智能体协作与异构调度深度设计.md    # [阶段二专项] 猎手/辩护/法官三方协议、完整Prompt与Go实现
     ├── 06-CodeShield-多任务企业治理与历史记忆闭环深度设计.md # [阶段三专项] 全任务指纹算法、增量Diff状态机与10大规则库
-    └── 07-CodeShield-数据模型与系统配置变更设计.md      # [工程配套专项] 数据库 DDL、GORM 模型扩展与 config.yaml 规范
+    ├── 07-CodeShield-数据模型与系统配置变更设计.md      # [工程配套专项] 数据库 DDL、GORM 模型扩展与 config.yaml 规范
+    └── 08-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md # [执行引擎专项] 原生轻量 LLM、5大单轮场景与动静分离混合调用
 ```
 
 ---
@@ -29,4 +30,4 @@ docs/
 1. 📖 **[Code-Shield 智能扫描引擎与任务配置使用手册](CodeShield-智能扫描引擎与任务配置使用手册.md)**
    涵盖 5 大执行模式（`debate_full`、`debate_selective`、`chunked_fast`、`chunked`、`single`）选型决策、`engine_config` 增量配置模版库、Tier 模型分层调度与研发反馈沉淀指南。
 2. 🛡️ **[下一代 Agent 扫描架构设计总览 (agentic-scanner-architecture/README.md)](agentic-scanner-architecture/README.md)**
-   收录完整的系统架构方案演进、学术级设计规范（01~07）与 AI 结对工程复盘。
+   收录完整的系统架构方案演进、学术级设计规范（01~08）与 AI 结对工程复盘。
