@@ -465,8 +465,8 @@ ai:
 
   # ── 原生轻量 LLM API 配置 (Thin LLM Engine) ──
   native:
-    temperature: 0.1
-    max_tokens: 4096
+    # temperature: 0.1              # 缺省继承端点/模型默认设定；确定性工具如 RepairJSON 内部自动采用 0.0
+    # max_tokens: 0                 # 默认 0 不做硬性限制（交由服务端模型自适应最大输出容量，避免长报告截断）
     response_format_json: true
     max_retries: 3
     retry_backoff_ms: 500

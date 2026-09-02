@@ -20,6 +20,7 @@ type AIRequest struct {
 	OutputPath    string          // AI 输出文档的目标路径
 	TimeoutMin    int             // 执行超时（分钟），0 表示默认 60 分钟
 	ModelName     string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
+	Temperature   *float64        // 新增：可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
 	Env           []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
 }
 
@@ -127,12 +128,14 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 	repairMsg := "你是一个 JSON 语法修复工具。请修复以下内容中的语法错误（未转义引号、多余逗号、括号缺失等）。" +
 		"只输出纯 JSON，不要 Markdown 代码块标记，不要任何解释文字，保持原始数据结构不变。"
 
+	zeroTemp := 0.0
 	req := AIRequest{
-		WorkDir:    workDir,
-		PromptMsg:  repairMsg + "\n\n" + string(rawContent),
-		InputFiles: []string{jsonFilePath},
-		OutputPath: fixedPath,
-		TimeoutMin: 2,
+		WorkDir:     workDir,
+		PromptMsg:   repairMsg + "\n\n" + string(rawContent),
+		InputFiles:  []string{jsonFilePath},
+		OutputPath:  fixedPath,
+		TimeoutMin:  2,
+		Temperature: &zeroTemp,
 	}
 
 	if err := invoker.Invoke(req); err != nil {
