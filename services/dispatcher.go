@@ -122,6 +122,43 @@ func InitModelDispatcher() {
 		})
 	}
 
+	// 检查是否已有任何 resource 配置了 native
+	hasNativeResource := false
+	for _, r := range d.resources {
+		if r.Native != "" {
+			hasNativeResource = true
+			break
+		}
+	}
+
+	// 如果未在 ai.models 中显式指定 native，但全局启用了 ai.native 配置，
+	// 自动为 Native LLM 引擎注册算力资源，纳管其并发与限流调度
+	nativeCfg := models.AppConfig.AI.Native
+	if !hasNativeResource && (nativeCfg.BaseURL != "" || nativeCfg.Endpoint != "" || len(nativeCfg.Endpoints) > 0) {
+		nativeConcurrent := 0
+		if len(nativeCfg.Endpoints) > 0 {
+			for _, ep := range nativeCfg.Endpoints {
+				if ep.Concurrent > 0 {
+					nativeConcurrent += ep.Concurrent
+				} else {
+					nativeConcurrent += 20
+				}
+			}
+		}
+		if nativeConcurrent <= 0 {
+			nativeConcurrent = 20
+		}
+		defaultModel := nativeCfg.DefaultModel
+		if defaultModel == "" {
+			defaultModel = "glm-4-flash"
+		}
+		d.resources = append(d.resources, &ModelResource{
+			Index:      len(d.resources),
+			Native:     defaultModel,
+			Concurrent: nativeConcurrent,
+		})
+	}
+
 	if len(d.resources) > 0 {
 		d.enabled = true
 		log.Printf("[Dispatcher] Initialized with %d custom LLM servers\n", len(d.resources))
