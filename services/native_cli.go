@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,6 +46,11 @@ func NewNativeInvoker() *NativeInvoker {
 	return &NativeInvoker{
 		client: &http.Client{
 			Transport: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout:   5 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSHandshakeTimeout: 5 * time.Second,
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 20,
 				IdleConnTimeout:     90 * time.Second,
@@ -311,12 +317,16 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 			break
 		}
 
-		// 429 限流或 5xx 报错记录并尝试 Failover
+		// 记录错误响应
 		lastErr = fmt.Errorf("endpoint %q returned HTTP %d: %s", ep.Name, resp.StatusCode, string(respBody))
-		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
-			// 4xx 客户端语法错误通常重试无效，记录并尝试降级
-			break
+
+		// 401/403/404 属于特定端点鉴权或路径配置故障，429 或 5xx 属于服务端限流/宕机，均继续 Failover 至下一个候选端点
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			continue
 		}
+
+		// 其他 4xx（如 400 Bad Request Payload 无效）通常为全局请求错误，退出循环以尝试本地 CLI 降级
+		break
 	}
 
 	if lastErr != nil {

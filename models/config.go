@@ -64,13 +64,13 @@ type GovernanceSystemConfig struct {
 
 // NativeEndpointConfig 单个 Native LLM 算力节点配置 (独立 BaseURL, APIKey 与 Model)
 type NativeEndpointConfig struct {
-	Name        string  `yaml:"name" json:"name"`                 // 节点名称，如 "local-vllm-primary"
-	BaseURL     string  `yaml:"base_url" json:"base_url"`         // API 地址，如 "http://192.168.56.18:8000/v1/chat/completions"
-	APIKey      string  `yaml:"api_key" json:"api_key"`           // 该端点专有 API Key (可留空或从环境变量读取)
-	Model       string  `yaml:"model" json:"model"`               // 该端点部署/绑定的模型名称，如 "glm-4-flash"
-	Concurrent  int     `yaml:"concurrent" json:"concurrent"`     // 该节点最大并发槽位数 (默认 20)
-	Weight      int     `yaml:"weight" json:"weight"`             // 负载权重 (1~100, 默认 10)
-	Temperature float64 `yaml:"temperature" json:"temperature"`   // 节点级温度 (可选，缺省继承全局)
+	Name        string  `yaml:"name" json:"name"`               // 节点名称，如 "local-vllm-primary"
+	BaseURL     string  `yaml:"base_url" json:"base_url"`       // API 地址，如 "http://192.168.56.18:8000/v1/chat/completions"
+	APIKey      string  `yaml:"api_key" json:"api_key"`         // 该端点专有 API Key (可留空或从环境变量读取)
+	Model       string  `yaml:"model" json:"model"`             // 该端点部署/绑定的模型名称，如 "glm-4-flash"
+	Concurrent  int     `yaml:"concurrent" json:"concurrent"`   // 该节点最大并发槽位数 (默认 20)
+	Weight      int     `yaml:"weight" json:"weight"`           // 负载权重 (1~100, 默认 10)
+	Temperature float64 `yaml:"temperature" json:"temperature"` // 节点级温度 (可选，缺省继承全局)
 }
 
 // NativeLLMConfig Native 引擎全局配置与多端点集群
