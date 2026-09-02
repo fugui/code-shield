@@ -1,9 +1,9 @@
-# 08-CodeShield-原生LLM轻量执行引擎与混合调用架构设计
+# 01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计
 
 ## 📋 方案元数据与评审导读
 
-*   **文档编号**：`CS-ARCH-08`
-*   **文档类型**：系统级架构演进与执行引擎专项设计
+*   **文档编号**：`CS-NATIVE-01`
+*   **文档类型**：执行引擎与驱动层架构专项设计
 *   **当前状态**：`PROPOSED`（待架构组评审）
 *   **涉及模块**：`shield-server/services`（AI 调度与执行层）、`shield-server/models`（系统配置与元数据）、`engine_debate`、`task_runner`
 *   **核心目标**：针对当前系统依赖重型 Agent CLI（`claude` / `opencode` / `codex` / `agy`）导致的进程冷启动开销高、并发吞吐受限、环境依赖脆弱及输出不确定等痛点，设计并引入基于原生 REST/HTTP 协议的 **LLM Native Agent（原生轻量执行引擎，Direct/Thin LLM Invoker）**，构建 **“重型自主探索 Agent + 原生轻量确定性 LLM” 的动静分离混合调用架构（Hybrid AI Invocation Architecture）**。
