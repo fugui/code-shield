@@ -90,24 +90,24 @@ ai:
   #     agy: "gemini-3.7-pro"
   #     concurrent: 3
   #
-  # ── 异构模型多阶梯资源池配置 (可选 - 业务需求端) ──
-  # 为多智能体流水线的不同业务环节配置专门的快/强模型与独立超时时限（详见使用手册 4.6 章节）。
+  # ── 异构模型多阶梯资源池配置 (可选 - 动静分离混合调用流水线) ──
+  # 为多智能体流水线的不同业务环节配置专门的快/强模型与独立执行引擎（详见架构设计文档 01）：
   # tiers:
-  #   tier1_fast:                    # Tier 1 快排初筛 (高并发、低成本)
-  #     backend: "agy"               # 可选 agy / opencode / claude / codex
+  #   tier1_fast:                    # Tier 1 Hunter 缺陷初筛：Prompt 仅传文件名，需自主读取源码
+  #     backend: "agy"               # → 必须使用 Thick Agent (agy / claude / opencode / codex)
   #     model: "gemini-3.7-flash"
   #     concurrent: 5
-  #     timeout_seconds: 1200        # 初筛阶段单片超时时限 (秒，如 1200 代表 20 分钟)
-  #   tier2_reasoning:               # Tier 2 强推理对抗 (Challenger 辩护与 Judge 终审)
-  #     backend: "agy"
+  #     timeout_seconds: 600         # 初筛阶段单片超时时限 (秒)
+  #   tier2_reasoning:               # Tier 2 辩护与仲裁 (Challenger & Judge)：Prompt 已内联代码片段
+  #     backend: "native"            # → 可选 native (Thin LLM 高速纯推理) 或 agy (Thick Agent)
   #     model: "gemini-3.7-pro"
-  #     concurrent: 3
-  #     timeout_seconds: 1800        # 辩论与裁决阶段单片超时时限 (秒，如 1800 代表 30 分钟)
-  #   tier3_synthesis:               # Tier 3 报告排版汇总
-  #     backend: "agy"
-  #     model: "gemini-3.7-flash"
-  #     concurrent: 2
-  #     timeout_seconds: 900         # 报告汇总阶段超时时限 (秒，如 900 代表 15 分钟)
+  #     concurrent: 10
+  #     timeout_seconds: 600         # 辩论与裁决阶段单片超时时限 (秒)
+  #   tier3_synthesis:               # Tier 3 全仓报告排版汇总：纯文本与 JSON 聚合
+  #     backend: "native"            # → 推荐使用 native (Thin LLM 零进程开销、直传直出)
+  #     model: "glm-4-flash"
+  #     concurrent: 5
+  #     timeout_seconds: 300         # 报告汇总阶段超时时限 (秒)
   #
   # ── 多智能体对抗辩论与流水线流控配置 (可选) ──
   # debate:
