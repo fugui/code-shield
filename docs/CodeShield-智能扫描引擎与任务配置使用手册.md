@@ -15,12 +15,13 @@
 - [四、 服务端核心架构配置指南 (config.yaml)](#四-服务端核心架构配置指南-configyaml)
   - [4.1 任务池大小与全局并发排队 (`server`)](#41-任务池大小与全局并发排队-server)
   - [4.2 AI 基础引擎与调试开关 (`ai`)](#42-ai-基础引擎与调试开关-ai)
-  - [4.3 工作时间智能限流与自动避峰 (`ai.work_hours_throttle`)](#43-工作时间智能限流与自动避峰-aiwork_hours_throttle)
-  - [4.4 多 LLM 物理节点负载均衡池 (`ai.models`)](#44-多-llm-物理节点负载均衡池-aimodels)
+  - [4.3 原生轻量大模型引擎配置 (`ai.native`)](#43-原生轻量大模型引擎配置-ainative)
+  - [4.4 场景级内嵌工具专有后端路由 (`ai.tool_backends`)](#44-场景级内嵌工具专有后端路由-aitool_backends)
   - [4.5 异构模型多阶梯分层调度 (`ai.tiers`)](#45-异构模型多阶梯分层调度-aitiers)
-  - [4.6 核心概念辨析：`ai.models` 与 `ai.tiers` 的协同原理与选型指南](#46-核心概念辨析aimodels-与-aitiers-的协同原理与选型指南)
+  - [4.6 核心概念辨析：`ai.models`、`ai.tiers` 与 `ai.native` 的协同原理与选型指南](#46-核心概念辨析aimodelsaitiers-与-ainative-的协同原理与选型指南)
   - [4.7 智能体辩论流水线流控与背压 (`ai.debate`)](#47-智能体辩论流水线流控与背压-aidebate)
-  - [4.8 企业治理与历史记忆闭环配置 (`governance`)](#48-企业治理与历史记忆闭环配置-governance)
+  - [4.8 工作时间智能限流与自动避峰 (`ai.work_hours_throttle`)](#48-工作时间智能限流与自动避峰-aiwork_hours_throttle)
+  - [4.9 企业治理与历史记忆闭环配置 (`governance`)](#49-企业治理与历史记忆闭环配置-governance)
 - [五、 缺陷生命周期与人机反馈记忆闭环](#五-缺陷生命周期与人机反馈记忆闭环)
 - [六、 常见问题与排查指引 (FAQ)](#六-常见问题与排查指引-faq)
 
@@ -28,26 +29,30 @@
 
 ## 一、 核心架构与核心理念
 
-Code-Shield 摒弃了传统 SAST 规则匹配的高误报，也规避了简单 Prompt 调用在大仓场景下的“上下文丢失”、“幻觉”与“算力浪费”，构建了四大核心技术支柱：
+Code-Shield 摒弃了传统 SAST 规则匹配的高误报，也规避了简单 Prompt 调用在大仓场景下的“上下文丢失”、“幻觉”与“算力浪费”，构建了五大核心技术支柱：
 
 ```mermaid
 flowchart LR
     A["代码仓 (Git/Workdir)"] --> B["1. 语义感知分片器\n(同名头文件投影 + 宏注入 + Git Diff)"]
-    B --> C["2. 多智能体对抗辩论\n(Hunter ➜ Challenger ➜ Judge)"]
-    C --> D["3. 确定性严重度校准\n(CWE 决策树 + 宏隔离识别)"]
-    D --> E["4. 通用缺陷指纹与记忆\n(SSOT 增量比对 + 范围守卫 + 规则沉淀)"]
-    E --> F["结构化高质感报告与治理看板"]
+    B --> C["2. 动静分离混合执行引擎\n(Thick Agent 探索 + Thin LLM 推理)"]
+    C --> D["3. 多智能体对抗辩论\n(Hunter ➜ Challenger ➜ Judge)"]
+    D --> E["4. 确定性严重度校准\n(CWE 决策树 + 宏隔离识别)"]
+    E --> F["5. 通用缺陷指纹与记忆\n(SSOT 增量比对 + 范围守卫 + 规则沉淀)"]
+    F --> G["结构化高质感报告与治理看板"]
 ```
 
 1. **语义感知分片 (Semantic Chunking)**：
    自动将 `src/` 实现文件与其依赖的 `include/` 同名头文件配对归组，并自动提取公共头文件结构体声明摘要（Header Outline）与全局构建宏（`#define`），随分片一同送给大模型，彻底解决跨文件上下文缺失问题。
-2. **多智能体三方对抗辩论 (Agentic Debate)**：
+2. **动静分离混合调用引擎 (Hybrid Execution Engine)**：
+   - **Thick Agent（重型/探索型，如 `agy` / `claude`）**：专注于 Hunter 角色，在代码仓中自主递归穿透与按需读取磁盘源码文件；
+   - **Thin LLM（轻量/推理型，`NativeInvoker`）**：基于 HTTP/2 长连接直接调用 LLM API，专用于 Challenger 抗辩、Judge 终审、Tier 3 报告汇总、JSON 语法修复及指纹匹配，彻底消除本地 CLI 子进程开销与 SQLite 状态锁冲突。
+3. **多智能体三方对抗辩论 (Agentic Debate)**：
    - **Hunter (初筛猎手 - Tier 1 快模型)**：高召回快速发掘可疑漏洞与攻击假设；
    - **Challenger (对抗辩护人 - Tier 2 推理模型)**：从断言、条件宏、语言规范四维发起严厉反向质询；
    - **Judge (终审法官 - Tier 2 推理模型)**：对照源码做出最终判词，判定 `CONFIRMED`、`REJECTED` 或 `CONDITIONAL`，彻底剔除误报。
-3. **确定性严重度校准决策树 (Deterministic Calibrator)**：
+4. **确定性严重度校准决策树 (Deterministic Calibrator)**：
    基于 CWE 知识库、内存越界/UAF 特征与外部宏隔离判定，纠正大模型的自由裁量与定级倒挂。
-4. **通用缺陷指纹与历史记忆闭环 (SSOT Fingerprint & Memory)**：
+5. **通用缺陷指纹与历史记忆闭环 (SSOT Fingerprint & Memory)**：
    基于公式 $\text{SHA256}(\text{RepoID} + \text{TaskTypeID} + \text{Path} + \text{Scope} + \text{TriggerLine})$ 计算抗行号抖动的唯一指纹，实现跨扫描的增量生命周期追踪（`NEW` / `EXISTED` / `RESOLVED` / `REOPENED`），并支持研发人员一键沉淀负样本规则。
 
 ---
@@ -210,120 +215,141 @@ ai:
 
 ---
 
-### 4.3 工作时间智能限流与自动避峰 (`ai.work_hours_throttle`)
+### 4.3 原生轻量大模型引擎配置 (`ai.native`)
 
-在企业共享 GPU 集群或商业 API 场景下，可配置在白天工作时间内自动压低扫描并发（例如 10% 算力或完全暂停），夜间非工作时间自动恢复 100% 满速排队消化：
+**定位**：**底层轻量执行引擎 (Thin LLM Engine / `NativeInvoker`)**。
+针对 JSON 语法修复、跨周期缺陷比对、终审裁决、报告排版等**输入已内联的确定性单轮推理任务**，系统提供基于 HTTP/2 REST 协议直连大模型 API 的原生调用能力，彻底摆脱本地 CLI 子进程（Fork/Exec）和 SQLite 状态锁的性能瓶颈。
 
 ```yaml
 ai:
-  work_hours_throttle:
-    enabled: true                 # 是否启用工作时间自动限流
-    workdays: [1, 2, 3, 4, 5]     # 生效星期: 1=周一 ~ 5=周五
-    start_time: "09:00"           # 开始限流时刻 (HH:MM)
-    end_time: "20:00"             # 结束限流时刻 (HH:MM)
-    scale: 0.10                   # 并发比例 (0.10 代表压低至 10%，0.0 代表白天完全暂停)
+  native:
+    base_url: "http://192.168.56.18:8000/v1/chat/completions" # 原生兼容 REST API 端点 (OpenAI / vLLM / LiteLLM 规范)
+    api_key: "sk-code-shield-internal"                        # API Key 鉴权凭证 (支持通过环境变量 CODE_SHIELD_AI_NATIVE_API_KEY 注入)
+    default_model: "glm-4-flash"                              # 默认轻量模型名称
+    # max_tokens: 0                                           # 默认 0 不限制（由服务端模型自适应最大输出容量，避免长报告截断）
+    # temperature: 0.1                                        # 节点级温度（若未配置则继承模型默认值；确定性工具内部自动设为 0.0）
+    response_format_json: true                                # 是否启用原生 JSON Mode 强约束 (response_format: json_object)
+    max_retries: 3                                            # 网络超时 / 429 限流 / 5xx 错误时的最大重试次数
+    retry_backoff_ms: 500                                     # 指数退避重试基础等待时间 (毫秒)，内含随机 Jitter 错峰削峰
+
+    # ── 多异构算力端点集群 (可选：自动执行节点负载打散与故障转移 Failover) ──
+    # endpoints:
+    #   - name: "local-vllm-primary"                           # 内网主 GPU 节点
+    #     base_url: "http://192.168.56.18:8000/v1/chat/completions"
+    #     api_key: "sk-token-primary"
+    #     model: "glm-4-flash"
+    #     concurrent: 30
+    #     weight: 80
+    #   - name: "local-vllm-backup"                            # 内网备用 GPU 节点 (异构大模型)
+    #     base_url: "http://192.168.56.19:8000/v1/chat/completions"
+    #     api_key: "sk-token-backup"
+    #     model: "qwen-2.5-72b-instruct"
+    #     concurrent: 15
+    #     weight: 20
+    #   - name: "cloud-fallback-gateway"                       # 外部云端兜底冷备节点
+    #     base_url: "https://api.deepseek.com/v1/chat/completions"
+    #     api_key: "sk-deepseek-prod-token"
+    #     model: "deepseek-chat"
+    #     concurrent: 5
+    #     weight: 0
 ```
+
+#### 核心高可用与容灾机制：
+1. **多端点故障转移 (Multi-Endpoint Failover)**：
+   若主节点发生网络超时、401/403 鉴权异常、429 限流或 5xx 服务端故障，重试机制会自动切换到备用端点，并使用备用端点的专属 `api_key` 与 `model` 发起请求。
+2. **断路器与平滑降级至本地 CLI (Circuit Breaker & Fallback)**：
+   若 Native HTTP 端点在滑动窗口内连续失败 $\ge 3$ 次，断路器自动触发跳闸（`OPEN` 状态），后续请求平滑降级至本地 `ai.backend`（如 `agy` CLI）兜底执行，**确保代码扫描流水线 100% 成功交付**；后台探活恢复后自动回切至高速 Native 模式。
 
 ---
 
-### 4.4 多 LLM 物理节点负载均衡池 (`ai.models`)
+### 4.4 场景级内嵌工具专有后端路由 (`ai.tool_backends`)
 
-**定位**：**底层算力供给层**。管理系统底层接入了“哪些物理 GPU 服务器或第三方 API 网关”，以及“各自允许承担的最大并发数”。
-
-支持将请求按**负载最低优先策略（Least-Loaded Strategy）**动态打散分发给多台物理 LLM 节点，根据后端类型自动映射模型名称并精确控制每台服务器的并发负载：
+**定位**：**内嵌轻量工具路由层**。针对扫描流水线中频繁调用的确定性微任务，独立指定 AI 执行引擎，避免无谓拉起重型 CLI：
 
 ```yaml
 ai:
-  models:
-    - opencode: "models/glm5.1"
-      claude: "glm5.1"
-      codex: "gpt-5.6-sol"
-      agy: "gemini-3.7-flash"
-      concurrent: 8              # 节点 1：分配 8 个并发槽位
-    - codex: "o3-mini"
-      agy: "gemini-3.7-pro"
-      concurrent: 4              # 节点 2：分配 4 个并发槽位
+  tool_backends:
+    repair_json: "native"               # JSON 语法修复工具 -> 默认 native (耗时由 8s~25s 降至 <800ms)
+    finding_match: "native"             # 缺陷指纹跨周期语义二分类比对 -> 默认 native (<500ms 纯文本比对)
+    feedback_extraction: "native"       # 研发标记误报时负样本规则提炼 -> 默认 native (UI 交互即时响应)
 ```
 
-- **并发拓扑拓展**：当配置了 `ai.models` 时，全局实际 AI 并发数会被所有节点的 `concurrent` 总和自动拓展（例如上述配置为 $8 + 4 = 12$ 并发），取代基础的 `server.worker_count`。
-- **自动过载保护**：当某台节点并发跑满时，调度器会自动阻塞并等待槽位释放，或将任务智能路由至其他空闲节点，防止打爆单机显存或触发网关限流。
+- **`repair_json`**：当 AI 返回的 JSON 包含轻微语法瑕疵（如尾部多余逗号）时，直接内存直传原生大模型修复，消除临时文件与子进程；
+- **`finding_match`**：代码行号发生位移时，判断新旧缺陷是否属于同一问题，纯文本秒级判定；
+- **`feedback_extraction`**：研发在前端点击“标记误报”时，后台即时提炼特征正则并沉淀为规则。
 
 ---
 
 ### 4.5 异构模型多阶梯分层调度 (`ai.tiers`)
 
-**定位**：**业务需求路由层**。管理代码检视流水线在“初筛、推理、排版等不同业务环节”，分别采用什么能力等级的模型、并发槽位与超时时限。
-
-Code-Shield 核心的**三级异构模型调度拓扑**。通过将任务拆分为初筛、推理与汇总三大阶梯，实现“轻重分离”，在大幅提升扫描吞吐的同时大幅压降深度推理成本：
+**定位**：**业务需求编排层 (动静分离混合调用体系)**。
+管理代码检视流水线在“初筛、推理、排版等不同业务环节”，分别采用什么能力等级的模型、并发槽位与超时时限：
 
 ```yaml
 ai:
   tiers:
-    tier1_fast:                    # Tier 1：高并发初筛猎手 (Hunter)
-      backend: "agy"               # 推荐轻量快模型，高并发快速发散筛选疑点
-      model: "gemini-3.7-flash"
-      concurrent: 5                # 并发槽位数
-      timeout_seconds: 1200        # 快速初筛阶段单片超时时限 (秒，如 1200 代表 20 分钟)
-    tier2_reasoning:               # Tier 2：深度推理对抗 (Challenger 抗辩与 Judge 终审)
-      backend: "agy"               # 推荐最强深度推理模型，用于事实链推演与反向仲裁
-      model: "gemini-3.7-pro"
-      concurrent: 3                # 精细化推演槽位
-      timeout_seconds: 1800        # 辩论与裁决阶段单片超时时限 (秒，如 1800 代表 30 分钟)
-    tier3_synthesis:               # Tier 3：综合报告排版与汇总 (Synthesis)
-      backend: "agy"               # 具备超大上下文与高格式化排版能力
-      model: "gemini-3.7-flash"
-      concurrent: 2                # 全仓总结并发槽位
-      timeout_seconds: 900         # 综合阶段超时时限 (秒，如 900 代表 15 分钟)
+    tier1_fast:                         # Tier 1 Hunter 缺陷初筛：Prompt 仅传文件名，需自主读取源码
+      backend: "agy"                    # → 必须使用 Thick Agent (agy / claude / opencode / codex)
+      model: "gemini-3.7-flash"         # 轻量快模型，高并发快速发散筛选疑点
+      concurrent: 5                     # 初筛并发槽位数
+      timeout_seconds: 600              # 快速初筛阶段单片超时时限 (秒)
+
+    tier2_reasoning:                    # Tier 2 辩护与仲裁 (Challenger & Judge)：Prompt 已内联代码片段
+      backend: "native"                 # → 推荐使用 native (Thin LLM 高速纯推理) 或 agy (Thick Agent)
+      model: "gemini-3.7-pro"           # 深度推理大模型，事实链推演与反向仲裁
+      concurrent: 10                    # 辩论与仲裁并发槽位数
+      timeout_seconds: 600              # 辩论与裁决阶段单片超时时限 (秒)
+
+    tier3_synthesis:                    # Tier 3 全仓报告排版与态势汇总：纯文本与 JSON 聚合
+      backend: "native"                 # → 推荐使用 native (Thin LLM 零进程开销、直传直出)
+      model: "glm-4-flash"              # 具备良好结构化排版与归纳能力
+      concurrent: 5                     # 综合汇总并发槽位数
+      timeout_seconds: 300              # 综合阶段超时时限 (秒)
 ```
+
+- **动静分离原则**：
+  - **Tier 1 (Hunter)**：由于初筛阶段 Prompt 仅传入文件清单，AI 必须拥有自主探索本地工作区、遍历调用链并读取文件的能力，**必须保持 Thick Agent 模式**；
+  - **Tier 2 (Challenger & Judge)**：候选缺陷代码片段已在案卷中全量内联，无需访问磁盘，**优先采用 Thin Native 模式**；
+  - **Tier 3 (Synthesis)**：纯文本与 JSON 报告聚合排版，**优先采用 Thin Native 模式**。
 
 ---
 
-### 4.6 核心概念辨析：`ai.models` 与 `ai.tiers` 的协同原理与选型指南
+### 4.6 核心概念辨析：`ai.models`、`ai.tiers` 与 `ai.native` 的协同原理与选型指南
 
-初次配置 Code-Shield 时，许多管理员容易混淆 `ai.models` 与 `ai.tiers`。它们本质上是 **“算力供给端”** 与 **“业务需求端”** 的纵横协同关系：
+初次配置 Code-Shield 时，许多管理员容易混淆这三个配置项。它们本质上是 **“算力供给端”**、**“业务需求端”** 与 **“通信执行驱动”** 的立体协同体系：
 
 ```
                ┌────────────────────────────────────────────────────────┐
                │              业务流水线阶段 (ai.tiers - 需求端)          │
-               │  • Tier 1: 快排初筛 (Hunter)   ➔ 高并发、低成本、响应快   │
-               │  • Tier 2: 对抗裁决 (Judge)    ➔ 强推理、高深度、长超时   │
-               │  • Tier 3: 报告排版 (Synthesis)➔ 大上下文、结构化排版    │
+               │  • Tier 1: 快排初筛 (Hunter)   ➔ 必须 Thick Agent 自主读文件│
+               │  • Tier 2: 对抗裁决 (Judge)    ➔ 推荐 Thin Native 高速推理 │
+               │  • Tier 3: 报告排版 (Synthesis)➔ 推荐 Thin Native 直传直出 │
                └──────────────────────────┬─────────────────────────────┘
                                           │ 调度路由 (TierRouter)
                                           ▼
                ┌────────────────────────────────────────────────────────┐
                │           物理服务器/并发负载池 (ai.models - 供给端)     │
-               │  • Server #1: GPU 节点 A (glm5.1 / qwen32b, 并发=8)    │
+               │  • Server #1: GPU 节点 A (glm5.1 / qwen72b, 并发=8)     │
                │  • Server #2: GPU 节点 B / 外部网关 (claude, 并发=4)    │
                │  • 负责：Least-Loaded 负载均衡、工作时间自动限流(Throttle)│
+               └──────────────────────────┬─────────────────────────────┘
+                                          │ 通信与驱动
+                                          ▼
+               ┌────────────────────────────────────────────────────────┐
+               │         执行驱动层 (Thick CLI Agent vs Thin Native)     │
+               │  • Thick CLI: os/exec 启动进程，支持本地文件自主读写     │
+               │  • Thin Native: HTTP/2 REST 直连，带 Failover 与熔断兜底 │
                └────────────────────────────────────────────────────────┘
 ```
 
 #### 1. 核心职责对比
 
-| 维度 | `ai.models` (物理负载池) | `ai.tiers` (阶梯路由层) |
-| :--- | :--- | :--- |
-| **所属层级** | 物理/网络算力层（供给端） | 业务逻辑流水线层（需求端） |
-| **核心问题** | “我有几台服务器/API 网关？各自允许跑几个并发？” | “代码检视的不同阶段，分别需要什么等级的模型与超时？” |
-| **生效范围** | 全局物理槽位管理、工作时间自动限流 (`work_hours_throttle`) | 仅在分片检视与辩论流水线中按阶段生效 |
-| **典型配置项** | 服务器列表、`opencode`/`claude`/`agy` 模型名映射、节点 `concurrent` | `tier1_fast`、`tier2_reasoning`、`tier3_synthesis`、`timeout_seconds` |
-
-#### 2. 两者的内部调度协作流程
-
-当一次多智能体代码检视任务执行时，底层的 `TierRouter` 与 `ModelDispatcher` 会协同工作：
-1. **阶段发起（需求声明）**：任务进入 Hunter 阶段，调用 `TierRouter.AcquireTier("tier1_fast")`；
-2. **能力匹配（路由解析）**：`TierRouter` 读取 `tier1_fast` 的配置，确定当前阶段期望使用 `backend: agy` 与轻量快模型；
-3. **物理分配（负载均衡）**：底层的 `ModelDispatcher` 遍历 `ai.models` 中的物理服务器列表，寻找支持 `agy` 且**当前活跃连接最少（Least-Loaded）**的空闲物理槽位并加锁占用；
-4. **执行与释放（资源归还）**：AI 调用完成（或超时）后，物理槽位被释放，唤醒其他等待中的分片。
-
-#### 3. 四种典型配置组合与选型矩阵
-
-| 配置组合 | 运行表现 | 推荐适用场景 |
-| :--- | :--- | :--- |
-| **模式一：仅配置 `ai.tiers`** | 辩论各阶段使用不同的快/慢模型，并发走全局统一配置 (`server.worker_count`)。 | 适合单一 API 网关（如使用单一 Antigravity / Claude 账号），但希望初筛与裁决区分快慢模型。 |
-| **模式二：仅配置 `ai.models`** | 所有扫描任务在多台物理 GPU 服务器间做负载均衡，但各阶段使用同等强度的模型。 | 适合有多台私有 GPU 机器，主要运行传统单次或快扫分片引擎。 |
-| **模式三：两者同时配置** *(推荐)* | **极致性能与成本平衡**：业务阶段精准调用快/强模型，底层物理节点实现负载均衡与并发打散。 | 适合大型团队高并发多智能体辩论扫描（生产环境最佳实践）。 |
-| **模式四：两者均不配置** | 自动降级为全局单点模式：使用全局 `ai.backend` 与默认 `server.worker_count`。 | 适合本地单机快速轻量体验。 |
+| 维度 | `ai.models` (物理负载池) | `ai.tiers` (阶梯路由层) | `ai.native` (原生轻量引擎) |
+| :--- | :--- | :--- | :--- |
+| **所属层级** | 物理/网络算力层（供给端） | 业务逻辑流水线层（需求端） | 通信与执行驱动层（协议端） |
+| **核心问题** | “我有几台服务器/网关？各自允许跑几个并发？” | “初筛、辩论、排版各阶段分别用什么模型与超时？” | “如何用最轻量的高性能 HTTP 协议直接调用模型？” |
+| **生效范围** | 全局物理槽位管理、工作时间自动限流 | 分片扫描与辩论流水线按阶段生效 | 所有单轮确定性推理与 Native 路由阶段 |
+| **典型配置项** | 服务器列表、`claude`/`agy`/`native` 模型名映射 | `tier1_fast`、`tier2_reasoning`、`tier3_synthesis` | `base_url`、`endpoints`、`max_retries`、`retry_backoff_ms` |
 
 ---
 
@@ -346,7 +372,23 @@ ai:
 
 ---
 
-### 4.8 企业治理与历史记忆闭环配置 (`governance`)
+### 4.8 工作时间智能限流与自动避峰 (`ai.work_hours_throttle`)
+
+在企业共享 GPU 集群或商业 API 场景下，可配置在白天工作时间内自动压低扫描并发（例如 10% 算力或完全暂停），夜间非工作时间自动恢复 100% 满速排队消化：
+
+```yaml
+ai:
+  work_hours_throttle:
+    enabled: true                 # 是否启用工作时间自动限流
+    workdays: [1, 2, 3, 4, 5]     # 生效星期: 1=周一 ~ 5=周五
+    start_time: "09:00"           # 开始限流时刻 (HH:MM)
+    end_time: "20:00"             # 结束限流时刻 (HH:MM)
+    scale: 0.10                   # 并发比例 (0.10 代表压低至 10%，0.0 代表白天完全暂停)
+```
+
+---
+
+### 4.9 企业治理与历史记忆闭环配置 (`governance`)
 
 控制全任务通用缺陷指纹、增量比对状态机与人机负样本学习：
 
@@ -401,6 +443,14 @@ governance:
 1. **分片级重试**：失败分片自动在后台退避重试（最大 3 次）；
 2. **辩护人降级**：若辩护人节点超时，法官会自动基于猎手原始材料与源码独立裁决；
 3. **部分成功合成**：若全仓 95% 以上分片成功，系统会优雅输出报告并附带部分未扫警告，保证整体任务不作废。
+
+### Q5: Native 引擎调用失败（如内网 LLM 显存 OOM 或宕机）时系统如何容灾？
+**答**：Native 引擎具备双重高可用容灾闭环：
+1. **端点级 Failover**：当主端点报错（401/403/429/5xx）或连接超时时，系统在重试周期内自动切换到 `ai.native.endpoints` 中的备用算力节点；
+2. **断路器降级至本地 CLI**：若全部 Native 节点连续失败 $\ge 3$ 次，断路器自动跳闸并将当前任务平滑降级至本地配置的 CLI（如 `agy`），调用子进程兜底完成分析，确保流水线永远不会中断。
+
+### Q6: 为什么 RepairJSON 和缺陷指纹比对能够提速 10~15 倍？
+**答**：因为在传统模式下，即使只是修复一个只有多余逗号的小 JSON，系统也需要 `os/exec` 创建子进程、拉起庞大的 Node.js/Python 运行时并经历 2~10s 的沙箱初始化；而切换为 Thin LLM Native 模式后，系统复用 HTTP/2 长连接池，以内存 Payload 直传模型，耗时缩短至几百毫秒，且彻底避免了本地 SQLite 数据库锁争抢。
 
 ---
 
