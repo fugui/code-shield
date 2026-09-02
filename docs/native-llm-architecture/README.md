@@ -9,7 +9,8 @@
 ```
 native-llm-architecture/
 ├── README.md                                                 # 本文档：专题导航与核心设计摘要
-└── 01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md        # 🌟【核心设计】原生轻量 LLM 引擎、5大单轮场景与动静分离混合调用架构
+├── 01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md        # 🌟【核心设计】原生轻量 LLM 引擎、5大单轮场景与动静分离混合调用架构
+└── 02-Thin-LLM-Engine设计批判性审视与场景配置方案.md             # 🔍【批判审视】必要性/完备性/准确性三维审视、场景级 Thin/Thick 可配置化路由方案
 ```
 
 ---
@@ -18,7 +19,7 @@ native-llm-architecture/
 
 ### 1. 痛点破局与动因 ([查看文档 01](01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md))
 *   **重型 Agent 瓶颈**：现存 4 大 AI 驱动（`claude`、`opencode`、`codex`、`agy`）基于 OS 进程（Fork/Exec）和本地状态管理，存在 **2~10s 进程启动冷开销**、**本地 SQLite 锁争抢**、**受限并发槽位** 以及 **单轮确定性任务内耗（如拉起 CLI 修复 JSON）** 等痛点。
-*   **原生轻量引擎 (NativeInvoker)**：基于标准 HTTP/2 REST 协议，实现长连接复用、毫秒级响应、原生 JSON Schema 结构化约束，彻底根治本地进程级隐患。
+*   **Thin LLM Engine**：基于标准 HTTP/2 REST 协议，实现长连接复用、毫秒级响应、原生 JSON Schema 结构化约束，彻底根治本地进程级隐患。
 
 ### 2. 五大轻量单轮场景支撑
 1.  **JSON 语法与结构修复 (`RepairJSON`)**：零进程开销，毫秒级快速纠错。
@@ -27,7 +28,9 @@ native-llm-architecture/
 4.  **分片快速初筛 (`Tier 1 Fast`)**：50~100 路超高并发连接池，海量代码片段秒级初筛。
 5.  **报告汇总与态势总结 (`Tier 3 Synthesis`)**：内存数据直传直出，消除临时文件 I/O。
 
-### 3. 动静分离混合架构 (Hybrid Execution Pipeline)
-*   **Thick Agent（重型/探索型）**：专注全局 Hunter 复杂跨文件污点深挖与自主工具调用；
-*   **Native LLM（轻量/推理型）**：专注高并发初筛、辩论裁判与结构化输出。
-*   **预期收益**：消除 99.9% 进程启动延迟，初筛吞吐量提升 10 倍，单仓全扫描总耗时预期缩减 70%。
+### 3. 批判性审视与修订建议 ([查看文档 02](02-Thin-LLM-Engine设计批判性审视与场景配置方案.md))
+*   **补充遗漏场景**：`askLLMIfSameFinding`（缺陷指纹语义匹配）纳入 Thin LLM 候选。
+*   **纠正夸大**：并发提速上限取决于 LLM 服务端算力，非客户端 HTTP 连接池能力。
+*   **审慎推进**：Judge/Challenger 切换 Thin LLM 需先完成 A/B 对照基准测试。
+*   **可配置化路由**：新增 `ai.tool_backends` 配置层，支持场景级 Thin/Thick 灵活切换。
+
