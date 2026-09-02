@@ -568,12 +568,61 @@ gantt
 
 ---
 
-## 七、 架构组评审焦点与讨论议题 (Review Focus)
+## 七、 架构组评审决议与高可用降级规范 (Architecture Decisions & HA)
 
-1.  **协议选型**：当前优先采用 **OpenAI 兼容协议**（`/v1/chat/completions`）。对于 Google Gemini 或 Anthropic 原生 API，建议通过内部 LLM 网关（如 LiteLLM / One-API）统一聚合，Go 服务端保持协议精简。
-2.  **Hunter 角色定位**：明确 Hunter 初筛角色**继续保留 Thick Agent**（`agy` / `claude` / `opencode`），保留其自主探索代码仓与工具调用能力。
-3.  **内网高可用与降级**：在私有化部署环境下，Native API 的鉴权 Key 托管与私有 vLLM 节点的连通性保障规范。
+### 7.1 架构组评审决议 (ADR)
+
+经核心架构组评审与讨论，形成以下三项关键架构决议：
+
+| 决议议题 | 架构组最终决议 | 落地实施规范 |
+| :--- | :--- | :--- |
+| **ADR-01: 协议选型** | **统一采用 OpenAI 兼容协议 (`/v1/chat/completions`)** | Go 服务端仅维护一套标准的 HTTP/REST 客户端实现。针对 Gemini、Claude 或私有模型，统一通过内网 LLM 网关（如 One-API / LiteLLM / vLLM）或标准兼容端点接入，保持 Go 服务底层协议极简。 |
+| **ADR-02: Hunter 角色定位** | **Hunter 初筛与深度扫描角色默认使用 Thick Agent 引擎** | 确认 Hunter 必须具备自主文件系统探索与代码阅读能力。在 `ai.tiers.tier1_fast.backend` 中默认配置为 `agy` / `claude` / `opencode` 等重型 Agent，保留其环境穿透优势。 |
+| **ADR-03: 鉴权与高可用降级** | **API Key 统一由 `config.yaml` 集中管理，上线多节点故障转移与断路器降级** | 鉴权 Key 支持 `config.yaml` 配置与系统环境变量注入；同时建立内网私有节点的断路器与自动降级机制，保障扫描任务永不中断。 |
+
+---
+
+### 7.2 内网私有化部署高可用与故障降级方案 (HA & Fallback)
+
+在企业内网或私有化部署场景下，私有 LLM 算力节点（如自建 vLLM / Ollama 显卡服务器）可能因大并发显存 OOM、实例宕机或网络抖动出现短暂不可用。系统设计了以下双重高可用机制：
+
+#### 1. 鉴权与配置规范 (API Key Management)
+*   **集中配置文件**：在 `config.yaml` 中配置 `ai.native.api_key`，与系统现有的数据库密码、JWTSecret 等凭据保持一致；
+*   **环境变量覆盖**：支持通过 `CODE_SHIELD_AI_NATIVE_API_KEY` 环境变量动态注入，方便 Docker 容器化编排与 CI/CD 密钥脱敏。
+
+#### 2. 多端点故障轮询与故障转移 (Multi-Endpoint Failover)
+配置支持配置单个或多个私有 LLM 节点地址。当首选节点发生网络超时或 5xx 错误时，自动在重试周期内轮询备用节点：
+
+```yaml
+ai:
+  native:
+    endpoints:
+      - "http://192.168.56.18:8000/v1/chat/completions" # 节点 1 (主)
+      - "http://192.168.56.19:8000/v1/chat/completions" # 节点 2 (备)
+    api_key: "sk-code-shield-native-key"
+```
+
+#### 3. 熔断器与平滑降级至 Thick Agent CLI (Circuit Breaker & CLI Fallback)
+为了防止私有 LLM 集群全量宕机导致扫描流水线彻底卡死，`NativeInvoker` 内置断路器状态机：
+
+```mermaid
+graph TD
+    Request["单轮推理请求到来"] --> CheckCB{"断路器状态"}
+    
+    CheckCB -->|"CLOSED 正常"| TryNative["请求 Native HTTP API"]
+    TryNative -->|"成功"| Success["返回 JSON 裁决结果"]
+    TryNative -->|"连续失败 >= 3 次"| Trip["断路器开启 OPEN<br/>触发告警"]
+    
+    CheckCB -->|"OPEN 熔断中"| Fallback["自动降级至默认 CLI Agent<br/>(调用全局 ai.backend 进程执行)"]
+    Trip --> Fallback
+    Fallback --> CLIResult["CLI 兜底完成推理"]
+    
+    CheckCB -->|"HALF-OPEN 探测"| Probe["异步轻量心跳探测 /v1/models"]
+    Probe -->|"探测成功"| Reset["重置断路器为 CLOSED<br/>恢复 Native 高速调用"]
+```
+*   **平滑降级保护**：当 Native 端点在滑动窗口内连续失败 $\ge 3$ 次（如连接被拒绝、持续 502/503），系统自动触发降级，将当前的 JSON 修复、裁决或总结请求无缝转交由本地配置的 `ai.backend`（如 `agy` CLI）兜底执行，**确保扫描任务 100% 成功交付**；
+*   **异步自动恢复**：后台定时（如每 30 秒）向 Native 端点发送轻量探活请求，确认服务恢复后自动回切至高速 Native 模式。
 
 ---
 *文档编制人：Code-Shield 核心架构组 / AI 协同工程团队*  
-*最新修订日期：2026-09-02 (v2.0 完备性刷新版)*
+*最新修订日期：2026-09-02 (v2.1 架构决议与高可用完善版)*
