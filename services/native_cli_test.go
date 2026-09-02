@@ -26,7 +26,9 @@ func (m *MockInvoker) Name() string {
 func (m *MockInvoker) Invoke(req AIRequest) error {
 	atomic.AddInt32(&m.InvokedCnt, 1)
 	if req.OutputPath != "" {
-		_ = os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock CLI output"}`), 0644)
+		if err := os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock CLI output"}`), 0644); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -41,7 +43,9 @@ func TestNativeInvoker_BasicSuccess(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Errorf("expected Bearer test-key, got %s", r.Header.Get("Authorization"))
 		}
-		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+		if err := json.NewDecoder(r.Body).Decode(&receivedBody); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+		}
 
 		resp := map[string]interface{}{
 			"id":      "chatcmpl-123",
@@ -65,7 +69,9 @@ func TestNativeInvoker_BasicSuccess(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -118,7 +124,9 @@ func TestNativeInvoker_FailoverAndRetry(t *testing.T) {
 	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&server1Hits, 1)
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error": "internal server error"}`))
+		if _, err := w.Write([]byte(`{"error": "internal server error"}`)); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
 	}))
 	defer server1.Close()
 
@@ -137,7 +145,9 @@ func TestNativeInvoker_FailoverAndRetry(t *testing.T) {
 			"usage": map[string]interface{}{"total_tokens": 10},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server2.Close()
 
@@ -172,7 +182,10 @@ func TestNativeInvoker_FailoverAndRetry(t *testing.T) {
 		t.Errorf("expected server2 to be hit on failover, got %d", server2Hits)
 	}
 
-	content, _ := os.ReadFile(tmpOut)
+	content, err := os.ReadFile(tmpOut)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
 	if string(content) != `{"status": "ok"}` {
 		t.Fatalf("unexpected content: %s", string(content))
 	}
@@ -250,7 +263,9 @@ func TestRepairJSON_WithNative(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -267,7 +282,9 @@ func TestRepairJSON_WithNative(t *testing.T) {
 	tempDir := t.TempDir()
 	brokenJSONPath := filepath.Join(tempDir, "broken.json")
 	// 写入一个有语法错误的 JSON（尾部有多余逗号）
-	_ = os.WriteFile(brokenJSONPath, []byte(`{"findings": [{"title": "fixed vulnerability",}],}`), 0644)
+	if err := os.WriteFile(brokenJSONPath, []byte(`{"findings": [{"title": "fixed vulnerability",}],}`), 0644); err != nil {
+		t.Fatalf("failed to write broken JSON: %v", err)
+	}
 
 	fixedBytes, err := RepairJSON(tempDir, brokenJSONPath, "native")
 	if err != nil {
@@ -311,7 +328,9 @@ func TestExtractFeedbackRuleViaNative(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -350,7 +369,9 @@ func TestExecuteSynthesisOnce_Tier3Native(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -367,7 +388,9 @@ func TestExecuteSynthesisOnce_Tier3Native(t *testing.T) {
 	tempDir := t.TempDir()
 	jsonPath := filepath.Join(tempDir, "findings.json")
 	reportPath := filepath.Join(tempDir, "report.md")
-	_ = os.WriteFile(jsonPath, []byte(`{"findings": []}`), 0644)
+	if err := os.WriteFile(jsonPath, []byte(`{"findings": []}`), 0644); err != nil {
+		t.Fatalf("failed to write findings.json: %v", err)
+	}
 
 	ctx := &taskContext{
 		reportPath: reportPath,
@@ -391,5 +414,80 @@ func TestExecuteSynthesisOnce_Tier3Native(t *testing.T) {
 	}
 	if len(reportContent) == 0 {
 		t.Fatal("report is empty")
+	}
+}
+
+func TestNativeInvoker_UnauthorizedFailover(t *testing.T) {
+	var authServerHits int32
+	var backupServerHits int32
+
+	// Auth Server 返回 401 Unauthorized
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&authServerHits, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+		if _, err := w.Write([]byte(`{"error": "invalid api key"}`)); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	}))
+	defer authServer.Close()
+
+	// Backup Server 正常响应
+	backupServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&backupServerHits, 1)
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]string{
+						"role":    "assistant",
+						"content": `{"auth_failover": "success"}`,
+					},
+				},
+			},
+			"usage": map[string]interface{}{"total_tokens": 12},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	defer backupServer.Close()
+
+	origCfg := models.AppConfig
+	defer func() { models.AppConfig = origCfg }()
+
+	models.AppConfig.AI.Native = models.NativeLLMConfig{
+		MaxRetries:     2,
+		RetryBackoffMs: 10,
+		Endpoints: []models.NativeEndpointConfig{
+			{Name: "auth-bad", BaseURL: authServer.URL, APIKey: "bad-key", Model: "m1", Weight: 50},
+			{Name: "auth-backup", BaseURL: backupServer.URL, APIKey: "good-key", Model: "m2", Weight: 50},
+		},
+	}
+
+	invoker := NewNativeInvoker()
+	tmpOut := filepath.Join(t.TempDir(), "output_auth.json")
+
+	err := invoker.Invoke(AIRequest{
+		PromptMsg:  "test auth failover",
+		OutputPath: tmpOut,
+		TimeoutMin: 1,
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+
+	if atomic.LoadInt32(&authServerHits) < 1 {
+		t.Errorf("expected authServer to be hit, got %d", authServerHits)
+	}
+	if atomic.LoadInt32(&backupServerHits) < 1 {
+		t.Errorf("expected backupServer to be hit on 401 failover, got %d", backupServerHits)
+	}
+
+	content, err := os.ReadFile(tmpOut)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+	if string(content) != `{"auth_failover": "success"}` {
+		t.Fatalf("unexpected content: %s", string(content))
 	}
 }
