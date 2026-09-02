@@ -6,11 +6,11 @@
 *   **文档类型**：执行引擎与驱动层架构专项设计
 *   **当前状态**：`PROPOSED`（待架构组评审）
 *   **涉及模块**：`shield-server/services`（AI 调度与执行层）、`shield-server/models`（系统配置与元数据）、`engine_debate`、`task_runner`
-*   **核心目标**：针对当前系统依赖重型 Agent CLI（`claude` / `opencode` / `codex` / `agy`）导致的进程冷启动开销高、并发吞吐受限、环境依赖脆弱及输出不确定等痛点，设计并引入基于原生 REST/HTTP 协议的 **LLM Native Agent（原生轻量执行引擎，Direct/Thin LLM Invoker）**，构建 **“重型自主探索 Agent + 原生轻量确定性 LLM” 的动静分离混合调用架构（Hybrid AI Invocation Architecture）**。
+*   **核心目标**：针对当前系统依赖重型 Agent CLI（`claude` / `opencode` / `codex` / `agy`）导致的进程冷启动开销高、并发吞吐受限、环境依赖脆弱及输出不确定等痛点，设计并引入基于原生 REST/HTTP 协议的 **Thin LLM Engine（轻量大模型引擎）**，构建 **“重型自主探索 Agent (Thick Agent) + 轻量大模型引擎 (Thin LLM)” 的动静分离混合调用架构（Hybrid AI Invocation Architecture）**。
 
 ---
 
-## 一、 背景与痛点分析：为什么当前需要 LLM Native Agent？
+## 一、 背景与痛点分析：为什么当前需要 Thin LLM Engine？
 
 ### 1.1 现状与现存架构机制
 
@@ -55,7 +55,7 @@ graph TD
 
 ## 二、 适用场景深度盘点：Code-Shield 中的 5 大轻量单轮任务
 
-系统中有大量任务属于**“输入固定、单轮完成、无需外部工具介入”**的场景，极度契合 LLM Native Agent：
+系统中有大量任务属于**“输入固定、单轮完成、无需外部工具介入”**的场景，极度契合 Thin LLM Engine：
 
 ```mermaid
 graph LR
@@ -65,7 +65,7 @@ graph LR
         H3[自主生成 PoC 动态测试]
     end
 
-    subgraph Native_Tasks [适合 LLM Native (轻量单轮直连)]
+    subgraph Native_Tasks [适合 Thin LLM (轻量单轮直连)]
         N1[1. JSON 语法与结构修复]
         N2[2. 辩论终审法官 Judge Agent]
         N3[3. 辩护人 Challenger 抗辩]
@@ -77,7 +77,7 @@ graph LR
 
 ### 详细场景分析表
 
-| 场景编号 | 业务场景名称 | 涉及代码位置 | 任务特征描述 | 改造前 (Thick Agent) 表现 | 改造后 (LLM Native) 预期收益 |
+| 场景编号 | 业务场景名称 | 涉及代码位置 | 任务特征描述 | 改造前 (Thick Agent) 表现 | 改造后 (Thin LLM) 预期收益 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **场景 1** | **JSON 语法修复** | [`services/ai_cli.go:RepairJSON`](file:///home/fugui/codes/code-shield/services/ai_cli.go#L99) | 输入破损 JSON，修复引号/逗号并输出合法 JSON。零外部工具依赖。 | Fork CLI 进程，耗时 5~15s，占用主分析槽位。 | **纯 HTTP 请求，耗时 $\le 800\text{ms}$**，`temperature=0` 保证严格合法。 |
 | **场景 2** | **辩论终审法官 (Judge)** | [`services/engine_debate.go:buildJudgePrompt`](file:///home/fugui/codes/code-shield/services/engine_debate.go#L546) | 输入 Hunter 候选 + Challenger 抗辩，根据规则做出 CONFIRMED/REJECTED 裁决。 | 依赖 CLI 运行，日志解析复杂，排队耗时久。 | **单轮结构化推理，原生 JSON Schema 输出**，裁决耗时降低 70%。 |
@@ -88,7 +88,7 @@ graph LR
 
 ---
 
-## 三、 混合架构设计：Thick Agent 与 LLM Native 的动静分离
+## 三、 混合架构设计：Thick Agent 与 Thin LLM 的动静分离
 
 Code-Shield 不应是“非此即彼”的替代，而是建立 **“动静分离、深浅互补” 的混合执行架构（Hybrid Execution Pipeline）**：
 
@@ -103,7 +103,7 @@ Code-Shield 不应是“非此即彼”的替代，而是建立 **“动静分�
                       ┌────────────┴────────────┐
                      YES                        NO
                       │                         │
-            【Thick Agent Mode】       【LLM Native Mode】
+            【Thick Agent Mode】       【Thin LLM Mode】
          (claude / opencode / agy)     (HTTP REST / JSON Schema)
                       │                         │
          • 全局 Hunter 污点深挖           • JSON 语法修复 (RepairJSON)
@@ -119,10 +119,10 @@ Code-Shield 不应是“非此即彼”的替代，而是建立 **“动静分�
 sequenceDiagram
     autonumber
     participant Task as 任务调度层 (TaskRunner)
-    participant Tier1 as Tier 1 初筛池 (Native LLM)
+    participant Tier1 as Tier 1 初筛池 (Thin LLM)
     participant Tier2_H as Tier 2 猎手 (Thick Agent)
-    participant Tier2_J as Tier 2 辩护与法官 (Native LLM)
-    participant Tier3 as Tier 3 报告汇总 (Native LLM)
+    participant Tier2_J as Tier 2 辩护与法官 (Thin LLM)
+    participant Tier3 as Tier 3 报告汇总 (Thin LLM)
 
     Task->>Tier1: 批量提交代码分片 (50+ 并发 HTTP)
     Note over Tier1: 毫秒级连接池复用，零进程开销
@@ -132,11 +132,11 @@ sequenceDiagram
     Note over Tier2_H: 深度代码阅读、跨文件查找、工具调用
     Tier2_H-->>Task: 产出候选漏洞指控列表 (Candidates)
 
-    Task->>Tier2_J: 提交候选列表进行辩论与裁判 (Native LLM)
+    Task->>Tier2_J: 提交候选列表进行辩论与裁判 (Thin LLM)
     Note over Tier2_J: 结构化推理，严格 JSON Schema 输出
     Tier2_J-->>Task: 产出最终裁决 (Final Verdicts)
 
-    Task->>Tier3: 提交全量确诊缺陷列表 (Native LLM)
+    Task->>Tier3: 提交全量确诊缺陷列表 (Thin LLM)
     Tier3-->>Task: 输出综合安全态势与修复建议
 ```
 
@@ -249,7 +249,10 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("native LLM returned status %d, but failed to read error body: %v", resp.StatusCode, err)
+		}
 		return fmt.Errorf("native LLM returned status %d: %s", resp.StatusCode, string(body))
 	}
 
