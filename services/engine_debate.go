@@ -399,13 +399,57 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 				CreatedAt:     time.Now(),
 			}
 			confirmedFindings = append(confirmedFindings, finding)
+			log.Printf("[DebateEngine] Candidate %s [%s]: %s\n", jv.CandidateID, jv.Verdict, jv.Title)
 		} else {
-			log.Printf("[DebateEngine] Candidate %s REJECTED: %s (Reason: %s)\n",
-				jv.CandidateID, jv.Title, jv.JudgementRationale)
+			log.Printf("[DebateEngine] Candidate %s [%s]: %s (Reason: %s)\n",
+				jv.CandidateID, jv.Verdict, jv.Title, summarizeRationale(jv.JudgementRationale))
+		}
+	}
+
+	// 记录全量详细判词与事实推演至 chunkDir 下的 debate-verdicts.log，供审计与深度回溯
+	if chunkDir != "" && len(judgeOut.FinalVerdicts) > 0 {
+		logFilePath := filepath.Join(chunkDir, "debate-verdicts.log")
+		var logSb strings.Builder
+		for _, jv := range judgeOut.FinalVerdicts {
+			logSb.WriteString("================================================================================\n")
+			logSb.WriteString(fmt.Sprintf("[%s] Candidate: %s | Verdict: %s | Title: %s\n", time.Now().Format("2006-01-02 15:04:05"), jv.CandidateID, jv.Verdict, jv.Title))
+			logSb.WriteString(fmt.Sprintf("File: %s:%s | Trigger: %s | Scope: %s\n", jv.FilePath, jv.LineNumber, jv.TriggerLine, jv.ScopeSymbol))
+			logSb.WriteString(fmt.Sprintf("Category: %s | Severity: %s\n\n", jv.Category, jv.SeverityPreliminary))
+			logSb.WriteString(fmt.Sprintf("【详细裁判词与事实推演】:\n%s\n\n", jv.JudgementRationale))
+			if jv.Suggestion != "" {
+				logSb.WriteString(fmt.Sprintf("【建议修复方案】:\n%s\n\n", jv.Suggestion))
+			}
+		}
+		f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err == nil {
+			_, _ = f.WriteString(logSb.String())
+			_ = f.Close()
 		}
 	}
 
 	return confirmedFindings, debateLogs, nil
+}
+
+// summarizeRationale 将冗长的仲裁裁判词浓缩为控制台单行可读的简要结论
+func summarizeRationale(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if idx := strings.Index(trimmed, "【源码事实】"); idx != -1 {
+		trimmed = strings.TrimSpace(trimmed[:idx])
+	}
+	if idx := strings.Index(trimmed, "\n"); idx != -1 {
+		trimmed = strings.TrimSpace(trimmed[:idx])
+	}
+	trimmed = strings.TrimPrefix(trimmed, "【综合裁决】:")
+	trimmed = strings.TrimPrefix(trimmed, "【综合裁决】：")
+	trimmed = strings.TrimSpace(trimmed)
+	runes := []rune(trimmed)
+	if len(runes) > 60 {
+		return string(runes[:60]) + "..."
+	}
+	if len(runes) == 0 {
+		return "已驳回"
+	}
+	return trimmed
 }
 
 // runHunterStage 运行猎手初筛阶段 (Tier 1 快模型)
