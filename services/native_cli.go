@@ -267,16 +267,19 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 		if req.ModelName != "" {
 			modelName = req.ModelName
 		}
-		temperature := cfg.Temperature
-		if ep.Temperature > 0 {
-			temperature = ep.Temperature
+		requestBody := map[string]interface{}{
+			"model":    modelName,
+			"messages": messages,
 		}
 
-		requestBody := map[string]interface{}{
-			"model":       modelName,
-			"messages":    messages,
-			"temperature": temperature,
+		if req.Temperature != nil {
+			requestBody["temperature"] = *req.Temperature
+		} else if ep.Temperature > 0 {
+			requestBody["temperature"] = ep.Temperature
+		} else if cfg.Temperature > 0 {
+			requestBody["temperature"] = cfg.Temperature
 		}
+
 		if cfg.ResponseFormatJSON {
 			requestBody["response_format"] = map[string]string{"type": "json_object"}
 		}
