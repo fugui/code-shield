@@ -622,12 +622,16 @@ func calculateStringSimilarity(s1, s2 string) float64 {
 
 // askLLMIfSameFinding 使用大模型辅助语义匹配
 func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail, oldSnippet, newPath, newLine, newTitle, newDetail, newSnippet string) bool {
-	backend := ""
-	if ctx.runParams.AIBackend != nil {
-		backend = *ctx.runParams.AIBackend
-	}
+	backend := models.AppConfig.AI.ToolBackends.FindingMatch
 	if backend == "" {
-		backend = models.AppConfig.AI.Backend
+		backend = "native"
+	}
+	if !IsValidAIBackend(backend) {
+		if ctx.runParams.AIBackend != nil && *ctx.runParams.AIBackend != "" {
+			backend = *ctx.runParams.AIBackend
+		} else {
+			backend = models.AppConfig.AI.Backend
+		}
 	}
 	if backend == "" {
 		backend = "claude"

@@ -1,10 +1,98 @@
 package services
 
 import (
-	"code-shield/models"
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
+
+	"code-shield/models"
 )
+
+// ExtractedFeedbackRule 结构化提取的负样本规则
+type ExtractedFeedbackRule struct {
+	ScopeType  string `json:"scope_type"`  // "FILE" 或 "SYMBOL"
+	Pattern    string `json:"pattern"`     // 文件路径或函数符号
+	RuleAction string `json:"rule_action"` // "IGNORE"
+	Reason     string `json:"reason"`      // 提炼的免扫理由
+}
+
+// ExtractFeedbackRuleViaNative 使用 Native Thin LLM 快速提炼误报特征规则
+func ExtractFeedbackRuleViaNative(filePath, codeSnippet, defectTitle, userReason string) (*ExtractedFeedbackRule, error) {
+	backend := models.AppConfig.AI.ToolBackends.FeedbackExtraction
+	if backend == "" {
+		backend = "native"
+	}
+	if !IsValidAIBackend(backend) {
+		backend = models.AppConfig.AI.Backend
+	}
+	if backend == "" {
+		backend = "native"
+	}
+
+	invoker := GetAIInvoker(backend)
+	if invoker == nil {
+		return nil, fmt.Errorf("no invoker for backend: %s", backend)
+	}
+
+	prompt := fmt.Sprintf(`你是一个代码安全规则分析专家。研发人员将以下代码缺陷标记为误报。请根据上下文提炼出结构化的负样本例外规则，供后续扫描引擎避免同类误报。
+
+# 缺陷信息
+- 文件路径: %s
+- 缺陷标题: %s
+- 代码片段:
+%s
+
+# 研发反馈原因
+%s
+
+请以纯 JSON 格式输出，不要输出任何 Markdown 代码块包裹：
+{
+  "scope_type": "FILE",
+  "pattern": "%s",
+  "rule_action": "IGNORE",
+  "reason": "提炼的简明免扫原因"
+}`, filePath, defectTitle, codeSnippet, userReason, filePath)
+
+	tmpFile, err := os.CreateTemp("", "feedback-rule-*.json")
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	req := AIRequest{
+		PromptMsg:  prompt,
+		OutputPath: tmpPath,
+		TimeoutMin: 1,
+	}
+
+	if err := invoker.Invoke(req); err != nil {
+		return nil, err
+	}
+
+	outBytes, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cleaned := cleanJSONFromAI(outBytes)
+	var rule ExtractedFeedbackRule
+	if err := json.Unmarshal(cleaned, &rule); err != nil {
+		return nil, err
+	}
+	if rule.Pattern == "" {
+		rule.Pattern = filePath
+	}
+	if rule.ScopeType == "" {
+		rule.ScopeType = "FILE"
+	}
+	if rule.RuleAction == "" {
+		rule.RuleAction = "IGNORE"
+	}
+	return &rule, nil
+}
 
 // MarkDefectFeedback 处理研发人员对缺陷的反馈（误报/不予修复/已确认）
 func MarkDefectFeedback(repoID uint, taskTypeID uint, fingerprint string, feedbackStatus string, reason string, userID *uint) error {
@@ -32,13 +120,39 @@ func MarkDefectFeedback(repoID uint, taskTypeID uint, fingerprint string, feedba
 
 	// 2. 如果标记为误报 (FALSE_POSITIVE) 或不予修复 (WONT_FIX)，自动沉淀为代码仓负样本例外规则
 	if feedbackStatus == "FALSE_POSITIVE" || feedbackStatus == "WONT_FIX" {
+		ruleScope := "FILE"
+		rulePattern := record.FilePath
+		ruleReason := fmt.Sprintf("[%s] %s (由指纹 %s 沉淀)", feedbackStatus, reason, fingerprint[:8])
+
+		// 尝试通过 Thin LLM 智能提取更加精准的模式与原因
+		var snippet, title string
+		var finding models.AnalysisFinding
+		if err := models.DB.Where("fingerprint = ?", fingerprint).First(&finding).Error; err == nil {
+			snippet = finding.CodeSnippet
+			title = finding.Title
+		}
+		if title == "" {
+			title = record.Category
+		}
+		if extracted, extErr := ExtractFeedbackRuleViaNative(record.FilePath, snippet, title, reason); extErr == nil && extracted != nil {
+			if extracted.ScopeType != "" {
+				ruleScope = extracted.ScopeType
+			}
+			if extracted.Pattern != "" {
+				rulePattern = extracted.Pattern
+			}
+			if extracted.Reason != "" {
+				ruleReason = fmt.Sprintf("[%s] %s (由指纹 %s 提炼)", feedbackStatus, extracted.Reason, fingerprint[:8])
+			}
+		}
+
 		rule := models.RepoFeedbackRule{
 			RepoID:     repoID,
 			TaskTypeID: taskTypeID,
-			ScopeType:  "FILE",
-			Pattern:    record.FilePath,
+			ScopeType:  ruleScope,
+			Pattern:    rulePattern,
 			RuleAction: "IGNORE",
-			Reason:     fmt.Sprintf("[%s] %s (由指纹 %s 沉淀)", feedbackStatus, reason, fingerprint[:8]),
+			Reason:     ruleReason,
 			CreatedBy:  "System-Feedback",
 			CreatedAt:  now,
 			UpdatedAt:  now,

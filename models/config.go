@@ -21,6 +21,7 @@ type ModelConfig struct {
 	Claude     string `yaml:"claude"`     // Claude 引擎对应的具体模型名
 	Codex      string `yaml:"codex"`      // Codex 引擎对应的具体模型名
 	Agy        string `yaml:"agy"`        // Antigravity (agy) 引擎对应的具体模型名（可选）
+	Native     string `yaml:"native"`     // Native 引擎对应的具体模型名（可选）
 	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
 }
 
@@ -61,6 +62,38 @@ type GovernanceSystemConfig struct {
 	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`         // PR 门禁模式下是否仅阻断 NEW 增量缺陷
 }
 
+// NativeEndpointConfig 单个 Native LLM 算力节点配置 (独立 BaseURL, APIKey 与 Model)
+type NativeEndpointConfig struct {
+	Name        string  `yaml:"name" json:"name"`                 // 节点名称，如 "local-vllm-primary"
+	BaseURL     string  `yaml:"base_url" json:"base_url"`         // API 地址，如 "http://192.168.56.18:8000/v1/chat/completions"
+	APIKey      string  `yaml:"api_key" json:"api_key"`           // 该端点专有 API Key (可留空或从环境变量读取)
+	Model       string  `yaml:"model" json:"model"`               // 该端点部署/绑定的模型名称，如 "glm-4-flash"
+	Concurrent  int     `yaml:"concurrent" json:"concurrent"`     // 该节点最大并发槽位数 (默认 20)
+	Weight      int     `yaml:"weight" json:"weight"`             // 负载权重 (1~100, 默认 10)
+	Temperature float64 `yaml:"temperature" json:"temperature"`   // 节点级温度 (可选，缺省继承全局)
+}
+
+// NativeLLMConfig Native 引擎全局配置与多端点集群
+type NativeLLMConfig struct {
+	BaseURL            string                 `yaml:"base_url" json:"base_url"`
+	Endpoint           string                 `yaml:"endpoint" json:"endpoint"` // 兼容 endpoint 别名
+	APIKey             string                 `yaml:"api_key" json:"api_key"`
+	DefaultModel       string                 `yaml:"default_model" json:"default_model"`
+	Temperature        float64                `yaml:"temperature" json:"temperature"`
+	MaxTokens          int                    `yaml:"max_tokens" json:"max_tokens"`
+	ResponseFormatJSON bool                   `yaml:"response_format_json" json:"response_format_json"`
+	MaxRetries         int                    `yaml:"max_retries" json:"max_retries"`
+	RetryBackoffMs     int                    `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
+	Endpoints          []NativeEndpointConfig `yaml:"endpoints" json:"endpoints"`
+}
+
+// ToolBackendsConfig 场景级内嵌工具专有后端路由配置
+type ToolBackendsConfig struct {
+	RepairJSON         string `yaml:"repair_json" json:"repair_json"`                 // 默认 "native"
+	FindingMatch       string `yaml:"finding_match" json:"finding_match"`             // 默认 "native"
+	FeedbackExtraction string `yaml:"feedback_extraction" json:"feedback_extraction"` // 默认 "native"
+}
+
 type Config struct {
 	Server struct {
 		Port              string        `yaml:"port"`
@@ -86,6 +119,10 @@ type Config struct {
 		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"` // CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式关闭）
 		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"` // 工作时间自动限流配置
 		Models            []ModelConfig           `yaml:"models"`              // 多 LLM 服务器并发配置
+
+		// ── 原生轻量 LLM 引擎配置 ──
+		Native       NativeLLMConfig    `yaml:"native" json:"native"`
+		ToolBackends ToolBackendsConfig `yaml:"tool_backends" json:"tool_backends"`
 
 		// ── 异构模型多阶梯资源池配置 (阶段二) ──
 		Tiers struct {
@@ -243,6 +280,30 @@ func LoadConfig(filename string) error {
 	if cfg.AI.MockOnMissingCLI == nil {
 		enabled := true
 		cfg.AI.MockOnMissingCLI = &enabled
+	}
+
+	// Native 引擎与场景工具默认值
+	if cfg.AI.Native.BaseURL == "" && cfg.AI.Native.Endpoint == "" && len(cfg.AI.Native.Endpoints) == 0 {
+		cfg.AI.Native.BaseURL = "http://192.168.56.18:8000/v1/chat/completions"
+		cfg.AI.Native.DefaultModel = "glm-4-flash"
+	}
+	if envKey := os.Getenv("CODE_SHIELD_AI_NATIVE_API_KEY"); envKey != "" && cfg.AI.Native.APIKey == "" {
+		cfg.AI.Native.APIKey = envKey
+	}
+	if cfg.AI.Native.MaxRetries <= 0 {
+		cfg.AI.Native.MaxRetries = 3
+	}
+	if cfg.AI.Native.RetryBackoffMs <= 0 {
+		cfg.AI.Native.RetryBackoffMs = 500
+	}
+	if cfg.AI.ToolBackends.RepairJSON == "" {
+		cfg.AI.ToolBackends.RepairJSON = "native"
+	}
+	if cfg.AI.ToolBackends.FindingMatch == "" {
+		cfg.AI.ToolBackends.FindingMatch = "native"
+	}
+	if cfg.AI.ToolBackends.FeedbackExtraction == "" {
+		cfg.AI.ToolBackends.FeedbackExtraction = "native"
 	}
 
 	// Server timeout defaults

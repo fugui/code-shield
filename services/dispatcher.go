@@ -16,6 +16,7 @@ type ModelResource struct {
 	Claude     string
 	Codex      string
 	Agy        string
+	Native     string
 	Concurrent int
 	Active     int // 当前正在运行的并发数
 }
@@ -31,6 +32,8 @@ func (r *ModelResource) ModelName(backend string) string {
 		return r.Codex
 	case "agy":
 		return r.Agy
+	case "native":
+		return r.Native
 	default:
 		return ""
 	}
@@ -114,6 +117,7 @@ func InitModelDispatcher() {
 			Claude:     mc.Claude,
 			Codex:      mc.Codex,
 			Agy:        mc.Agy,
+			Native:     mc.Native,
 			Concurrent: concurrent,
 		})
 	}
@@ -122,7 +126,7 @@ func InitModelDispatcher() {
 		d.enabled = true
 		log.Printf("[Dispatcher] Initialized with %d custom LLM servers\n", len(d.resources))
 		for _, r := range d.resources {
-			log.Printf("  - Server #%d: opencode=%s, claude=%s, codex=%s, agy=%s, concurrent=%d\n", r.Index, r.OpenCode, r.Claude, r.Codex, r.Agy, r.Concurrent)
+			log.Printf("  - Server #%d: opencode=%s, claude=%s, codex=%s, agy=%s, native=%s, concurrent=%d\n", r.Index, r.OpenCode, r.Claude, r.Codex, r.Agy, r.Native, r.Concurrent)
 		}
 	} else {
 		d.enabled = false
