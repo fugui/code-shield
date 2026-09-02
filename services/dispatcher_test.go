@@ -326,3 +326,38 @@ func TestDispatcher_AgyRouting(t *testing.T) {
 	}
 	d.Release(res, "agy")
 }
+
+func TestDispatcher_NativeAutoRegistration(t *testing.T) {
+	origConfig := models.AppConfig
+	defer func() { models.AppConfig = origConfig }()
+
+	// 配置只包含 CLI 模型的 models 列表，但开启了 ai.native
+	models.AppConfig.AI.Models = []models.ModelConfig{
+		{Claude: "claude-3-5", Concurrent: 3},
+	}
+	models.AppConfig.AI.Native = models.NativeLLMConfig{
+		BaseURL:      "http://192.168.56.18:8000/v1/chat/completions",
+		DefaultModel: "glm-4-flash",
+	}
+
+	InitModelDispatcher()
+	if Dispatcher == nil || !Dispatcher.enabled {
+		t.Fatal("expected Dispatcher to be enabled")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// 验证请求 native 不会直通告警，而是正常分配 native 槽位
+	res, model, err := Dispatcher.Acquire(ctx, "native")
+	if err != nil {
+		t.Fatalf("Acquire failed for native: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected native resource to be allocated, got nil")
+	}
+	if model != "glm-4-flash" {
+		t.Fatalf("expected model 'glm-4-flash', got '%s'", model)
+	}
+	Dispatcher.Release(res, "native")
+}
