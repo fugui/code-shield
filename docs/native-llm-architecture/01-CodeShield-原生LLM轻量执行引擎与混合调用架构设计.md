@@ -214,6 +214,51 @@ func (n *NativeInvoker) Name() string {
 	return "native"
 }
 
+// resolveEndpoints 智能解析当前可用的异构端点候选列表
+func (n *NativeInvoker) resolveEndpoints(targetModel string) []models.NativeEndpointConfig {
+	cfg := models.AppConfig.AI.Native
+	if len(cfg.Endpoints) > 0 {
+		var matched []models.NativeEndpointConfig
+		// 若指定了目标模型，优先筛选匹配该模型的端点
+		if targetModel != "" {
+			for _, ep := range cfg.Endpoints {
+				if strings.EqualFold(ep.Model, targetModel) {
+					matched = append(matched, ep)
+				}
+			}
+		}
+		if len(matched) > 0 {
+			return matched
+		}
+		return cfg.Endpoints
+	}
+
+	// 兼容单端点简写配置
+	endpoint := cfg.Endpoint
+	if endpoint == "" {
+		endpoint = cfg.BaseURL
+	}
+	if endpoint == "" {
+		endpoint = "http://192.168.56.18:8000/v1/chat/completions"
+	}
+	model := targetModel
+	if model == "" {
+		model = cfg.DefaultModel
+		if model == "" {
+			model = "glm-4-flash"
+		}
+	}
+	return []models.NativeEndpointConfig{
+		{
+			Name:     "default",
+			BaseURL:  endpoint,
+			APIKey:   cfg.APIKey,
+			Model:    model,
+			Weight:   100,
+		},
+	}
+}
+
 func (n *NativeInvoker) Invoke(req AIRequest) error {
 	ctx := req.ParentContext
 	if ctx == nil {
@@ -228,10 +273,6 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 	defer cancel()
 
 	cfg := models.AppConfig.AI.Native
-	modelName := req.ModelName
-	if modelName == "" {
-		modelName = cfg.DefaultModel
-	}
 
 	// 1. 拆分 System Prompt 与 User Prompt
 	var messages []map[string]string
@@ -248,25 +289,12 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 		"content": req.PromptMsg,
 	})
 
-	// 2. 构造 OpenAI 兼容请求体
-	requestBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    messages,
-		"temperature": cfg.Temperature,
-	}
-	if cfg.ResponseFormatJSON {
-		requestBody["response_format"] = map[string]string{"type": "json_object"}
-	}
-	if cfg.MaxTokens > 0 {
-		requestBody["max_tokens"] = cfg.MaxTokens
+	// 2. 获取可用异构端点候选池 (支持独立 BaseURL, APIKey 与 Model)
+	candidates := n.resolveEndpoints(req.ModelName)
+	if len(candidates) == 0 {
+		return fmt.Errorf("no available native LLM endpoints configured")
 	}
 
-	reqBytes, err := json.Marshal(requestBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal native request: %w", err)
-	}
-
-	// 3. 执行带指数退避的重试请求
 	maxRetries := cfg.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = 3
@@ -279,12 +307,16 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 	var respBody []byte
 	var lastErr error
 
+	// 3. 带异构节点故障转移 (Failover) 的指数退避重试循环
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// 每次重试轮询切换到下一个备用端点 (使用端点自身的 BaseURL, APIKey 与 Model)
+		ep := candidates[attempt%len(candidates)]
+
 		if attempt > 0 {
 			jitter := time.Duration(rand.Int63n(int64(baseBackoff / 2)))
 			sleepDur := baseBackoff*(1<<uint(attempt-1)) + jitter
-			log.Printf("[NativeInvoker] Retry attempt %d/%d after %v (last error: %v)\n",
-				attempt, maxRetries, sleepDur, lastErr)
+			log.Printf("[NativeInvoker] Retry attempt %d/%d switching to endpoint %q (%s, model: %s) after %v (last error: %v)\n",
+				attempt, maxRetries, ep.Name, ep.BaseURL, ep.Model, sleepDur, lastErr)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -292,18 +324,40 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 			}
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", cfg.Endpoint, bytes.NewReader(reqBytes))
+		// 构造当前端点绑定的请求体
+		modelName := ep.Model
+		if req.ModelName != "" {
+			modelName = req.ModelName
+		}
+		requestBody := map[string]interface{}{
+			"model":       modelName,
+			"messages":    messages,
+			"temperature": cfg.Temperature,
+		}
+		if cfg.ResponseFormatJSON {
+			requestBody["response_format"] = map[string]string{"type": "json_object"}
+		}
+		if cfg.MaxTokens > 0 {
+			requestBody["max_tokens"] = cfg.MaxTokens
+		}
+
+		reqBytes, err := json.Marshal(requestBody)
+		if err != nil {
+			return fmt.Errorf("failed to marshal native request: %w", err)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", ep.BaseURL, bytes.NewReader(reqBytes))
 		if err != nil {
 			return fmt.Errorf("failed to create http request: %w", err)
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		if cfg.APIKey != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+		if ep.APIKey != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+ep.APIKey)
 		}
 
 		resp, err := n.client.Do(httpReq)
 		if err != nil {
-			lastErr = err
+			lastErr = fmt.Errorf("endpoint %q (%s) connection failed: %w", ep.Name, ep.BaseURL, err)
 			continue
 		}
 
@@ -311,7 +365,7 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 		resp.Body.Close()
 
 		if err != nil {
-			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			lastErr = fmt.Errorf("endpoint %q read response failed: %w", ep.Name, err)
 			continue
 		}
 
@@ -320,15 +374,15 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 			break
 		}
 
-		// 429 限流或 5xx 服务端错误允许重试，4xx 客户端错误直接终止
-		lastErr = fmt.Errorf("native LLM returned status %d: %s", resp.StatusCode, string(respBody))
+		// 429 限流或 5xx 错误记录并尝试 Failover 切换备用端点
+		lastErr = fmt.Errorf("endpoint %q returned status %d: %s", ep.Name, resp.StatusCode, string(respBody))
 		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
 			return lastErr
 		}
 	}
 
 	if lastErr != nil {
-		return fmt.Errorf("native LLM request failed after %d retries: %w", maxRetries, lastErr)
+		return fmt.Errorf("all native LLM endpoints failed after %d retries: %w", maxRetries, lastErr)
 	}
 
 	// 4. 解析响应并写入目标文件
@@ -368,8 +422,23 @@ func init() {
 
 ```go
 // models/config.go 扩展结构体
+
+// NativeEndpointConfig 单个 Native LLM 算力节点配置 (独立 BaseURL, APIKey 与 Model)
+type NativeEndpointConfig struct {
+	Name        string  `yaml:"name" json:"name"`                 // 节点名称，如 "local-vllm-primary"
+	BaseURL     string  `yaml:"base_url" json:"base_url"`         // API 地址，如 "http://192.168.56.18:8000/v1/chat/completions"
+	APIKey      string  `yaml:"api_key" json:"api_key"`           // 该端点专有 API Key (可留空或从环境变量读取)
+	Model       string  `yaml:"model" json:"model"`               // 该端点部署/绑定的模型名称，如 "glm-4-flash"
+	Concurrent  int     `yaml:"concurrent" json:"concurrent"`     // 该节点最大并发槽位数 (默认 20)
+	Weight      int     `yaml:"weight" json:"weight"`             // 负载权重 (1~100, 默认 10)
+	Temperature float64 `yaml:"temperature" json:"temperature"`   // 节点级温度 (可选，缺省继承全局)
+}
+
+// NativeLLMConfig Native 引擎全局配置与多端点集群
 type NativeLLMConfig struct {
-	Endpoint           string  `yaml:"endpoint" json:"endpoint"`
+	// ── 全局/向后兼容单端点简写配置 ──
+	BaseURL            string  `yaml:"base_url" json:"base_url"`
+	Endpoint           string  `yaml:"endpoint" json:"endpoint"` // 兼容 endpoint 别名
 	APIKey             string  `yaml:"api_key" json:"api_key"`
 	DefaultModel       string  `yaml:"default_model" json:"default_model"`
 	Temperature        float64 `yaml:"temperature" json:"temperature"`
@@ -377,6 +446,9 @@ type NativeLLMConfig struct {
 	ResponseFormatJSON bool    `yaml:"response_format_json" json:"response_format_json"`
 	MaxRetries         int     `yaml:"max_retries" json:"max_retries"`
 	RetryBackoffMs     int     `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
+
+	// ── 多异构端点集群列表 (Multi-Provider Cluster) ──
+	Endpoints []NativeEndpointConfig `yaml:"endpoints" json:"endpoints"`
 }
 
 type ToolBackendsConfig struct {
@@ -393,14 +465,34 @@ ai:
 
   # ── 原生轻量 LLM API 配置 (Thin LLM Engine) ──
   native:
-    endpoint: "http://192.168.56.18:8000/v1/chat/completions"
-    api_key: "sk-code-shield-native-key"
-    default_model: "glm-4-flash"
     temperature: 0.1
     max_tokens: 4096
     response_format_json: true
     max_retries: 3
     retry_backoff_ms: 500
+
+    # ── 多异构端点集群 (每个端点拥有独立的 BaseURL, APIKey, Model 与并发上限) ──
+    endpoints:
+      - name: "local-vllm-primary"
+        base_url: "http://192.168.56.18:8000/v1/chat/completions"
+        api_key: "sk-code-shield-internal"
+        model: "glm-4-flash"
+        concurrent: 30
+        weight: 80
+
+      - name: "local-vllm-backup"
+        base_url: "http://192.168.56.19:8000/v1/chat/completions"
+        api_key: "sk-code-shield-backup"
+        model: "qwen-2.5-72b-instruct"
+        concurrent: 15
+        weight: 20
+
+      - name: "cloud-fallback-gateway"
+        base_url: "https://api.deepseek.com/v1/chat/completions"
+        api_key: "sk-deepseek-prod-token"
+        model: "deepseek-chat"
+        concurrent: 5
+        weight: 0                  # 权重 0 作为冷备降级节点
 
   # ── 异构模型多阶梯资源池配置 (流水线级编排) ──
   tiers:
@@ -590,16 +682,36 @@ gantt
 *   **集中配置文件**：在 `config.yaml` 中配置 `ai.native.api_key`，与系统现有的数据库密码、JWTSecret 等凭据保持一致；
 *   **环境变量覆盖**：支持通过 `CODE_SHIELD_AI_NATIVE_API_KEY` 环境变量动态注入，方便 Docker 容器化编排与 CI/CD 密钥脱敏。
 
-#### 2. 多端点故障轮询与故障转移 (Multi-Endpoint Failover)
-配置支持配置单个或多个私有 LLM 节点地址。当首选节点发生网络超时或 5xx 错误时，自动在重试周期内轮询备用节点：
+#### 2. 多异构端点集群与故障转移 (Multi-Endpoint Failover)
+配置支持定义多个异构 LLM 算力节点。每个节点支持**独立配置其专属的 `base_url`、`api_key`、`model`、`concurrent` 与 `weight`**。当主节点发生网络超时、显存 OOM 或 5xx 错误时，系统在重试周期内自动按优先级切换到备用节点，并自动使用备用节点的 APIKey 与 Model 进行请求：
 
 ```yaml
 ai:
   native:
+    temperature: 0.1
+    max_retries: 3
+    retry_backoff_ms: 500
     endpoints:
-      - "http://192.168.56.18:8000/v1/chat/completions" # 节点 1 (主)
-      - "http://192.168.56.19:8000/v1/chat/completions" # 节点 2 (备)
-    api_key: "sk-code-shield-native-key"
+      - name: "local-vllm-node1"                       # 内网主节点
+        base_url: "http://192.168.56.18:8000/v1/chat/completions"
+        api_key: "sk-vllm-primary-token"
+        model: "glm-4-flash"
+        concurrent: 30
+        weight: 80
+
+      - name: "local-vllm-node2"                       # 内网备用节点 (异构模型)
+        base_url: "http://192.168.56.19:8000/v1/chat/completions"
+        api_key: "sk-vllm-backup-token"
+        model: "qwen-2.5-72b-instruct"
+        concurrent: 15
+        weight: 20
+
+      - name: "cloud-gateway-fallback"                 # 外部网关兜底冷备
+        base_url: "https://api.deepseek.com/v1/chat/completions"
+        api_key: "sk-deepseek-prod-token"
+        model: "deepseek-chat"
+        concurrent: 5
+        weight: 0
 ```
 
 #### 3. 熔断器与平滑降级至 Thick Agent CLI (Circuit Breaker & CLI Fallback)
