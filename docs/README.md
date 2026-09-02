@@ -29,9 +29,12 @@ docs/
 │   ├── 05-租户自定义任务类型与动态规则扩展设计.md
 │   ├── 06-多租户系统迁移运维与实施路线图.md
 │   └── 07-租户分层配置与动态热加载深度设计.md
-└── native-llm-architecture/                           # ⚡【专题三】原生 LLM 轻量执行引擎与混合调用架构设计
-    ├── README.md                                      # 原生 LLM 引擎方案总览与导航
-    └── 01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md # 🌟【核心设计】原生轻量 LLM 引擎、6大单轮场景与动静分离混合调用
+├── native-llm-architecture/                           # ⚡【专题三】原生 LLM 轻量执行引擎与混合调用架构设计
+│   ├── README.md                                      # 原生 LLM 引擎方案总览与导航
+│   └── 01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md # 🌟【核心设计】原生轻量 LLM 引擎、6大单轮场景与动静分离混合调用
+└── deterministic-fingerprint-architecture/            # 🧬【专题四】确定性源码指纹与抗抖动增量生命周期架构设计
+    ├── README.md                                      # 确定性指纹架构方案总览与导航
+    └── 01-确定性源码指纹与抗抖动增量生命周期架构设计.md # 🌟【核心设计】物理源码感知器、三级指纹分层、受控Taxonomy归一化与防假修复状态机
 ```
 
 ---
@@ -46,3 +49,6 @@ docs/
    收录分库多租户物理隔离、连接池动态路由、数据凭据沙箱与实施路线图（01~07）。
 4. ⚡ **[原生 LLM 轻量执行引擎与混合调用架构 (native-llm-architecture/README.md)](native-llm-architecture/README.md)**
    收录原生 HTTP REST API 轻量引擎设计、5 大单轮任务场景分析与“探索型 Agent + 原生 LLM”动静分离混合调用体系。
+5. 🧬 **[确定性源码指纹与抗抖动增量生命周期架构 (deterministic-fingerprint-architecture/README.md)](deterministic-fingerprint-architecture/README.md)**
+   收录物理源码真实源提取（`SourceEnricher`）、三级指纹分层体系、受控 Taxonomy 归一化与代码变更守卫防假修复状态机。
+
