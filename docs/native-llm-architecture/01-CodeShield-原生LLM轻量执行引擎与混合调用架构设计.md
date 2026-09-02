@@ -24,14 +24,14 @@
 
 ```mermaid
 graph TD
-    subgraph Current_Architecture [现有重型 Agent CLI 架构]
-        Caller[业务调用点<br/>辩论/指纹匹配/修JSON/总结] -->|AIRequest| Dispatcher[ModelDispatcher 调度器]
-        Dispatcher -->|Acquire 槽位| CLIProcess[RunCLIProcess: os/exec 子进程]
-        CLIProcess -->|Fork 进程| AgentRuntime[Agent CLI 运行时<br/>(claude / opencode / codex / agy)]
-        AgentRuntime -->|加载沙箱/插件/数据库| LocalState[本地状态与配置<br/>(SQLite/auth.json/WorkDir)]
-        LocalState -->|多轮工具循环| RemoteLLM[远端大模型服务]
+    subgraph Current_Architecture ["现有重型 Agent CLI 架构"]
+        Caller["业务调用点<br/>辩论/指纹匹配/修JSON/总结"] -->|AIRequest| Dispatcher["ModelDispatcher 调度器"]
+        Dispatcher -->|Acquire 槽位| CLIProcess["RunCLIProcess: os/exec 子进程"]
+        CLIProcess -->|Fork 进程| AgentRuntime["Agent CLI 运行时<br/>(claude / opencode / codex / agy)"]
+        AgentRuntime -->|加载沙箱/插件/数据库| LocalState["本地状态与配置<br/>(SQLite/auth.json/WorkDir)"]
+        LocalState -->|多轮工具循环| RemoteLLM["远端大模型服务"]
         RemoteLLM -->|原始流式响应| AgentRuntime
-        AgentRuntime -->|落盘文本/Markdown| OutputFile[req.OutputPath 文件]
+        AgentRuntime -->|落盘文本/Markdown| OutputFile["req.OutputPath 文件"]
         OutputFile -->|正则清洗/Markdown解析| Caller
     end
 ```
@@ -67,20 +67,20 @@ graph TD
 
 ```mermaid
 graph TD
-    Start[任务调用到来] --> Q1{是否需要自主读取/探索源码文件<br/>或执行外部工具?}
-    Q1 -->|是 (Prompt 只传文件名/路径)| Thick[Thick Agent Mode<br/>(claude / opencode / agy / codex)<br/>具备本地文件系统与沙箱工具能力]
-    Q1 -->|否 (Prompt 已内联全部上下文)| Thin[Thin LLM Mode<br/>(NativeInvoker HTTP REST)<br/>毫秒级连接复用 + 原生 JSON Schema]
+    Start["任务调用到来"] --> Q1{"是否需要自主读取/探索源码文件<br/>或执行外部工具?"}
+    Q1 -->|"是 (Prompt 只传文件名/路径)"| Thick["Thick Agent Mode<br/>(claude / opencode / agy / codex)<br/>具备本地文件系统与沙箱工具能力"]
+    Q1 -->|"否 (Prompt 已内联全部上下文)"| Thin["Thin LLM Mode<br/>(NativeInvoker HTTP REST)<br/>毫秒级连接复用 + 原生 JSON Schema"]
 
-    Thick --> T1[Hunter 初筛与全仓深度扫描]
-    Thick --> T2[单仓/分片自主代码分析]
-    Thick --> T3[PoC 构造与动态复现验证]
+    Thick --> T1["Hunter 初筛与全仓深度扫描"]
+    Thick --> T2["单仓/分片自主代码分析"]
+    Thick --> T3["PoC 构造与动态复现验证"]
 
-    Thin --> N1[JSON 语法与结构修复 RepairJSON]
-    Thin --> N2[缺陷指纹跨周期语义匹配 Finding Match]
-    Thin --> N3[辩论终审法官 Judge Agent]
-    Thin --> N4[辩护人反向抗辩 Challenger Agent]
-    Thin --> N5[Tier 3 全量报告汇总与态势总结]
-    Thin --> N6[误报反馈负样本特征提炼]
+    Thin --> N1["JSON 语法与结构修复 RepairJSON"]
+    Thin --> N2["缺陷指纹跨周期语义匹配 Finding Match"]
+    Thin --> N3["辩论终审法官 Judge Agent"]
+    Thin --> N4["辩护人反向抗辩 Challenger Agent"]
+    Thin --> N5["Tier 3 全量报告汇总与态势总结"]
+    Thin --> N6["误报反馈负样本特征提炼"]
 ```
 
 ### 2.1 适用场景详细分析表
@@ -522,13 +522,13 @@ func getFindingMatchBackend(ctx *taskContext) string {
 
 ```mermaid
 graph LR
-    BenchmarkSet[基准测试集<br/>scylladb/fmt 等 10 个代码仓历史报告] --> RunA[方案 A: Thick Agent CLI<br/>(agy / claude)]
-    BenchmarkSet --> RunB[方案 B: Thin LLM Engine<br/>(NativeInvoker)]
-    RunA --> Eval[对比指标评估]
+    BenchmarkSet["基准测试集<br/>scylladb/fmt 等 10 个代码仓历史报告"] --> RunA["方案 A: Thick Agent CLI<br/>(agy / claude)"]
+    BenchmarkSet --> RunB["方案 B: Thin LLM Engine<br/>(NativeInvoker)"]
+    RunA --> Eval["对比指标评估"]
     RunB --> Eval
-    Eval --> M1[1. 裁决一致性 Agreement Rate $\ge 95\%$]
-    Eval --> M2[2. 误报剔除率 Precision 差异 $\le \pm 2\%$]
-    Eval --> M3[3. 裁决阶段耗时下降 $\ge 50\%$]
+    Eval --> M1["1. 裁决一致性 Agreement Rate >= 95%"]
+    Eval --> M2["2. 误报剔除率 Precision 差异 <= +-2%"]
+    Eval --> M3["3. 裁决阶段耗时下降 >= 50%"]
 ```
 
 *   **准入条件**：方案 B 在测试集上的裁决一致性达到 $\ge 95\%$ 且无新增误报漏报，方可将 `ai.tiers.tier2_reasoning.backend` 默认值设为 `native`。
@@ -541,16 +541,16 @@ graph LR
 gantt
     title CodeShield Thin LLM Engine 落地演进路线图
     dateFormat  YYYY-MM-DD
-    section Phase 1: 基础能力与工具先行 (零风险)
-    实现 NativeInvoker (带重试/Token统计)   :p1_1, 2026-09-03, 3d
-    配置模型扩展 (Native + ToolBackends)   :p1_2, after p1_1, 2d
+    section Phase 1 - 基础能力与工具先行
+    实现 NativeInvoker (带重试与Token统计)   :p1_1, 2026-09-03, 3d
+    配置模型扩展 (Native 与 ToolBackends)  :p1_2, after p1_1, 2d
     RepairJSON 与指纹比对原生化改造        :p1_3, after p1_2, 2d
-    section Phase 2: 报告汇总与 A/B 基准测试
+    section Phase 2 - 报告汇总与基准测试
     Tier 3 报告汇总原生化接入              :p2_1, 2026-09-10, 2d
-    Judge/Challenger A/B 基准对照测试      :p2_2, after p2_1, 4d
-    section Phase 3: 全流水线混合编排与上线
+    Judge与Challenger AB基准对照测试       :p2_2, after p2_1, 4d
+    section Phase 3 - 全流水线混合编排与上线
     辩论流水线按配置启用 Native 模式       :p3_1, 2026-09-17, 3d
-    故障自动降级 (Native 报错平滑降级至 CLI):p3_2, after p3_1, 2d
+    故障自动降级 (Native 报错平滑降级至 CLI) :p3_2, after p3_1, 2d
 ```
 
 ### 6.1 分阶段实施细则
