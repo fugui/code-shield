@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1422,5 +1423,212 @@ func TestPrepareAndSync_BranchSwitching(t *testing.T) {
 	models.DB.First(&updatedReport, report.ID)
 	if updatedReport.CloneStatus != "success" {
 		t.Errorf("expected clone_status to be 'success', got '%s'", updatedReport.CloneStatus)
+	}
+}
+
+func TestPrepareAndSync_StaleLockAutoHealing(t *testing.T) {
+	tempBase, err := os.MkdirTemp("", "test-stale-lock-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempBase)
+
+	remoteRepoDir := filepath.Join(tempBase, "remote-repo")
+	_ = os.MkdirAll(remoteRepoDir, 0755)
+	exec.Command("git", "-C", remoteRepoDir, "init").Run()
+	exec.Command("git", "-C", remoteRepoDir, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", remoteRepoDir, "config", "user.email", "test@test.com").Run()
+	os.WriteFile(filepath.Join(remoteRepoDir, "file.txt"), []byte("content"), 0644)
+	exec.Command("git", "-C", remoteRepoDir, "add", ".").Run()
+	exec.Command("git", "-C", remoteRepoDir, "commit", "-m", "init").Run()
+
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
+	}
+	models.DB = testDB
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+
+	models.AppConfig.Storage.Root = filepath.Join(tempBase, "storage")
+	_ = os.MkdirAll(models.AppConfig.GetDataDir(), 0755)
+
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "dept-" + ts}
+	testDB.Create(&dept)
+	user := models.User{Username: "user-" + ts, Email: "user-" + ts + "@test.com"}
+	testDB.Create(&user)
+	taskType := models.TaskType{Name: "type-" + ts, DisplayName: "测试类型"}
+	testDB.Create(&taskType)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "stale-lock-repo-" + ts,
+		URL:          "file://" + remoteRepoDir,
+		Branch:       "master",
+	}
+	testDB.Create(&repo)
+
+	report := models.TaskReport{
+		RepoID:     repo.ID,
+		TaskTypeID: taskType.ID,
+		Status:     "pending",
+	}
+	testDB.Create(&report)
+
+	taskCtx := &taskContext{
+		ctx:      context.Background(),
+		repo:     repo,
+		report:   report,
+		taskType: taskType,
+	}
+
+	// 1. 首次同步
+	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+		t.Fatalf("first prepareAndSync failed: %v", err)
+	}
+
+	// 2. 人为制造异常中断残留的 .git/index.lock
+	lockPath := filepath.Join(taskCtx.codesPath, ".git", "index.lock")
+	if err := os.WriteFile(lockPath, []byte("stale-lock-pid-99999"), 0644); err != nil {
+		t.Fatalf("failed to create fake stale index.lock: %v", err)
+	}
+
+	// 3. 再次触发同步：应当自动自愈清理 index.lock，且不发生错误
+	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+		t.Fatalf("prepareAndSync failed to auto-heal stale git lock: %v", err)
+	}
+
+	// 验证锁文件已被自愈清除
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Errorf("expected index.lock to be cleaned up, but it still exists")
+	}
+}
+
+func TestPrepareAndSync_ConcurrentSafe(t *testing.T) {
+	tempBase, err := os.MkdirTemp("", "test-concurrent-sync-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempBase)
+
+	remoteRepoDir := filepath.Join(tempBase, "remote-repo")
+	_ = os.MkdirAll(remoteRepoDir, 0755)
+	exec.Command("git", "-C", remoteRepoDir, "init").Run()
+	exec.Command("git", "-C", remoteRepoDir, "config", "user.name", "test").Run()
+	exec.Command("git", "-C", remoteRepoDir, "config", "user.email", "test@test.com").Run()
+	os.WriteFile(filepath.Join(remoteRepoDir, "file.txt"), []byte("content"), 0644)
+	exec.Command("git", "-C", remoteRepoDir, "add", ".").Run()
+	exec.Command("git", "-C", remoteRepoDir, "commit", "-m", "init").Run()
+
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
+	}
+	models.DB = testDB
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+
+	models.AppConfig.Storage.Root = filepath.Join(tempBase, "storage")
+	_ = os.MkdirAll(models.AppConfig.GetDataDir(), 0755)
+
+	ts := time.Now().Format("150405.000000")
+	dept := models.Department{Name: "dept-" + ts}
+	testDB.Create(&dept)
+	user := models.User{Username: "user-" + ts, Email: "user-" + ts + "@test.com"}
+	testDB.Create(&user)
+	taskType := models.TaskType{Name: "type-" + ts, DisplayName: "测试类型"}
+	testDB.Create(&taskType)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "concurrent-repo-" + ts,
+		URL:          "file://" + remoteRepoDir,
+		Branch:       "master",
+	}
+	testDB.Create(&repo)
+
+	// 并发 6 个任务同时对同一个物理仓库发起同步
+	concurrency := 6
+	var wg sync.WaitGroup
+	errCh := make(chan error, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			report := models.TaskReport{
+				RepoID:     repo.ID,
+				TaskTypeID: taskType.ID,
+				Status:     "pending",
+			}
+			testDB.Create(&report)
+
+			taskCtx := &taskContext{
+				ctx:      context.Background(),
+				repo:     repo,
+				report:   report,
+				taskType: taskType,
+			}
+
+			if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+				errCh <- fmt.Errorf("worker %d failed: %w", idx, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent prepareAndSync produced error: %v", err)
+	}
+}
+
+func TestCleanStaleGitLocks(t *testing.T) {
+	tempDir := t.TempDir()
+	gitDir := filepath.Join(tempDir, ".git")
+	refsDir := filepath.Join(gitDir, "refs", "heads")
+	if err := os.MkdirAll(refsDir, 0755); err != nil {
+		t.Fatalf("failed to create fake git dirs: %v", err)
+	}
+
+	indexLock := filepath.Join(gitDir, "index.lock")
+	shallowLock := filepath.Join(gitDir, "shallow.lock")
+	branchLock := filepath.Join(refsDir, "master.lock")
+	regularFile := filepath.Join(gitDir, "config")
+
+	_ = os.WriteFile(indexLock, []byte("lock1"), 0644)
+	_ = os.WriteFile(shallowLock, []byte("lock2"), 0644)
+	_ = os.WriteFile(branchLock, []byte("lock3"), 0644)
+	_ = os.WriteFile(regularFile, []byte("[core]"), 0644)
+
+	// 执行清理
+	cleanStaleGitLocks(tempDir)
+
+	if _, err := os.Stat(indexLock); !os.IsNotExist(err) {
+		t.Errorf("expected index.lock to be deleted")
+	}
+	if _, err := os.Stat(shallowLock); !os.IsNotExist(err) {
+		t.Errorf("expected shallow.lock to be deleted")
+	}
+	if _, err := os.Stat(branchLock); !os.IsNotExist(err) {
+		t.Errorf("expected master.lock to be deleted")
+	}
+	if _, err := os.Stat(regularFile); os.IsNotExist(err) {
+		t.Errorf("expected regular config file to be preserved")
+	}
+}
+
+func TestGetRepoSyncLock(t *testing.T) {
+	lock1 := getRepoSyncLock("/path/to/repoA")
+	lock2 := getRepoSyncLock("/path/to/repoA")
+	lock3 := getRepoSyncLock("/path/to/repoB")
+
+	if lock1 != lock2 {
+		t.Errorf("expected identical mutex instance for the same repo path")
+	}
+	if lock1 == lock3 {
+		t.Errorf("expected different mutex instances for different repo paths")
 	}
 }
