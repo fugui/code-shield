@@ -6,7 +6,7 @@
 *   **文档类型**：系统配置架构与算力治理专项设计
 *   **当前状态**：`PROPOSED`（架构方案设计完成，待实施评审）
 *   **涉及模块**：`models/config.go`、`config.yaml`、`services/dispatcher.go`、`services/native_cli.go`、`services/governance`
-*   **核心目标**：针对 Code-Shield 随架构演进在 `ai`（AI 调度引擎）与 `governance`（企业治理闭环）模块中暴露出的“冷热配置混杂”、“算力供给与业务消费角色耦合”、“治理策略缺乏多级继承覆盖”、“配置修改需重启服务打断扫描”等痛点，提出以 **“显式精准算力池（Resources with Native Endpoints）+ 业务流水线阶梯（Pipeline Tiers）+ 微任务工具（Tools）+ 治理生命周期（Governance）”** 为核心的模块化配置重构方案，实现结构清晰、零歧义精准绑定，并完整保留多模型独立并发、Native 算力集群负载分流与工作时间自动避峰等核心能力。
+*   **核心目标**：针对 Code-Shield 随架构演进在 `ai`（AI 调度引擎）与 `governance`（企业治理闭环）模块中暴露出的“冷热配置混杂”、“算力供给与业务消费角色耦合”、“治理策略缺乏多级继承覆盖”、“配置修改需重启服务打断扫描”等痛点，提出以 **“显式精准算力池（Resources with Native Endpoints）+ 对抗辩论流水线（Debate Pipeline）+ 微任务工具（Tools）+ 治理生命周期（Governance）”** 为核心的扁平模块化重构方案，消除过度抽象，实现结构清晰、零歧义精准绑定，并完整保留多模型独立并发、Native 算力集群负载分流与工作时间自动避峰等核心能力。
 
 ---
 
@@ -27,7 +27,7 @@ graph TD
 
     subgraph HotConfig ["高频易变热配置 (算力供给与业务策略层 - 需敏捷调优/热加载)"]
         AI_Compute["ai.resources: Thick Agent 节点 / Native 算力集群 endpoints / 独立并发配额"]
-        AI_Pipeline["ai.pipeline: Hunter/Judge 显式阶梯绑定 / 辩论流控 / 阶段超时"]
+        AI_Debate["ai.debate: Hunter/Judge 阶梯角色绑定 / 辩论流控 / 阶段超时"]
         AI_Throttling["ai.throttling: 工作时间避峰限流 / 动态等比缩放"]
         AI_Tools["ai.tools: JSON修复 / 指纹比对 / 知识提炼微任务直连 native"]
         Gov_Policy["governance: 缺陷指纹 / 范围守卫 / 负样本注入 / PR 门禁"]
@@ -36,14 +36,14 @@ graph TD
 
 ### 1.2 现行配置 (`config.yaml`) 的结构痛点
 
-1. **算力供给端 (Compute Provider) 与 业务消费端 (Pipeline Tiers) 概念混杂**：
+1. **算力供给端 (Compute Provider) 与 业务消费端 (Debate Tiers) 概念混杂**：
    * 现存配置中，`ai.backend`（全局 CLI）、`ai.native`（原生端点）、`ai.models`（CLI 多模型并发池）、`ai.tiers`（初筛/辩论/汇总业务角色）与 `ai.tool_backends`（场景工具）平铺在 `ai:` 根节点下。
    * 运维人员在新增物理算力节点或调整某阶段模型时，需跨越 `native`、`models`、`tiers` 等多处字段修改，概念割裂。
 2. **Native 引擎的集群能力与消费绑定关系不够清晰**：
    * 原生 Thin LLM 引擎（`NativeInvoker`）在底层支持多 `endpoints` 权重分流与 Failover，但在顶层配置中与消费端（`tiers` / `tool_backends`）的对应关系不够直观；
    * 消费端期望直接以确定性的 `resource: "native"` 进行显式引用，由 Native 引擎自身内部闭环管理其多个算力节点。
-3. **`ai.debate` 与 `ai.tiers` 的从属关系倒置**：
-   * `debate`（辩论流控与背压）与 `tiers`（阶梯资源）是平级兄弟字段，但实际上 `tier1_hunter`、`tier2_reasoning` 正是对抗辩论流水线的执行阶梯，两者应收拢于统一的流水线编排中。
+3. **流水线流控与执行阶梯割裂**：
+   * `debate`（辩论流控与背压）与 `tiers`（阶梯资源）过去作为同级字段分散存在，实际上 `tier1_hunter`、`tier2_reasoning` 正是对抗辩论流水线的执行阶梯，两者应扁平收拢在 `ai.debate` 中。
 4. **企业治理策略缺乏多级继承与容量保护**：
    * `governance` 仅提供了 5 个平铺布尔开关，无法区分“全局默认基线”与“任务/项目级定制覆盖”；
    * 研发负样本反馈注入（`feedback_injection`）缺乏最大规则注入上限（Token 预算控制），在历史知识库庞大时存在 Prompt 溢出风险。
@@ -53,9 +53,9 @@ graph TD
 
 ---
 
-## 二、 核心重构设计：显式精准绑定的四层解耦模型
+## 二、 核心重构设计：显式精准绑定的解耦模型
 
-优化后的配置体系遵循 **“职责单一、显式精准绑定、能力不减、平滑演进”** 的原则，将配置划分为清晰的 4 个子领域：
+优化后的配置体系遵循 **“职责单一、显式精准绑定、拒绝过度抽象（YAGNI）、平滑演进”** 的原则，将配置划分为清晰的 4 个子领域：
 
 ```mermaid
 graph LR
@@ -65,7 +65,7 @@ graph LR
         R_Native["id: 'native' (原生 Thin LLM 引擎)<br/>├── endpoint 1: local-vllm-primary (weight: 80, concurrent: 30)<br/>└── endpoint 2: cloud-deepseek-backup (weight: 20, concurrent: 5)"]
     end
 
-    subgraph Layer2 ["2. 业务阶梯流水线 (ai.pipeline.tiers)"]
+    subgraph Layer2 ["2. 对抗辩论流水线 (ai.debate.tiers)"]
         T1["tier1_hunter<br/>resource: 'agy-gemini'"]
         T2["tier2_reasoning<br/>resource: 'native'"]
         T3["tier3_synthesis<br/>resource: 'native'"]
@@ -85,8 +85,9 @@ graph LR
 * **Thick Agent 节点**：每个 CLI 模型定义为一个确定的 resource 节点（包含唯一的 `id`、`driver`、`model`、`concurrent`）。
 * **Native Thin LLM 引擎节点**：统一固定为 **`id: "native"`**，内部包含全局调用选项（`response_format_json`、`max_retries`、`retry_backoff_ms`），并通过 **`endpoints` 数组** 支持配置多个异构算力节点（各自拥有独立 `base_url`、`api_key`、`model`、`concurrent` 与权重 `weight`）。
 
-### 2.2 业务流水线消费端 (`ai.pipeline.tiers`)
-* **100% 显式精确绑定**：每个业务阶段（`tier1_hunter`、`tier2_reasoning`、`tier3_synthesis`）通过 **`resource: "<id>"`** 直接引用资源池中的节点 ID，彻底消除模糊匹配与暗箱猜测逻辑。
+### 2.2 多智能体对抗辩论流水线 (`ai.debate`)
+* **拒绝模式嵌套**：系统核心扫描流水线即为辩论流水线，去除非必要的 `pipeline.mode: debate` 嵌套，直接使用 `ai.debate` 统管流控与阶梯。
+* **100% 显式精确绑定 (`ai.debate.tiers`)**：每个业务阶段（`tier1_hunter`、`tier2_reasoning`、`tier3_synthesis`）通过 **`resource: "<id>"`** 直接引用资源池中的节点 ID，彻底消除模糊匹配与暗箱猜测逻辑。
 * **业务阶段超时与流控**：各阶段独立配置 `timeout_seconds`，流水线全局配置 `fast_pass_enabled`（0 候选快速放行）、`backpressure_threshold`（跨阶梯背压阈值）与 `stage_timeout_seconds`。
 
 ### 2.3 微任务工具消费端 (`ai.tools`)
@@ -134,7 +135,7 @@ database:
   max_idle_conns: 10
 
 # ==============================================================================
-# 2. AI 执行引擎：算力池、流水线与工具 (高频易变热配置)
+# 2. AI 执行引擎：算力池、辩论流水线与工具 (高频易变热配置)
 # ==============================================================================
 ai:
   default_resource: "native"           # 全局兜底 Resource ID
@@ -194,17 +195,17 @@ ai:
       scale: 0.10                      # 工作时间算力比例 (0.10 代表 10%，0.0 代表暂停)
 
   # ────────────────────────────────────────────────────────────────────────────
-  # 2.3 业务流水线编排：100% 显式指定 Resource ID
+  # 2.3 多智能体对抗辩论流水线 (Debate Pipeline)
+  # 扁平直观：统管辩论流控参数与各阶段阶梯算力绑定
   # ────────────────────────────────────────────────────────────────────────────
-  pipeline:
-    mode: "debate"                     # 流水线模式：debate (对抗辩论) / single / chunked
-    debate:
-      fast_pass_enabled: true          # 0 候选快速放行 (节省 80%+ 辩论算力)
-      max_candidates_per_chunk: 20     # 单分片最大仲裁候选数
-      stage_timeout_seconds: 1800      # 单阶段全局硬超时兜底 (秒)
-      backpressure_threshold: 30       # 跨 Tier 背压触发积压阈值
-      backpressure_timeout_seconds: 120 # 背压超时兜底 (秒)
-      log_retention_days: 30           # 辩论轨迹日志保留天数
+  debate:
+    enabled: true                      # 是否启用多智能体对抗辩论流水线
+    fast_pass_enabled: true            # 0 候选快速放行 (节省 80%+ 辩论算力)
+    max_candidates_per_chunk: 20       # 单分片最大仲裁候选数
+    stage_timeout_seconds: 1800        # 单阶段全局硬超时兜底 (秒)
+    backpressure_threshold: 30         # 跨 Tier 背压触发积压阈值
+    backpressure_timeout_seconds: 120  # 背压超时兜底 (秒)
+    log_retention_days: 30             # 辩论轨迹日志保留天数
 
     # 各阶段阶梯显式绑定 resource
     tiers:
@@ -320,18 +321,23 @@ type TierBindingConfig struct {
 	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"` // 超时时限 (秒)
 }
 
-// PipelineTiersConfig 阶梯流水线配置
-type PipelineTiersConfig struct {
+// DebateTiersConfig 辩论阶梯流水线配置
+type DebateTiersConfig struct {
 	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`
 	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"`
 	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"`
 }
 
-// PipelineConfig 业务流水线编排
-type PipelineConfig struct {
-	Mode   string              `yaml:"mode" json:"mode"`
-	Debate DebateFlowConfig    `yaml:"debate" json:"debate"`
-	Tiers  PipelineTiersConfig `yaml:"tiers" json:"tiers"`
+// DebateConfig 辩论流水线流控与阶梯配置
+type DebateConfig struct {
+	Enabled                    bool              `yaml:"enabled" json:"enabled"`
+	FastPassEnabled            bool              `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
+	MaxCandidatesPerChunk      int               `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
+	StageTimeoutSeconds        int               `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
+	LogRetentionDays           int               `yaml:"log_retention_days" json:"log_retention_days"`
+	BackpressureThreshold      int               `yaml:"backpressure_threshold" json:"backpressure_threshold"`
+	BackpressureTimeoutSeconds int               `yaml:"backpressure_timeout_seconds" json:"backpressure_timeout_seconds"`
+	Tiers                      DebateTiersConfig `yaml:"tiers" json:"tiers"`
 }
 
 // ToolsConfig 微任务工具路由
@@ -345,7 +351,7 @@ type ToolsConfig struct {
 在 `LoadConfig` 中自动执行平滑映射：
 1. 若配置文件包含旧版 `ai.models`，自动转换为 `ai.resources` 列表；
 2. 若配置文件包含旧版 `ai.native`（含 `endpoints`），自动封装为 `id: "native"` 实体注入 `resources`；
-3. 若配置文件包含旧版 `ai.tiers.tier1_fast`，自动转换为 `ai.pipeline.tiers.tier1_hunter`；
+3. 若配置文件包含旧版 `ai.tiers.tier1_fast`，自动转换为 `ai.debate.tiers.tier1_hunter`；
 4. 若配置文件包含旧版 `ai.tool_backends`，自动同步为 `ai.tools`；
 5. 若配置文件包含旧版平铺 `governance` 布尔值，自动映射到 `governance.fingerprint`、`governance.lifecycle` 与 `governance.feedback_memory`。
 
@@ -381,7 +387,7 @@ sequenceDiagram
 ```
 
 1. **热加载安全范围**：
-   * **允许热重载**：`ai.resources`（算力节点增删/并发调整）、`ai.throttling`（限流时段与比例）、`ai.pipeline.debate`（超时与背压门限）、`governance`（规则阈值）。
+   * **允许热重载**：`ai.resources`（算力节点增删/并发调整）、`ai.throttling`（限流时段与比例）、`ai.debate`（超时与背压门限）、`governance`（规则阈值）。
    * **需重启生效**：`server.port`、`database.*`。
 2. **零中断保障**：`ReloadResources` 仅更新槽位定义与 `Limit`，已在执行中的子进程/HTTP 请求保持执行直到完成，新到请求立即使用最新算力池。
 
@@ -392,7 +398,7 @@ sequenceDiagram
 | 评估维度 | 现行配置架构 (`Current`) | 重构后配置架构 (`Proposed`) | 核心收益 |
 | :--- | :--- | :--- | :--- |
 | **算力资源管理** | `models` / `native.endpoints` 割裂，概念不清 | 统一收拢为 `ai.resources` 算力池，`native` 作为一等公民内聚 `endpoints` | 结构极简统一，内部原生支持权重分流与 Failover，外部显式引用。 |
-| **流水线编排** | `debate` 与 `tiers` 平级，缺少上下文聚合 | 收拢为 `ai.pipeline` 流水线编排，各阶梯 100% 显式绑定 `resource: "<id>"` | 彻底消除模糊匹配与歧义，所见即所得，业务角色与算力清晰解耦。 |
+| **流水线编排** | `debate` 与 `tiers` 平级，缺少上下文聚合 | 扁平收拢为 `ai.debate` 流水线编排，各阶梯 100% 显式绑定 `resource: "<id>"` | 消除无意义多层嵌套，所见即所得，业务角色与算力清晰解耦。 |
 | **微工具扩展** | 写死 3 个孤立场景 | 统一在 `ai.tools` 下指定 `default_resource: "native"` | 统一直连原生集群，具备极速 $<800\text{ms}$ 响应与极简覆盖语法。 |
 | **企业治理策略** | 仅 5 个平铺布尔开关 | 分层为 `fingerprint`、`lifecycle`、`feedback_memory` | 增加 `max_rules_injected` 等保护参数，防止 Prompt 爆炸，支持项目级覆盖。 |
 | **运维与安全性** | 敏感 Key 易明文泄露，改配置需重启 | 支持 `${ENV}` 占位符 + 动态配置热重载（Hot Reload） | 提高安全性，修改算力与阈值无需重启服务，扫描任务零中断。 |
