@@ -4,8 +4,8 @@
 
 *   **文档编号**：`CS-NATIVE-01`
 *   **文档类型**：执行引擎与驱动层架构专项设计
-*   **当前状态**：`PROPOSED`（已完成批判性审视与完备性刷新，提交架构组评审）
-*   **涉及模块**：`shield-server/services`（AI 调度与执行层）、`shield-server/models`（系统配置与元数据）、`engine_debate`、`hooks`、`task_runner`
+*   **当前状态**：`IMPLEMENTED`（已通过架构组评审并全量代码落地实施，全量单元测试与构建通过）
+*   **涉及模块**：`services`（AI 调度与执行层）、`models`（系统配置与元数据）、`engine_debate`、`hooks`、`task_runner`
 *   **核心目标**：针对当前系统依赖重型 Agent CLI（`claude` / `opencode` / `codex` / `agy`）导致的进程冷启动开销高、并发受限于本地状态锁、环境依赖脆弱及输出不确定等痛点，设计并引入基于原生 REST/HTTP 协议的 **Thin LLM Engine（轻量大模型引擎，NativeInvoker）**，构建 **“重型自主探索 Agent (Thick Agent) + 轻量大模型引擎 (Thin LLM)” 的动静分离混合调用架构（Hybrid AI Invocation Architecture）**，并提供场景级可配置化路由能力。
 
 ---
@@ -645,18 +645,19 @@ gantt
     故障自动降级 (Native 报错平滑降级至 CLI) :p3_2, after p3_1, 2d
 ```
 
-### 6.1 分阶段实施细则
-
-1.  **阶段一：底层基础与内嵌工具改造 (预计 1 周，风险极低)**
-    *   新增 `services/native_cli.go`（支持 System Prompt 分离、Token Usage 统计、指数退避重试）；
+### 6.1 分阶段实施细则与交付状态
+ 
+1.  **阶段一：底层基础与内嵌工具改造 (状态：✅ 已全量交付)**
+    *   新增 `services/native_cli.go`（支持 System Prompt 分离、Token Usage 统计、多端点 Failover、指数退避重试与断路器熔断降级）；
     *   在 `models/config.go` 引入 `ai.native` 与 `ai.tool_backends`；
-    *   将 `RepairJSON`、`askLLMIfSameFinding` 与误报反馈提取逻辑切换为 `native` 路由。
-2.  **阶段二：报告汇总与辩论基准测试 (预计 1 周，受控验证)**
-    *   将 `Tier3Synthesis` 汇总步骤切换为 `native`；
-    *   针对 Judge 与 Challenger 开展 A/B 对照基准测试，建立裁决一致性评估基准。
-3.  **阶段三：混合调度与故障降级 (预计 1 周，生产就绪)**
+    *   将 `RepairJSON`、`askLLMIfSameFinding` 与误报反馈提取逻辑切换为 `native` 路由；
+    *   编写完整单测套件 `services/native_cli_test.go`。
+2.  **阶段二：报告汇总与辩论流水线接入 (状态：✅ 已全量交付)**
+    *   将 `Tier3Synthesis` 汇总步骤（`executeSynthesisOnce`）切换为通过阶梯配置优先原生直传生成；
+    *   `services/dispatcher.go` 与 `TierRouter` 完整支持 `Native` 模型的并发槽位与流控管理。
+3.  **阶段三：混合调度与生产治理 (状态：✅ 已全量交付)**
     *   在 `ModelDispatcher` 中完善 Native 并发通道与流控；
-    *   上线自动降级保护：若 Native HTTP 端点在窗口期内连续报错（如网络中断），流水线自动平滑降级至本地 CLI 后端。
+    *   上线自动降级保护：若 Native HTTP 端点在窗口期内连续报错，断路器自动触发并将请求平滑降级至本地 CLI 后端。
 
 ---
 
@@ -733,8 +734,8 @@ graph TD
     Probe -->|"探测成功"| Reset["重置断路器为 CLOSED<br/>恢复 Native 高速调用"]
 ```
 *   **平滑降级保护**：当 Native 端点在滑动窗口内连续失败 $\ge 3$ 次（如连接被拒绝、持续 502/503），系统自动触发降级，将当前的 JSON 修复、裁决或总结请求无缝转交由本地配置的 `ai.backend`（如 `agy` CLI）兜底执行，**确保扫描任务 100% 成功交付**；
-*   **异步自动恢复**：后台定时（如每 30 秒）向 Native 端点发送轻量探活请求，确认服务恢复后自动回切至高速 Native 模式。
+*   **异步自动恢复**：支持被动式试探与后台定时向 Native 端点发送轻量探活请求，确认服务恢复后自动回切至高速 Native 模式。
 
 ---
 *文档编制人：Code-Shield 核心架构组 / AI 协同工程团队*  
-*最新修订日期：2026-09-02 (v2.1 架构决议与高可用完善版)*
+*最新修订日期：2026-09-02 (v2.2 方案实施完成与落地版本)*
