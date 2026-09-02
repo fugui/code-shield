@@ -561,7 +561,7 @@ func GetTierRouter() *TierRouter {
 	return GlobalTierRouter
 }
 
-// AcquireTier 申请指定阶梯的槽位资源（支持任务级 backend 覆盖与平滑回退）
+// AcquireTier 解析指定阶梯的路由配置（物理槽位并发由底层的 DispatchingInvoker 统一安全管理，避免双重加锁自锁）
 func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, overrideBackend string) (*TierAcquisition, error) {
 	tierCfg := models.AppConfig.GetTierConfig(tierName)
 	backend := tierCfg.Backend
@@ -572,30 +572,13 @@ func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, override
 		backend = models.AppConfig.AI.Backend
 	}
 
-	var res *ModelResource
-	var modelName string
-	var err error
-
-	if tr != nil && tr.dispatcher != nil {
-		res, modelName, err = tr.dispatcher.Acquire(ctx, backend)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// 若配置了特定的 Tier Model 且物理槽位未给出特定映射，使用 Tier Model
-	if modelName == "" && tierCfg.Model != "" {
-		modelName = tierCfg.Model
-	}
+	modelName := tierCfg.Model
 
 	acq := &TierAcquisition{
-		Resource:  res,
 		Backend:   backend,
 		ModelName: modelName,
 		Release: func() {
-			if tr != nil && tr.dispatcher != nil && res != nil {
-				tr.dispatcher.Release(res, backend)
-			}
+			// 物理槽位统一由 DispatchingInvoker.Invoke 闭环管理，此处保留空实现以兼容上层 defer 调用
 		},
 	}
 	return acq, nil

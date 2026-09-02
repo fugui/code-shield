@@ -3,6 +3,7 @@ package services
 import (
 	"code-shield/models"
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -360,4 +361,101 @@ func TestDispatcher_NativeAutoRegistration(t *testing.T) {
 		t.Fatalf("expected model 'glm-4-flash', got '%s'", model)
 	}
 	Dispatcher.Release(res, "native")
+}
+
+func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
+	origConfig := models.AppConfig
+	defer func() { models.AppConfig = origConfig }()
+
+	// 1. 设置仅有 1 个并发槽位的调度器 (模拟 scale 缩容或单槽位极限情况)
+	d := setupTestDispatcher(1)
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	mockBackend := "mock-tier-test"
+	mockInv := &MockInvoker{NameStr: mockBackend}
+	RegisterAIInvoker(mockBackend, mockInv)
+
+	models.AppConfig.AI.Tiers.Tier1Fast.Backend = mockBackend
+	models.AppConfig.AI.Tiers.Tier1Fast.Model = "custom-tier1-model"
+
+	tr := &TierRouter{dispatcher: d}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// 2. 模拟 runHunterStage: 先调 AcquireTier，再调 callAITier (GetAIInvoker -> DispatchingInvoker)
+	acq, err := tr.AcquireTier(ctx, "tier1_fast", "")
+	if err != nil {
+		t.Fatalf("AcquireTier failed: %v", err)
+	}
+	defer acq.Release()
+
+	if acq.ModelName != "custom-tier1-model" {
+		t.Fatalf("expected ModelName 'custom-tier1-model', got '%s'", acq.ModelName)
+	}
+
+	invoker := GetAIInvoker(acq.Backend)
+	tmpFile, err := os.CreateTemp("", "tier-deadlock-test-*.json")
+	if err != nil {
+		t.Fatalf("CreateTemp failed: %v", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	req := AIRequest{
+		ParentContext: ctx,
+		OutputPath:    tmpPath,
+		ModelName:     acq.ModelName,
+	}
+
+	// 3. 执行 Invoke，若存在双重加锁自锁，此处必然超时阻塞
+	if err := invoker.Invoke(req); err != nil {
+		t.Fatalf("invoker.Invoke failed (possible deadlock): %v", err)
+	}
+
+	if mockInv.InvokedCnt != 1 {
+		t.Fatalf("expected mock invoker to be invoked once, got %d", mockInv.InvokedCnt)
+	}
+}
+
+func TestDispatchingInvoker_PreserveExplicitModelName(t *testing.T) {
+	d := setupTestDispatcher(2)
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	mockBackend := "mock-preserve-model"
+	mockInv := &MockInvoker{NameStr: mockBackend}
+	RegisterAIInvoker(mockBackend, mockInv)
+
+	invoker := GetAIInvoker(mockBackend)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	tmpFile, err := os.CreateTemp("", "preserve-model-test-*.json")
+	if err != nil {
+		t.Fatalf("CreateTemp failed: %v", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	req := AIRequest{
+		ParentContext: ctx,
+		OutputPath:    tmpPath,
+		ModelName:     "explicit-model-name",
+	}
+
+	if err := invoker.Invoke(req); err != nil {
+		t.Fatalf("invoker.Invoke failed: %v", err)
+	}
+
+	// 验证请求中显式设置的 ModelName 没有被冲掉
+	if req.ModelName != "explicit-model-name" {
+		t.Fatalf("expected ModelName to be preserved as 'explicit-model-name', got '%s'", req.ModelName)
+	}
 }

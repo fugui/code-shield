@@ -74,7 +74,9 @@ func (w *DispatchingInvoker) Invoke(req AIRequest) error {
 
 	if res != nil {
 		defer Dispatcher.Release(res, backend)
-		req.ModelName = modelName
+		if req.ModelName == "" && modelName != "" {
+			req.ModelName = modelName
+		}
 	}
 
 	// 2. 调用真正的底层 AI 后端
