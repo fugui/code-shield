@@ -1,6 +1,6 @@
 # Code-Shield 原生 LLM 轻量执行引擎与混合调用架构设计专题
 
-本专题收录了针对 Code-Shield 平台的底层 AI 执行引擎演进方案、原生 HTTP REST / gRPC 直接调用架构（LLM Native Invoker）设计、5 大轻量单轮任务场景落地规范以及“重型自主探索 Agent + 轻量原生 LLM”的动静分离混合调用（Hybrid Invocation）体系。
+本专题收录了针对 Code-Shield 平台的底层 AI 执行引擎演进方案、原生 HTTP REST / gRPC 直接调用架构（LLM Native Invoker）设计、6 大轻量单轮任务场景落地规范以及“重型自主探索 Agent + 轻量原生 LLM”的动静分离混合调用（Hybrid Invocation）体系。
 
 ---
 
