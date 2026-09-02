@@ -99,6 +99,7 @@ export const buildDynamicMenuGroups = (taskTypes?: TaskTypeMenuMeta[]): MenuGrou
       items: [
         { path: '/admin/scan', label: '扫描任务', headerTitle: '扫描任务管理', icon: 'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z', adminOnly: true },
         { path: '/admin/task-types', label: '任务类型', headerTitle: '任务类型管理', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', adminOnly: true },
+        { path: '/admin/debug', label: '系统诊断', headerTitle: '系统性能与堆栈诊断', icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z', adminOnly: true },
       ],
     },
   ];
