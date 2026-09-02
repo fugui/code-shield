@@ -414,6 +414,46 @@ func (d *ModelDispatcher) GetThrottleInfo() ThrottleInfo {
 	return d.getEffectiveScaleInfoLocked(time.Now())
 }
 
+// ModelResourceStatus 封装单台 LLM 服务器的状态快照
+type ModelResourceStatus struct {
+	Index      int    `json:"index"`
+	OpenCode   string `json:"opencode"`
+	Claude     string `json:"claude"`
+	Codex      string `json:"codex"`
+	Agy        string `json:"agy"`
+	Native     string `json:"native"`
+	Concurrent int    `json:"concurrent"`
+	Active     int    `json:"active"`
+	Limit      int    `json:"limit"`
+}
+
+// GetResourcesStatus 返回所有 LLM 服务器当前的并发状态快照
+func (d *ModelDispatcher) GetResourcesStatus() []ModelResourceStatus {
+	if d == nil || !d.enabled {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	info := d.getEffectiveScaleInfoLocked(time.Now())
+	var list []ModelResourceStatus
+	for _, r := range d.resources {
+		limit := calculateLimit(r.Concurrent, info.EffectiveScale)
+		list = append(list, ModelResourceStatus{
+			Index:      r.Index,
+			OpenCode:   r.OpenCode,
+			Claude:     r.Claude,
+			Codex:      r.Codex,
+			Agy:        r.Agy,
+			Native:     r.Native,
+			Concurrent: r.Concurrent,
+			Active:     r.Active,
+			Limit:      limit,
+		})
+	}
+	return list
+}
+
 // calculateLimit 语义计算：使用 math.Ceil 保证非 0 限速下至少分配 1 个并发
 func calculateLimit(rawConcurrent int, scale float64) int {
 	if scale <= 0 {

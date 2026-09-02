@@ -212,6 +212,14 @@ func main() {
 					admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
 					admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
 					admin.PATCH("/config", handlers.UpdateConfig)
+
+					// 系统性能与堆栈诊断 (Admin Debug & PProf)
+					debugGroup := admin.Group("/admin/debug")
+					{
+						debugGroup.GET("/overview", handlers.GetDebugOverview)
+						debugGroup.POST("/gc", handlers.TriggerGC)
+						handlers.RegisterPProfRoutes(debugGroup)
+					}
 				}
 			}
 		},

@@ -7,6 +7,7 @@ import PublicReportFindings from './pages/PublicReportFindings';
 
 import ScanManagement from './pages/ScanManagement';
 import TaskTypeManagement from './pages/TaskTypeManagement';
+import SystemDebug from './pages/SystemDebug';
 import UniversalCampaignPage from './pages/UniversalCampaignPage';
 import Workbench from './pages/Workbench';
 
@@ -135,6 +136,7 @@ function MainLayout({ children, taskTypes }: { children: React.ReactNode; taskTy
 
                 if (relativePath.startsWith('/admin/scan')) return '扫描任务管理';
                 if (relativePath.startsWith('/admin/task-types')) return '任务类型管理';
+                if (relativePath.startsWith('/admin/debug')) return '系统性能与堆栈诊断';
                 if (relativePath.startsWith('/admin/teams') || relativePath.startsWith('/teams')) return '团队与代码仓管理';
                 if (relativePath.startsWith('/admin/users')) return '用户管理';
                 if (relativePath.startsWith('/admin/activity')) return '执行日志';
@@ -230,6 +232,7 @@ function AppContent() {
             <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
+            <Route path="/admin/debug" element={<PrivateRoute><SystemDebug /></PrivateRoute>} />
             <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
             {/* 报告独立视图路由（受保护） */}
