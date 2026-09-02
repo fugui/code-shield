@@ -425,7 +425,7 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle, o
 	}
 
 	var hunterOut HunterOutput
-	if parseErr := parseJSONFromAIOutput(rawOutput, &hunterOut); parseErr != nil {
+	if parseErr := parseJSONFromAIOutput(rawOutput, &hunterOut, ctx.codesPath); parseErr != nil {
 		// 容错: 尝试从非结构化文本中提取基本候选
 		hunterOut.Summary = rawOutput
 	}
@@ -450,7 +450,7 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 	}
 
 	var challOut ChallengerOutput
-	if parseErr := parseJSONFromAIOutput(rawOutput, &challOut); parseErr != nil {
+	if parseErr := parseJSONFromAIOutput(rawOutput, &challOut, ctx.codesPath); parseErr != nil {
 		challOut.Summary = rawOutput
 	}
 	return &challOut, tokens, nil
@@ -473,7 +473,7 @@ func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hu
 	}
 
 	var judgeOut JudgeOutput
-	if parseErr := parseJSONFromAIOutput(rawOutput, &judgeOut); parseErr != nil {
+	if parseErr := parseJSONFromAIOutput(rawOutput, &judgeOut, ctx.codesPath); parseErr != nil {
 		return nil, tokens, fmt.Errorf("failed to parse judge JSON: %w (raw: %s)", parseErr, rawOutput)
 	}
 	return &judgeOut, tokens, nil
@@ -592,8 +592,8 @@ func buildJudgePrompt(ctx *taskContext, bundle SemanticBundle, hunterOut *Hunter
 	return sb.String()
 }
 
-// parseJSONFromAIOutput 从大模型可能包含 Markdown ```json 包裹的输出中精准解析 JSON
-func parseJSONFromAIOutput(output string, target interface{}) error {
+// parseJSONFromAIOutput 从大模型可能包含 Markdown ```json 包裹的输出中精准解析 JSON（支持自动截取与 AI 自愈修复）
+func parseJSONFromAIOutput(output string, target interface{}, workDir string) error {
 	trimmed := strings.TrimSpace(output)
 	if strings.Contains(trimmed, "```") {
 		start := strings.Index(trimmed, "```json")
@@ -611,7 +611,43 @@ func parseJSONFromAIOutput(output string, target interface{}) error {
 		}
 	}
 	trimmed = strings.TrimSpace(trimmed)
-	return json.Unmarshal([]byte(trimmed), target)
+
+	// 智能寻找最外层的有效 JSON 边界 { ... }
+	firstBrace := strings.Index(trimmed, "{")
+	lastBrace := strings.LastIndex(trimmed, "}")
+	if firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace {
+		trimmed = trimmed[firstBrace : lastBrace+1]
+	}
+
+	err := json.Unmarshal([]byte(trimmed), target)
+	if err == nil {
+		return nil
+	}
+
+	// 第一次解析失败（可能存在未转义引号、尾部多余逗号等轻微语法瑕疵），尝试调用 RepairJSON 自动修复
+	tmpFile, tmpErr := os.CreateTemp("", "debate-parse-repair-*.json")
+	if tmpErr == nil {
+		tmpPath := tmpFile.Name()
+		_ = os.WriteFile(tmpPath, []byte(trimmed), 0644)
+		tmpFile.Close()
+		defer os.Remove(tmpPath)
+
+		repaired, repErr := RepairJSON(workDir, tmpPath, "")
+		if repErr == nil {
+			repTrimmed := strings.TrimSpace(string(repaired))
+			if f := strings.Index(repTrimmed, "{"); f != -1 {
+				if l := strings.LastIndex(repTrimmed, "}"); l != -1 && l > f {
+					repTrimmed = repTrimmed[f : l+1]
+				}
+			}
+			if unmarshalErr := json.Unmarshal([]byte(repTrimmed), target); unmarshalErr == nil {
+				log.Printf("[DebateEngine] Successfully auto-repaired malformed AI JSON output via RepairJSON\n")
+				return nil
+			}
+		}
+	}
+
+	return err
 }
 
 // callAITier 底层调用指定后端和模型的 AI Invoker 工具

@@ -14,7 +14,7 @@ func TestParseJSONFromAIOutput(t *testing.T) {
 	rawMarkdown := "下面是初筛结果：\n```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/posix.cc\",\n      \"cwe_category\": \"CWE-476\"\n    }\n  ],\n  \"summary\": \"ok\"\n}\n```\n祝工作顺利！"
 
 	var out HunterOutput
-	err := parseJSONFromAIOutput(rawMarkdown, &out)
+	err := parseJSONFromAIOutput(rawMarkdown, &out, t.TempDir())
 	if err != nil {
 		t.Fatalf("parseJSONFromAIOutput failed: %v", err)
 	}
@@ -23,6 +23,17 @@ func TestParseJSONFromAIOutput(t *testing.T) {
 	}
 	if out.Candidates[0].CandidateID != "H-001" {
 		t.Errorf("Expected candidate ID H-001, got %s", out.Candidates[0].CandidateID)
+	}
+
+	// 测试自然语言前导与外层未包裹边界提取
+	rawDirect := "这是判词：{\"final_verdicts\": [{\"candidate_id\": \"H-001\", \"verdict\": \"CONFIRMED\"}]} 结束"
+	var judgeOut JudgeOutput
+	err = parseJSONFromAIOutput(rawDirect, &judgeOut, t.TempDir())
+	if err != nil {
+		t.Fatalf("parseJSONFromAIOutput failed on rawDirect: %v", err)
+	}
+	if len(judgeOut.FinalVerdicts) != 1 {
+		t.Fatalf("Expected 1 verdict, got %d", len(judgeOut.FinalVerdicts))
 	}
 }
 
