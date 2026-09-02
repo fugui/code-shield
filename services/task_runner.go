@@ -268,6 +268,54 @@ func execCommandWithProcessGroup(ctx context.Context, dir string, name string, a
 	}
 }
 
+var (
+	repoSyncMu    sync.Mutex
+	repoSyncLocks = make(map[string]*sync.Mutex)
+)
+
+// getRepoSyncLock 获取指定仓库物理路径对应的互斥锁，确保同一代码仓的 Git 同步操作严格串行排队
+func getRepoSyncLock(repoPath string) *sync.Mutex {
+	repoSyncMu.Lock()
+	defer repoSyncMu.Unlock()
+	l, exists := repoSyncLocks[repoPath]
+	if !exists {
+		l = &sync.Mutex{}
+		repoSyncLocks[repoPath] = l
+	}
+	return l
+}
+
+// cleanStaleGitLocks 检查并清理由于历史进程崩溃或异常中断残留的 .git/*.lock 文件
+func cleanStaleGitLocks(codesPath string) {
+	gitDir := filepath.Join(codesPath, ".git")
+	if stat, err := os.Stat(gitDir); err != nil || !stat.IsDir() {
+		return
+	}
+
+	lockFiles := []string{
+		filepath.Join(gitDir, "index.lock"),
+		filepath.Join(gitDir, "shallow.lock"),
+		filepath.Join(gitDir, "config.lock"),
+		filepath.Join(gitDir, "HEAD.lock"),
+	}
+
+	// 遍历 refs 目录下的所有可能 lock 文件
+	_ = filepath.Walk(filepath.Join(gitDir, "refs"), func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasSuffix(path, ".lock") {
+			lockFiles = append(lockFiles, path)
+		}
+		return nil
+	})
+
+	for _, lockPath := range lockFiles {
+		if stat, err := os.Stat(lockPath); err == nil && !stat.IsDir() {
+			log.Printf("[TaskRunner] Detected stale git lock: %s (modTime: %v), auto-cleaning to heal repository\n",
+				lockPath, stat.ModTime())
+			_ = os.Remove(lockPath)
+		}
+	}
+}
+
 // prepareAndSync handles URL parsing and git operations, including branch checkout
 func (ctx *taskContext) prepareAndSync(repoURL string) error {
 	u, err := url.Parse(repoURL)
@@ -282,6 +330,11 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
+	// 仓库级互斥排队锁：防止同一物理仓库并发执行 Git Clone / Fetch / Checkout / Pull 操作产生 index.lock 冲突
+	repoLock := getRepoSyncLock(ctx.codesPath)
+	repoLock.Lock()
+	defer repoLock.Unlock()
+
 	updateTaskStatus(ctx.report.ID, models.StatusCloning)
 
 	branch := strings.TrimSpace(ctx.repo.Branch)
@@ -289,8 +342,45 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 		branch = "master"
 	}
 
+	// 同步前自动自愈清理可能存在的陈旧僵死锁
+	cleanStaleGitLocks(ctx.codesPath)
+
 	var output []byte
 	var gitErr error
+
+	// 执行实际的 Git 同步逻辑（支持 1 次锁冲突自愈重试）
+	for attempt := 1; attempt <= 2; attempt++ {
+		output, gitErr = ctx.execGitSync(branch, repoURL)
+		if gitErr == nil {
+			break
+		}
+
+		// 如果错误中包含 index.lock 或锁竞争信息，清理锁文件后重试
+		errStr := string(output) + " " + gitErr.Error()
+		if strings.Contains(errStr, ".lock") || strings.Contains(errStr, "File exists") || strings.Contains(errStr, "Another git process") {
+			log.Printf("[TaskRunner] Git lock contention detected on attempt %d for %s, auto-healing locks and retrying...\n",
+				attempt, ctx.codesPath)
+			cleanStaleGitLocks(ctx.codesPath)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	if gitErr != nil {
+		models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "failed")
+		return fmt.Errorf("git operation failed: %s", string(output))
+	}
+
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "success")
+	return nil
+}
+
+// execGitSync 执行单次底层的 Git Clone / Fetch / Checkout / Pull
+func (ctx *taskContext) execGitSync(branch string, repoURL string) ([]byte, error) {
+	var output []byte
+	var gitErr error
+
 	if stat, errStat := os.Stat(filepath.Join(ctx.codesPath, ".git")); errStat == nil && stat.IsDir() {
 		log.Printf("[TaskRunner] Updating existing repository in %s for branch %s\n", ctx.codesPath, branch)
 		// 1. 检查是否存在 remote origin，若存在则拉取所有远程分支更新
@@ -345,13 +435,7 @@ func (ctx *taskContext) prepareAndSync(repoURL string) error {
 		}
 	}
 
-	if gitErr != nil {
-		models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "failed")
-		return fmt.Errorf("git operation failed: %s", string(output))
-	}
-
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Update("clone_status", "success")
-	return nil
+	return output, gitErr
 }
 
 // checkPrecondition executes the task-specific script to decide whether to proceed
