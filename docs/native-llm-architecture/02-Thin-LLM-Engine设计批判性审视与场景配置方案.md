@@ -164,11 +164,12 @@ ai:
 
   tiers:
     # ── 初筛场景 ──
-    # 大量分片并发粗筛，无需工具调用 → 使用 Thin LLM（高并发 HTTP）
+    # Hunter 初筛 Prompt 仅传入文件名列表，Agent 需自主读取 WorkDir 下的源码
+    # → 必须使用 Thick Agent（具备文件系统访问能力）
     tier1_fast:
-      backend: "native"             # ← Thin LLM
-      model: "glm-4-flash"
-      concurrent: 50
+      backend: "agy"                # ← Thick Agent（Hunter 需读取代码文件）
+      model: "gemini-3.7-flash"
+      concurrent: 5
       timeout_seconds: 300
 
     # ── 深度分析场景 ──
@@ -228,7 +229,7 @@ func getToolBackend(toolName string) string {
 | :--- | :--- | :--- | :--- | :--- |
 | **JSON 语法修复** | `native` (Thin) | `ai.tool_backends.repair_json` | 任意 Thick | 几乎不需要替换，Thin 是最优选择 |
 | **缺陷指纹语义匹配** | `native` (Thin) | `ai.tool_backends.finding_match` | 任意 Thick | 同上 |
-| **Tier 1 初筛 (Hunter)** | `native` (Thin) | `ai.tiers.tier1_fast.backend` | `agy` / `claude` | 若初筛需要自主读取代码文件则切 Thick |
+| **Tier 1 初筛 (Hunter)** | `agy` (Thick) | `ai.tiers.tier1_fast.backend` | — | **必须 Thick**：`buildHunterPrompt` 只传文件名列表，Agent 需自主从 WorkDir 读取源码 |
 | **Tier 2 深挖 (Hunter)** | `agy` (Thick) | `ai.tiers.tier2_reasoning.backend` | `native` | ⚠️ 仅限 Prompt 中已内联全部代码的场景 |
 | **Tier 2 辩论 (Challenger/Judge)** | `agy` (Thick) | `ai.tiers.tier2_reasoning.backend` | `native` | ⚠️ 需先 A/B 验证裁决质量不降级 |
 | **Tier 3 报告汇总** | `native` (Thin) | `ai.tiers.tier3_synthesis.backend` | 任意 Thick | 几乎不需要替换 |
@@ -261,6 +262,7 @@ func getToolBackend(toolName string) string {
 | R8 | 新增第四章：场景级 Thin/Thick 可配置化路由（`ai.tool_backends` + Tier backend） | **高** |
 | R9 | 显式排除 Single / Chunked 引擎不适用 Thin LLM 的声明 | **中** |
 | R10 | 考虑流式响应模式（`stream: true`）对长时间生成任务的连接超时保护 | **低** |
+| R11 | **纠正 01 文档中 Tier 1 初筛可用 Thin LLM 的错误假设**：Hunter 的 Prompt 只传入文件名列表（`buildHunterPrompt` L521-524），Agent 需自主从 WorkDir 读取源码文件，必须保持 Thick Agent | **高** |
 
 ---
 *批判性审视编制人：Code-Shield 核心架构组*
