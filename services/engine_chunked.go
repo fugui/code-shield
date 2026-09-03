@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -245,7 +246,7 @@ loop:
 	for _, fList := range chunks {
 		scannedFiles = append(scannedFiles, fList...)
 	}
-	allFindings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, scannedFiles, allFindings)
+	allFindings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, scannedFiles, allFindings, ctx.codesPath)
 
 	log.Printf("[ChunkedEngine] Starting synthesis for %d findings from %d chunks\n", len(allFindings), len(chunks))
 	ctx.findings = allFindings
@@ -398,6 +399,9 @@ func getFilteredFiles(codesPath string, cfg ChunkConfig, targetScope string) ([]
 
 		filtered = append(filtered, file)
 	}
+
+	// 确定性稳定排序：按路径字典序排序，保证多次扫描切块边界绝对稳定
+	sort.Strings(filtered)
 
 	return filtered, nil
 }

@@ -9,50 +9,85 @@ import (
 	"strings"
 )
 
-// CalculateDefectFingerprint 计算抗代码行号与上下文抖动的通用缺陷强指纹 (L1 强指纹)
-// 公式: SHA256(RepoID + TaskTypeID + NormalizedPath + ScopeSymbol + Category? + NormalizedTriggerLine)
-func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scopeSymbol string, category ...string) string {
+// CalculateDefectFingerprint 计算抗代码行号与上下文抖动的确定性源码强指纹 (L1 物理强指纹)
+// 公式: SHA256(RepoID + TaskTypeID + NormalizedPath + NormalizedScope + PhysicalToken)
+// 【核心架构突破】：彻底剔除 Category 与大模型自然语言文本，确保纯物理源码客观生成！
+func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scopeSymbol string, _ ...string) string {
 	// 1. 规范化相对路径 (统一正斜杠，小写)
 	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
 
-	// 2. 核心触发行规范化 (去除注释、所有空白字符、单双引号与分号)
-	normTrigger := NormalizeTriggerLine(triggerLine)
-
-	// 3. 规范化作用域符号 (若为空，提取路径基名容错)
-	normScope := strings.TrimSpace(scopeSymbol)
+	// 2. 规范化作用域符号 (剥离外层命名空间，规范化 lambda)
+	normScope := NormalizeScopeSymbol(scopeSymbol)
 	if normScope == "" {
 		normScope = filepath.Base(normPath)
 	}
 
-	// 4. 规范化类别 (参与指纹计算以区分同一位置不同类别的缺陷)
-	var normCat string
-	if len(category) > 0 && strings.TrimSpace(category[0]) != "" {
-		normCat = strings.ToLower(strings.TrimSpace(category[0]))
-	}
+	// 3. 核心触发行物理 Token 清洗 (去除注释、所有空白字符、单双引号与分号)
+	normTrigger := CleanSourceToken(triggerLine)
 
-	// 5. 组合特征计算 SHA-256 强指纹
-	var rawKey string
-	if normCat != "" {
-		rawKey = fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|cat:%s|trigger:%s",
-			repoID, taskTypeID, normPath, normScope, normCat, normTrigger)
-	} else {
-		rawKey = fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|trigger:%s",
-			repoID, taskTypeID, normPath, normScope, normTrigger)
-	}
+	// 4. 纯物理锚点特征计算 SHA-256 强指纹
+	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|token:%s",
+		repoID, taskTypeID, normPath, normScope, normTrigger)
 
 	hash := sha256.Sum256([]byte(rawKey))
 	return hex.EncodeToString(hash[:])
 }
 
-// CalculateWeakScopeFingerprint 计算作用域弱指纹 (L2 弱指纹容错)
-// 用于当核心触发行发生微调重构时，仍能继承历史反馈与生命周期
-func CalculateWeakScopeFingerprint(repoID uint, taskTypeID uint, filePath string, scopeSymbol string, category string) string {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	normScope := strings.TrimSpace(scopeSymbol)
-	normCat := strings.ToLower(strings.TrimSpace(category))
+// CalculateTokenJaccard 计算两串代码 Token 的 2-gram Jaccard 相似度 [0.0, 1.0]
+func CalculateTokenJaccard(s1, s2 string) float64 {
+	t1 := CleanSourceToken(s1)
+	t2 := CleanSourceToken(s2)
+	if t1 == t2 {
+		return 1.0
+	}
+	if len(t1) == 0 || len(t2) == 0 {
+		return 0.0
+	}
 
-	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|cat:%s",
-		repoID, taskTypeID, normPath, normScope, normCat)
+	// 字符级 2-gram 集合
+	grams1 := make(map[string]bool)
+	grams2 := make(map[string]bool)
+
+	if len(t1) < 2 {
+		grams1[t1] = true
+	} else {
+		for i := 0; i < len(t1)-1; i++ {
+			grams1[t1[i:i+2]] = true
+		}
+	}
+
+	if len(t2) < 2 {
+		grams2[t2] = true
+	} else {
+		for i := 0; i < len(t2)-1; i++ {
+			grams2[t2[i:i+2]] = true
+		}
+	}
+
+	intersection := 0
+	for g := range grams1 {
+		if grams2[g] {
+			intersection++
+		}
+	}
+
+	union := len(grams1) + len(grams2) - intersection
+	if union <= 0 {
+		return 0.0
+	}
+	return float64(intersection) / float64(union)
+}
+
+// CalculateWeakScopeFingerprint 计算作用域弱指纹 (L2 弱指纹容错)
+func CalculateWeakScopeFingerprint(repoID uint, taskTypeID uint, filePath string, scopeSymbol string, _ ...string) string {
+	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
+	normScope := NormalizeScopeSymbol(scopeSymbol)
+	if normScope == "" {
+		normScope = filepath.Base(normPath)
+	}
+
+	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s",
+		repoID, taskTypeID, normPath, normScope)
 
 	hash := sha256.Sum256([]byte(rawKey))
 	return hex.EncodeToString(hash[:])

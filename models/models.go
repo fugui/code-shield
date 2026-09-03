@@ -79,10 +79,23 @@ type TaskType struct {
 	GovernanceMode string         `gorm:"size:50;default:'defect_tracking'" json:"governance_mode"` // defect_tracking / entity_assessment
 	CampaignIcon   string         `gorm:"type:text" json:"campaign_icon"`                           // SVG 图标路径或图标类名
 	CampaignConfig datatypes.JSON `json:"campaign_config"`                                          // 高级配置，结构定义见 CampaignConfigSchema
+	Categories     datatypes.JSON `gorm:"type:jsonb" json:"categories"`                             // 受控标准分类白名单 (SSOT)
 
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// GetAllowedCategories 返回该任务类型配置的标准受控分类白名单
+func (t *TaskType) GetAllowedCategories() []string {
+	if len(t.Categories) == 0 {
+		return nil
+	}
+	var cats []string
+	if err := json.Unmarshal(t.Categories, &cats); err == nil {
+		return cats
+	}
+	return nil
 }
 
 // CampaignConfigSchema 高级专项配置 Schema
@@ -438,10 +451,12 @@ type CampaignFinding struct {
 
 // ── 增量比对状态常量 (DiffStatus) ──
 const (
-	DiffStatusNew      = "NEW"      // 本次新增
-	DiffStatusExisted  = "EXISTED"  // 历史存量
-	DiffStatusResolved = "RESOLVED" // 本次已修复
-	DiffStatusReopened = "REOPENED" // 历史缺陷复发
+	DiffStatusNew             = "NEW"              // 本次新增
+	DiffStatusExisted         = "EXISTED"          // 历史存量
+	DiffStatusActive          = "ACTIVE"           // 存活中
+	DiffStatusResolved        = "RESOLVED"         // 本次已修复
+	DiffStatusReopened        = "REOPENED"         // 历史缺陷复发
+	DiffStatusVerifiedPending = "VERIFIED_PENDING" // 严重漏洞修复待确认 (缓冲观察期)
 )
 
 // ── 智能体辩论结论常量 (DebateVerdict) ──
@@ -460,14 +475,32 @@ type DefectFingerprintRecord struct {
 	FilePath    string `gorm:"size:512;not null" json:"file_path"`
 	ScopeSymbol string `gorm:"size:256" json:"scope_symbol"` // 函数/类/方法签名
 	Category    string `gorm:"size:255" json:"category"`
-	Status      string `gorm:"size:32;default:'ACTIVE';index" json:"status"` // ACTIVE, RESOLVED
+	Severity    string `gorm:"size:64" json:"severity"`                      // 严重等级 (CRITICAL, HIGH, etc.)
+	Status      string `gorm:"size:32;default:'ACTIVE';index" json:"status"` // ACTIVE, RESOLVED, VERIFIED_PENDING
 
-	// 人工反馈状态
+	// ── 物理版本与物理锚点字段 ──
+	TriggerLine      string `gorm:"type:text" json:"trigger_line"`      // 物理单行代码 Token
+	LineStart        int    `gorm:"index" json:"line_start"`            // 物理起始行号
+	LineEnd          int    `json:"line_end"`                           // 物理结束行号
+	FileHashSnapshot string `gorm:"size:64" json:"file_hash_snapshot"` // 检出时该物理文件的 SHA-256
+	ScopeBodyHash    string `gorm:"size:64" json:"scope_body_hash"`     // 所在函数代码块 Hash (用于细粒度物理守卫)
+
+	// ── 平滑生命周期与抗抖动追踪 ──
+	MissedCount int `gorm:"default:0" json:"missed_count"` // 物理代码已修改时的连续未命中计数器
+
+	// ── 人工反馈状态
 	FeedbackStatus string     `gorm:"size:32;default:'UNREVIEWED';index" json:"feedback_status"` // UNREVIEWED, FALSE_POSITIVE, WONT_FIX, CONFIRMED
 	FeedbackReason string     `gorm:"type:text" json:"feedback_reason"`
 	FeedbackUserID *uint      `json:"feedback_user_id"`
 	FeedbackUser   *User      `gorm:"foreignKey:FeedbackUserID" json:"feedback_user,omitempty"`
 	FeedbackAt     *time.Time `json:"feedback_at"`
+
+	// ── 严肃修复审计与证据链字段 (Resolution Audit & Proof of Fix) ──
+	ResolvedCommitHash string     `gorm:"size:64;index" json:"resolved_commit_hash"` // 修复该缺陷的 Git Commit ID
+	ResolvedAuthor     string     `gorm:"size:128" json:"resolved_author"`           // 修复人提交者姓名与邮箱
+	ResolvedDiffHunk   string     `gorm:"type:text" json:"resolved_diff_hunk"`       // 修复前后的真实 Git Diff 对比块
+	FixPattern         string     `gorm:"size:64" json:"fix_pattern"`               // FIX_GUARD, FIX_DELETE, FIX_REFACTOR, FIX_SUSPICIOUS
+	ResolvedAt         *time.Time `json:"resolved_at"`                               // 确认修复时间戳
 
 	FirstTaskID uint           `json:"first_task_id"` // 引入该缺陷的任务 ID
 	LastTaskID  uint           `json:"last_task_id"`  // 最近检出该缺陷的任务 ID

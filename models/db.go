@@ -152,6 +152,7 @@ func seedBuiltinTaskTypes() {
 				"governance_mode":  taskType.GovernanceMode,
 				"campaign_icon":    taskType.CampaignIcon,
 				"campaign_config":  taskType.CampaignConfig,
+				"categories":       taskType.Categories,
 			}
 			if err := DB.Model(&existing).Updates(updates).Error; err != nil {
 				log.Printf("Error: failed to update task type %s in db: %v", taskType.Name, err)

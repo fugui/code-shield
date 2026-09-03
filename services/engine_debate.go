@@ -233,7 +233,7 @@ bundleLoop:
 	for _, b := range bundles {
 		scannedFiles = append(scannedFiles, b.AllFiles...)
 	}
-	enrichedFindings, diffErr := DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, scannedFiles, allFindings)
+	enrichedFindings, diffErr := DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, scannedFiles, allFindings, ctx.codesPath)
 	if diffErr == nil && len(enrichedFindings) > 0 {
 		allFindings = enrichedFindings
 	}
@@ -316,8 +316,8 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 		return fastFindings, nil, nil
 	}
 
-	// 单分片候选数上限限流截断 (防异常爆炸，最多取 Top 20 核心疑点辩论)
-	maxCap := 20
+	// 单分片候选数安全保护上限 (默认放宽至 100，避免后排文件候选被粗暴丢弃导致覆盖漏扫)
+	maxCap := 100
 	if models.AppConfig.AI.Debate.MaxCandidatesPerChunk > 0 {
 		maxCap = models.AppConfig.AI.Debate.MaxCandidatesPerChunk
 	}
@@ -401,19 +401,34 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 				challArgText += " (" + challCase.MitigatingFactors + ")"
 			}
 
+			cleanCategory := SanitizeCategory(jv.Category, ctx.taskType.GetAllowedCategories())
+			normScope := NormalizeScopeSymbol(jv.ScopeSymbol)
+			cleanTrigger := CleanSourceToken(jv.TriggerLine)
+			calibratedLine := jv.LineNumber
+
+			// 如果有物理源码目录，通过 SourceEnricher 物理校准真实行号与代码 Token
+			if ctx.codesPath != "" {
+				if anchor, err := EnrichSourceAnchor(ctx.codesPath, jv.FilePath, jv.LineNumber, jv.TriggerLine); err == nil {
+					normScope = anchor.NormalizedScope
+					cleanTrigger = anchor.PhysicalToken
+					calibratedLine = fmt.Sprintf("%d-%d", anchor.StartLine, anchor.EndLine)
+				}
+			}
+
 			finding := models.AnalysisFinding{
 				FilePath:      jv.FilePath,
-				LineNumber:    jv.LineNumber,
-				TriggerLine:   jv.TriggerLine,
-				ScopeSymbol:   jv.ScopeSymbol,
+				LineNumber:    calibratedLine,
+				TriggerLine:   cleanTrigger,
+				ScopeSymbol:   normScope,
 				CodeSnippet:   jv.CodeSnippet,
-				Category:      jv.Category,
-				Title:         deriveConciseTitle(jv.Title, jv.Category),
+				Category:      cleanCategory,
+				Title:         deriveConciseTitle(jv.Title, cleanCategory),
 				Detail:        fmt.Sprintf("%s\n\n【仲裁法官裁决词】: %s", jv.Title, jv.JudgementRationale),
 				Suggestion:    jv.Suggestion,
 				HunterClaim:   origCand.AttackHypothesis,
 				ChallengerArg: challArgText,
 				JudgeVerdict:  jv.JudgementRationale,
+				Severity:      jv.SeverityPreliminary,
 				CreatedAt:     time.Now(),
 			}
 			confirmedFindings = append(confirmedFindings, finding)
@@ -796,6 +811,16 @@ func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
 		sb.WriteString("### 历史已确认负样本与例外规则 (需避免误报):\n")
 		for _, nr := range bundle.NegativeRules {
 			sb.WriteString(fmt.Sprintf("- %s\n", nr))
+		}
+		sb.WriteString("\n")
+	}
+
+	allowedCats := ctx.taskType.GetAllowedCategories()
+	if len(allowedCats) > 0 {
+		sb.WriteString("### 必须严格遵守的缺陷分类受控白名单 (Strict Categories):\n")
+		sb.WriteString("候选输出中的分类（cwe_category）**必须且只能严格从以下受控列表中选择**，严禁输出非列表中的自由发散文本：\n")
+		for _, cat := range allowedCats {
+			sb.WriteString(fmt.Sprintf("- `%s`\n", cat))
 		}
 		sb.WriteString("\n")
 	}
