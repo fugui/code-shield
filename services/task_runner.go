@@ -1156,35 +1156,47 @@ func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPr
 
 // sanitizeMarkdownReport 智能清洗大模型生成的 Markdown 报告。
 // 若模型因极端幻觉输出为 JSON（如 {"report": "..."} 或 {"markdown": "..."}），尝试解包提取正文；
-// 若模型用 ```markdown ... ``` 整个包裹，剥除最外层标记。
+// 若模型用 ```markdown ... ``` 或 ```json ... ``` 整个包裹，剥除最外层标记。
 func sanitizeMarkdownReport(raw []byte) []byte {
 	s := strings.TrimSpace(string(raw))
 
-	// 1. 如果内容为 JSON 对象，尝试提取常见 Markdown 键
-	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
-		var obj map[string]interface{}
-		if err := json.Unmarshal([]byte(s), &obj); err == nil {
-			for _, key := range []string{"report", "markdown", "content", "summary", "result", "text"} {
-				if val, ok := obj[key].(string); ok && len(strings.TrimSpace(val)) > 0 {
-					s = strings.TrimSpace(val)
-					break
+	// 剥除最外层代码块标记
+	stripOuterFence := func(str string) string {
+		str = strings.TrimSpace(str)
+		if strings.HasPrefix(str, "```") {
+			if idx := strings.Index(str, "\n"); idx != -1 {
+				firstLine := strings.TrimSpace(str[:idx])
+				if firstLine == "```" || firstLine == "```markdown" || firstLine == "```md" || firstLine == "```json" || firstLine == "```text" {
+					if strings.HasSuffix(str, "```") {
+						trimmed := strings.TrimSuffix(str, "```")
+						return strings.TrimSpace(trimmed[idx+1:])
+					}
 				}
 			}
 		}
+		return str
 	}
 
-	// 2. 剥除最外层的 ```markdown ... ``` 或 ``` ... ``` 标记
-	if strings.HasPrefix(s, "```") {
-		if idx := strings.Index(s, "\n"); idx != -1 {
-			firstLine := strings.TrimSpace(s[:idx])
-			if firstLine == "```" || firstLine == "```markdown" || firstLine == "```md" {
-				if strings.HasSuffix(s, "```") {
-					s = strings.TrimSuffix(s, "```")
-					s = strings.TrimSpace(s[idx+1:])
+	// 若为 JSON 对象则提取其中的 markdown 字段
+	extractFromJSON := func(str string) string {
+		str = strings.TrimSpace(str)
+		if strings.HasPrefix(str, "{") && strings.HasSuffix(str, "}") {
+			var obj map[string]interface{}
+			if err := json.Unmarshal([]byte(str), &obj); err == nil {
+				for _, key := range []string{"report", "markdown", "content", "summary", "result", "text"} {
+					if val, ok := obj[key].(string); ok && len(strings.TrimSpace(val)) > 0 {
+						return strings.TrimSpace(val)
+					}
 				}
 			}
 		}
+		return str
 	}
+
+	// 依次解包：先去除最外层代码块 -> 若解出 JSON 则提取 -> 若提取出的 Markdown 仍有代码块包裹则再次剥离
+	s = stripOuterFence(s)
+	s = extractFromJSON(s)
+	s = stripOuterFence(s)
 
 	return []byte(s)
 }
