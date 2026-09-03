@@ -45,7 +45,6 @@
       "third_party"
     ]
   },
-  "ai_backend": "",
   "target_scope": "business",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,

@@ -64,7 +64,7 @@ type TaskType struct {
 	Description     string         `json:"description"`                            // 任务说明
 	EngineMode      string         `gorm:"default:single" json:"engine_mode"`      // 执行引擎模式: single, chunked
 	EngineConfig    datatypes.JSON `json:"engine_config"`                          // 引擎配置 {"max_files": 50, "depth": 2}
-	AIBackend       string         `gorm:"default:''" json:"ai_backend"`           // AI 后端: 为空时使用全局配置，可选 claude/opencode/codex
+	AIBackend       string         `gorm:"default:''" json:"ai_backend"`           // [Deprecated] 历史单体 CLI 字段，统一由 scanner.debate.tiers 接管调度
 	TargetScope     string         `gorm:"default:'business'" json:"target_scope"` // 处理范围: all (全部), business (仅业务), test (仅测试)
 	NotifyTemplate  string         `json:"notify_template"`                        // 邮件主题模板
 	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"`      // score >= 此值才通知
@@ -73,8 +73,8 @@ type TaskType struct {
 
 	// ── 智能体协同与异构调度扩展 (阶段二) ──
 	DebateEnabled        bool   `gorm:"default:true" json:"debate_enabled"`               // 是否启用三方对抗辩论流
-	TierFastBackend      string `gorm:"size:64;default:''" json:"tier_fast_backend"`      // 指定 Tier 1 初筛后端 (空则遵循全局路由)
-	TierReasoningBackend string `gorm:"size:64;default:''" json:"tier_reasoning_backend"` // 指定 Tier 2 强推理后端 (空则遵循全局路由)
+	TierFastBackend      string `gorm:"size:64;default:''" json:"tier_fast_backend"`      // [Deprecated] 历史初筛后端，统一由 scanner.debate.tiers 接管
+	TierReasoningBackend string `gorm:"size:64;default:''" json:"tier_reasoning_backend"` // [Deprecated] 历史强推理后端，统一由 scanner.debate.tiers 接管
 
 	// ── 专项分析元数据扩展 ──
 	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`                   // 是否启用为专项分析
@@ -323,6 +323,17 @@ type SystemConfig struct {
 	ConcurrencyScale float64    `gorm:"default:1.0" json:"concurrency_scale"`
 	ScaleExpiresAt   *time.Time `json:"scale_expires_at"`
 	QueuePaused      bool       `gorm:"default:false" json:"queue_paused"`
+}
+
+// SystemDynamicConfig 数据库持久化动态配置表 (按 Category 独立存储结构化 JSON，单库天然唯一)
+type SystemDynamicConfig struct {
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	Category  string         `gorm:"size:50;not null;uniqueIndex" json:"category"` // "llm", "scanner", "governance", "notification"
+	Data      datatypes.JSON `gorm:"type:jsonb;not null" json:"data"`              // 对应的结构化 JSON 数据
+	Version   int            `gorm:"default:1" json:"version"`                     // 乐观锁版本号
+	UpdatedBy string         `gorm:"size:100" json:"updated_by"`                   // 最后修改人
+	CreatedAt time.Time      `json:"created_at"`                                   // 首次 Seed 导入时间
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 type ScheduleConfig struct {

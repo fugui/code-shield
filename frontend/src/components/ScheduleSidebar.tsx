@@ -345,24 +345,10 @@ export default function ScheduleSidebar({ isOpen, onClose, onSave, editingSchedu
                   <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
                 </svg>
                 运行参数
-                <span style={{ fontSize: '0.72rem', fontWeight: 400, color: '#94a3b8', marginLeft: '0.5rem' }}>覆盖任务类型默认值</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 400, color: 'var(--color-text-muted)', marginLeft: '0.5rem' }}>覆盖任务类型默认值</span>
               </div>
 
-              <label className="sidebar-label">AI 后端</label>
-              <select
-                className="sidebar-input"
-                value={form.run_params.ai_backend ?? ''}
-                onChange={e => setForm({ ...form, run_params: { ...form.run_params, ai_backend: e.target.value || undefined } })}
-                style={{ cursor: 'pointer' }}
-              >
-                <option value="">跟随任务类型默认</option>
-                <option value="claude">Claude</option>
-                <option value="opencode">OpenCode</option>
-                <option value="codex">Codex</option>
-                <option value="agy">Antigravity (agy)</option>
-              </select>
-
-              <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <div style={{ marginTop: '0.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 <label className="sidebar-label" style={{ marginBottom: 0 }}>处理范围</label>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   {[

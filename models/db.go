@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/datatypes"
@@ -36,6 +37,7 @@ func InitDB() {
 		&TaskReport{},
 		&KeyIssue{},
 		&SystemConfig{},
+		&SystemDynamicConfig{},
 		&ScheduleConfig{},
 		&TaskTriggerLog{},
 		&TaskExecutionLog{},
@@ -184,4 +186,72 @@ func seedBuiltinTaskTypes() {
 			}
 		}
 	}
+}
+
+// InitDynamicConfigs 检查并按 Category 执行 Seed-Once 导入，并将数据库持久化配置作为运行时 SSOT
+func InitDynamicConfigs(seed Config) {
+	if DB == nil {
+		log.Println("[Config] WARNING: DB is nil, skipping dynamic config initialization")
+		return
+	}
+
+	categories := []string{"llm", "scanner", "governance", "notification"}
+	for _, cat := range categories {
+		var record SystemDynamicConfig
+		res := DB.Where("category = ?", cat).First(&record)
+		if res.Error != nil {
+			// 首次启动，未找到记录，执行 Seed-Once 写入
+			var rawJSON []byte
+			var err error
+			switch cat {
+			case "llm":
+				rawJSON, err = json.Marshal(seed.LLM)
+			case "scanner":
+				rawJSON, err = json.Marshal(seed.Scanner)
+			case "governance":
+				rawJSON, err = json.Marshal(seed.Governance)
+			case "notification":
+				rawJSON, err = json.Marshal(seed.Notification)
+			}
+			if err != nil {
+				log.Printf("[Config] Failed to serialize seed config for category %s: %v", cat, err)
+				continue
+			}
+
+			record = SystemDynamicConfig{
+				Category:  cat,
+				Data:      datatypes.JSON(rawJSON),
+				Version:   1,
+				UpdatedBy: "system_seed",
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			if err := DB.Create(&record).Error; err != nil {
+				log.Printf("[Config] Failed to seed dynamic config for category %s: %v", cat, err)
+			} else {
+				log.Printf("[Config] Initialized seed config for category %s into database", cat)
+			}
+		} else {
+			// 已存在记录，以数据库持久化数据为准反序列化覆盖至全局 AppConfig
+			switch cat {
+			case "llm":
+				_ = json.Unmarshal(record.Data, &AppConfig.LLM)
+			case "scanner":
+				_ = json.Unmarshal(record.Data, &AppConfig.Scanner)
+			case "governance":
+				_ = json.Unmarshal(record.Data, &AppConfig.Governance)
+			case "notification":
+				_ = json.Unmarshal(record.Data, &AppConfig.Notification)
+			}
+		}
+	}
+
+	// 同步回旧字段，保证全系统向前与向后兼容
+	AppConfig.SyncLegacy()
+
+	log.Println("================================================================================")
+	log.Println("[Config Source] RUNTIME DYNAMIC CONFIG LOADED FROM DATABASE (SSOT)")
+	log.Println("Note: Dynamic sections in config.yaml (llm, scanner, governance) are bypassed.")
+	log.Println("To adjust LLM nodes, workers, or debate tiers, visit Web UI: /admin/config")
+	log.Println("================================================================================")
 }

@@ -16,67 +16,189 @@ type FieldMappingConfig = commonModels.FieldMappingConfig
 type OAuth2Config = commonModels.OAuth2Config
 type DatabaseConfig = commonModels.DatabaseConfig
 
-type ModelConfig struct {
-	OpenCode   string `yaml:"opencode"`   // OpenCode 引擎对应的具体模型名
-	Claude     string `yaml:"claude"`     // Claude 引擎对应的具体模型名
-	Codex      string `yaml:"codex"`      // Codex 引擎对应的具体模型名
-	Agy        string `yaml:"agy"`        // Antigravity (agy) 引擎对应的具体模型名（可选）
-	Native     string `yaml:"native"`     // Native 引擎对应的具体模型名（可选）
-	Concurrent int    `yaml:"concurrent"` // 该 LLM 服务器允许的最大并发数
+// ==============================================================================
+// 1. 大模型算力供给层结构体 (LLM Compute Resources)
+// ==============================================================================
+
+// ResourceEndpointConfig 原生算力端点配置
+type ResourceEndpointConfig struct {
+	Name        string  `yaml:"name" json:"name"`
+	BaseURL     string  `yaml:"base_url" json:"base_url"`
+	APIKey      string  `yaml:"api_key" json:"api_key"`
+	Model       string  `yaml:"model" json:"model"`
+	Concurrent  int     `yaml:"concurrent" json:"concurrent"`
+	Weight      int     `yaml:"weight" json:"weight"` // 相对权重比例，如 80 / 20
+	Temperature float64 `yaml:"temperature" json:"temperature"`
 }
 
-type WorkHoursThrottleConfig struct {
+// ComputeResourceConfig 算力节点实体定义
+type ComputeResourceConfig struct {
+	ID                 string                   `yaml:"id" json:"id"`
+	Driver             string                   `yaml:"driver" json:"driver"` // agy / opencode / claude / codex / native
+	Model              string                   `yaml:"model" json:"model"`
+	Concurrent         int                      `yaml:"concurrent" json:"concurrent"`
+	BaseURL            string                   `yaml:"base_url" json:"base_url"`
+	APIKey             string                   `yaml:"api_key" json:"api_key"`
+	ResponseFormatJSON bool                     `yaml:"response_format_json" json:"response_format_json"`
+	MaxRetries         int                      `yaml:"max_retries" json:"max_retries"`
+	RetryBackoffMs     int                      `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
+	Endpoints          []ResourceEndpointConfig `yaml:"endpoints" json:"endpoints"`
+}
+
+// LLMConfig 大模型算力供给层配置
+type LLMConfig struct {
+	DefaultResource string                  `yaml:"default_resource" json:"default_resource"`
+	DebugLogs       bool                    `yaml:"debug_logs" json:"debug_logs"`
+	Resources       []ComputeResourceConfig `yaml:"resources" json:"resources"`
+}
+
+// ==============================================================================
+// 2. 智能扫描引擎与任务调度结构体 (Scanner & Debate Pipeline Engine)
+// ==============================================================================
+
+// WorkHoursConfig 工作时间限流时段配置
+type WorkHoursConfig struct {
 	Enabled   bool    `yaml:"enabled" json:"enabled"`
-	Workdays  []int   `yaml:"workdays" json:"workdays"`     // 生效星期: 1=周一, 2=周二, ..., 5=周五, 6=周六, 7=周日 (0也代表周日)
-	StartTime string  `yaml:"start_time" json:"start_time"` // 工作时间开始，如 "09:00"
-	EndTime   string  `yaml:"end_time" json:"end_time"`     // 工作时间结束，如 "22:00"
-	Scale     float64 `yaml:"scale" json:"scale"`           // 工作时间内的并发比例 (0.0~1.0, 如 0.1 代表 10%)
+	Workdays  []int   `yaml:"workdays" json:"workdays"`     // 1=周一, ..., 5=周五, 6=周六, 7=周日
+	StartTime string  `yaml:"start_time" json:"start_time"` // "09:00"
+	EndTime   string  `yaml:"end_time" json:"end_time"`     // "22:00"
+	Scale     float64 `yaml:"scale" json:"scale"`           // 0.10 代表 10%
 }
 
-// TierConfig 单个阶梯模型的资源配置
+// ThrottlingConfig 全局流控策略
+type ThrottlingConfig struct {
+	WorkHours WorkHoursConfig `yaml:"work_hours" json:"work_hours"`
+}
+
+// TierBindingConfig 阶梯绑定配置
+type TierBindingConfig struct {
+	Resource       string `yaml:"resource" json:"resource"`
+	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"`
+}
+
+// DebateTiersConfig 辩论阶梯流水线配置 (3 层组织映射 4 大角色)
+type DebateTiersConfig struct {
+	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`       // Hunter 初筛角色
+	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"` // Challenger & Judge 角色
+	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"` // Synthesis 汇总角色
+}
+
+// DebateConfig 辩论流水线流控与阶梯配置
+type DebateConfig struct {
+	Enabled                    bool              `yaml:"enabled" json:"enabled"`
+	FastPassEnabled            bool              `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
+	MaxCandidatesPerChunk      int               `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
+	StageTimeoutSeconds        int               `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
+	LogRetentionDays           int               `yaml:"log_retention_days" json:"log_retention_days"`
+	BackpressureThreshold      int               `yaml:"backpressure_threshold" json:"backpressure_threshold"`
+	BackpressureTimeoutSeconds int               `yaml:"backpressure_timeout_seconds" json:"backpressure_timeout_seconds"`
+	Tiers                      DebateTiersConfig `yaml:"tiers" json:"tiers"`
+}
+
+// ToolsConfig 微任务工具路由
+type ToolsConfig struct {
+	DefaultResource string            `yaml:"default_resource" json:"default_resource"`
+	Overrides       map[string]string `yaml:"overrides" json:"overrides"`
+}
+
+// ScannerConfig 智能扫描引擎与任务调度配置
+type ScannerConfig struct {
+	WorkerCount      int              `yaml:"worker_count" json:"worker_count"`
+	MaxQueueSize     int              `yaml:"max_queue_size" json:"max_queue_size"`
+	MockOnMissingCLI *bool            `yaml:"mock_on_missing_cli" json:"mock_on_missing_cli"`
+	Throttling       ThrottlingConfig `yaml:"throttling" json:"throttling"`
+	Debate           DebateConfig     `yaml:"debate" json:"debate"`
+	Tools            ToolsConfig      `yaml:"tools" json:"tools"`
+}
+
+// ==============================================================================
+// 3. 企业治理与通知配置 (Governance & Notification)
+// ==============================================================================
+
+// GovernancePolicyConfig 企业治理策略定义 (升级自原 GovernanceSystemConfig)
+type GovernancePolicyConfig struct {
+	Fingerprint struct {
+		Enabled             bool    `yaml:"enabled" json:"enabled"`
+		SimilarityThreshold float64 `yaml:"similarity_threshold" json:"similarity_threshold"`
+	} `yaml:"fingerprint" json:"fingerprint"`
+
+	Lifecycle struct {
+		ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`
+		AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+		DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`
+	} `yaml:"lifecycle" json:"lifecycle"`
+
+	FeedbackMemory struct {
+		InjectionEnabled bool `yaml:"injection_enabled" json:"injection_enabled"`
+		MaxRulesInjected int  `yaml:"max_rules_injected" json:"max_rules_injected"`
+	} `yaml:"feedback_memory" json:"feedback_memory"`
+}
+
+// NotificationConfig 通知配置
+type NotificationConfig struct {
+	Webhook string `yaml:"webhook" json:"webhook"`
+}
+
+// ServerConfig HTTP 服务配置
+type ServerConfig struct {
+	Port              string        `yaml:"port" json:"port"`
+	DataDir           string        `yaml:"data_dir" json:"data_dir"`
+	GinLog            bool          `yaml:"gin_log" json:"gin_log"`
+	ReadTimeout       time.Duration `yaml:"read_timeout" json:"read_timeout"`
+	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout" json:"read_header_timeout"`
+	WriteTimeout      time.Duration `yaml:"write_timeout" json:"write_timeout"`
+	IdleTimeout       time.Duration `yaml:"idle_timeout" json:"idle_timeout"`
+	MaxHeaderBytes    int           `yaml:"max_header_bytes" json:"max_header_bytes"`
+	WorkerCount       int           `yaml:"worker_count" json:"worker_count"`
+	MaxQueueSize      int           `yaml:"max_queue_size" json:"max_queue_size"`
+	ExternalURL       string        `yaml:"external_url" json:"external_url"`
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	StandaloneMode       bool         `yaml:"standalone_mode" json:"standalone_mode"`
+	JWTSecret            string       `yaml:"jwt_secret" json:"jwt_secret"`
+	PasswordLoginEnabled bool         `yaml:"password_login_enabled" json:"password_login_enabled"`
+	OAuth2               OAuth2Config `yaml:"oauth2" json:"oauth2"`
+}
+
+// ==============================================================================
+// 4. 旧版结构体兼容别名 (Backward-Compatibility Types)
+// ==============================================================================
+
+type ModelConfig struct {
+	OpenCode   string `yaml:"opencode"`
+	Claude     string `yaml:"claude"`
+	Codex      string `yaml:"codex"`
+	Agy        string `yaml:"agy"`
+	Native     string `yaml:"native"`
+	Concurrent int    `yaml:"concurrent"`
+}
+
+type WorkHoursThrottleConfig = WorkHoursConfig
+
 type TierConfig struct {
-	Backend        string `yaml:"backend" json:"backend"`                 // claude / opencode / codex / agy
-	Model          string `yaml:"model" json:"model"`                     // 具体模型名称
-	Concurrent     int    `yaml:"concurrent" json:"concurrent"`           // 该阶梯并发槽位
-	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"` // 超时时限 (秒)
+	Backend        string `yaml:"backend" json:"backend"`
+	Model          string `yaml:"model" json:"model"`
+	Concurrent     int    `yaml:"concurrent" json:"concurrent"`
+	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"`
 }
 
-// DebateFlowConfig 辩论流水线流控与背压配置
-type DebateFlowConfig struct {
-	Enabled                    bool `yaml:"enabled" json:"enabled"`
-	FastPassEnabled            bool `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
-	MaxCandidatesPerChunk      int  `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
-	StageTimeoutSeconds        int  `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
-	LogRetentionDays           int  `yaml:"log_retention_days" json:"log_retention_days"`
-	BackpressureThreshold      int  `yaml:"backpressure_threshold" json:"backpressure_threshold"`             // 背压触发积压阈值 (默认 30)
-	BackpressureTimeoutSeconds int  `yaml:"backpressure_timeout_seconds" json:"backpressure_timeout_seconds"` // 背压超时兜底 (秒，默认 120)
-	LogRedactionEnabled        bool `yaml:"log_redaction_enabled" json:"log_redaction_enabled"`               // 日志脱敏开关
-}
+type DebateFlowConfig = DebateConfig
 
-// GovernanceSystemConfig 企业多任务治理与历史记忆闭环配置
 type GovernanceSystemConfig struct {
-	FingerprintEnabled bool `yaml:"fingerprint_enabled" json:"fingerprint_enabled"`   // 是否启用跨扫描缺陷指纹计算
-	ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`   // 启用扫描范围守卫 (杜绝局部扫描假修复)
-	AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"` // 守卫范围内指纹消失自动标记 RESOLVED
-	FeedbackInjection  bool `yaml:"feedback_injection" json:"feedback_injection"`     // 是否将负样本知识注入 Prompt
-	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`         // PR 门禁模式下是否仅阻断 NEW 增量缺陷
+	FingerprintEnabled bool `yaml:"fingerprint_enabled" json:"fingerprint_enabled"`
+	ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`
+	AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+	FeedbackInjection  bool `yaml:"feedback_injection" json:"feedback_injection"`
+	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`
 }
 
-// NativeEndpointConfig 单个 Native LLM 算力节点配置 (独立 BaseURL, APIKey 与 Model)
-type NativeEndpointConfig struct {
-	Name        string  `yaml:"name" json:"name"`               // 节点名称，如 "local-vllm-primary"
-	BaseURL     string  `yaml:"base_url" json:"base_url"`       // API 地址，如 "http://192.168.56.18:8000/v1/chat/completions"
-	APIKey      string  `yaml:"api_key" json:"api_key"`         // 该端点专有 API Key (可留空或从环境变量读取)
-	Model       string  `yaml:"model" json:"model"`             // 该端点部署/绑定的模型名称，如 "glm-4-flash"
-	Concurrent  int     `yaml:"concurrent" json:"concurrent"`   // 该节点最大并发槽位数 (默认 20)
-	Weight      int     `yaml:"weight" json:"weight"`           // 负载权重 (1~100, 默认 10)
-	Temperature float64 `yaml:"temperature" json:"temperature"` // 节点级温度 (可选，缺省继承全局)
-}
+type NativeEndpointConfig = ResourceEndpointConfig
 
-// NativeLLMConfig Native 引擎全局配置与多端点集群
 type NativeLLMConfig struct {
 	BaseURL            string                 `yaml:"base_url" json:"base_url"`
-	Endpoint           string                 `yaml:"endpoint" json:"endpoint"` // 兼容 endpoint 别名
+	Endpoint           string                 `yaml:"endpoint" json:"endpoint"`
 	APIKey             string                 `yaml:"api_key" json:"api_key"`
 	DefaultModel       string                 `yaml:"default_model" json:"default_model"`
 	Temperature        float64                `yaml:"temperature" json:"temperature"`
@@ -87,74 +209,222 @@ type NativeLLMConfig struct {
 	Endpoints          []NativeEndpointConfig `yaml:"endpoints" json:"endpoints"`
 }
 
-// ToolBackendsConfig 场景级内嵌工具专有后端路由配置
 type ToolBackendsConfig struct {
-	RepairJSON         string `yaml:"repair_json" json:"repair_json"`                 // 默认 "native"
-	FindingMatch       string `yaml:"finding_match" json:"finding_match"`             // 默认 "native"
-	FeedbackExtraction string `yaml:"feedback_extraction" json:"feedback_extraction"` // 默认 "native"
+	RepairJSON         string `yaml:"repair_json" json:"repair_json"`
+	FindingMatch       string `yaml:"finding_match" json:"finding_match"`
+	FeedbackExtraction string `yaml:"feedback_extraction" json:"feedback_extraction"`
 }
 
+// ==============================================================================
+// 5. 全局配置聚合单例 (Config)
+// ==============================================================================
+
 type Config struct {
-	Server struct {
-		Port              string        `yaml:"port"`
-		DataDir           string        `yaml:"data_dir"`            // 运行时数据目录，下设 codes/ 和 reports/（默认 ./data）
-		GinLog            bool          `yaml:"gin_log"`             // 是否打印 GIN 请求日志，默认 false
-		ReadTimeout       time.Duration `yaml:"read_timeout"`        // 读取请求超时，默认 120s
-		ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"` // 读取 header 超时，默认 10s
-		WriteTimeout      time.Duration `yaml:"write_timeout"`       // 写入响应超时，默认 120s
-		IdleTimeout       time.Duration `yaml:"idle_timeout"`        // keep-alive 空闲超时，默认 180s
-		MaxHeaderBytes    int           `yaml:"max_header_bytes"`    // 最大 header 字节数，默认 1MB
-		WorkerCount       int           `yaml:"worker_count"`        // 全局任务并发数，默认 5
-		MaxQueueSize      int           `yaml:"max_queue_size"`      // 任务排队最大上限，默认 2000，-1 表示不限制
-		ExternalURL       string        `yaml:"external_url"`        // 外部访问基准 URL，用于通知和邮件跳转，如 http://127.0.0.1:8080
-	} `yaml:"server"`
-	Storage struct {
-		Root string `yaml:"root"` // 兼容旧版配置（已弃用，建议配置 server.data_dir）
-	} `yaml:"storage"`
-	Database DatabaseConfig `yaml:"database"`
-	AI       struct {
-		Backend           string                  `yaml:"backend"`             // CLI 后端：claude、opencode、codex 或 agy，默认 claude
-		DebugLogs         bool                    `yaml:"debug_logs"`          // 是否输出 AI 引擎底层的 debug 级别日志
-		OutputFormat      string                  `yaml:"output_format"`       // 输出格式：text 或 json，默认 text
-		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"` // CLI 未安装时是否写入空发现模拟报告（默认 true，建议生产环境显式关闭）
-		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"` // 工作时间自动限流配置
-		Models            []ModelConfig           `yaml:"models"`              // 多 LLM 服务器并发配置
+	Server       ServerConfig           `yaml:"server" json:"server"`
+	Storage      struct {
+		Root string `yaml:"root" json:"root"`
+	} `yaml:"storage" json:"storage"`
+	Database     DatabaseConfig         `yaml:"database" json:"database"`
+	Auth         AuthConfig             `yaml:"auth" json:"auth"`
+	LLM          LLMConfig              `yaml:"llm" json:"llm"`
+	Scanner      ScannerConfig          `yaml:"scanner" json:"scanner"`
+	Governance   GovernancePolicyConfig `yaml:"governance" json:"governance"`
+	Notification NotificationConfig     `yaml:"notification" json:"notification"`
 
-		// ── 原生轻量 LLM 引擎配置 ──
-		Native       NativeLLMConfig    `yaml:"native" json:"native"`
-		ToolBackends ToolBackendsConfig `yaml:"tool_backends" json:"tool_backends"`
-
-		// ── 异构模型多阶梯资源池配置 (阶段二) ──
-		Tiers struct {
-			Tier1Fast      TierConfig `yaml:"tier1_fast" json:"tier1_fast"`           // Tier 1 快模型初筛
-			Tier2Reasoning TierConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"` // Tier 2 强推理辩论与仲裁
-			Tier3Synthesis TierConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"` // Tier 3 报告排版与汇总
+	// 兼容旧版 config.yaml 的 AI 块与影子镜像
+	AI struct {
+		Backend           string                  `yaml:"backend"`
+		DebugLogs         bool                    `yaml:"debug_logs"`
+		OutputFormat      string                  `yaml:"output_format"`
+		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"`
+		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"`
+		Models            []ModelConfig           `yaml:"models"`
+		Native            NativeLLMConfig         `yaml:"native" json:"native"`
+		ToolBackends      ToolBackendsConfig      `yaml:"tool_backends" json:"tool_backends"`
+		Tiers             struct {
+			Tier1Fast      TierConfig `yaml:"tier1_fast" json:"tier1_fast"`
+			Tier2Reasoning TierConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"`
+			Tier3Synthesis TierConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"`
 		} `yaml:"tiers" json:"tiers"`
-
-		// ── 多智能体对抗辩论配置 (阶段二) ──
 		Debate DebateFlowConfig `yaml:"debate" json:"debate"`
 	} `yaml:"ai"`
-
-	// ── 企业多任务治理与历史记忆闭环配置 (阶段三) ──
-	Governance GovernanceSystemConfig `yaml:"governance" json:"governance"`
-
-	Notification struct {
-		Webhook string `yaml:"webhook"` // 通知回调地址
-	} `yaml:"notification"`
-	Auth struct {
-		StandaloneMode       bool         `yaml:"standalone_mode"`        // 是否以独立系统模式运行（默认 false 为微前端模式）
-		JWTSecret            string       `yaml:"jwt_secret"`             // JWT 签名密钥（替代硬编码，留空则启动时随机生成临时密钥）
-		PasswordLoginEnabled bool         `yaml:"password_login_enabled"` // 是否启用密码登录，默认 false
-		OAuth2               OAuth2Config `yaml:"oauth2"`
-	} `yaml:"auth"`
 }
 
 var AppConfig Config
 
-// GetTierConfig 智能获取指定 Tier 的配置（具备向后兼容的平滑回退兜底）
+// SyncLegacy 保持新顶层结构与旧 AI 影子镜像的双向同步
+func (c *Config) SyncLegacy() {
+	// 1. 若新版 LLM 为空但旧版 AI 有配置，从旧版生成新版
+	if len(c.LLM.Resources) == 0 && (c.AI.Backend != "" || len(c.AI.Models) > 0 || c.AI.Native.BaseURL != "" || len(c.AI.Native.Endpoints) > 0) {
+		c.LLM.DefaultResource = "native"
+		c.LLM.DebugLogs = c.AI.DebugLogs
+
+		// 填充 native 资源节点
+		nativeRes := ComputeResourceConfig{
+			ID:                 "native",
+			Driver:             "native",
+			Model:              c.AI.Native.DefaultModel,
+			Concurrent:         20,
+			BaseURL:            c.AI.Native.BaseURL,
+			APIKey:             c.AI.Native.APIKey,
+			ResponseFormatJSON: c.AI.Native.ResponseFormatJSON,
+			MaxRetries:         c.AI.Native.MaxRetries,
+			RetryBackoffMs:     c.AI.Native.RetryBackoffMs,
+		}
+		if len(c.AI.Native.Endpoints) > 0 {
+			for _, ep := range c.AI.Native.Endpoints {
+				nativeRes.Endpoints = append(nativeRes.Endpoints, ResourceEndpointConfig{
+					Name:        ep.Name,
+					BaseURL:     ep.BaseURL,
+					APIKey:      ep.APIKey,
+					Model:       ep.Model,
+					Concurrent:  ep.Concurrent,
+					Weight:      ep.Weight,
+					Temperature: ep.Temperature,
+				})
+			}
+		}
+		c.LLM.Resources = append(c.LLM.Resources, nativeRes)
+
+		// 填充 models 资源
+		for i, m := range c.AI.Models {
+			id := "model-" + string(rune('1'+i))
+			driver := "opencode"
+			modelName := m.OpenCode
+			if m.Claude != "" {
+				driver = "claude"
+				modelName = m.Claude
+			} else if m.Agy != "" {
+				driver = "agy"
+				modelName = m.Agy
+			} else if m.Codex != "" {
+				driver = "codex"
+				modelName = m.Codex
+			}
+			c.LLM.Resources = append(c.LLM.Resources, ComputeResourceConfig{
+				ID:         id,
+				Driver:     driver,
+				Model:      modelName,
+				Concurrent: m.Concurrent,
+			})
+		}
+	}
+
+	// 2. 若 Scanner 为空，从 Server 与 AI 填充
+	if c.Scanner.WorkerCount == 0 && c.Server.WorkerCount > 0 {
+		c.Scanner.WorkerCount = c.Server.WorkerCount
+	}
+	if c.Scanner.MaxQueueSize == 0 && c.Server.MaxQueueSize > 0 {
+		c.Scanner.MaxQueueSize = c.Server.MaxQueueSize
+	}
+	if c.Scanner.MockOnMissingCLI == nil && c.AI.MockOnMissingCLI != nil {
+		c.Scanner.MockOnMissingCLI = c.AI.MockOnMissingCLI
+	}
+	if !c.Scanner.Throttling.WorkHours.Enabled && c.AI.WorkHoursThrottle.Enabled {
+		c.Scanner.Throttling.WorkHours = c.AI.WorkHoursThrottle
+	}
+	if !c.Scanner.Debate.Enabled && c.AI.Debate.Enabled {
+		c.Scanner.Debate = c.AI.Debate
+		// 映射旧版 Tiers
+		c.Scanner.Debate.Tiers.Tier1Hunter = TierBindingConfig{
+			Resource:       c.AI.Tiers.Tier1Fast.Backend,
+			TimeoutSeconds: c.AI.Tiers.Tier1Fast.TimeoutSeconds,
+		}
+		c.Scanner.Debate.Tiers.Tier2Reasoning = TierBindingConfig{
+			Resource:       c.AI.Tiers.Tier2Reasoning.Backend,
+			TimeoutSeconds: c.AI.Tiers.Tier2Reasoning.TimeoutSeconds,
+		}
+		c.Scanner.Debate.Tiers.Tier3Synthesis = TierBindingConfig{
+			Resource:       c.AI.Tiers.Tier3Synthesis.Backend,
+			TimeoutSeconds: c.AI.Tiers.Tier3Synthesis.TimeoutSeconds,
+		}
+	}
+	if c.Scanner.Tools.DefaultResource == "" {
+		c.Scanner.Tools.DefaultResource = "native"
+		c.Scanner.Tools.Overrides = map[string]string{
+			"repair_json":         c.AI.ToolBackends.RepairJSON,
+			"finding_match":       c.AI.ToolBackends.FindingMatch,
+			"feedback_extraction": c.AI.ToolBackends.FeedbackExtraction,
+		}
+	}
+
+	// 3. 将新版状态同步回旧版字段（保证旧业务逻辑不报错）
+	if c.Scanner.WorkerCount > 0 {
+		c.Server.WorkerCount = c.Scanner.WorkerCount
+	}
+	if c.Scanner.MaxQueueSize > 0 {
+		c.Server.MaxQueueSize = c.Scanner.MaxQueueSize
+	}
+	c.AI.MockOnMissingCLI = c.Scanner.MockOnMissingCLI
+	c.AI.WorkHoursThrottle = c.Scanner.Throttling.WorkHours
+	c.AI.DebugLogs = c.LLM.DebugLogs
+	c.AI.Debate = c.Scanner.Debate
+
+	// 寻找 native 节点同步给 AI.Native
+	for _, res := range c.LLM.Resources {
+		if res.ID == "native" || res.Driver == "native" {
+			c.AI.Native.BaseURL = res.BaseURL
+			c.AI.Native.APIKey = res.APIKey
+			c.AI.Native.DefaultModel = res.Model
+			c.AI.Native.ResponseFormatJSON = res.ResponseFormatJSON
+			c.AI.Native.MaxRetries = res.MaxRetries
+			c.AI.Native.RetryBackoffMs = res.RetryBackoffMs
+			c.AI.Native.Endpoints = nil
+			for _, ep := range res.Endpoints {
+				c.AI.Native.Endpoints = append(c.AI.Native.Endpoints, ep)
+			}
+			break
+		}
+	}
+	if c.AI.Backend == "" {
+		if c.LLM.DefaultResource != "" {
+			c.AI.Backend = c.LLM.DefaultResource
+		} else {
+			c.AI.Backend = "claude"
+		}
+	}
+}
+
+// GetTierConfig 智能获取指定 Tier 的配置（支持新版绑定与旧版向后兼容兜底）
 func (c *Config) GetTierConfig(tier string) TierConfig {
+	// 1. 优先从新版 Scanner.Debate.Tiers 中查找对应 Resource
+	var binding TierBindingConfig
 	switch tier {
-	case "tier1_fast":
+	case "tier1_fast", "tier1_hunter":
+		binding = c.Scanner.Debate.Tiers.Tier1Hunter
+	case "tier2_reasoning":
+		binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+	case "tier3_synthesis":
+		binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+	}
+
+	if binding.Resource != "" {
+		// 在 LLM.Resources 中定位对应资源
+		for _, res := range c.LLM.Resources {
+			if res.ID == binding.Resource {
+				timeout := binding.TimeoutSeconds
+				if timeout <= 0 {
+					timeout = 600
+				}
+				return TierConfig{
+					Backend:        res.Driver,
+					Model:          res.Model,
+					Concurrent:     res.Concurrent,
+					TimeoutSeconds: timeout,
+				}
+			}
+		}
+		// 若 Resource ID 为 driver 名称（如 "agy", "native", "opencode"）
+		return TierConfig{
+			Backend:        binding.Resource,
+			Concurrent:     5,
+			TimeoutSeconds: binding.TimeoutSeconds,
+		}
+	}
+
+	// 2. 回退到旧版 AI.Tiers
+	switch tier {
+	case "tier1_fast", "tier1_hunter":
 		if c.AI.Tiers.Tier1Fast.Backend != "" {
 			return c.AI.Tiers.Tier1Fast
 		}
@@ -168,7 +438,7 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 		}
 	}
 
-	// 回退到全局默认 AI 后端配置
+	// 3. 全局默认兜底
 	concurrent := c.Server.WorkerCount
 	if concurrent <= 0 {
 		concurrent = 5
@@ -181,11 +451,6 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 }
 
 // GetAppBaseDir 获取应用程序基准目录（用于定位 tasks/ 等内置资产模版）
-// 依次查找：
-// 1. 可执行文件所在目录（若包含 tasks/）
-// 2. 当前工作目录（若包含 tasks/，如 go run / go test 环境）
-// 3. 上级工作目录（兼容子包单测环境）
-// 4. 兜底返回可执行文件目录或当前目录
 func GetAppBaseDir() string {
 	if exe, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exe)
@@ -219,7 +484,17 @@ func (c *Config) GetDataDir() string {
 	return "./data"
 }
 
-// GetTaskAbsPath 返回 tasks 目录下模版或脚本的绝对路径（始终基于程序基准目录）
+// GetCodesDir 获取代码仓缓存根目录
+func (c *Config) GetCodesDir() string {
+	return filepath.Join(c.GetDataDir(), "codes")
+}
+
+// GetReportsDir 获取分析报告输出根目录
+func (c *Config) GetReportsDir() string {
+	return filepath.Join(c.GetDataDir(), "reports")
+}
+
+// GetTaskAbsPath 返回 tasks 目录下模版或脚本的绝对路径
 func (c *Config) GetTaskAbsPath(path string) string {
 	if path == "" {
 		return ""
@@ -230,9 +505,7 @@ func (c *Config) GetTaskAbsPath(path string) string {
 	return filepath.Join(GetAppBaseDir(), path)
 }
 
-// GetAbsPath 综合路径解析：
-// - 如果路径属于 tasks/ 目录，自动使用应用程序基准目录解析；
-// - 其他相对路径默认基于数据根目录 GetDataDir() 解析。
+// GetAbsPath 综合路径解析
 func (c *Config) GetAbsPath(path string) string {
 	if path == "" {
 		return ""
@@ -247,7 +520,7 @@ func (c *Config) GetAbsPath(path string) string {
 	return filepath.Join(c.GetDataDir(), path)
 }
 
-// LoadConfig reads the configuration from the specified YAML file
+// LoadConfig reads configuration from specified YAML file
 func LoadConfig(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -257,7 +530,8 @@ func LoadConfig(filename string) error {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
-	// Default data directory
+
+	// 基础数据目录
 	if cfg.Server.DataDir == "" {
 		if cfg.Storage.Root != "" {
 			cfg.Server.DataDir = cfg.Storage.Root
@@ -271,9 +545,7 @@ func LoadConfig(filename string) error {
 	}
 	cfg.Storage.Root = cfg.Server.DataDir
 
-	if cfg.AI.Backend == "" {
-		cfg.AI.Backend = "claude"
-	}
+	// 默认输出格式
 	if cfg.AI.OutputFormat == "" {
 		cfg.AI.OutputFormat = "text"
 	}
@@ -282,63 +554,17 @@ func LoadConfig(filename string) error {
 		cfg.AI.MockOnMissingCLI = &enabled
 	}
 
-	// Native 引擎与场景工具默认值
-	if cfg.AI.Native.BaseURL == "" && cfg.AI.Native.Endpoint == "" && len(cfg.AI.Native.Endpoints) == 0 {
-		cfg.AI.Native.BaseURL = "http://192.168.56.18:8000/v1/chat/completions"
-		cfg.AI.Native.DefaultModel = "glm-4-flash"
-	}
-	if envKey := os.Getenv("CODE_SHIELD_AI_NATIVE_API_KEY"); envKey != "" && cfg.AI.Native.APIKey == "" {
-		cfg.AI.Native.APIKey = envKey
-	}
-	if cfg.AI.Native.MaxRetries <= 0 {
-		cfg.AI.Native.MaxRetries = 3
-	}
-	if cfg.AI.Native.RetryBackoffMs <= 0 {
-		cfg.AI.Native.RetryBackoffMs = 500
-	}
-	if cfg.AI.ToolBackends.RepairJSON == "" {
-		cfg.AI.ToolBackends.RepairJSON = "native"
-	}
-	if cfg.AI.ToolBackends.FindingMatch == "" {
-		cfg.AI.ToolBackends.FindingMatch = "native"
-	}
-	if cfg.AI.ToolBackends.FeedbackExtraction == "" {
-		cfg.AI.ToolBackends.FeedbackExtraction = "native"
-	}
+	// 同步新旧配置
+	cfg.SyncLegacy()
 
-	// Server timeout defaults
-	if cfg.Server.ExternalURL == "" {
-		port := cfg.Server.Port
-		if strings.HasPrefix(port, ":") {
-			cfg.Server.ExternalURL = "http://127.0.0.1" + port
-		} else {
-			cfg.Server.ExternalURL = "http://127.0.0.1:8080"
-		}
-	}
-	// 校验工作时间限流配置
-	if cfg.AI.WorkHoursThrottle.Enabled {
-		wt := &cfg.AI.WorkHoursThrottle
-		if len(wt.Workdays) == 0 {
-			wt.Workdays = []int{1, 2, 3, 4, 5}
-		}
-		if wt.StartTime == "" {
-			wt.StartTime = "09:00"
-		}
-		if wt.EndTime == "" {
-			wt.EndTime = "22:00"
-		}
-		if wt.Scale < 0 {
-			wt.Scale = 0
-		}
-		if wt.Scale > 1.0 {
-			wt.Scale = 1.0
-		}
-		log.Printf("[Config] Work hours auto-throttle enabled: workdays=%v, %s-%s, scale=%.2f\n",
-			wt.Workdays, wt.StartTime, wt.EndTime, wt.Scale)
-	}
-
-	// 校验并补充 Models 默认并发数，并计算所有模型并发之和
+	// 算力总并发推导 WorkerCount
 	sumConcurrent := 0
+	for _, r := range cfg.LLM.Resources {
+		if r.Concurrent <= 0 {
+			r.Concurrent = 5
+		}
+		sumConcurrent += r.Concurrent
+	}
 	for i := range cfg.AI.Models {
 		if cfg.AI.Models[i].Concurrent <= 0 {
 			cfg.AI.Models[i].Concurrent = 1
@@ -346,33 +572,25 @@ func LoadConfig(filename string) error {
 		sumConcurrent += cfg.AI.Models[i].Concurrent
 	}
 
-	// 确定全局任务并发数（WorkerCount）
-	// 如果用户在 config.yaml 中配置了 worker_count 且其值 > 0，则直接使用它；
-	// 否则，根据大模型节点的并发限制动态计算折中任务并发，防止多任务交替争夺槽位引起效率损耗。
 	if cfg.Server.WorkerCount <= 0 {
 		if sumConcurrent > 0 {
-			// 因为 chunked 任务每个会并发 4 个请求，若直接将 WorkerCount 设为 sumConcurrent 会引发交替抢槽导致的“磨洋工”。
-			// 采用 (sumConcurrent + 1) / 2 作为折中，既能给单个分片任务留有合理的子并发，又不会造成严重的槽位争夺。
 			calculated := (sumConcurrent + 1) / 2
 			if calculated < 1 {
 				calculated = 1
 			}
 			cfg.Server.WorkerCount = calculated
-			log.Printf("[Config] Dynamic worker_count set to %d (calculated from sum of LLM concurrencies %d to prevent chunk interleaving)\n", calculated, sumConcurrent)
+			cfg.Scanner.WorkerCount = calculated
+			log.Printf("[Config] Dynamic worker_count set to %d (calculated from sum of LLM concurrencies %d)\n", calculated, sumConcurrent)
 		} else {
-			cfg.Server.WorkerCount = 5 // 默认兜底值
+			cfg.Server.WorkerCount = 5
+			cfg.Scanner.WorkerCount = 5
 		}
-	} else {
-		log.Printf("[Config] Using explicitly configured worker_count: %d\n", cfg.Server.WorkerCount)
 	}
 	if cfg.Server.MaxQueueSize == 0 {
 		cfg.Server.MaxQueueSize = 2000
+		cfg.Scanner.MaxQueueSize = 2000
 	}
-	if cfg.Server.MaxQueueSize > 0 {
-		log.Printf("[Config] Max pending queue size limit set to %d\n", cfg.Server.MaxQueueSize)
-	} else {
-		log.Println("[Config] Max pending queue size limit is disabled (unlimited).")
-	}
+
 	// Server timeout defaults
 	serverCfg := configutil.ServerConfig{
 		Port:              cfg.Server.Port,
@@ -384,7 +602,7 @@ func LoadConfig(filename string) error {
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 		ExternalURL:       cfg.Server.ExternalURL,
 	}
-	configutil.ApplyServerDefaults(&serverCfg, ":8080")
+	configutil.ApplyServerDefaults(&serverCfg, ":8082")
 	cfg.Server.Port = serverCfg.Port
 	cfg.Server.ExternalURL = serverCfg.ExternalURL
 	cfg.Server.ReadTimeout = serverCfg.ReadTimeout
@@ -393,19 +611,11 @@ func LoadConfig(filename string) error {
 	cfg.Server.IdleTimeout = serverCfg.IdleTimeout
 	cfg.Server.MaxHeaderBytes = serverCfg.MaxHeaderBytes
 
-	// Convert root to absolute path
-	absRoot, err := filepath.Abs(cfg.Storage.Root)
-	if err == nil {
-		cfg.Storage.Root = absRoot
-	}
-
 	// Auth defaults
 	configutil.EnsureJWTSecret(&cfg.Auth.JWTSecret, "Shield-Auth")
-	// If neither OAuth2 nor password login is explicitly enabled, enable password login as fallback
 	if !cfg.Auth.OAuth2.Enabled && !cfg.Auth.PasswordLoginEnabled {
 		cfg.Auth.PasswordLoginEnabled = true
 	}
-	// OAuth2 defaults
 	if cfg.Auth.OAuth2.Enabled {
 		if len(cfg.Auth.OAuth2.Scopes) == 0 {
 			cfg.Auth.OAuth2.Scopes = []string{"openid", "profile", "email"}
@@ -428,10 +638,8 @@ func LoadConfig(filename string) error {
 		if cfg.Auth.OAuth2.FieldMapping.EmployeeType == "" {
 			cfg.Auth.OAuth2.FieldMapping.EmployeeType = "employee_type"
 		}
-		// Default redirect URL based on external URL
 		if cfg.Auth.OAuth2.RedirectURL == "" {
 			cfg.Auth.OAuth2.RedirectURL = strings.TrimRight(cfg.Server.ExternalURL, "/") + "/api/oauth2/callback"
-			log.Printf("[Auth] OAuth2 redirect_url auto-derived: %s", cfg.Auth.OAuth2.RedirectURL)
 		}
 	}
 
@@ -439,7 +647,10 @@ func LoadConfig(filename string) error {
 	return nil
 }
 
-// MockOnMissingCLIEnabled 返回 CLI 未安装时是否启用模拟降级（未配置时默认 true）
+// MockOnMissingCLIEnabled 返回 CLI 未安装时是否启用模拟降级
 func (c *Config) MockOnMissingCLIEnabled() bool {
+	if c.Scanner.MockOnMissingCLI != nil {
+		return *c.Scanner.MockOnMissingCLI
+	}
 	return c.AI.MockOnMissingCLI == nil || *c.AI.MockOnMissingCLI
 }

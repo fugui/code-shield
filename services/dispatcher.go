@@ -106,57 +106,94 @@ func InitModelDispatcher() {
 	}
 	d.cond = sync.NewCond(&d.mu)
 
-	for i, mc := range models.AppConfig.AI.Models {
-		concurrent := mc.Concurrent
-		if concurrent <= 0 {
-			concurrent = 1
-		}
-		d.resources = append(d.resources, &ModelResource{
-			Index:      i,
-			OpenCode:   mc.OpenCode,
-			Claude:     mc.Claude,
-			Codex:      mc.Codex,
-			Agy:        mc.Agy,
-			Native:     mc.Native,
-			Concurrent: concurrent,
-		})
-	}
-
-	// 检查是否已有任何 resource 配置了 native
-	hasNativeResource := false
-	for _, r := range d.resources {
-		if r.Native != "" {
-			hasNativeResource = true
-			break
-		}
-	}
-
-	// 如果未在 ai.models 中显式指定 native，但全局启用了 ai.native 配置，
-	// 自动为 Native LLM 引擎注册算力资源，纳管其并发与限流调度
-	nativeCfg := models.AppConfig.AI.Native
-	if !hasNativeResource && (nativeCfg.BaseURL != "" || nativeCfg.Endpoint != "" || len(nativeCfg.Endpoints) > 0) {
-		nativeConcurrent := 0
-		if len(nativeCfg.Endpoints) > 0 {
-			for _, ep := range nativeCfg.Endpoints {
-				if ep.Concurrent > 0 {
-					nativeConcurrent += ep.Concurrent
-				} else {
-					nativeConcurrent += 20
+	if len(models.AppConfig.LLM.Resources) > 0 {
+		for i, res := range models.AppConfig.LLM.Resources {
+			concurrent := res.Concurrent
+			if concurrent <= 0 {
+				concurrent = 5
+			}
+			mr := &ModelResource{
+				Index:      i,
+				Concurrent: concurrent,
+			}
+			switch res.Driver {
+			case "opencode":
+				mr.OpenCode = res.Model
+			case "claude":
+				mr.Claude = res.Model
+			case "codex":
+				mr.Codex = res.Model
+			case "agy":
+				mr.Agy = res.Model
+			case "native":
+				mr.Native = res.Model
+				if len(res.Endpoints) > 0 {
+					epConcurrent := 0
+					for _, ep := range res.Endpoints {
+						if ep.Concurrent > 0 {
+							epConcurrent += ep.Concurrent
+						}
+					}
+					if epConcurrent > 0 {
+						mr.Concurrent = epConcurrent
+					}
 				}
+			default:
+				mr.Native = res.Model
+			}
+			d.resources = append(d.resources, mr)
+		}
+	} else {
+		for i, mc := range models.AppConfig.AI.Models {
+			concurrent := mc.Concurrent
+			if concurrent <= 0 {
+				concurrent = 1
+			}
+			d.resources = append(d.resources, &ModelResource{
+				Index:      i,
+				OpenCode:   mc.OpenCode,
+				Claude:     mc.Claude,
+				Codex:      mc.Codex,
+				Agy:        mc.Agy,
+				Native:     mc.Native,
+				Concurrent: concurrent,
+			})
+		}
+
+		// 检查是否已有任何 resource 配置了 native
+		hasNativeResource := false
+		for _, r := range d.resources {
+			if r.Native != "" {
+				hasNativeResource = true
+				break
 			}
 		}
-		if nativeConcurrent <= 0 {
-			nativeConcurrent = 20
+
+		nativeCfg := models.AppConfig.AI.Native
+		if !hasNativeResource && (nativeCfg.BaseURL != "" || nativeCfg.Endpoint != "" || len(nativeCfg.Endpoints) > 0) {
+			nativeConcurrent := 0
+			if len(nativeCfg.Endpoints) > 0 {
+				for _, ep := range nativeCfg.Endpoints {
+					if ep.Concurrent > 0 {
+						nativeConcurrent += ep.Concurrent
+					} else {
+						nativeConcurrent += 20
+					}
+				}
+			}
+			if nativeConcurrent <= 0 {
+				nativeConcurrent = 20
+			}
+			defaultModel := nativeCfg.DefaultModel
+			if defaultModel == "" {
+				defaultModel = "glm-4-flash"
+			}
+			d.resources = append(d.resources, &ModelResource{
+				Index:      len(d.resources),
+				Native:     defaultModel,
+				Concurrent: nativeConcurrent,
+			})
 		}
-		defaultModel := nativeCfg.DefaultModel
-		if defaultModel == "" {
-			defaultModel = "glm-4-flash"
-		}
-		d.resources = append(d.resources, &ModelResource{
-			Index:      len(d.resources),
-			Native:     defaultModel,
-			Concurrent: nativeConcurrent,
-		})
 	}
 
 	if len(d.resources) > 0 {
@@ -572,6 +609,84 @@ func (d *ModelDispatcher) Release(res *ModelResource, backend string) {
 	limit := calculateLimit(res.Concurrent, info.EffectiveScale)
 	log.Printf("[Dispatcher] [Release] Server #%d released for backend %s. Concurrency: %d/%d (Scale: %.2f [%s], Raw: %d)\n",
 		res.Index, backend, res.Active, limit, info.EffectiveScale, info.ThrottleMode, res.Concurrent)
+	d.cond.Broadcast()
+}
+
+// ReloadResources 动态热重载算力资源池（零停机，平滑继承已有活跃任务 Active 计数）
+func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
+	if d == nil {
+		return
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// 保存已有资源中的活跃计数映射，以便新旧平滑过渡
+	oldActives := make(map[string]int)
+	for _, r := range d.resources {
+		key := r.OpenCode + "|" + r.Claude + "|" + r.Codex + "|" + r.Agy + "|" + r.Native
+		oldActives[key] = r.Active
+	}
+
+	var newResources []*ModelResource
+	for i, res := range llmCfg.Resources {
+		concurrent := res.Concurrent
+		if concurrent <= 0 {
+			concurrent = 5
+		}
+
+		mr := &ModelResource{
+			Index:      i,
+			Concurrent: concurrent,
+		}
+		switch res.Driver {
+		case "opencode":
+			mr.OpenCode = res.Model
+		case "claude":
+			mr.Claude = res.Model
+		case "codex":
+			mr.Codex = res.Model
+		case "agy":
+			mr.Agy = res.Model
+		case "native":
+			mr.Native = res.Model
+			if len(res.Endpoints) > 0 {
+				epConcurrent := 0
+				for _, ep := range res.Endpoints {
+					if ep.Concurrent > 0 {
+						epConcurrent += ep.Concurrent
+					}
+				}
+				if epConcurrent > 0 {
+					mr.Concurrent = epConcurrent
+				}
+			}
+		default:
+			mr.Native = res.Model
+		}
+
+		key := mr.OpenCode + "|" + mr.Claude + "|" + mr.Codex + "|" + mr.Agy + "|" + mr.Native
+		if act, ok := oldActives[key]; ok {
+			mr.Active = act
+		}
+
+		newResources = append(newResources, mr)
+	}
+
+	d.resources = newResources
+	if len(d.resources) > 0 {
+		d.enabled = true
+	} else {
+		d.enabled = false
+	}
+
+	log.Printf("[Dispatcher] [HotReload] Dynamically reloaded %d compute resources in memory", len(d.resources))
+	for _, r := range d.resources {
+		log.Printf("  - Server #%d: opencode=%s, claude=%s, codex=%s, agy=%s, native=%s, concurrent=%d, active=%d\n",
+			r.Index, r.OpenCode, r.Claude, r.Codex, r.Agy, r.Native, r.Concurrent, r.Active)
+	}
+
+	// 广播唤醒可能由于并发调整而可以立即执行的任务
 	d.cond.Broadcast()
 }
 
