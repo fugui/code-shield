@@ -28,6 +28,13 @@ func TestCalculateDefectFingerprint_AntiDrift(t *testing.T) {
 	if fp1 != fp3 {
 		t.Errorf("Fingerprint drifted with spaces! fp1=%s, fp3=%s", fp1, fp3)
 	}
+
+	// 传入不同分类时，应生成不同的强指纹以区分相同位置的不同缺陷
+	fpCat1 := CalculateDefectFingerprint(repoID, taskTypeID, filePath, trigger1, scopeSymbol, "CWE-476")
+	fpCat2 := CalculateDefectFingerprint(repoID, taskTypeID, filePath, trigger1, scopeSymbol, "CWE-125")
+	if fpCat1 == fpCat2 {
+		t.Errorf("Fingerprint should differ for different categories! fpCat1=%s, fpCat2=%s", fpCat1, fpCat2)
+	}
 }
 
 func TestExtractScopeSymbol(t *testing.T) {
