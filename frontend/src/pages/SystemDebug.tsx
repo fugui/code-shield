@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../components/Toast';
-import { Drawer, EmptyState } from '@code/common';
+import { EmptyState } from '@code/common';
+import './SystemDebug.css';
 
 interface SystemInfo {
   go_version: string;
@@ -31,16 +32,28 @@ interface MemoryInfo {
   last_gc_time: string;
 }
 
+interface EndpointConfig {
+  name: string;
+  base_url: string;
+  model: string;
+  concurrent: number;
+  weight: number;
+}
+
 interface ModelResourceStatus {
   index: number;
-  opencode: string;
-  claude: string;
-  codex: string;
-  agy: string;
-  native: string;
+  id?: string;
+  driver?: string;
+  model?: string;
+  opencode?: string;
+  claude?: string;
+  codex?: string;
+  agy?: string;
+  native?: string;
   concurrent: number;
   active: number;
   limit: number;
+  endpoints?: EndpointConfig[];
 }
 
 interface ThrottleInfo {
@@ -52,13 +65,59 @@ interface ThrottleInfo {
   is_work_hours: boolean;
 }
 
-interface GoroutineCluster {
-  state: string;
-  key_function: string;
-  location: string;
-  count: number;
-  sample_stack: string;
-  goroutine_ids: number[];
+interface WorkerPoolInfo {
+  worker_count: number;
+  active_workers: number;
+  max_queue_size: number;
+  pending_tasks: number;
+  is_paused: boolean;
+}
+
+interface RunningTaskInfo {
+  report_id: number;
+  repo_id: number;
+  repo_name: string;
+  repo_url: string;
+  task_type: string;
+  task_display_name: string;
+  engine_mode: string;
+  status: string;
+  start_time: string;
+  duration_seconds: number;
+  total_chunks: number;
+  processed_chunks: number;
+  success_chunks: number;
+  attempts: number;
+}
+
+interface DebateTierItem {
+  resource: string;
+  timeout_seconds: number;
+}
+
+interface DebatePipelineInfo {
+  enabled: boolean;
+  fast_pass_enabled: boolean;
+  stage_timeout_seconds: number;
+  backpressure_threshold: number;
+  tiers: {
+    tier1_hunter?: DebateTierItem;
+    tier2_reasoning?: DebateTierItem;
+    tier3_synthesis?: DebateTierItem;
+  };
+  tools: {
+    default_resource: string;
+    overrides?: Record<string, string>;
+  };
+}
+
+interface DailyStatsInfo {
+  today_total: number;
+  today_success: number;
+  today_failed: number;
+  today_tier1_tokens: number;
+  today_tier2_tokens: number;
+  today_new_defects: number;
 }
 
 interface DebugOverviewData {
@@ -67,22 +126,22 @@ interface DebugOverviewData {
   dispatcher: {
     throttle_info: ThrottleInfo;
     resources: ModelResourceStatus[];
+    total_active_slots: number;
+    total_limit_slots: number;
+    total_raw_slots: number;
   };
-  goroutines: {
-    total: number;
-    clusters: GoroutineCluster[];
-  };
+  workers: WorkerPoolInfo;
+  active_tasks: RunningTaskInfo[];
+  debate_pipeline: DebatePipelineInfo;
+  daily_stats: DailyStatsInfo;
 }
 
 export default function SystemDebug() {
   const { showToast } = useToast();
   const [data, setData] = useState<DebugOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState<number>(0); // 0 = off, 5/10/30 sec
+  const [refreshInterval, setRefreshInterval] = useState<number>(5); // 默认 5 秒自动轮询实时诊断
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const [selectedCluster, setSelectedCluster] = useState<GoroutineCluster | null>(null);
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [selectedStateFilter, setSelectedStateFilter] = useState<string>('all');
   const [gcTriggering, setGcTriggering] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -108,7 +167,7 @@ export default function SystemDebug() {
     fetchOverview();
   }, [fetchOverview]);
 
-  // 轮询定时器
+  // 自动刷新定时器
   useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -153,97 +212,55 @@ export default function SystemDebug() {
     showToast(`正在导出 ${filename}...`, 'info');
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('堆栈内容已复制到剪贴板', 'success');
-    }).catch(() => {
-      showToast('复制失败，请手动选择复制', 'error');
-    });
+  const formatDuration = (seconds: number) => {
+    if (seconds < 60) return `${seconds} 秒`;
+    const mins = Math.floor(seconds / 60);
+    const remSecs = seconds % 60;
+    return `${mins} 分 ${remSecs} 秒`;
   };
 
-  // 过滤 Goroutine 聚类
-  const filteredClusters = (data?.goroutines.clusters || []).filter(c => {
-    if (selectedStateFilter !== 'all' && c.state !== selectedStateFilter) {
-      return false;
-    }
-    if (!searchKeyword.trim()) return true;
-    const kw = searchKeyword.toLowerCase();
-    return (
-      c.key_function.toLowerCase().includes(kw) ||
-      c.state.toLowerCase().includes(kw) ||
-      c.location.toLowerCase().includes(kw) ||
-      c.sample_stack.toLowerCase().includes(kw)
-    );
-  });
+  // 计算 Worker 占用比例
+  const workerActive = data?.workers?.active_workers || 0;
+  const workerTotal = data?.workers?.worker_count || 5;
+  const workerPercent = Math.min(100, Math.round((workerActive / workerTotal) * 100));
 
-  const stateTypes = Array.from(new Set((data?.goroutines.clusters || []).map(c => c.state)));
-
-  const getStateBadgeStyle = (state: string) => {
-    if (state.includes('running')) return { bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: 'rgba(16, 185, 129, 0.3)' };
-    if (state.includes('sync.Cond') || state.includes('Wait')) return { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: 'rgba(239, 68, 68, 0.3)' };
-    if (state.includes('IO') || state.includes('net')) return { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: 'rgba(59, 130, 246, 0.3)' };
-    if (state.includes('chan') || state.includes('select')) return { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)' };
-    return { bg: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', border: 'rgba(148, 163, 184, 0.3)' };
-  };
+  // 计算全局 AI 槽位占用比例
+  const activeSlots = data?.dispatcher?.total_active_slots || 0;
+  const limitSlots = data?.dispatcher?.total_limit_slots || 1;
+  const slotPercent = Math.min(100, Math.round((activeSlots / limitSlots) * 100));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="code-debug-container">
       {/* 顶部状态与工具栏 */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        padding: '1.25rem 1.5rem',
-        background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-        borderRadius: '12px',
-        border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(79,70,229,0.15))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--primary-color, #2563eb)'
-          }}>
+      <div className="code-debug-header">
+        <div className="code-debug-header__left">
+          <div className="code-debug-header__icon">
             <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-              系统性能与堆栈可视化诊断
+            <h2 className="code-debug-header__title">
+              扫描任务与 AI 算力实时诊断中心
             </h2>
-            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)', marginTop: '2px' }}>
-              上次快照: {lastUpdated.toLocaleTimeString()} · Go Runtime 实时可观测面板
+            <div className="code-debug-header__subtitle">
+              上次快照: {lastUpdated.toLocaleTimeString()} · CS-NATIVE-02 任务队列与模型调度器实时全景透视
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div className="code-debug-header__actions">
           {/* 自动刷新选择 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--color-text-secondary, #64748b)' }}>
             <span>自动刷新:</span>
             <select
               value={refreshInterval}
               onChange={(e) => setRefreshInterval(Number(e.target.value))}
-              style={{
-                padding: '0.35rem 0.6rem',
-                borderRadius: '6px',
-                border: '1px solid var(--color-border-primary, var(--border-color, #cbd5e1))',
-                background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-                color: 'var(--color-text-primary, var(--text-color, #0f172a))',
-                fontSize: '0.85rem'
-              }}
+              className="code-debug-header__select"
             >
               <option value={0}>手动刷新</option>
-              <option value={5}>每 5 秒</option>
+              <option value={3}>每 3 秒</option>
+              <option value={5}>每 5 秒 (推荐)</option>
               <option value={10}>每 10 秒</option>
               <option value={30}>每 30 秒</option>
             </select>
@@ -273,378 +290,235 @@ export default function SystemDebug() {
             {gcTriggering ? 'GC 运行中...' : '手动 Full GC'}
           </button>
 
-          {/* pprof 导出下拉/按钮 */}
-          <div style={{ position: 'relative', display: 'inline-block' }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => handleDownloadPprof('goroutine?debug=2', `goroutine-dump-${Date.now()}.txt`)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
-            >
-              <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              导出 Goroutine Dump
-            </button>
-          </div>
-
           <button
             className="btn btn-secondary"
             onClick={() => handleDownloadPprof('heap', `heap-${Date.now()}.pb.gz`)}
-            title="下载堆内存 Heap Profile (可使用 go tool pprof 分析)"
+            title="下载堆内存 Heap Profile"
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
           >
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
             导出 Heap Profile
           </button>
         </div>
       </div>
 
-      {/* 核心指标卡片区 */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-        gap: '1rem'
-      }}>
-        {/* 卡片 1: Goroutine */}
-        <div style={{
-          padding: '1.25rem',
-          borderRadius: '12px',
-          background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-          border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary, #64748b)', fontWeight: 500 }}>活跃 Goroutines</span>
+      {/* 四格核心全局指标大盘 */}
+      <div className="code-debug-metrics-grid">
+        {/* 卡片 1: 扫描 Worker 工作池 */}
+        <div className="code-debug-card">
+          <div className="code-debug-card__top">
+            <span className="code-debug-card__title">扫描任务 Worker 池</span>
+            <span className={`code-debug-card__badge ${data?.workers?.is_paused ? 'code-debug-card__badge--warning' : 'code-debug-card__badge--success'}`}>
+              {data?.workers?.is_paused ? '已暂停派发' : '就绪工作'}
+            </span>
+          </div>
+          <div>
+            <div className="code-debug-card__value">
+              {workerActive} <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--color-text-secondary, #64748b)' }}>/ {workerTotal} 运行中</span>
+            </div>
+            <div className="code-debug-progress-bar">
+              <div
+                className="code-debug-progress-fill"
+                style={{
+                  width: `${workerPercent}%`,
+                  background: workerPercent >= 100 ? '#ef4444' : (workerPercent > 60 ? '#f59e0b' : '#2563eb')
+                }}
+              />
+            </div>
+          </div>
+          <div className="code-debug-card__subtext">
+            <span>排队待处理: <strong>{data?.workers?.pending_tasks || 0}</strong> 笔 (队列上限: {data?.workers?.max_queue_size || 2000})</span>
+          </div>
+        </div>
+
+        {/* 卡片 2: AI 算力总槽位负载 */}
+        <div className="code-debug-card">
+          <div className="code-debug-card__top">
+            <span className="code-debug-card__title">AI 算力槽位实时占用</span>
+            <span className="code-debug-card__badge code-debug-card__badge--info">
+              {data?.dispatcher?.throttle_info?.throttle_mode === 'work_hours' ? '工作时间避峰' : (data?.dispatcher?.throttle_info?.throttle_mode === 'manual' ? '手动覆盖' : '标准全速')}
+              （{((data?.dispatcher?.throttle_info?.effective_scale || 1) * 100).toFixed(0)}%）
+            </span>
+          </div>
+          <div>
+            <div className="code-debug-card__value">
+              {activeSlots} <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--color-text-secondary, #64748b)' }}>/ {limitSlots} 槽位</span>
+            </div>
+            <div className="code-debug-progress-bar">
+              <div
+                className="code-debug-progress-fill"
+                style={{
+                  width: `${slotPercent}%`,
+                  background: slotPercent >= 100 ? '#ef4444' : (slotPercent > 60 ? '#f59e0b' : '#10b981')
+                }}
+              />
+            </div>
+          </div>
+          <div className="code-debug-card__subtext">
+            <span>原始总并发: {data?.dispatcher?.total_raw_slots || 0} · 纳管节点: {data?.dispatcher?.resources?.length || 0} 台</span>
+          </div>
+        </div>
+
+        {/* 卡片 3: 今日执行吞吐与效能 */}
+        <div className="code-debug-card">
+          <div className="code-debug-card__top">
+            <span className="code-debug-card__title">今日扫描任务吞吐</span>
+            <span className="code-debug-card__badge code-debug-card__badge--success">
+              共 {data?.daily_stats?.today_total || 0} 批次
+            </span>
+          </div>
+          <div className="code-debug-card__value">
+            <span style={{ color: '#10b981' }}>{data?.daily_stats?.today_success || 0} 成功</span>
+            {Boolean(data?.daily_stats?.today_failed) && (
+              <span style={{ fontSize: '1.2rem', color: '#ef4444', marginLeft: '0.6rem' }}>
+                / {data?.daily_stats?.today_failed} 失败
+              </span>
+            )}
+          </div>
+          <div className="code-debug-card__subtext">
+            <span>检出缺陷: <strong>{data?.daily_stats?.today_new_defects || 0}</strong> 个 · 今日 Token: {((data?.daily_stats?.today_tier1_tokens || 0) + (data?.daily_stats?.today_tier2_tokens || 0)).toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* 卡片 4: 运行时与内存健康 */}
+        <div className="code-debug-card">
+          <div className="code-debug-card__top">
+            <span className="code-debug-card__title">运行时与内存健康</span>
+            <span className="code-debug-card__badge code-debug-card__badge--info">
+              {data?.system?.num_goroutine || 0} 协程
+            </span>
+          </div>
+          <div className="code-debug-card__value">
+            {data?.memory?.heap_alloc_fmt || '-'}
+          </div>
+          <div className="code-debug-card__subtext">
+            <span>GC: {data?.memory?.num_gc || 0} 次 ({data?.memory?.pause_total_ms?.toFixed(1) || 0}ms) · 运行: {data?.system?.uptime_formatted || '-'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 版块 1: 在途扫描任务实时看板 */}
+      <div className="code-debug-section">
+        <div className="code-debug-section__header">
+          <div className="code-debug-section__title-group">
+            <h3 className="code-debug-section__title">
+              在途扫描任务实时看板 (Live Running Scan Tasks)
+            </h3>
             <span style={{
               fontSize: '0.75rem',
               padding: '2px 8px',
               borderRadius: '999px',
-              background: (data?.system.num_goroutine || 0) > 200 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-              color: (data?.system.num_goroutine || 0) > 200 ? '#ef4444' : '#10b981',
+              background: (data?.active_tasks?.length || 0) > 0 ? 'rgba(37, 99, 235, 0.12)' : 'rgba(148, 163, 184, 0.15)',
+              color: (data?.active_tasks?.length || 0) > 0 ? '#2563eb' : '#64748b',
               fontWeight: 600
             }}>
-              {(data?.system.num_goroutine || 0) > 200 ? '高负载/阻塞警戒' : '正常'}
+              {(data?.active_tasks?.length || 0)} 个任务正在分析中
             </span>
           </div>
-          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-            {data?.system.num_goroutine || 0}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)', marginTop: '0.5rem' }}>
-            CPU 核心数: {data?.system.num_cpu || '-'} · 聚类数: {data?.goroutines.clusters.length || 0} 类
-          </div>
-        </div>
-
-        {/* 卡片 2: 内存堆使用 */}
-        <div style={{
-          padding: '1.25rem',
-          borderRadius: '12px',
-          background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-          border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary, #64748b)', fontWeight: 500 }}>堆内存占用 (Heap Alloc)</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)' }}>Sys: {data?.memory.sys_formatted || '-'}</span>
-          </div>
-          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-            {data?.memory.heap_alloc_fmt || '-'}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)', marginTop: '0.5rem' }}>
-            活动对象: {(data?.memory.heap_objects || 0).toLocaleString()} · 释放: {data?.memory.heap_released_fmt || '-'}
-          </div>
-        </div>
-
-        {/* 卡片 3: GC 性能与延迟 */}
-        <div style={{
-          padding: '1.25rem',
-          borderRadius: '12px',
-          background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-          border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary, #64748b)', fontWeight: 500 }}>GC 触发轮次</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)' }}>累计停顿: {data?.memory.pause_total_ms.toFixed(1)} ms</span>
-          </div>
-          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-            {data?.memory.num_gc || 0} <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--color-text-secondary, #64748b)' }}>次</span>
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)', marginTop: '0.5rem' }}>
-            上次 GC: {data?.memory.last_gc_time || '未发生'}
-          </div>
-        </div>
-
-        {/* 卡片 4: 系统运行时间 */}
-        <div style={{
-          padding: '1.25rem',
-          borderRadius: '12px',
-          background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-          border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary, #64748b)', fontWeight: 500 }}>运行时间 (Uptime)</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)' }}>{data?.system.go_version || '-'}</span>
-          </div>
-          <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--color-text-primary, var(--text-color, #0f172a))', lineHeight: 1.4 }}>
-            {data?.system.uptime_formatted || '-'}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)', marginTop: '0.5rem' }}>
-            启动于: {data?.system.server_start_time || '-'}
-          </div>
-        </div>
-      </div>
-
-      {/* 模型并发调度实时大盘 (ModelDispatcher Concurrency Inspector) */}
-      <div style={{
-        padding: '1.5rem',
-        borderRadius: '12px',
-        background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-        border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-              LLM 模型调度器 (ModelDispatcher) 槽位实时负载
-            </h3>
-            <span style={{
-              fontSize: '0.75rem',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              background: data?.dispatcher.throttle_info.throttle_mode === 'work_hours' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(37, 99, 235, 0.1)',
-              color: data?.dispatcher.throttle_info.throttle_mode === 'work_hours' ? '#f59e0b' : '#2563eb',
-              fontWeight: 600
-            }}>
-              模式: {data?.dispatcher.throttle_info.throttle_mode === 'work_hours' ? '工作时间限流' : (data?.dispatcher.throttle_info.throttle_mode === 'manual' ? '手动覆盖' : '标准全速')}
-              （比例: {((data?.dispatcher.throttle_info.effective_scale || 1) * 100).toFixed(0)}%）
-            </span>
-          </div>
-
-          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
-            总纳管服务器: {data?.dispatcher.resources?.length || 0} 台
+          <span className="code-debug-section__desc">
+            实时捕获当前正在执行大模型推理、分片并发或全仓汇总的任务进展
           </span>
         </div>
 
-        {(!data?.dispatcher.resources || data.dispatcher.resources.length === 0) ? (
-          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary, #64748b)', fontSize: '0.9rem' }}>
-            当前未配置多服务器模型调度器（运行在默认单直通模式）
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {data.dispatcher.resources.map(res => {
-              const percent = res.limit > 0 ? Math.min(100, Math.round((res.active / res.limit) * 100)) : 0;
-              const isFull = res.active >= res.limit && res.limit > 0;
-              return (
-                <div key={res.index} style={{
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  background: 'var(--color-bg-muted, rgba(248, 250, 252, 0.6))',
-                  border: isFull ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-                      Server #{res.index}
-                    </span>
-                    <span style={{
-                      fontSize: '0.85rem',
-                      fontWeight: 700,
-                      color: isFull ? '#ef4444' : (res.active > 0 ? '#2563eb' : 'var(--color-text-secondary, #64748b)')
-                    }}>
-                      槽位占用: {res.active} / {res.limit} <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>(原始: {res.concurrent})</span>
-                    </span>
-                  </div>
-
-                  {/* 槽位进度条 */}
-                  <div style={{
-                    width: '100%',
-                    height: '8px',
-                    borderRadius: '999px',
-                    background: 'var(--color-border-primary, var(--border-color, #e2e8f0))',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${percent}%`,
-                      height: '100%',
-                      background: isFull ? '#ef4444' : (percent > 60 ? '#f59e0b' : '#2563eb'),
-                      borderRadius: '999px',
-                      transition: 'width 0.3s'
-                    }} />
-                  </div>
-
-                  {/* 支持的模型标签 */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', fontSize: '0.75rem' }}>
-                    {res.claude && <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>claude: {res.claude}</span>}
-                    {res.opencode && <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>opencode: {res.opencode}</span>}
-                    {res.native && <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}>native: {res.native}</span>}
-                    {res.agy && <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(249, 115, 22, 0.1)', color: '#f97316' }}>agy: {res.agy}</span>}
-                    {res.codex && <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(100, 116, 139, 0.1)', color: '#64748b' }}>codex: {res.codex}</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Goroutine 智能聚类透视器 (Goroutine Stack Cluster Explorer) */}
-      <div style={{
-        padding: '1.5rem',
-        borderRadius: '12px',
-        background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-        border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
-              Goroutine 堆栈聚类与阻塞透视
-            </h3>
-            <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
-              按等待状态与核心业务调用栈自动聚类，快速识别活锁、假死与高并发阻塞热点
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {/* 状态筛选 Tabs */}
-            <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--color-bg-muted, #f1f5f9)', padding: '2px', borderRadius: '6px' }}>
-              <button
-                onClick={() => setSelectedStateFilter('all')}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: selectedStateFilter === 'all' ? 600 : 400,
-                  background: selectedStateFilter === 'all' ? 'var(--color-bg-surface, #fff)' : 'transparent',
-                  color: selectedStateFilter === 'all' ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-secondary, #64748b)',
-                  cursor: 'pointer'
-                }}
-              >
-                全部 ({data?.goroutines.total || 0})
-              </button>
-              {stateTypes.map(st => (
-                <button
-                  key={st}
-                  onClick={() => setSelectedStateFilter(st)}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    fontSize: '0.75rem',
-                    fontWeight: selectedStateFilter === st ? 600 : 400,
-                    background: selectedStateFilter === st ? 'var(--color-bg-surface, #fff)' : 'transparent',
-                    color: selectedStateFilter === st ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-secondary, #64748b)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {st}
-                </button>
-              ))}
-            </div>
-
-            {/* 关键字搜索 */}
-            <input
-              type="text"
-              placeholder="搜索函数 / 状态 / 行号..."
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              style={{
-                padding: '0.35rem 0.65rem',
-                borderRadius: '6px',
-                border: '1px solid var(--color-border-primary, var(--border-color, #cbd5e1))',
-                background: 'var(--color-bg-surface, var(--card-bg, #fff))',
-                color: 'var(--color-text-primary, var(--text-color, #0f172a))',
-                fontSize: '0.85rem',
-                width: '180px'
-              }}
+        {(!data?.active_tasks || data.active_tasks.length === 0) ? (
+          <div style={{ padding: '2rem 1rem' }}>
+            <EmptyState
+              title="当前无正在执行的扫描任务"
+              description="Worker 工作池与 AI 大模型算力节点全部就绪，等待新扫描触发。"
             />
           </div>
-        </div>
-
-        {/* 聚类列表表格 */}
-        {filteredClusters.length === 0 ? (
-          <EmptyState title="未找到匹配的 Goroutine 堆栈" description="当前没有符合条件的协程聚类" />
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <table className="code-debug-table">
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))', color: 'var(--color-text-secondary, #64748b)' }}>
-                  <th style={{ padding: '0.75rem 0.5rem', width: '90px' }}>协程数量</th>
-                  <th style={{ padding: '0.75rem 0.5rem', width: '140px' }}>运行/等待状态</th>
-                  <th style={{ padding: '0.75rem 0.5rem' }}>核心业务函数 / 栈帧特征</th>
-                  <th style={{ padding: '0.75rem 0.5rem' }}>调用源行号</th>
-                  <th style={{ padding: '0.75rem 0.5rem', width: '100px', textAlign: 'right' }}>操作</th>
+                <tr>
+                  <th style={{ width: '90px' }}>报告 ID</th>
+                  <th>目标仓库</th>
+                  <th>扫描专项任务</th>
+                  <th style={{ width: '110px' }}>引擎模式</th>
+                  <th style={{ width: '220px' }}>分片执行进度</th>
+                  <th style={{ width: '120px' }}>已运行持续时长</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredClusters.map((cluster, idx) => {
-                  const badge = getStateBadgeStyle(cluster.state);
+                {data.active_tasks.map((task) => {
+                  const chunkPercent = task.total_chunks > 0
+                    ? Math.min(100, Math.round((task.processed_chunks / task.total_chunks) * 100))
+                    : 0;
                   return (
-                    <tr
-                      key={idx}
-                      style={{
-                        borderBottom: '1px solid var(--color-border-primary, var(--border-color, #f1f5f9))',
-                        transition: 'background 0.15s'
-                      }}
-                    >
-                      {/* 数量 */}
-                      <td style={{ padding: '0.75rem 0.5rem' }}>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          minWidth: '28px',
-                          padding: '2px 8px',
-                          borderRadius: '999px',
-                          fontWeight: 700,
-                          fontSize: '0.85rem',
-                          background: cluster.count > 10 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(37, 99, 235, 0.1)',
-                          color: cluster.count > 10 ? '#ef4444' : '#2563eb'
-                        }}>
-                          {cluster.count}
-                        </span>
+                    <tr key={task.report_id}>
+                      <td>
+                        <strong style={{ fontFamily: 'monospace', color: 'var(--color-text-primary, #0f172a)' }}>
+                          #{task.report_id}
+                        </strong>
                       </td>
-
-                      {/* 状态徽章 */}
-                      <td style={{ padding: '0.75rem 0.5rem' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          background: badge.bg,
-                          color: badge.color,
-                          border: `1px solid ${badge.border}`
-                        }}>
-                          {cluster.state}
-                        </span>
-                      </td>
-
-                      {/* 关键函数 */}
-                      <td style={{ padding: '0.75rem 0.5rem' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--color-text-primary, var(--text-color, #0f172a))', fontFamily: 'monospace' }}>
-                          {cluster.key_function}
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--color-text-secondary, #64748b)', flexShrink: 0 }}>
+                            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.53 1.03 1.53 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />
+                          </svg>
+                          <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>
+                            {task.repo_name || `Repo #${task.repo_id}`}
+                          </span>
                         </div>
                       </td>
-
-                      {/* 源码位置 */}
-                      <td style={{ padding: '0.75rem 0.5rem', color: 'var(--color-text-secondary, #64748b)', fontSize: '0.8rem', fontFamily: 'monospace' }}>
-                        {cluster.location || '-'}
+                      <td>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: 'var(--color-bg-muted, #f1f5f9)',
+                          color: 'var(--color-text-primary, #0f172a)',
+                          fontWeight: 500,
+                          fontSize: '0.8rem'
+                        }}>
+                          {task.task_display_name || task.task_type}
+                        </span>
                       </td>
-
-                      {/* 查看详情 */}
-                      <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setSelectedCluster(cluster)}
-                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
-                        >
-                          查看堆栈
-                        </button>
+                      <td>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
+                          background: task.engine_mode === 'chunked' ? 'rgba(168, 85, 247, 0.12)' : 'rgba(37, 99, 235, 0.12)',
+                          color: task.engine_mode === 'chunked' ? '#a855f7' : '#2563eb'
+                        }}>
+                          {task.engine_mode === 'chunked' ? '分片并发' : '单仓分析'}
+                        </span>
+                      </td>
+                      <td>
+                        {task.total_chunks > 0 ? (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
+                              <span>{task.processed_chunks} / {task.total_chunks} 分片</span>
+                              <span>{chunkPercent}%</span>
+                            </div>
+                            <div className="code-debug-progress-bar" style={{ margin: 0 }}>
+                              <div
+                                className="code-debug-progress-fill"
+                                style={{
+                                  width: `${chunkPercent}%`,
+                                  background: chunkPercent === 100 ? '#10b981' : '#2563eb'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--color-text-secondary, #64748b)', fontSize: '0.8rem' }}>
+                            代码检出中或单次分析
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{
+                          fontFamily: 'monospace',
+                          fontWeight: 600,
+                          color: task.duration_seconds > 300 ? '#f59e0b' : 'var(--color-text-primary, #0f172a)'
+                        }}>
+                          {formatDuration(task.duration_seconds)}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -655,67 +529,229 @@ export default function SystemDebug() {
         )}
       </div>
 
-      {/* 堆栈详情抽屉 Drawer */}
-      <Drawer
-        open={!!selectedCluster}
-        onClose={() => setSelectedCluster(null)}
-        title={`Goroutine 堆栈详情 (${selectedCluster?.count || 0} 个协程)`}
-        width="xl"
-      >
-        {selectedCluster && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0.75rem 1rem',
-              background: 'var(--color-bg-muted, #f8fafc)',
-              borderRadius: '8px',
-              border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))'
+      {/* 版块 2: LLM 模型调度器 (ModelDispatcher) 槽位实时负载与集群端点 */}
+      <div className="code-debug-section">
+        <div className="code-debug-section__header">
+          <div className="code-debug-section__title-group">
+            <h3 className="code-debug-section__title">
+              LLM 模型调度器 (ModelDispatcher) 算力池实时负载
+            </h3>
+            <span style={{
+              fontSize: '0.75rem',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: data?.dispatcher?.throttle_info?.throttle_mode === 'work_hours' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(37, 99, 235, 0.1)',
+              color: data?.dispatcher?.throttle_info?.throttle_mode === 'work_hours' ? '#f59e0b' : '#2563eb',
+              fontWeight: 600
             }}>
-              <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
-                  特征状态: <strong>{selectedCluster.state}</strong> · 函数: <strong>{selectedCluster.key_function}</strong>
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)', marginTop: '2px' }}>
-                  部分 GID: {selectedCluster.goroutine_ids.join(', ')} {selectedCluster.count > selectedCluster.goroutine_ids.length ? '...' : ''}
-                </div>
-              </div>
+              模式: {data?.dispatcher?.throttle_info?.throttle_mode === 'work_hours' ? '工作时间限流' : (data?.dispatcher?.throttle_info?.throttle_mode === 'manual' ? '手动覆盖' : '标准全速')}
+              （比例: {((data?.dispatcher?.throttle_info?.effective_scale || 1) * 100).toFixed(0)}%）
+            </span>
+          </div>
 
-              <button
-                className="btn btn-primary"
-                onClick={() => copyToClipboard(selectedCluster.sample_stack)}
-                style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
-              >
-                复制完整堆栈
-              </button>
-            </div>
+          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
+            总纳管算力节点: {data?.dispatcher?.resources?.length || 0} 台
+          </span>
+        </div>
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--color-text-primary, #0f172a)' }}>
-                完整 Go 调用栈 (Sample Stack Trace):
-              </div>
-              <pre style={{
-                flex: 1,
-                margin: 0,
-                padding: '1rem',
-                borderRadius: '8px',
-                background: 'var(--color-bg-muted, #0f172a)',
-                color: 'var(--color-text-primary, #e2e8f0)',
-                fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-                fontSize: '0.8rem',
-                lineHeight: 1.5,
-                overflowY: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                border: '1px solid var(--color-border-primary, var(--border-color, #334155))'
-              }}>
-                {selectedCluster.sample_stack}
-              </pre>
-            </div>
+        {(!data?.dispatcher?.resources || data.dispatcher.resources.length === 0) ? (
+          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary, #64748b)', fontSize: '0.9rem' }}>
+            当前未配置多服务器模型调度器（运行在默认单直通模式）
+          </div>
+        ) : (
+          <div className="code-debug-resources-grid">
+            {data.dispatcher.resources.map((res) => {
+              const percent = res.limit > 0 ? Math.min(100, Math.round((res.active / res.limit) * 100)) : 0;
+              const isFull = res.active >= res.limit && res.limit > 0;
+              const resourceId = res.id || `Server #${res.index}`;
+              const driverName = res.driver || (res.agy ? 'agy' : (res.opencode ? 'opencode' : (res.native ? 'native' : 'custom')));
+              const modelName = res.model || res.agy || res.opencode || res.native || res.claude || res.codex || '-';
+
+              return (
+                <div
+                  key={res.index}
+                  className={`code-debug-resource-card ${isFull ? 'code-debug-resource-card--full' : ''}`}
+                >
+                  <div className="code-debug-resource-card__head">
+                    <div className="code-debug-resource-card__id">
+                      <span>{resourceId}</span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        background: driverName === 'native' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(37, 99, 235, 0.15)',
+                        color: driverName === 'native' ? '#a855f7' : '#2563eb',
+                        fontWeight: 600,
+                        textTransform: 'uppercase'
+                      }}>
+                        {driverName}
+                      </span>
+                    </div>
+                    <span
+                      className="code-debug-resource-card__slots"
+                      style={{
+                        color: isFull ? '#ef4444' : (res.active > 0 ? '#2563eb' : 'var(--color-text-secondary, #64748b)')
+                      }}
+                    >
+                      槽位: {res.active} / {res.limit} <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>(原始: {res.concurrent})</span>
+                    </span>
+                  </div>
+
+                  {/* 槽位进度条 */}
+                  <div className="code-debug-progress-bar">
+                    <div
+                      className="code-debug-progress-fill"
+                      style={{
+                        width: `${percent}%`,
+                        background: isFull ? '#ef4444' : (percent > 60 ? '#f59e0b' : '#2563eb')
+                      }}
+                    />
+                  </div>
+
+                  {/* 绑定模型 */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--color-text-secondary, #64748b)' }}>绑定模型:</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>
+                      {modelName}
+                    </span>
+                  </div>
+
+                  {/* 针对 Native 算力节点内聚展示集群端点 Endpoints */}
+                  {res.endpoints && res.endpoints.length > 0 && (
+                    <div className="code-debug-endpoint-list">
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)', marginBottom: '2px' }}>
+                        集群负载均衡端点 ({res.endpoints.length} 个):
+                      </div>
+                      {res.endpoints.map((ep, epIdx) => (
+                        <div key={epIdx} className="code-debug-endpoint-item">
+                          <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>
+                            {ep.name || `Endpoint #${epIdx + 1}`}
+                          </span>
+                          <span>并发: {ep.concurrent || '-'} · 权重: {ep.weight || 100}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
-      </Drawer>
+      </div>
+
+      {/* 版块 3: 多智能体对抗辩论流水线阶梯编排与微任务路由 */}
+      <div className="code-debug-section">
+        <div className="code-debug-section__header">
+          <div className="code-debug-section__title-group">
+            <h3 className="code-debug-section__title">
+              多智能体对抗辩论流水线 (Debate Pipeline) 阶梯编排与微任务路由
+            </h3>
+            <span style={{
+              fontSize: '0.75rem',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: data?.debate_pipeline?.fast_pass_enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+              color: data?.debate_pipeline?.fast_pass_enabled ? '#10b981' : '#64748b',
+              fontWeight: 600
+            }}>
+              {data?.debate_pipeline?.fast_pass_enabled ? '0 候选快速放行已开启 (节能 80%+)' : '全候选辩论'}
+            </span>
+          </div>
+
+          <span className="code-debug-section__desc">
+            单阶段超时兜底: {data?.debate_pipeline?.stage_timeout_seconds || 1800} 秒 · 背压阈值: {data?.debate_pipeline?.backpressure_threshold || 30} 分片
+          </span>
+        </div>
+
+        <div className="code-debug-tiers-flow">
+          {/* Tier 1 Hunter */}
+          <div className="code-debug-tier-box">
+            <div className="code-debug-tier-box__head">
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                Tier 1: 初筛猎手 (Hunter)
+              </strong>
+              <span className="code-debug-tier-box__badge">
+                {data?.debate_pipeline?.tiers?.tier1_hunter?.resource || 'agy'}
+              </span>
+            </div>
+            <div className="code-debug-tier-box__role">
+              角色职责：Thick Agent 自主遍历文件树，初筛可疑代码片段并生成初始候选点
+            </div>
+            <div className="code-debug-tier-box__meta">
+              <span>单片时限: {data?.debate_pipeline?.tiers?.tier1_hunter?.timeout_seconds || 1200} 秒</span>
+              <span>执行引擎: Thick Agent</span>
+            </div>
+          </div>
+
+          {/* Tier 2 Reasoning */}
+          <div className="code-debug-tier-box">
+            <div className="code-debug-tier-box__head">
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                Tier 2: 深度对抗与裁决 (Reasoning)
+              </strong>
+              <span className="code-debug-tier-box__badge" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
+                {data?.debate_pipeline?.tiers?.tier2_reasoning?.resource || 'agy'}
+              </span>
+            </div>
+            <div className="code-debug-tier-box__role">
+              角色职责：统一承载 Challenger 辩护与 Judge 终审，事实链交叉推演与反向仲裁
+            </div>
+            <div className="code-debug-tier-box__meta">
+              <span>单片时限: {data?.debate_pipeline?.tiers?.tier2_reasoning?.timeout_seconds || 1800} 秒</span>
+              <span>执行引擎: 逻辑强推理</span>
+            </div>
+          </div>
+
+          {/* Tier 3 Synthesis */}
+          <div className="code-debug-tier-box">
+            <div className="code-debug-tier-box__head">
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                Tier 3: 全仓态势汇总 (Synthesis)
+              </strong>
+              <span className="code-debug-tier-box__badge" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
+                {data?.debate_pipeline?.tiers?.tier3_synthesis?.resource || 'native'}
+              </span>
+            </div>
+            <div className="code-debug-tier-box__role">
+              角色职责：纯文本与 JSON 结构化排版汇总，风险评分与全仓扫描诊断报告聚合
+            </div>
+            <div className="code-debug-tier-box__meta">
+              <span>汇总时限: {data?.debate_pipeline?.tiers?.tier3_synthesis?.timeout_seconds || 300} 秒</span>
+              <span>执行引擎: Thin LLM 原生直连</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 微任务工具路由 */}
+        <div style={{
+          marginTop: '0.5rem',
+          padding: '0.85rem 1rem',
+          borderRadius: '8px',
+          background: 'var(--color-bg-muted, #f8fafc)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          fontSize: '0.8rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>场景微任务专有路由:</span>
+            <span style={{ color: 'var(--color-text-secondary, #64748b)' }}>默认走 {data?.debate_pipeline?.tools?.default_resource || 'native'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'var(--color-bg-surface, #fff)', border: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)' }}>
+              JSON 语法修复 ➔ <strong>native</strong>
+            </span>
+            <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'var(--color-bg-surface, #fff)', border: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)' }}>
+              缺陷指纹语义比对 ➔ <strong>native</strong>
+            </span>
+            <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'var(--color-bg-surface, #fff)', border: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)' }}>
+              研发负样本特征提炼 ➔ <strong>native</strong>
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -132,6 +132,78 @@ func CancelAllRunningTasks() {
 	}
 }
 
+// RunningTaskInfo 封装正在执行的扫描任务实时状态
+type RunningTaskInfo struct {
+	ReportID        uint      `json:"report_id"`
+	RepoID          uint      `json:"repo_id"`
+	RepoName        string    `json:"repo_name"`
+	RepoURL         string    `json:"repo_url"`
+	TaskType        string    `json:"task_type"`
+	TaskDisplayName string    `json:"task_display_name"`
+	EngineMode      string    `json:"engine_mode"`
+	Status          string    `json:"status"`
+	StartTime       time.Time `json:"start_time"`
+	DurationSec     int64     `json:"duration_seconds"`
+	TotalChunks     int       `json:"total_chunks"`
+	ProcessedChunks int       `json:"processed_chunks"`
+	SuccessChunks   int       `json:"success_chunks"`
+	Attempts        int       `json:"attempts"`
+}
+
+// GetRunningTasks 获取当前内存中所有正在执行中的扫描任务快照
+func GetRunningTasks() []RunningTaskInfo {
+	activeTasksMu.Lock()
+	defer activeTasksMu.Unlock()
+
+	var list []RunningTaskInfo
+	now := time.Now()
+	for reportID, ctx := range activeTasks {
+		startTime := ctx.Summary.StartTime
+		if startTime.IsZero() {
+			startTime = ctx.report.CreatedAt
+		}
+		duration := int64(now.Sub(startTime).Seconds())
+		if duration < 0 {
+			duration = 0
+		}
+
+		repoName := ctx.repo.Name
+		if repoName == "" {
+			repoName = ctx.Summary.RepoName
+		}
+		if repoName == "" && ctx.repo.URL != "" {
+			parts := strings.Split(strings.TrimSuffix(ctx.repo.URL, ".git"), "/")
+			if len(parts) > 0 {
+				repoName = parts[len(parts)-1]
+			}
+		}
+
+		list = append(list, RunningTaskInfo{
+			ReportID:        reportID,
+			RepoID:          ctx.repo.ID,
+			RepoName:        repoName,
+			RepoURL:         ctx.repo.URL,
+			TaskType:        ctx.taskType.Name,
+			TaskDisplayName: ctx.taskType.DisplayName,
+			EngineMode:      ctx.taskType.EngineMode,
+			Status:          ctx.report.Status,
+			StartTime:       startTime,
+			DurationSec:     duration,
+			TotalChunks:     ctx.report.TotalChunks,
+			ProcessedChunks: ctx.report.ProcessedChunks,
+			SuccessChunks:   ctx.report.SuccessChunks,
+			Attempts:        ctx.Attempts,
+		})
+	}
+
+	// 按启动时间从早到晚排序
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].StartTime.Before(list[j].StartTime)
+	})
+
+	return list
+}
+
 // resolveRunParams 将外部传入的 RunParams 与 TaskType 默认值合并。
 // 优先级：外部 RunParams > TaskType 默认值 > 全局配置
 func (ctx *taskContext) resolveRunParams(input models.RunParams) {

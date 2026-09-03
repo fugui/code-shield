@@ -1,18 +1,14 @@
 package handlers
 
 import (
-	"bytes"
-	"code-shield/services"
 	"fmt"
 	"net/http"
 	httpPprof "net/http/pprof"
-	"regexp"
 	"runtime"
-	runtimePprof "runtime/pprof"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
+
+	"code-shield/models"
+	"code-shield/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,17 +34,7 @@ func RegisterPProfRoutes(rg *gin.RouterGroup) {
 	}
 }
 
-// GoroutineCluster 代表相同等待特征和调用栈顶部的协程聚类
-type GoroutineCluster struct {
-	State        string `json:"state"`         // 等待/执行状态，如 "sync.Cond.Wait", "chan receive", "running", "IO wait"
-	KeyFunction  string `json:"key_function"`  // 识别出的关键业务/框架函数，如 "ModelDispatcher.Acquire", "DebateEngine.Run"
-	Location     string `json:"location"`      // 源码行号位置
-	Count        int    `json:"count"`         // 该特征聚类的协程总数
-	SampleStack  string `json:"sample_stack"`  // 示例完整堆栈
-	GoroutineIDs []int  `json:"goroutine_ids"` // 归属于该聚类的部分 Goroutine ID 列表
-}
-
-// GetDebugOverview 提供用于前端系统诊断大盘的结构化运行态指标与堆栈聚类
+// GetDebugOverview 提供用于前端系统诊断大盘的结构化运行态指标、任务看板与 AI 资源透视
 func GetDebugOverview(c *gin.Context) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -57,16 +43,58 @@ func GetDebugOverview(c *gin.Context) {
 	numCPU := runtime.NumCPU()
 	uptimeSec := int64(time.Since(serverStartTime).Seconds())
 
-	// 1. 抓取并聚类 Goroutine 堆栈
-	clusters := analyzeGoroutineStacks()
-
-	// 2. 获取模型调度器并发状态
+	// 1. 获取模型调度器并发状态与总槽位统计
 	var throttleInfo services.ThrottleInfo
 	var resourceList []services.ModelResourceStatus
+	totalActiveSlots := 0
+	totalLimitSlots := 0
+	totalRawSlots := 0
+
 	if services.Dispatcher != nil {
 		throttleInfo = services.Dispatcher.GetThrottleInfo()
 		resourceList = services.Dispatcher.GetResourcesStatus()
+		for _, r := range resourceList {
+			totalActiveSlots += r.Active
+			totalLimitSlots += r.Limit
+			totalRawSlots += r.Concurrent
+		}
 	}
+
+	// 2. 获取当前正在运行的在途任务快照
+	runningTasks := services.GetRunningTasks()
+
+	// 3. Worker 工作池与队列排队水位
+	workerCount := models.AppConfig.Scanner.WorkerCount
+	if workerCount <= 0 {
+		workerCount = 5
+	}
+	maxQueueSize := models.AppConfig.Scanner.MaxQueueSize
+	if maxQueueSize <= 0 {
+		maxQueueSize = 2000
+	}
+
+	var pendingCount int64
+	models.DB.Model(&models.TaskReport{}).Where("status = ?", models.StatusPending).Count(&pendingCount)
+
+	// 4. 今日执行与算力消耗统计 (00:00 至今)
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	var todayTotal, todaySuccess, todayFailed int64
+	models.DB.Model(&models.TaskReport{}).Where("created_at >= ?", todayStart).Count(&todayTotal)
+	models.DB.Model(&models.TaskReport{}).Where("created_at >= ? AND status = ?", todayStart, models.StatusSuccess).Count(&todaySuccess)
+	models.DB.Model(&models.TaskReport{}).Where("created_at >= ? AND status = ?", todayStart, models.StatusFailed).Count(&todayFailed)
+
+	type TokenDefectSum struct {
+		Tier1Tokens int64 `gorm:"column:tier1_tokens"`
+		Tier2Tokens int64 `gorm:"column:tier2_tokens"`
+		NewDefects  int64 `gorm:"column:new_defects"`
+	}
+	var sumResult TokenDefectSum
+	models.DB.Model(&models.TaskReport{}).
+		Select("COALESCE(SUM(tier1_tokens), 0) as tier1_tokens, COALESCE(SUM(tier2_tokens), 0) as tier2_tokens, COALESCE(SUM(new_defects_count), 0) as new_defects").
+		Where("created_at >= ?", todayStart).
+		Scan(&sumResult)
 
 	lastGCTimeStr := ""
 	if m.LastGC > 0 {
@@ -102,12 +130,35 @@ func GetDebugOverview(c *gin.Context) {
 			"last_gc_time":      lastGCTimeStr,
 		},
 		"dispatcher": gin.H{
-			"throttle_info": throttleInfo,
-			"resources":     resourceList,
+			"throttle_info":      throttleInfo,
+			"resources":          resourceList,
+			"total_active_slots": totalActiveSlots,
+			"total_limit_slots":  totalLimitSlots,
+			"total_raw_slots":    totalRawSlots,
 		},
-		"goroutines": gin.H{
-			"total":    numGoroutine,
-			"clusters": clusters,
+		"workers": gin.H{
+			"worker_count":   workerCount,
+			"active_workers": len(runningTasks),
+			"max_queue_size": maxQueueSize,
+			"pending_tasks":  pendingCount,
+			"is_paused":      services.IsQueuePaused(),
+		},
+		"active_tasks": runningTasks,
+		"debate_pipeline": gin.H{
+			"enabled":                models.AppConfig.Scanner.Debate.Enabled,
+			"fast_pass_enabled":      models.AppConfig.Scanner.Debate.FastPassEnabled,
+			"stage_timeout_seconds":  models.AppConfig.Scanner.Debate.StageTimeoutSeconds,
+			"backpressure_threshold": models.AppConfig.Scanner.Debate.BackpressureThreshold,
+			"tiers":                  models.AppConfig.Scanner.Debate.Tiers,
+			"tools":                  models.AppConfig.Scanner.Tools,
+		},
+		"daily_stats": gin.H{
+			"today_total":        todayTotal,
+			"today_success":      todaySuccess,
+			"today_failed":       todayFailed,
+			"today_tier1_tokens": sumResult.Tier1Tokens,
+			"today_tier2_tokens": sumResult.Tier2Tokens,
+			"today_new_defects":  sumResult.NewDefects,
 		},
 	})
 }
@@ -137,123 +188,6 @@ func TriggerGC(c *gin.Context) {
 		"after_alloc_fmt":  formatBytes(after.Alloc),
 		"num_gc":           after.NumGC,
 	})
-}
-
-// analyzeGoroutineStacks 抓取 full stack 并智能按状态和函数聚类
-func analyzeGoroutineStacks() []GoroutineCluster {
-	var buf bytes.Buffer
-	p := runtimePprof.Lookup("goroutine")
-	if p == nil {
-		return nil
-	}
-	_ = p.WriteTo(&buf, 2) // debug=2: full stack traces
-
-	raw := buf.String()
-	blocks := strings.Split(raw, "\n\n")
-
-	type clusterKey struct {
-		state   string
-		keyFunc string
-		loc     string
-	}
-
-	clusterMap := make(map[clusterKey]*GoroutineCluster)
-	headerRegex := regexp.MustCompile(`^goroutine\s+(\d+)\s+\[([^\]]+)\]:`)
-
-	for _, block := range blocks {
-		block = strings.TrimSpace(block)
-		if block == "" {
-			continue
-		}
-
-		lines := strings.Split(block, "\n")
-		if len(lines) == 0 {
-			continue
-		}
-
-		match := headerRegex.FindStringSubmatch(lines[0])
-		if len(match) < 3 {
-			continue
-		}
-
-		gid, _ := strconv.Atoi(match[1])
-		rawState := match[2]
-
-		// 规范化状态（去除具体的等待分钟数，如 "sync.Cond.Wait, 15 minutes" -> "sync.Cond.Wait"）
-		state := rawState
-		if idx := strings.Index(state, ","); idx != -1 {
-			state = strings.TrimSpace(state[:idx])
-		}
-
-		// 提取最有代表性的调用栈帧（优先寻找业务代码 code-shield，其次找有意义的第三方库或运行时顶层）
-		keyFunc := "unknown"
-		location := ""
-
-		for i := 1; i < len(lines); i += 2 {
-			fn := strings.TrimSpace(lines[i])
-			loc := ""
-			if i+1 < len(lines) {
-				loc = strings.TrimSpace(lines[i+1])
-			}
-
-			// 跳过 runtime 内部基础分发帧
-			if strings.HasPrefix(fn, "runtime.") || strings.HasPrefix(fn, "runtime/pprof.") {
-				if keyFunc == "unknown" {
-					keyFunc = fn
-					location = loc
-				}
-				continue
-			}
-
-			keyFunc = fn
-			location = loc
-
-			// 如果命中了业务主逻辑（code-shield），作为高优先级聚类特征
-			if strings.Contains(fn, "code-shield") {
-				break
-			}
-		}
-
-		// 简化函数名展示，提升可读性
-		cleanKeyFunc := simplifyFunctionName(keyFunc)
-
-		k := clusterKey{state: state, keyFunc: cleanKeyFunc, loc: location}
-		if c, exists := clusterMap[k]; exists {
-			c.Count++
-			if len(c.GoroutineIDs) < 10 {
-				c.GoroutineIDs = append(c.GoroutineIDs, gid)
-			}
-		} else {
-			clusterMap[k] = &GoroutineCluster{
-				State:        state,
-				KeyFunction:  cleanKeyFunc,
-				Location:     location,
-				Count:        1,
-				SampleStack:  block,
-				GoroutineIDs: []int{gid},
-			}
-		}
-	}
-
-	var list []GoroutineCluster
-	for _, c := range clusterMap {
-		list = append(list, *c)
-	}
-
-	// 按数量从高到低排序
-	sort.Slice(list, func(i, j int) bool {
-		return list[i].Count > list[j].Count
-	})
-
-	return list
-}
-
-func simplifyFunctionName(fn string) string {
-	// 去除多余路径前缀，保留包名与方法名
-	if idx := strings.LastIndex(fn, "/"); idx != -1 {
-		fn = fn[idx+1:]
-	}
-	return fn
 }
 
 func formatBytes(b uint64) string {
