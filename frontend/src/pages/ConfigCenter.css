@@ -407,3 +407,326 @@
   color: var(--color-info);
   border: 1px solid var(--color-info-border);
 }
+
+/* ==========================================================================
+   辩论阶梯动静分离指南与算力选型卡片
+   ========================================================================== */
+
+/* 动静分离指南横幅 */
+.code-config-guide-banner {
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg, 10px);
+  padding: 1.15rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.code-config-guide-banner__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.code-config-guide-banner__icon {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.code-config-guide-banner__title {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.code-config-guide-banner__subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.code-config-guide-banner__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.85rem;
+}
+
+.code-config-guide-item {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.code-config-guide-item--thick {
+  border-left: 3px solid var(--color-primary);
+}
+
+.code-config-guide-item--thin {
+  border-left: 3px solid var(--color-warning);
+}
+
+.code-config-guide-item--thin-alt {
+  border-left: 3px solid var(--color-purple);
+}
+
+.code-config-guide-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.code-config-guide-item__badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.code-config-guide-item__badge--thick {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.code-config-guide-item__badge--thin {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.code-config-guide-item__badge--thin-alt {
+  background: var(--color-purple-subtle);
+  color: var(--color-purple);
+}
+
+.code-config-guide-item__title {
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+}
+
+.code-config-guide-item__desc {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.code-config-guide-item__rec {
+  margin-top: auto;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  border-top: 1px dashed var(--color-border-subtle);
+  padding-top: 0.4rem;
+}
+
+.code-config-guide-item__rec code {
+  background: var(--color-bg-muted);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  color: var(--color-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+}
+
+/* 阶梯资源卡片 */
+.code-config-tier-card {
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg, 10px);
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.code-config-tier-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.code-config-tier-card__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.code-config-tier-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.code-config-tier-card__badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.code-config-tier-card__badge--tier1_hunter {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.code-config-tier-card__badge--tier2_reasoning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.code-config-tier-card__badge--tier3_synthesis {
+  background: var(--color-purple-subtle);
+  color: var(--color-purple);
+}
+
+.code-config-tier-card__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.code-config-tier-card__role-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.code-config-tier-card__role-tag--thick-required {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-border);
+}
+
+.code-config-tier-card__role-tag--thin-recommended {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+.code-config-tier-card__role-tag--thin-suggested {
+  background: var(--color-purple-subtle);
+  color: var(--color-purple);
+  border: 1px solid var(--color-purple-border);
+}
+
+.code-config-tier-card__desc {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.code-config-tier-card__slots {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+/* 算力节点按钮组 */
+.code-config-tier-card__btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.code-config-tier-res-btn {
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 400;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+}
+
+.code-config-tier-res-btn:hover {
+  border-color: var(--color-border-hover);
+  color: var(--color-text-primary);
+}
+
+.code-config-tier-res-btn--selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.code-config-tier-res-btn__driver-tag {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+  background: var(--color-bg-muted);
+  color: var(--color-text-muted);
+}
+
+.code-config-tier-res-btn--selected .code-config-tier-res-btn__driver-tag {
+  background: var(--color-primary-border);
+  color: var(--color-primary);
+}
+
+.code-config-tier-res-btn__rec-tag {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.code-config-tier-res-btn__req-tag {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 阶梯动态健康诊断条 */
+.code-config-tier-notice {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm, 6px);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.code-config-tier-notice--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+.code-config-tier-notice--info {
+  background: var(--color-info-subtle);
+  color: var(--color-info);
+  border: 1px solid var(--color-info-border);
+}
+
+.code-config-tier-notice--success {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
+}
+

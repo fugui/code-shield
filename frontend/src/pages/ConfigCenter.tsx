@@ -302,23 +302,71 @@ export default function ConfigCenter() {
     }
   };
 
+  // 智能体辩论各阶梯元数据与选型建议规范
+  const TIER_METAS: Record<'tier1_hunter' | 'tier2_reasoning' | 'tier3_synthesis', {
+    tierNumber: string;
+    roleTitle: string;
+    badgeModifier: string;
+    engineBadgeText: string;
+    engineReqType: 'thick-required' | 'thin-recommended' | 'thin-suggested';
+    desc: string;
+    recSnippet: string;
+    defaultSeconds: number;
+  }> = {
+    tier1_hunter: {
+      tierNumber: 'Tier 1',
+      roleTitle: 'Hunter 源码初筛',
+      badgeModifier: 'code-config-tier-card__badge--tier1_hunter',
+      engineBadgeText: '必须 Thick Agent',
+      engineReqType: 'thick-required',
+      desc: '遍历文件树与跨文件调用链，自主阅读磁盘源码并生成初筛案卷。',
+      recSnippet: '必须 Thick (如 agy / opencode)，纯 Thin 节点无法读取磁盘文件。',
+      defaultSeconds: 1200,
+    },
+    tier2_reasoning: {
+      tierNumber: 'Tier 2',
+      roleTitle: 'Challenger & Judge 深度推理',
+      badgeModifier: 'code-config-tier-card__badge--tier2_reasoning',
+      engineBadgeText: '强烈推荐 Thin LLM',
+      engineReqType: 'thin-recommended',
+      desc: '案卷代码已全量内联，负责反向质询辩护与终审事实仲裁，纯逻辑推演。',
+      recSnippet: '强烈推荐 native (Thin)，案卷代码已内联；推荐配 agy (Thick) 容灾备选。',
+      defaultSeconds: 1800,
+    },
+    tier3_synthesis: {
+      tierNumber: 'Tier 3',
+      roleTitle: 'Synthesis 终审汇总',
+      badgeModifier: 'code-config-tier-card__badge--tier3_synthesis',
+      engineBadgeText: '推荐 Thin LLM',
+      engineReqType: 'thin-suggested',
+      desc: '全仓确诊缺陷聚合、态势评分与 Markdown / JSON 排版直传直出。',
+      recSnippet: '推荐 native (Thin)，内存数据直传直出，消除 CLI 进程冷启动开销。',
+      defaultSeconds: 300,
+    },
+  };
+
   // 辅助渲染各阶段算力资源池多选选择器
   const renderTierResourcePoolSelector = (
-    tierKey: 'tier1_hunter' | 'tier2_reasoning' | 'tier3_synthesis',
-    badgeText: string,
-    badgeBg: string,
-    badgeColor: string,
-    title: string,
-    defaultSeconds: number
+    tierKey: 'tier1_hunter' | 'tier2_reasoning' | 'tier3_synthesis'
   ) => {
-    const tierItem = scannerConfig.debate.tiers?.[tierKey] || { resource: 'native', timeout_seconds: defaultSeconds };
+    const meta = TIER_METAS[tierKey];
+    const tierItem = scannerConfig.debate.tiers?.[tierKey] || { resource: 'native', timeout_seconds: meta.defaultSeconds };
     const selected = (tierItem.resources && tierItem.resources.length > 0)
       ? tierItem.resources
       : (tierItem.resource ? [tierItem.resource] : []);
 
     let totalSlots = 0;
+    let hasThick = false;
+    let hasThin = false;
+
     selected.forEach(id => {
       const res = llmConfig.resources.find(r => r.id === id);
+      const isThin = res ? res.driver === 'native' : id === 'native';
+      if (isThin) {
+        hasThin = true;
+      } else {
+        hasThick = true;
+      }
       if (res) totalSlots += (res.concurrent || 5);
       else totalSlots += 5;
     });
@@ -350,62 +398,96 @@ export default function ConfigCenter() {
       });
     };
 
+    let diagnosticNotice: { type: 'warning' | 'info' | 'success'; message: string } | null = null;
+    if (tierKey === 'tier1_hunter') {
+      if (!hasThick) {
+        diagnosticNotice = {
+          type: 'warning',
+          message: '⚠️ 选型告警：当前未绑定任何 Thick Agent（如 agy / opencode）。Hunter 初筛需自主遍历工作区读取磁盘源码，纯 Thin 模式将导致扫描无法读取文件，请务必勾选 Thick 节点！'
+        };
+      }
+    } else if (tierKey === 'tier2_reasoning') {
+      if (!hasThin) {
+        diagnosticNotice = {
+          type: 'info',
+          message: '💡 架构建议：案卷代码已全量内联，建议勾选 native (Thin LLM) 获得 10x 吞吐与毫秒级延迟；可保留 agy 等作为削峰容灾备选池。'
+        };
+      } else if (hasThick) {
+        diagnosticNotice = {
+          type: 'success',
+          message: '✅ 最佳实践组合：已同时绑定 Thin 纯推理 (native) 与 Thick Agent (agy)，兼具高吞吐纯推理与弹性容灾保障。'
+        };
+      }
+    } else if (tierKey === 'tier3_synthesis') {
+      if (!hasThin) {
+        diagnosticNotice = {
+          type: 'info',
+          message: '💡 架构建议：推荐勾选 native (Thin LLM) 进行内存报告快速排版汇总，消除 CLI 进程冷启动开销。'
+        };
+      }
+    }
+
     return (
-      <div style={{ background: 'var(--color-bg-muted)', padding: '1rem', borderRadius: '8px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.8rem', background: badgeBg, color: badgeColor, padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
-              {badgeText}
-            </span>
-            <strong>{title}</strong>
+      <div className="code-config-tier-card">
+        <div className="code-config-tier-card__header">
+          <div className="code-config-tier-card__title-group">
+            <div className="code-config-tier-card__title-row">
+              <span className={`code-config-tier-card__badge ${meta.badgeModifier}`}>
+                {meta.tierNumber}
+              </span>
+              <strong className="code-config-tier-card__title">{meta.roleTitle}</strong>
+              <span className={`code-config-tier-card__role-tag code-config-tier-card__role-tag--${meta.engineReqType}`}>
+                {meta.engineBadgeText}
+              </span>
+            </div>
+            <p className="code-config-tier-card__desc">{meta.desc}</p>
           </div>
           {selected.length > 1 && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-primary, #2563eb)', fontWeight: 600 }}>
-              池化并发: {totalSlots} 槽
+            <span className="code-config-tier-card__slots">
+              池化: {totalSlots} 槽
             </span>
           )}
         </div>
 
-        <div className="code-config-field" style={{ marginBottom: '0.75rem' }}>
-          <label className="code-config-label" style={{ marginBottom: '0.35rem' }}>
-            绑定算力资源 (点击勾选多节点池化负载打散)
+        <div className="code-config-field">
+          <label className="code-config-label">
+            绑定算力资源 (多选负载打散)
           </label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+          <div className="code-config-tier-card__btn-group">
             {llmConfig.resources.map(r => {
               const isChecked = selected.includes(r.id);
+              const isThin = r.driver === 'native';
+              const isRecommended = (tierKey === 'tier2_reasoning' && isThin) ||
+                                    (tierKey === 'tier1_hunter' && !isThin) ||
+                                    (tierKey === 'tier3_synthesis' && isThin);
               return (
                 <button
                   type="button"
                   key={r.id}
                   onClick={() => toggleRes(r.id)}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    border: isChecked ? '1px solid var(--color-primary, #2563eb)' : '1px solid var(--color-border-primary, #cbd5e1)',
-                    background: isChecked ? 'rgba(37, 99, 235, 0.12)' : 'var(--color-bg-surface, #fff)',
-                    color: isChecked ? 'var(--color-primary, #2563eb)' : 'var(--color-text-secondary, #64748b)',
-                    fontSize: '0.8rem',
-                    fontWeight: isChecked ? 600 : 400,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    transition: 'all 0.15s ease'
-                  }}
+                  className={`code-config-tier-res-btn ${isChecked ? 'code-config-tier-res-btn--selected' : ''}`}
                 >
                   <span>{isChecked ? '✓' : '+'}</span>
                   <span>{r.id}</span>
-                  <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>({r.driver} / {r.concurrent || 5}槽)</span>
+                  <span className="code-config-tier-res-btn__driver-tag">
+                    {isThin ? 'Thin' : 'Thick'} · {r.concurrent || 5}槽
+                  </span>
+                  {isRecommended && (
+                    <span className={tierKey === 'tier1_hunter' ? 'code-config-tier-res-btn__req-tag' : 'code-config-tier-res-btn__rec-tag'}>
+                      {tierKey === 'tier1_hunter' ? '必选' : '推荐'}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #94a3b8)', marginTop: '0.35rem' }}>
-            {selected.length > 1 
-              ? `已选 ${selected.length} 个算力节点，分片将由 ModelDispatcher 动态 Least-Loaded 负载均衡。`
-              : '单节点模式，可点击追加其他节点形成高并发资源池。'}
-          </div>
         </div>
+
+        {diagnosticNotice && (
+          <div className={`code-config-tier-notice code-config-tier-notice--${diagnosticNotice.type}`}>
+            {diagnosticNotice.message}
+          </div>
+        )}
 
         <div className="code-config-field" style={{ marginTop: 'auto' }}>
           <label className="code-config-label">超时时间 (秒)</label>
@@ -419,7 +501,7 @@ export default function ConfigCenter() {
                 ...scannerConfig.debate,
                 tiers: {
                   ...scannerConfig.debate.tiers,
-                  [tierKey]: { ...tierItem, timeout_seconds: parseInt(e.target.value) || defaultSeconds }
+                  [tierKey]: { ...tierItem, timeout_seconds: parseInt(e.target.value) || meta.defaultSeconds }
                 }
               }
             })}
@@ -551,7 +633,9 @@ export default function ConfigCenter() {
             <div className="code-config-card__header">
               <div>
                 <h3 className="code-config-card__title">算力节点集群 (Compute Resources)</h3>
-                <span className="code-config-card__desc">配置各物理/逻辑 LLM 服务器端点、并发槽位数与加权分流</span>
+                <span className="code-config-card__desc">
+                  配置各物理/逻辑 LLM 服务器端点、并发槽位数与加权分流。支持 Thin LLM（HTTP REST 纯推理）与 Thick Agent（自主探索型 CLI）混合供给。
+                </span>
               </div>
               <button className="btn btn-secondary" onClick={handleAddResource}>
                 + 添加算力节点
@@ -564,11 +648,11 @@ export default function ConfigCenter() {
                   <div className="code-config-resource-item__top">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <span className="code-config-resource-item__badge" style={{
-                        background: res.driver === 'native' ? 'var(--color-primary-subtle)' : 'var(--color-bg-muted)',
-                        color: res.driver === 'native' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                        border: `1px solid ${res.driver === 'native' ? 'var(--color-primary-border)' : 'var(--color-border-subtle)'}`
+                        background: res.driver === 'native' ? 'var(--color-success-subtle)' : 'var(--color-primary-subtle)',
+                        color: res.driver === 'native' ? 'var(--color-success)' : 'var(--color-primary)',
+                        border: `1px solid ${res.driver === 'native' ? 'var(--color-success-border)' : 'var(--color-primary-border)'}`
                       }}>
-                        {res.driver}
+                        {res.driver === 'native' ? 'Thin · native' : `Thick · ${res.driver}`}
                       </span>
                       <strong style={{ fontSize: '1rem' }}>{res.id}</strong>
                       <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>模型: {res.model || '-'}</span>
@@ -618,11 +702,11 @@ export default function ConfigCenter() {
                         value={res.driver}
                         onChange={e => updateResource(idx, { driver: e.target.value })}
                       >
-                        <option value="native">native (OpenAI/vLLM HTTP 协议)</option>
-                        <option value="opencode">opencode (CLI 模式)</option>
-                        <option value="claude">claude (CLI 模式)</option>
-                        <option value="codex">codex (CLI 模式)</option>
-                        <option value="agy">agy (Antigravity 平台)</option>
+                        <option value="native">native (Thin LLM · HTTP REST 高并发纯推理)</option>
+                        <option value="agy">agy (Thick Agent · Antigravity 探索型平台)</option>
+                        <option value="opencode">opencode (Thick Agent · CLI 模式)</option>
+                        <option value="claude">claude (Thick Agent · CLI 模式)</option>
+                        <option value="codex">codex (Thick Agent · CLI 模式)</option>
                       </select>
                     </div>
 
@@ -1005,12 +1089,68 @@ export default function ConfigCenter() {
             </div>
 
             {/* 辩论 3 层流水线绑定设置 */}
-            <div style={{ marginTop: '1rem', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '1rem' }}>
-              <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem' }}>各阶段算力阶梯绑定 (Tiers Binding)</h4>
+            <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '1.25rem' }}>
+              {/* 动静分离与阶梯选型推荐指南 */}
+              <div className="code-config-guide-banner">
+                <div className="code-config-guide-banner__header">
+                  <span className="code-config-guide-banner__icon">💡</span>
+                  <div>
+                    <h4 className="code-config-guide-banner__title">智能体辩论阶梯算力选型指南 (动静分离最佳实践)</h4>
+                    <p className="code-config-guide-banner__subtitle">
+                      根据任务是否需要自主探索本地文件系统，辩论流水线划分为「探索型 (Thick Agent)」与「纯推演型 (Thin LLM)」两类阶段，请参考以下选型建议：
+                    </p>
+                  </div>
+                </div>
+                <div className="code-config-guide-banner__grid">
+                  <div className="code-config-guide-item code-config-guide-item--thick">
+                    <div className="code-config-guide-item__head">
+                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thick">Tier 1 · 必须 Thick</span>
+                      <strong className="code-config-guide-item__title">Hunter 初筛猎手</strong>
+                    </div>
+                    <p className="code-config-guide-item__desc">
+                      <strong>任务特征：</strong>Prompt 仅传入文件名清单。模型<strong>必须具备本地磁盘文件读写与工作区遍历能力</strong>，需递归穿透跨文件调用链。
+                    </p>
+                    <div className="code-config-guide-item__rec">
+                      <span>推荐驱动：</span><code>agy</code> (Antigravity 平台) / <code>opencode</code> (Thick CLI)
+                    </div>
+                  </div>
+
+                  <div className="code-config-guide-item code-config-guide-item--thin">
+                    <div className="code-config-guide-item__head">
+                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thin">Tier 2 · 强烈推荐 Thin</span>
+                      <strong className="code-config-guide-item__title">Challenger & Judge</strong>
+                    </div>
+                    <p className="code-config-guide-item__desc">
+                      <strong>任务特征：</strong>案卷代码切片与上下文<strong>已在 Prompt 中全量内联</strong>，无需磁盘 I/O。纯静态推理，需高吞吐与严格 JSON 格式。
+                    </p>
+                    <div className="code-config-guide-item__rec">
+                      <span>推荐驱动：</span>优先 <code>native</code> (Thin LLM 毫秒级低延迟/10+并发)，推荐加选 <code>agy</code> 组成弹性容灾池
+                    </div>
+                  </div>
+
+                  <div className="code-config-guide-item code-config-guide-item--thin-alt">
+                    <div className="code-config-guide-item__head">
+                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thin-alt">Tier 3 · 推荐 Thin</span>
+                      <strong className="code-config-guide-item__title">Synthesis 终审汇总</strong>
+                    </div>
+                    <p className="code-config-guide-item__desc">
+                      <strong>任务特征：</strong>全仓确诊缺陷聚合、态势评分归因与 Markdown/JSON 排版。内存纯文本直传直出，零 CLI 进程开销。
+                    </p>
+                    <div className="code-config-guide-item__rec">
+                      <span>推荐驱动：</span>推荐 <code>native</code> (Thin LLM 直传直出)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>各阶段算力阶梯绑定 (Tiers Binding)</h4>
+                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>点击节点可多选形成混合资源池，由 ModelDispatcher 动态负载打散与故障转移</span>
+              </div>
               <div className="code-config-grid-3">
-                {renderTierResourcePoolSelector('tier1_hunter', 'Tier 1', 'var(--color-primary-subtle)', 'var(--color-primary)', 'Hunter 初筛角色', 1200)}
-                {renderTierResourcePoolSelector('tier2_reasoning', 'Tier 2', 'var(--color-warning-subtle)', 'var(--color-warning)', 'Challenger & Judge 角色', 1800)}
-                {renderTierResourcePoolSelector('tier3_synthesis', 'Tier 3', 'var(--color-success-subtle)', 'var(--color-success)', 'Synthesis 终审汇总角色', 300)}
+                {renderTierResourcePoolSelector('tier1_hunter')}
+                {renderTierResourcePoolSelector('tier2_reasoning')}
+                {renderTierResourcePoolSelector('tier3_synthesis')}
               </div>
             </div>
           </div>
