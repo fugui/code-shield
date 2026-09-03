@@ -29,6 +29,14 @@
   "is_campaign": true,
   "campaign_path": "cjson",
   "governance_mode": "defect_tracking",
+  "categories": [
+    "cJSON_Parse 内存泄漏",
+    "cJSON_Create 内存泄漏",
+    "cJSON_Print 内存泄漏",
+    "cJSON_Duplicate 内存泄漏",
+    "cJSON_DetachItem 内存泄漏",
+    "其它 cJSON 泄漏"
+  ],
   "campaign_icon": "",
   "campaign_config": null,
   "is_active": true,

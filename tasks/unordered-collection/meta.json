@@ -53,5 +53,14 @@
   "is_campaign": true,
   "campaign_path": "unordered-collection",
   "governance_mode": "defect_tracking",
+  "categories": [
+    "无序集合-哈希签名顺序依赖",
+    "无序集合-序列化比较缺陷",
+    "无序集合-API响应不稳定",
+    "无序集合-索引依赖与对齐错位",
+    "无序集合-输入输出序列错位",
+    "无序集合-单元测试断言不确定性",
+    "无序集合-其它顺序依赖隐患"
+  ],
   "is_active": true
 }

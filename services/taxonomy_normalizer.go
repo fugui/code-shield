@@ -101,7 +101,14 @@ func SanitizeCategory(rawCategory string, allowedCategories []string) string {
 		return bestMatch
 	}
 
-	// 4. 兜底为“其它缺陷”并输出 Warning 日志便于追踪
+	// 4. 兜底为白名单中声明的兜底项（如“其它”、“其它缺陷”、“其它问题-*”），若无则收敛为全局 DefaultFallbackCategory
+	for _, allowed := range allowedCategories {
+		if strings.HasPrefix(allowed, "其它") || strings.Contains(allowed, "其它") || allowed == "其它" {
+			log.Printf("[TaxonomyWarn] Unrecognized category %q, falling back to task category %q\n", rawCategory, allowed)
+			return allowed
+		}
+	}
+
 	log.Printf("[TaxonomyWarn] Unrecognized category %q, falling back to %q\n", rawCategory, DefaultFallbackCategory)
 	return DefaultFallbackCategory
 }

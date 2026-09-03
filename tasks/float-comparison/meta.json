@@ -27,6 +27,13 @@
   "is_campaign": true,
   "campaign_path": "float",
   "governance_mode": "defect_tracking",
+  "categories": [
+    "浮点数比较缺陷-直接等值比较",
+    "浮点数比较缺陷-直接不等比较",
+    "浮点数比较缺陷-含有等号的边界比较",
+    "浮点数比较缺陷-循环控制条件",
+    "其它问题-其它浮点数隐患"
+  ],
   "campaign_icon": "",
   "campaign_config": null,
   "is_active": true,

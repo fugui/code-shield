@@ -11,11 +11,20 @@ type HunterCandidate struct {
 	LineRange        string `json:"line_range"`        // 行号范围如 "1915-1919"
 	TriggerLine      string `json:"trigger_line"`      // 核心引发风险的关键单一语句 (用于抗漂移强指纹计算)
 	ScopeSymbol      string `json:"scope_symbol"`      // AST 作用域符号（函数名/类名签名）
-	CodeSnippet      string `json:"code_snippet"`      // 原始代码片段
-	CWECategory      string `json:"cwe_category"`      // CWE 分类
-	Title            string `json:"title,omitempty"`   // 简明缺陷标题（如：析构中释放单例导致悬空指针）
-	AttackHypothesis string `json:"attack_hypothesis"` // 攻击路径假设与漏洞成因
-	SuspectedTrigger string `json:"suspected_trigger"` // 疑似触发条件
+	CodeSnippet      string `json:"code_snippet"`           // 原始代码片段
+	CWECategory      string `json:"cwe_category,omitempty"` // 兼容历史 CWE 字段
+	Category         string `json:"category,omitempty"`     // 标准受控分类字段
+	Title            string `json:"title,omitempty"`        // 简明缺陷标题（如：析构中释放单例导致悬空指针）
+	AttackHypothesis string `json:"attack_hypothesis"`      // 攻击路径假设与漏洞成因
+	SuspectedTrigger string `json:"suspected_trigger"`      // 疑似触发条件
+}
+
+// GetCategory 返回候选缺陷的有效分类
+func (h *HunterCandidate) GetCategory() string {
+	if h.Category != "" {
+		return h.Category
+	}
+	return h.CWECategory
 }
 
 // HunterOutput 猎手阶段产物
