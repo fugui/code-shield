@@ -4,13 +4,13 @@
 
 *   **文档编号**：`CS-NATIVE-02`
 *   **文档类型**：系统配置架构、数据库动态配置中心与算力治理专项设计
-*   **当前状态**：`PROPOSED`（架构方案定稿，待代码实施）
+*   **当前状态**：`APPROVED`（架构评审定稿，待代码实施）
 *   **涉及模块**：`models/config.go`、`models/models.go`、`config.yaml`、`tasks/*/meta.json`、`handlers/config.go`、`services/dispatcher.go`、`services/queue.go`、`services/native_cli.go`、`frontend/src/pages/ConfigCenter.tsx`
 *   **核心目标**：针对 Code-Shield 在配置管理中存在的“`ai:` 模块宽泛臃肿”、“扫描任务并发混在 HTTP Server 中”、“算力供给与扫描引擎耦合”、“改配置需登录服务器修改 YAML 并重启服务打断扫描”、“`tasks` 规则层混杂了底层算力参数 `ai_backend`”、“缺乏多租户配置扩展能力”等痛点，提出：
     1. **顶级领域解耦**：拆分为 `server/database`（静态基础设施）、`llm`（大模型与算力资源池）、`scanner`（扫描引擎与辩论流水线）、`governance`（质量治理与生命周期）四大支柱；
     2. **数据库动态配置中心（Seed-Once & Dynamic DB Config Center）**：`config.yaml` 仅保留启动引导冷配置，`llm`、`scanner`、`governance`、`notification` 全量入库，首次启动从 YAML 导入种子数据（Seed-Once），后续以数据库为唯一真实源（SSOT）；
     3. **业务规则与算力层彻底解耦**：废弃并清理 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend` 参数，任务规则纯粹化；
-    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），为未来多租户独立配置铺平道路。
+    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、API Key 掩码防覆盖传输、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），为未来多租户独立配置铺平道路。
 
 ---
 
@@ -77,23 +77,28 @@ graph TD
 sequenceDiagram
     autonumber
     participant Server as shield-server 启动
-    participant DB as PostgreSQL (system_configs 表)
+    participant DB as PostgreSQL (system_dynamic_configs 表)
     participant YAML as config.yaml (本地引导文件)
     participant AdminUI as 前端管理控制台 (ConfigCenter)
     participant Dispatcher as ModelDispatcher 调度器
 
-    Server->>DB: 1. 查询 system_configs 表记录数
+    Server->>DB: 1. 查询 system_dynamic_configs 表记录数
     alt 场景 A: 首次部署启动 (DB 记录为空)
         Server->>YAML: 读取 config.yaml 中的 llm, scanner, governance, notification 初始模版
         Server->>DB: 写入 DB 作为初始种子数据 (Seed-Once)
         Server->>Dispatcher: 基于初始种子数据初始化算力池与调度器
+        Server->>Server: 打印日志: [Config] Initialized seed configs from YAML into Database SSOT
     else 场景 B: 日常运行启动 (DB 已有持久化配置)
         Server->>DB: 直接加载 DB 最新配置 (忽略 YAML 中的同名动态配置)
         Server->>Dispatcher: 基于 DB 配置初始化算力池与调度器
+        Server->>Server: 打印高亮日志: [Config Source: Database SSOT] (YAML dynamic sections ignored)
+    else 场景 C: DB 连接失败 (降级容灾)
+        Server->>YAML: 回退读取本地 config.yaml 作为只读紧急降级配置
+        Server->>Server: 打印告警: [Config WARNING] DB unreachable, fallback to local YAML in read-only mode
     end
 
     AdminUI->>Server: 2. 管理员在前端修改配置并保存 (PUT /api/admin/config/full)
-    Server->>DB: 持久化新配置 (记录 sys_audit_logs 操作审计)
+    Server->>DB: 持久化新配置 (记录 sys_audit_logs 操作审计，处理 API Key 掩码防覆盖)
     Server->>Dispatcher: 调用 Dispatcher.ReloadResources() 动态热生效 (零停机)
     Server-->>AdminUI: 返回成功，界面即刻呈现最新状态
 ```
@@ -104,6 +109,18 @@ sequenceDiagram
 | :--- | :--- | :--- | :--- |
 | **静态引导冷配置** | `config.yaml` | `server.port`, `server.data_dir`, `server.read_timeout`<br>`database.*`（主机/端口/账号密码/连接池）<br>`auth.jwt_secret`, `auth.oauth2.*` | 服务启动前必需，仅通过修改文件并重启服务生效。 |
 | **动态业务热配置** | **PostgreSQL 数据库**<br>(初次从 YAML 导入) | **`llm`**（算力节点、模型名称、Native Endpoints 集群、并发与权重）<br>**`scanner`**（任务 Worker 数、排队上限、避峰时段、辩论阶梯与超时、微工具路由）<br>**`governance`**（指纹防抖、范围守卫、消退、PR 门禁、负样本规则数）<br>**`notification`**（Webhook 地址） | 首次从 YAML Seed 导入；后续由 Web UI 实时修改、持久化并**零停机动态热生效**。 |
+
+### 3.2 防配置漂移机制（Anti-Drift Guard）
+为防止运维人员修改 `config.yaml` 中的动态项未生效而产生困惑，系统提供双重保障：
+1. **终端启动明确标识**：服务每次启动打印高亮日志：
+   ```text
+   ================================================================================
+   [Config Source] RUNTIME DYNAMIC CONFIG LOADED FROM DATABASE (SSOT)
+   Note: Dynamic sections in config.yaml (llm, scanner, governance) are bypassed.
+   To adjust LLM nodes, workers, or debate tiers, visit Web UI: /admin/config-center
+   ================================================================================
+   ```
+2. **`config.yaml` 显式标头注释**：在动态模块章节顶部用大写醒目标注说明。
 
 ---
 
@@ -132,7 +149,7 @@ graph LR
 ### 4.2 清理与平滑下线措施
 1. **清理 `tasks/*/meta.json`**：彻底移除各任务元数据中的 `"ai_backend": ""` 冗余字段；
 2. **前端页面解绑**：在「任务类型管理」与「定时策略」页面中移除“AI 后端”下拉选择框；
-3. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力，数据库 `task_types.ai_backend` 标记为 Deprecated，不再读取。
+3. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力，数据库 `task_types.ai_backend` 标记为 Deprecated，运行时不再读取。
 
 ---
 
@@ -143,8 +160,11 @@ graph LR
 ```yaml
 # ==============================================================================
 # Code-Shield 🛡️ 服务端配置规范 (最终定稿标准)
-# 注：llm、scanner、governance、notification 仅在系统首次启动时作为种子数据导入 DB，
-# 后续以数据库和 Web UI 配置中心修改为准。
+#
+# ⚠️ 注意事项：
+# 1. server, database, auth 属于静态引导冷配置，启动时加载，修改需重启服务；
+# 2. llm, scanner, governance, notification 仅在系统首次启动时作为种子数据导入数据库；
+#    后续系统以数据库 (DB SSOT) 为准，建议直接通过 Web 管理界面实时修改，无需重启服务。
 # ==============================================================================
 
 # ── 1. 基础设施层 (纯粹的静态低频冷配置) ──
@@ -323,7 +343,7 @@ notification:
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  ⚙️ 系统配置中心 (System Config Center)                               [重置为初始模版]  [保存生效] │
+│  ⚙️ 系统配置中心 (System Config Center)                               [重置模块为模版]  [保存生效] │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  [ 🤖 大模型与算力池 ]   [ ⚙️ 扫描引擎与流水线 ]   [ 🛡️ 质量治理与门禁 ]   [ 🔔 通知服务 ]               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -373,11 +393,20 @@ notification:
 #### Tab 4: 🔔 通知服务 (`notification`)
 * Webhook 回调地址输入框、测试发送通知按钮。
 
+### 6.3 安全交互与防覆盖核心规范 (Security & Masking Protocol)
+1. **API Key 掩码回显与非破坏性提交**：
+   * `GET /api/admin/config/full`：所有节点的 `api_key` 进行掩码脱敏（格式如 `sk-******a3b` 或固定占位符 `******`）；
+   * `PUT /api/admin/config/full`：后端保存时执行**智能合并**：
+     * 若前端传入的 `api_key` 为空字符串或包含掩码占位符 `*`，**严格保留数据库中现有的原始真实 API Key**；
+     * 仅当检测到管理员输入了不含掩码的全新明文字符串时，才替换更新该 Key。
+2. **模块级精准重置（Granular Reset）**：
+   * 支持按当前激活的 Tab 单独重置（如仅重置 `scanner` 避峰限流，不影响 `llm` 算力 Key），避免全系统配置被一刀切清空。
+
 ---
 
-## 七、 数据模型与 REST API 契约
+## 七、 数据模型与 Go 内存结构体定义
 
-### 7.1 GORM 数据模型扩展 (`models/models.go`)
+### 7.1 数据库持久化表结构 (`models/models.go`)
 
 ```go
 package models
@@ -399,18 +428,167 @@ type SystemDynamicConfig struct {
 }
 ```
 
-### 7.2 管理端 REST API 契约
+### 7.2 后端 Go 内存聚合结构体 (`models/config.go`)
+
+```go
+package models
+
+import "time"
+
+// ResourceEndpointConfig 原生算力端点配置
+type ResourceEndpointConfig struct {
+	Name        string  `yaml:"name" json:"name"`
+	BaseURL     string  `yaml:"base_url" json:"base_url"`
+	APIKey      string  `yaml:"api_key" json:"api_key"`
+	Model       string  `yaml:"model" json:"model"`
+	Concurrent  int     `yaml:"concurrent" json:"concurrent"`
+	Weight      int     `yaml:"weight" json:"weight"`
+	Temperature float64 `yaml:"temperature" json:"temperature"`
+}
+
+// ComputeResourceConfig 算力节点实体定义
+type ComputeResourceConfig struct {
+	ID                 string                   `yaml:"id" json:"id"`
+	Driver             string                   `yaml:"driver" json:"driver"` // agy / opencode / claude / codex / native
+	Model              string                   `yaml:"model" json:"model"`
+	Concurrent         int                      `yaml:"concurrent" json:"concurrent"`
+	BaseURL            string                   `yaml:"base_url" json:"base_url"`
+	APIKey             string                   `yaml:"api_key" json:"api_key"`
+	ResponseFormatJSON bool                     `yaml:"response_format_json" json:"response_format_json"`
+	MaxRetries         int                      `yaml:"max_retries" json:"max_retries"`
+	RetryBackoffMs     int                      `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
+	Endpoints          []ResourceEndpointConfig `yaml:"endpoints" json:"endpoints"`
+}
+
+// LLMConfig 大模型算力供给层配置
+type LLMConfig struct {
+	DefaultResource string                  `yaml:"default_resource" json:"default_resource"`
+	DebugLogs       bool                    `yaml:"debug_logs" json:"debug_logs"`
+	Resources       []ComputeResourceConfig `yaml:"resources" json:"resources"`
+}
+
+// TierBindingConfig 阶梯绑定配置
+type TierBindingConfig struct {
+	Resource       string `yaml:"resource" json:"resource"`
+	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"`
+}
+
+// DebateTiersConfig 辩论阶梯流水线配置
+type DebateTiersConfig struct {
+	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`
+	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"`
+	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"`
+}
+
+// DebateConfig 辩论流水线流控与阶梯配置
+type DebateConfig struct {
+	Enabled                    bool              `yaml:"enabled" json:"enabled"`
+	FastPassEnabled            bool              `yaml:"fast_pass_enabled" json:"fast_pass_enabled"`
+	MaxCandidatesPerChunk      int               `yaml:"max_candidates_per_chunk" json:"max_candidates_per_chunk"`
+	StageTimeoutSeconds        int               `yaml:"stage_timeout_seconds" json:"stage_timeout_seconds"`
+	LogRetentionDays           int               `yaml:"log_retention_days" json:"log_retention_days"`
+	BackpressureThreshold      int               `yaml:"backpressure_threshold" json:"backpressure_threshold"`
+	BackpressureTimeoutSeconds int               `yaml:"backpressure_timeout_seconds" json:"backpressure_timeout_seconds"`
+	Tiers                      DebateTiersConfig `yaml:"tiers" json:"tiers"`
+}
+
+// ToolsConfig 微任务工具路由
+type ToolsConfig struct {
+	DefaultResource string            `yaml:"default_resource" json:"default_resource"`
+	Overrides       map[string]string `yaml:"overrides" json:"overrides"`
+}
+
+// ScannerConfig 智能扫描引擎与任务调度配置
+type ScannerConfig struct {
+	WorkerCount      int              `yaml:"worker_count" json:"worker_count"`
+	MaxQueueSize     int              `yaml:"max_queue_size" json:"max_queue_size"`
+	MockOnMissingCLI *bool            `yaml:"mock_on_missing_cli" json:"mock_on_missing_cli"`
+	Throttling       ThrottlingConfig `yaml:"throttling" json:"throttling"`
+	Debate           DebateConfig     `yaml:"debate" json:"debate"`
+	Tools            ToolsConfig      `yaml:"tools" json:"tools"`
+}
+
+// GovernancePolicyConfig 企业治理策略定义
+type GovernancePolicyConfig struct {
+	Fingerprint struct {
+		Enabled             bool    `yaml:"enabled" json:"enabled"`
+		SimilarityThreshold float64 `yaml:"similarity_threshold" json:"similarity_threshold"`
+	} `yaml:"fingerprint" json:"fingerprint"`
+
+	Lifecycle struct {
+		ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`
+		AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+		DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`
+	} `yaml:"lifecycle" json:"lifecycle"`
+
+	FeedbackMemory struct {
+		InjectionEnabled bool `yaml:"injection_enabled" json:"injection_enabled"`
+		MaxRulesInjected int  `yaml:"max_rules_injected" json:"max_rules_injected"`
+	} `yaml:"feedback_memory" json:"feedback_memory"`
+}
+
+// Config 系统全局配置 (冷配置由 YAML 读取，热配置由 DB 动态覆盖并实时同步)
+type Config struct {
+	Server       ServerConfig           `yaml:"server"`
+	Database     DatabaseConfig         `yaml:"database"`
+	Auth         AuthConfig             `yaml:"auth"`
+	LLM          LLMConfig              `yaml:"llm"`
+	Scanner      ScannerConfig          `yaml:"scanner"`
+	Governance   GovernancePolicyConfig `yaml:"governance"`
+	Notification NotificationConfig   `yaml:"notification"`
+}
+```
+
+### 7.3 与现有 `SystemConfig` 表的融合演进
+当前系统中 `system_configs` 表已持久化 `concurrency_scale`、`scale_expires_at` 等运行态数据。演进策略如下：
+* **结构统一**：`system_dynamic_configs` 统一承载所有类别的静态与动态 JSON；
+* **透明桥接**：在代码层为 `SystemConfig` 保留兼容代理访问，其值透明代理至 `scanner.throttling`，既保持原有 `/api/admin/config` 兼容，又无缝接入全新的配置中心。
+
+### 7.4 管理端 REST API 契约
 
 | 方法 | API 路径 | 鉴权要求 | 描述 |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/admin/config/full` | Admin | 获取当前生效的全量动态配置（聚合 DB 中的 `llm`、`scanner`、`governance`、`notification`） |
-| `PUT` | `/api/admin/config/full` | Admin | 保存全量配置，持久化到 DB 并即时触发 `Dispatcher.ReloadResources` 动态热重载 |
+| `GET` | `/api/admin/config/full` | Admin | 获取当前生效的全量动态配置（Key 已自动掩码脱敏） |
+| `PUT` | `/api/admin/config/full` | Admin | 保存全量配置（含 Key 防覆盖机制），持久化 DB 并触发 `ReloadResources` 动态热重载 |
 | `POST`| `/api/admin/config/ping-endpoint` | Admin | 测试指定 Native 算力端点连通性与模型响应延迟 |
-| `POST`| `/api/admin/config/reset-to-seed` | Admin | 将配置重置为 `config.yaml` 初始模版（带审计与二次确认） |
+| `POST`| `/api/admin/config/reset-to-seed` | Admin | 将配置（支持单 Category 或全局）重置为 `config.yaml` 初始模版 |
 
 ---
 
-## 八、 方案收益总结对比
+## 八、 实施路线与修改风险防御矩阵 (Roadmap & Risk Defense)
+
+### 8.1 渐进式实施四阶段路径
+
+```mermaid
+graph LR
+    P1["阶段 1: 模型与结构体演进<br/>(models/config.go 兼容新旧解析)"] --> P2["阶段 2: DB 表与 Seed-Once 引擎<br/>(启动加载 DB SSOT + 动态热生效)"]
+    P2 --> P3["阶段 3: tasks 规则解耦<br/>(下线 tasks/meta.json ai_backend)"]
+    P3 --> P4["阶段 4: 前端配置中心交付<br/>(ConfigCenter.tsx 四 Tab 界面)"]
+```
+
+1. **阶段 1：数据模型与兼容解析（零风险）**：
+   * 更新 `models/config.go`，补齐新版结构体，`UnmarshalYAML` 对旧版 `config.yaml` 字段实现 100% 平滑兼容。
+2. **阶段 2：DB 持久化与 Seed-Once 引擎**：
+   * 新增 `SystemDynamicConfig` 表，在服务启动（`main.go`）初始化时执行 Seed-Once 检查与加载；
+   * 在 `services/dispatcher.go` 中实现 `ReloadResources()`，支持运行态槽位热生效。
+3. **阶段 3：Tasks 规则与前端表单解耦**：
+   * 批量清理 `tasks/*/meta.json` 中的 `"ai_backend": ""`；
+   * 前端任务类型表单与定时策略表单中下线该字段。
+4. **阶段 4：交付前端配置中心控制台**：
+   * 开发 `/admin/config-center` 页面，完成 API 联调、Ping 测速与操作审计记录。
+
+### 8.2 修改风险剖析与防御对策矩阵 (Risk Defense Matrix)
+
+| 潜在风险点 | 风险等级 | 影响表现 | 架构防御对策 (Mitigation) |
+| :--- | :---: | :--- | :--- |
+| **配置漂移与认知混淆** | **中** | 运维人员习惯性登机修改 `config.yaml`，但系统已以 DB 为准，导致修改未生效产生困惑。 | 1. 终端启动高亮打印 `[Config Source: Database SSOT]`。<br>2. 在 `config.yaml` 动态章节顶部增加醒目警告注释。 |
+| **密钥意外覆盖** | **高** | 前端拉取配置展示脱敏后的 `sk-***`，管理员修改其他参数点击保存时，真实的 API Key 被掩码串覆盖导致失效。 | **非破坏性合并机制**：后端比对传入的 Key，若包含掩码 `*` 或为空，严格保留 DB 中原值，仅传入全新非掩码明文字符串时才执行替换。 |
+| **数据库离线导致服务瘫痪** | **中** | 首次部署或日常重启时若 PostgreSQL 暂时不可达，无法加载动态配置。 | **本地双重回退**：若连接 DB 失败，自动降级读取本地 `config.yaml` 作为只读紧急降级配置启动，记录 ERROR 告警，待 DB 恢复后自动重试。 |
+| **运行时并发缩容震荡** | **低** | 管理员在 UI 上将某节点并发从 30 骤降为 5，导致活跃中的 Goroutine 槽位越界。 | `calculateLimit` 在 `dispatcher.go` 中已有平滑保护：缩容时不强制 kill 正在运行的任务，等待其执行完毕 `Release` 后自然平滑回落到新限制下。 |
+
+---
+
+## 九、 方案收益总结对比
 
 | 评估维度 | 现行配置架构 (`Current`) | 优化后配置中心架构 (`Proposed`) | 核心收益 |
 | :--- | :--- | :--- | :--- |
