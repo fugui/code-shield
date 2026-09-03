@@ -608,7 +608,7 @@ func ResumeFailedChunks(reportID uint) error {
 			}
 		}
 	}
-	if ctx.runParams.AIBackend == nil {
+	if ctx.runParams.TargetScope == nil {
 		ctx.resolveRunParams(models.RunParams{})
 	}
 

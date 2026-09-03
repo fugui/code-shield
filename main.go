@@ -239,6 +239,7 @@ func main() {
 					{
 						debugGroup.GET("/overview", handlers.GetDebugOverview)
 						debugGroup.POST("/gc", handlers.TriggerGC)
+						debugGroup.POST("/reset-slots", handlers.ResetActiveSlots)
 						handlers.RegisterPProfRoutes(debugGroup)
 					}
 				}

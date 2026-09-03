@@ -10,21 +10,21 @@ import (
 type TestCasePair struct {
 	Name string
 	// R1 历史基线数据
-	R1Path        string
-	R1Line        string
-	R1Scope       string
-	R1Trigger     string
-	R1Category    string
-	R1Severity    string
-	R1Title       string
+	R1Path     string
+	R1Line     string
+	R1Scope    string
+	R1Trigger  string
+	R1Category string
+	R1Severity string
+	R1Title    string
 	// R2 再次扫描输入数据 (包含漂移)
-	R2Path        string
-	R2Line        string
-	R2Scope       string
-	R2Trigger     string
-	R2Category    string
-	R2Severity    string
-	R2Title       string
+	R2Path     string
+	R2Line     string
+	R2Scope    string
+	R2Trigger  string
+	R2Category string
+	R2Severity string
+	R2Title    string
 }
 
 // 构造《03》报告中的 22 组现网连续扫描真实异动案例

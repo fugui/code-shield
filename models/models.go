@@ -49,10 +49,9 @@ type Repository struct {
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
-// RunParams 定义任务执行时的运行参数。
-// ScheduleConfig 中可设置此结构覆盖 TaskType 的默认值，nil 字段表示不覆盖。
+// RunParams 定义任务执行时的运行时动态过滤参数。
+// ScheduleConfig 或 API 触发时可设置此结构覆盖默认扫描范围，nil 字段表示不覆盖。
 type RunParams struct {
-	AIBackend   *string `json:"ai_backend,omitempty"`   // nil = 不覆盖，使用 TaskType 默认
 	TargetScope *string `json:"target_scope,omitempty"` // nil = 不覆盖，使用 TaskType 默认 ("all", "business", "test")
 }
 
@@ -479,11 +478,11 @@ type DefectFingerprintRecord struct {
 	Status      string `gorm:"size:32;default:'ACTIVE';index" json:"status"` // ACTIVE, RESOLVED, VERIFIED_PENDING
 
 	// ── 物理版本与物理锚点字段 ──
-	TriggerLine      string `gorm:"type:text" json:"trigger_line"`      // 物理单行代码 Token
-	LineStart        int    `gorm:"index" json:"line_start"`            // 物理起始行号
-	LineEnd          int    `json:"line_end"`                           // 物理结束行号
+	TriggerLine      string `gorm:"type:text" json:"trigger_line"`     // 物理单行代码 Token
+	LineStart        int    `gorm:"index" json:"line_start"`           // 物理起始行号
+	LineEnd          int    `json:"line_end"`                          // 物理结束行号
 	FileHashSnapshot string `gorm:"size:64" json:"file_hash_snapshot"` // 检出时该物理文件的 SHA-256
-	ScopeBodyHash    string `gorm:"size:64" json:"scope_body_hash"`     // 所在函数代码块 Hash (用于细粒度物理守卫)
+	ScopeBodyHash    string `gorm:"size:64" json:"scope_body_hash"`    // 所在函数代码块 Hash (用于细粒度物理守卫)
 
 	// ── 平滑生命周期与抗抖动追踪 ──
 	MissedCount int `gorm:"default:0" json:"missed_count"` // 物理代码已修改时的连续未命中计数器
@@ -499,7 +498,7 @@ type DefectFingerprintRecord struct {
 	ResolvedCommitHash string     `gorm:"size:64;index" json:"resolved_commit_hash"` // 修复该缺陷的 Git Commit ID
 	ResolvedAuthor     string     `gorm:"size:128" json:"resolved_author"`           // 修复人提交者姓名与邮箱
 	ResolvedDiffHunk   string     `gorm:"type:text" json:"resolved_diff_hunk"`       // 修复前后的真实 Git Diff 对比块
-	FixPattern         string     `gorm:"size:64" json:"fix_pattern"`               // FIX_GUARD, FIX_DELETE, FIX_REFACTOR, FIX_SUSPICIOUS
+	FixPattern         string     `gorm:"size:64" json:"fix_pattern"`                // FIX_GUARD, FIX_DELETE, FIX_REFACTOR, FIX_SUSPICIOUS
 	ResolvedAt         *time.Time `json:"resolved_at"`                               // 确认修复时间戳
 
 	FirstTaskID uint           `json:"first_task_id"` // 引入该缺陷的任务 ID

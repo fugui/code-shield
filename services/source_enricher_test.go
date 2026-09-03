@@ -51,13 +51,13 @@ func TestNormalizeScopeSymbol(t *testing.T) {
 
 func TestLocateTriggerNearby(t *testing.T) {
 	lines := []string{
-		"void Foo() {",                     // line 1
-		"    int a = 0;",                   // line 2
-		"    // some comments",             // line 3
-		"    Sensor* p = getSensor();",     // line 4
-		"    p->Read(); // 触发行在这里",      // line 5
-		"    delete p;",                    // line 6
-		"}",                                // line 7
+		"void Foo() {",                 // line 1
+		"    int a = 0;",               // line 2
+		"    // some comments",         // line 3
+		"    Sensor* p = getSensor();", // line 4
+		"    p->Read(); // 触发行在这里",     // line 5
+		"    delete p;",                // line 6
+		"}",                            // line 7
 	}
 
 	// 假设大模型给错了行号为 2，但 trigger 是 "p->Read();"

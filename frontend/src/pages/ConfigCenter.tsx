@@ -86,7 +86,6 @@ export default function ConfigCenter() {
   const [pingStates, setPingStates] = useState<Record<string, { loading: boolean; result?: PingResult }>>({});
 
   // Endpoint 抽屉编辑状态
-  const [editingResourceIdx, setEditingResourceIdx] = useState<number | null>(null);
   const [editingEndpoint, setEditingEndpoint] = useState<{ resIdx: number; epIdx: number | null; data: ResourceEndpoint } | null>(null);
 
   // 拉取全量配置

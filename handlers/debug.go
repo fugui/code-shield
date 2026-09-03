@@ -190,6 +190,23 @@ func TriggerGC(c *gin.Context) {
 	})
 }
 
+// ResetActiveSlots 允许管理员手动一键重置当前 AI 算力节点的活跃槽位（用于紧急解除因孤儿泄漏导致的死锁）
+func ResetActiveSlots(c *gin.Context) {
+	if services.Dispatcher == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Dispatcher not initialized",
+			"cleared": 0,
+		})
+		return
+	}
+
+	cleared := services.Dispatcher.ResetActiveSlots()
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Active slots successfully reset and waiting workers unblocked",
+		"cleared": cleared,
+	})
+}
+
 func formatBytes(b uint64) string {
 	const unit = 1024
 	if b < unit {

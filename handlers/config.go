@@ -1,10 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	commonAudit "code-common/backend/audit"
 	"code-shield/models"
 	"code-shield/services"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -463,4 +463,3 @@ func ResetCategoryConfig(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已重置为初始种子配置"})
 }
-

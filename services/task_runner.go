@@ -574,13 +574,35 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		promptMsg += "：" + customPromptSuffix
 	}
 
-	// 根据配置选择 AI CLI 后端（RunParams > TaskType > 全局配置）
-	backend := models.AppConfig.AI.Backend
-	if ctx.runParams.AIBackend != nil && *ctx.runParams.AIBackend != "" {
-		backend = *ctx.runParams.AIBackend
+	// 源码探索分析阶段统一对齐 tier1_hunter，由 TierRouter 动态调度与负载均衡
+	router := GetTierRouter()
+	acq, err := router.AcquireTier(ctx.ctx, "tier1_hunter", "")
+	if err != nil {
+		return fmt.Errorf("failed to acquire tier1_hunter compute resource: %w", err)
 	}
+	defer acq.Release()
+
+	backend := acq.Backend
+	modelName := acq.ModelName
+
+	// Thick Agent 强制守卫：源码探索阶段严禁使用无本地文件读写工具的 Thin LLM (native)
+	if backend == "" || backend == "native" {
+		log.Printf("[TaskRunner] WARNING: tier1_hunter resolved to non-thick agent %q, fallback to agy\n", backend)
+		backend = "agy"
+		modelName = "" // 重置为缺省模型，避免将原生 LLM 的模型标识透传给 agy 导致命令行执行失败
+	}
+
 	invoker := GetAIInvoker(backend)
-	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
+	log.Printf("[TaskRunner] Invoking AI via %s (Model: %s, ReportID: %d, Output: %s)\n",
+		invoker.Name(), modelName, ctx.report.ID, outputPath)
+
+	timeoutMin := ctx.taskType.Timeout
+	if timeoutMin <= 0 {
+		tierCfg := models.AppConfig.GetTierConfig("tier1_hunter")
+		if tierCfg.TimeoutSeconds > 0 {
+			timeoutMin = (tierCfg.TimeoutSeconds + 59) / 60
+		}
+	}
 
 	return invoker.Invoke(AIRequest{
 		ParentContext:  ctx.ctx,
@@ -589,7 +611,8 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		PromptMsg:      promptMsg,
 		InputFiles:     fileList,
 		OutputPath:     outputPath,
-		TimeoutMin:     ctx.taskType.Timeout,
+		TimeoutMin:     timeoutMin,
+		ModelName:      modelName,
 		ResponseFormat: "json",
 	})
 }
@@ -875,12 +898,8 @@ func (ctx *taskContext) executeAnalysisOnce(fileList []string) ([]models.Analysi
 		log.Printf("[Error] Failed to parse analysis JSON: %v, attempting AI repair\n", err)
 		log.Printf("[Error] Raw output (first 500 chars): %s\n", string(cleanedJSON[:min(len(cleanedJSON), 500)]))
 
-		// Attempt AI-powered JSON repair
-		backend := ""
-		if ctx.runParams.AIBackend != nil {
-			backend = *ctx.runParams.AIBackend
-		}
-		repairedJSON, repairErr := RepairJSON(ctx.codesPath, rawPath, backend)
+		// Attempt AI-powered JSON repair (优先使用 tools.repair_json 或 native)
+		repairedJSON, repairErr := RepairJSON(ctx.codesPath, rawPath, "")
 		if repairErr != nil {
 			log.Printf("[Error] AI JSON repair failed: %v\n", repairErr)
 			return nil, fmt.Errorf("AI JSON repair failed: %w", repairErr)
@@ -1161,13 +1180,22 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 }
 
 func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPrompt string) error {
-	tierCfg := models.AppConfig.GetTierConfig("tier3_synthesis")
-	backend := tierCfg.Backend
-	if ctx.runParams.AIBackend != nil && *ctx.runParams.AIBackend != "" {
-		backend = *ctx.runParams.AIBackend
+	router := GetTierRouter()
+	acq, err := router.AcquireTier(ctx.ctx, "tier3_synthesis", "")
+	if err != nil {
+		return fmt.Errorf("failed to acquire tier3_synthesis compute resource: %w", err)
 	}
+	defer acq.Release()
+
+	backend := acq.Backend
+	modelName := acq.ModelName
 	if backend == "" {
 		backend = models.AppConfig.AI.Backend
+	}
+
+	tierCfg := models.AppConfig.GetTierConfig("tier3_synthesis")
+	if modelName == "" {
+		modelName = tierCfg.Model
 	}
 
 	promptMsg := "请基于以下 JSON 分析发现，生成综合 Markdown 报告"
@@ -1178,7 +1206,7 @@ func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPr
 	absPrompt := models.AppConfig.GetAbsPath(ctx.taskType.SynthesisPromptFile())
 	invoker := GetAIInvoker(backend)
 	log.Printf("[TaskRunner] Invoking Synthesis via %s (Model: %s, ReportID: %d, Output: %s)\n",
-		invoker.Name(), tierCfg.Model, ctx.report.ID, ctx.reportPath)
+		invoker.Name(), modelName, ctx.report.ID, ctx.reportPath)
 
 	timeoutMin := ctx.taskType.Timeout
 	if tierCfg.TimeoutSeconds > 0 {

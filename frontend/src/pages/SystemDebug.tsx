@@ -144,6 +144,7 @@ export default function SystemDebug() {
   const [refreshInterval, setRefreshInterval] = useState<number>(5); // 默认 5 秒自动轮询实时诊断
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [gcTriggering, setGcTriggering] = useState(false);
+  const [resettingSlots, setResettingSlots] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchOverview = useCallback(async (isSilent = false) => {
@@ -199,6 +200,27 @@ export default function SystemDebug() {
       showToast('触发 GC 异常: ' + err.message, 'error');
     } finally {
       setGcTriggering(false);
+    }
+  };
+
+  const handleResetActiveSlots = async () => {
+    if (!window.confirm('确定要强制重置所有 LLM 算力节点的活跃槽位计数器为 0 吗？\n该操作将立即清零孤儿泄漏槽位，并广播唤醒所有处于等待状态的分析任务。')) {
+      return;
+    }
+    setResettingSlots(true);
+    try {
+      const res = await fetch('/api/admin/debug/reset-slots', { method: 'POST' });
+      if (res.ok) {
+        const result = await res.json();
+        showToast(`活跃槽位重置成功！已释放 ${result.cleared} 个活跃槽位并唤醒等待任务。`, 'success');
+        fetchOverview(true);
+      } else {
+        showToast('重置槽位失败', 'error');
+      }
+    } catch (err: any) {
+      showToast('重置槽位异常: ' + err.message, 'error');
+    } finally {
+      setResettingSlots(false);
     }
   };
 
@@ -550,9 +572,31 @@ export default function SystemDebug() {
             </span>
           </div>
 
-          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
-            总纳管算力节点: {data?.dispatcher?.resources?.length || 0} 台
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
+              总纳管算力节点: {data?.dispatcher?.resources?.length || 0} 台
+            </span>
+            <button
+              className="btn btn-secondary"
+              onClick={handleResetActiveSlots}
+              disabled={resettingSlots}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.3rem',
+                padding: '0.25rem 0.65rem',
+                fontSize: '0.78rem',
+                borderColor: 'var(--color-danger, #ef4444)',
+                color: 'var(--color-danger, #ef4444)'
+              }}
+              title="当现网因历史孤儿泄漏导致 Active 占满死锁时，点击可一键清零活跃槽位并唤醒等待任务"
+            >
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {resettingSlots ? '校准中...' : '校准活跃槽位'}
+            </button>
+          </div>
         </div>
 
         {(!data?.dispatcher?.resources || data.dispatcher.resources.length === 0) ? (

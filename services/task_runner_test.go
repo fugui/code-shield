@@ -166,6 +166,10 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 	// 5. Setup context
 	reportPath := filepath.Join(tempDir, "report.md")
 	backend := "mock_error_backend"
+	oldTier1 := models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter
+	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: backend}
+	defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
+
 	ctx := &taskContext{
 		ctx:        context.Background(),
 		report:     report,
@@ -174,9 +178,7 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 		codesPath:  tempDir,
 		reportPath: reportPath,
 		jsonPath:   filepath.Join(tempDir, "report.json"),
-		runParams: models.RunParams{
-			AIBackend: &backend,
-		},
+		runParams:  models.RunParams{},
 	}
 
 	// 6. Run chunked engine
@@ -699,7 +701,11 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 2}
 		RegisterAIInvoker(mockBackend, invoker)
 
-		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{AIBackend: &mockBackend})
+		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
+		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
+
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
 		if err != nil {
 			t.Fatalf("expected RunTaskSync to succeed eventually, got error: %v", err)
 		}
@@ -748,7 +754,11 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 5}
 		RegisterAIInvoker(mockBackend, invoker)
 
-		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{AIBackend: &mockBackend})
+		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
+		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
+
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
 		if err == nil {
 			t.Fatal("expected RunTaskSync to fail, got nil")
 		}
@@ -799,7 +809,11 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		invoker := &MockSynthesisAIInvoker{WriteEmpty: true}
 		RegisterAIInvoker(mockBackend, invoker)
 
-		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{AIBackend: &mockBackend})
+		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
+		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
+
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
 		if err == nil {
 			t.Fatal("expected RunTaskSync to fail, got nil")
 		}

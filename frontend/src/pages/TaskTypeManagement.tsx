@@ -12,8 +12,7 @@ function TaskTypeManagement() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
     name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
-    ai_backend: '', target_scope: 'business',
-    tier_fast_backend: '', tier_reasoning_backend: '',
+    target_scope: 'business',
     notify_template: '', notify_threshold: 0, notify_cc: [] as string[], timeout: 60, is_active: true,
     is_campaign: false, campaign_path: '', governance_mode: 'defect_tracking', campaign_icon: '', campaign_config: ''
   });
@@ -39,8 +38,7 @@ function TaskTypeManagement() {
   const resetForm = () => {
     setForm({
       name: '', display_name: '', description: '', engine_mode: 'single', engine_config: '',
-      ai_backend: '', target_scope: 'business',
-      tier_fast_backend: '', tier_reasoning_backend: '',
+      target_scope: 'business',
       notify_template: '', notify_threshold: 0,
       notify_cc: [], timeout: 60, is_active: true,
       is_campaign: false, campaign_path: '', governance_mode: 'defect_tracking', campaign_icon: '', campaign_config: ''
@@ -65,9 +63,7 @@ function TaskTypeManagement() {
     setForm({
       name: tt.name, display_name: tt.display_name, description: tt.description || '',
       engine_mode: tt.engine_mode || 'single', engine_config: configStr,
-      ai_backend: tt.ai_backend || '', target_scope: tt.target_scope || 'business',
-      tier_fast_backend: tt.tier_fast_backend || '',
-      tier_reasoning_backend: tt.tier_reasoning_backend || '',
+      target_scope: tt.target_scope || 'business',
       notify_template: tt.notify_template || '',
       notify_threshold: tt.notify_threshold || 0, notify_cc: ccList, timeout: tt.timeout || 60, is_active: tt.is_active,
       is_campaign: !!tt.is_campaign,
