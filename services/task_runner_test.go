@@ -1907,4 +1907,11 @@ func TestSanitizeMarkdownReport(t *testing.T) {
 	if got := string(sanitizeMarkdownReport([]byte(jsonReport))); got != expectedJSON {
 		t.Errorf("expected extracted markdown %q, got: %q", expectedJSON, got)
 	}
+
+	// 4. 外层带 ```json 代码块包裹的 JSON 且内部值也带 ```markdown 包裹
+	nestedReport := "```json\n{\"report\": \"```markdown\\n# 深度嵌套的 Markdown 报告\\n\\n## 一、检视结果概要\\n```\"}\n```"
+	expectedNested := "# 深度嵌套的 Markdown 报告\n\n## 一、检视结果概要"
+	if got := string(sanitizeMarkdownReport([]byte(nestedReport))); got != expectedNested {
+		t.Errorf("expected nested extracted markdown %q, got: %q", expectedNested, got)
+	}
 }
