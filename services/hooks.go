@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -275,188 +274,187 @@ func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFindi
 		}
 	}
 
-	// ── Phase 3: 顺序同步落库与老问题逻辑关闭阶段（数据库原子事务封装） ──
-	err := models.DB.Transaction(func(tx *gorm.DB) error {
-		for idx, f := range findings {
-			matchedFinding := matchedFindingsMap[idx]
-			targetStatus := "open"
-			if f.Severity == "合格" {
-				targetStatus = "closed"
+	// ── Phase 3: 顺序同步落库与老问题逻辑关闭阶段（容错性隔离持久化，杜绝单条异常导致全仓数据回滚丢弃） ──
+	var failedCount int
+	for idx, f := range findings {
+		matchedFinding := matchedFindingsMap[idx]
+		targetStatus := "open"
+		if f.Severity == "合格" {
+			targetStatus = "closed"
+		}
+
+		if matchedFinding == nil {
+			nowStr := time.Now().Format("2006-01-02 15:04:05")
+			statusLog := []map[string]interface{}{
+				{
+					"status":            targetStatus,
+					"time":              nowStr,
+					"user":              "system",
+					"reason":            "Initial scan discovery",
+					"last_confirmed_at": nowStr,
+					"confirm_count":     1,
+				},
+			}
+			logBytes, _ := json.Marshal(statusLog)
+
+			newFinding := models.CampaignFinding{
+				TaskTypeID:   ctx.taskType.ID,
+				RepoID:       ctx.repo.ID,
+				TaskReportID: ctx.report.ID,
+				FilePath:     f.FilePath,
+				LineNumber:   f.LineNumber,
+				Title:        f.Title,
+				Detail:       f.Detail,
+				Severity:     f.Severity,
+				Category:     f.Category,
+				CodeSnippet:  f.CodeSnippet,
+				Suggestion:   f.Suggestion,
+				Status:       targetStatus,
+				StatusLog:    datatypes.JSON(logBytes),
 			}
 
-			if matchedFinding == nil {
-				nowStr := time.Now().Format("2006-01-02 15:04:05")
-				statusLog := []map[string]interface{}{
-					{
-						"status":            targetStatus,
+			// 使用 OnConflict 保证幂等插入，当 (task_type_id, repo_id, file_path, title) 发生冲突时平滑更新最新属性
+			onConflictClause := clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "task_type_id"},
+					{Name: "repo_id"},
+					{Name: "file_path"},
+					{Name: "title"},
+				},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"line_number", "detail", "severity", "category",
+					"code_snippet", "suggestion", "status", "status_log",
+					"task_report_id", "updated_at",
+				}),
+			}
+
+			if err := models.DB.Clauses(onConflictClause).Create(&newFinding).Error; err != nil {
+				log.Printf("[TaskHooks] Warning: Failed to create/upsert CampaignFinding for %s (%s): %v, skipping to protect other findings", f.FilePath, f.Title, err)
+				failedCount++
+				continue
+			}
+		} else {
+			matchedOldIDs[matchedFinding.ID] = true
+			updatedStatus := matchedFinding.Status
+			var existingLog []map[string]interface{}
+			if len(matchedFinding.StatusLog) > 0 {
+				_ = json.Unmarshal(matchedFinding.StatusLog, &existingLog)
+			}
+
+			nowStr := time.Now().Format("2006-01-02 15:04:05")
+			reopened := false
+
+			if updatedStatus != "invalid" {
+				if (updatedStatus == "closed" || updatedStatus == "resolved") && targetStatus == "open" {
+					updatedStatus = "open"
+					reopened = true
+					existingLog = append(existingLog, map[string]interface{}{
+						"status":            "open",
 						"time":              nowStr,
 						"user":              "system",
-						"reason":            "Initial scan discovery",
+						"reason":            "Reopened by subsequent scan finding defects",
 						"last_confirmed_at": nowStr,
 						"confirm_count":     1,
-					},
+					})
+				} else if updatedStatus == "open" && targetStatus == "closed" {
+					updatedStatus = "closed"
+					existingLog = append(existingLog, map[string]interface{}{
+						"status": "closed",
+						"time":   nowStr,
+						"user":   "system",
+						"reason": "Automatically closed (resolved to合格 by scan)",
+					})
 				}
-				logBytes, _ := json.Marshal(statusLog)
+			}
 
-				newFinding := models.CampaignFinding{
-					TaskTypeID:   ctx.taskType.ID,
-					RepoID:       ctx.repo.ID,
-					TaskReportID: ctx.report.ID,
-					FilePath:     f.FilePath,
-					LineNumber:   f.LineNumber,
-					Title:        f.Title,
-					Detail:       f.Detail,
-					Severity:     f.Severity,
-					Category:     f.Category,
-					CodeSnippet:  f.CodeSnippet,
-					Suggestion:   f.Suggestion,
-					Status:       targetStatus,
-					StatusLog:    datatypes.JSON(logBytes),
+			// 如果未发生 reopen 或 auto-close 状态变化（例如持续处于 open 状态），则更新首条初始发现记录的确认时间与累计确认次数
+			if !reopened && updatedStatus != "closed" && len(existingLog) > 0 {
+				targetIdx := -1
+				for i := range existingLog {
+					if r, ok := existingLog[i]["reason"].(string); ok && strings.HasPrefix(r, "Initial scan discovery") {
+						targetIdx = i
+						break
+					}
 				}
-
-				// 使用 OnConflict 保证幂等插入，当 (task_type_id, repo_id, file_path, title) 发生冲突时平滑更新最新属性
-				onConflictClause := clause.OnConflict{
-					Columns: []clause.Column{
-						{Name: "task_type_id"},
-						{Name: "repo_id"},
-						{Name: "file_path"},
-						{Name: "title"},
-					},
-					DoUpdates: clause.AssignmentColumns([]string{
-						"line_number", "detail", "severity", "category",
-						"code_snippet", "suggestion", "status", "status_log",
-						"task_report_id", "updated_at",
-					}),
+				if targetIdx == -1 {
+					targetIdx = 0
 				}
 
-				if err := tx.Clauses(onConflictClause).Create(&newFinding).Error; err != nil {
-					log.Printf("[TaskHooks] Failed to create/upsert CampaignFinding record: %v", err)
-					return fmt.Errorf("failed to upsert CampaignFinding: %w", err)
+				existingLog[targetIdx]["last_confirmed_at"] = nowStr
+				cnt := 1
+				if rawCnt, ok := existingLog[targetIdx]["confirm_count"]; ok {
+					switch v := rawCnt.(type) {
+					case float64:
+						cnt = int(v)
+					case int:
+						cnt = v
+					case int64:
+						cnt = int(v)
+					}
 				}
-			} else {
-				matchedOldIDs[matchedFinding.ID] = true
-				updatedStatus := matchedFinding.Status
+				existingLog[targetIdx]["confirm_count"] = cnt + 1
+			}
+
+			newLogBytes, _ := json.Marshal(existingLog)
+
+			matchedFinding.TaskReportID = ctx.report.ID
+			matchedFinding.LineNumber = f.LineNumber
+			matchedFinding.Detail = f.Detail
+			matchedFinding.Severity = f.Severity
+			matchedFinding.Category = f.Category
+			matchedFinding.CodeSnippet = f.CodeSnippet
+			matchedFinding.Suggestion = f.Suggestion
+			matchedFinding.Status = updatedStatus
+			matchedFinding.StatusLog = datatypes.JSON(newLogBytes)
+
+			if err := models.DB.Save(matchedFinding).Error; err != nil {
+				log.Printf("[TaskHooks] Warning: Failed to update CampaignFinding record ID %d: %v, skipping", matchedFinding.ID, err)
+				failedCount++
+				continue
+			}
+		}
+	}
+
+	// 历史遗留且本次未匹配到的缺陷/用例，逻辑状态自动置为 resolved
+	// 注意：若任务存在失败分片，说明扫描未完全覆盖代码仓所有文件，跳过自动消亡以避免误关缺陷
+	if ctx.hasFailedChunks {
+		log.Printf("[TaskHooks] Notice: Skipped auto-resolving obsolete findings because task report %d had failed chunks.", ctx.report.ID)
+	} else {
+		for i := range allOldFindings {
+			oldF := &allOldFindings[i]
+			if !matchedOldIDs[oldF.ID] {
+				if oldF.Status == "closed" || oldF.Status == "resolved" {
+					continue
+				}
+
 				var existingLog []map[string]interface{}
-				if len(matchedFinding.StatusLog) > 0 {
-					_ = json.Unmarshal(matchedFinding.StatusLog, &existingLog)
+				if len(oldF.StatusLog) > 0 {
+					_ = json.Unmarshal(oldF.StatusLog, &existingLog)
 				}
 
-				nowStr := time.Now().Format("2006-01-02 15:04:05")
-				reopened := false
-
-				if updatedStatus != "invalid" {
-					if (updatedStatus == "closed" || updatedStatus == "resolved") && targetStatus == "open" {
-						updatedStatus = "open"
-						reopened = true
-						existingLog = append(existingLog, map[string]interface{}{
-							"status":            "open",
-							"time":              nowStr,
-							"user":              "system",
-							"reason":            "Reopened by subsequent scan finding defects",
-							"last_confirmed_at": nowStr,
-							"confirm_count":     1,
-						})
-					} else if updatedStatus == "open" && targetStatus == "closed" {
-						updatedStatus = "closed"
-						existingLog = append(existingLog, map[string]interface{}{
-							"status": "closed",
-							"time":   nowStr,
-							"user":   "system",
-							"reason": "Automatically closed (resolved to合格 by scan)",
-						})
-					}
-				}
-
-				// 如果未发生 reopen 或 auto-close 状态变化（例如持续处于 open 状态），则更新首条初始发现记录的确认时间与累计确认次数
-				if !reopened && updatedStatus != "closed" && len(existingLog) > 0 {
-					targetIdx := -1
-					for i := range existingLog {
-						if r, ok := existingLog[i]["reason"].(string); ok && strings.HasPrefix(r, "Initial scan discovery") {
-							targetIdx = i
-							break
-						}
-					}
-					if targetIdx == -1 {
-						targetIdx = 0
-					}
-
-					existingLog[targetIdx]["last_confirmed_at"] = nowStr
-					cnt := 1
-					if rawCnt, ok := existingLog[targetIdx]["confirm_count"]; ok {
-						switch v := rawCnt.(type) {
-						case float64:
-							cnt = int(v)
-						case int:
-							cnt = v
-						case int64:
-							cnt = int(v)
-						}
-					}
-					existingLog[targetIdx]["confirm_count"] = cnt + 1
-				}
-
+				existingLog = append(existingLog, map[string]interface{}{
+					"status": "resolved",
+					"time":   time.Now().Format("2006-01-02 15:04:05"),
+					"user":   "system",
+					"reason": "Automatically marked as resolved (not detected in the latest scan)",
+				})
 				newLogBytes, _ := json.Marshal(existingLog)
 
-				matchedFinding.TaskReportID = ctx.report.ID
-				matchedFinding.LineNumber = f.LineNumber
-				matchedFinding.Detail = f.Detail
-				matchedFinding.Severity = f.Severity
-				matchedFinding.Category = f.Category
-				matchedFinding.CodeSnippet = f.CodeSnippet
-				matchedFinding.Suggestion = f.Suggestion
-				matchedFinding.Status = updatedStatus
-				matchedFinding.StatusLog = datatypes.JSON(newLogBytes)
+				oldF.Status = "resolved"
+				oldF.StatusLog = datatypes.JSON(newLogBytes)
 
-				if err := tx.Save(matchedFinding).Error; err != nil {
-					log.Printf("[TaskHooks] Failed to update CampaignFinding record: %v", err)
-					return fmt.Errorf("failed to update CampaignFinding: %w", err)
+				if err := models.DB.Save(oldF).Error; err != nil {
+					log.Printf("[TaskHooks] Warning: Failed to logically resolve obsolete CampaignFinding ID %d: %v", oldF.ID, err)
+					failedCount++
+				} else {
+					log.Printf("[TaskHooks] CampaignFinding ID %d logically resolved.", oldF.ID)
 				}
 			}
 		}
+	}
 
-		// 历史遗留且本次未匹配到的缺陷/用例，逻辑状态自动置为 resolved
-		// 注意：若任务存在失败分片，说明扫描未完全覆盖代码仓所有文件，跳过自动消亡以避免误关缺陷
-		if ctx.hasFailedChunks {
-			log.Printf("[TaskHooks] Notice: Skipped auto-resolving obsolete findings because task report %d had failed chunks.", ctx.report.ID)
-		} else {
-			for i := range allOldFindings {
-				oldF := &allOldFindings[i]
-				if !matchedOldIDs[oldF.ID] {
-					if oldF.Status == "closed" || oldF.Status == "resolved" {
-						continue
-					}
-
-					var existingLog []map[string]interface{}
-					if len(oldF.StatusLog) > 0 {
-						_ = json.Unmarshal(oldF.StatusLog, &existingLog)
-					}
-
-					existingLog = append(existingLog, map[string]interface{}{
-						"status": "resolved",
-						"time":   time.Now().Format("2006-01-02 15:04:05"),
-						"user":   "system",
-						"reason": "Automatically marked as resolved (not detected in the latest scan)",
-					})
-					newLogBytes, _ := json.Marshal(existingLog)
-
-					oldF.Status = "resolved"
-					oldF.StatusLog = datatypes.JSON(newLogBytes)
-
-					if err := tx.Save(oldF).Error; err != nil {
-						log.Printf("[TaskHooks] Failed to logically resolve obsolete CampaignFinding: %v", err)
-						return fmt.Errorf("failed to resolve obsolete CampaignFinding: %w", err)
-					} else {
-						log.Printf("[TaskHooks] CampaignFinding ID %d logically resolved.", oldF.ID)
-					}
-				}
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Printf("[TaskHooks] Transaction for CampaignFinding sync failed: %v", err)
-		return err
+	if failedCount > 0 {
+		log.Printf("[TaskHooks] Completed campaign finding sync for repo %d with %d non-fatal warning(s).", ctx.repo.ID, failedCount)
 	}
 
 	return nil
