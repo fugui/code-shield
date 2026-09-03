@@ -22,5 +22,13 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
+  "categories": [
+    "堆内存泄漏",
+    "未关闭句柄或文件描述符",
+    "智能指针循环引用",
+    "第三方库资源未释放",
+    "RAII 析构异常遗漏",
+    "其它缺陷"
+  ],
   "is_active": true
 }

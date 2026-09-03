@@ -113,7 +113,7 @@ func (e *SingleEngine) Run(ctx *taskContext) error {
 
 	// ── 严重度校准与增量比对打标 ──
 	findings = CalibrateFindings(findings)
-	findings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, fileList, findings)
+	findings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, fileList, findings, ctx.codesPath)
 	ctx.findings = findings
 
 	// Phase 2: 综合阶段 — 基于 JSON 生成最终 Markdown 报告

@@ -25,5 +25,18 @@
   "is_campaign": true,
   "campaign_path": "coredump",
   "governance_mode": "defect_tracking",
+  "categories": [
+    "空指针解引用",
+    "越界访问",
+    "释放后使用",
+    "双重释放",
+    "数据竞争与多线程安全",
+    "信号处理不安全",
+    "未初始化变量",
+    "资源或内存泄漏",
+    "除零错误",
+    "死锁风险",
+    "其它缺陷"
+  ],
   "is_active": true
 }
