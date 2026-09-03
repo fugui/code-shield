@@ -4,12 +4,12 @@
 
 *   **文档编号**：`CS-NATIVE-02`
 *   **文档类型**：系统配置架构、数据库动态配置中心与算力治理专项设计
-*   **当前状态**：`APPROVED`（架构评审定稿，待代码实施）
+*   **当前状态**：`IMPLEMENTED & DELIVERED`（架构评审批准，全量代码与测试已落地并交付 GitHub `main`）
 *   **涉及模块**：`models/config.go`、`models/models.go`、`config.yaml`、`tasks/*/meta.json`、`handlers/config.go`、`services/dispatcher.go`、`services/queue.go`、`services/native_cli.go`、`frontend/src/pages/ConfigCenter.tsx`
 *   **核心目标**：针对 Code-Shield 在配置管理中存在的“`ai:` 模块宽泛臃肿”、“扫描任务并发混在 HTTP Server 中”、“算力供给与扫描引擎耦合”、“改配置需登录服务器修改 YAML 并重启服务打断扫描”、“`tasks` 规则层混杂了底层算力参数 `ai_backend`”等痛点，提出：
     1. **顶级领域解耦**：拆分为 `server/database`（静态基础设施）、`llm`（大模型与算力资源池）、`scanner`（扫描引擎与辩论流水线）、`governance`（质量治理与生命周期）四大支柱；
     2. **数据库动态配置中心（Seed-Once & Dynamic DB Config Center）**：`config.yaml` 仅保留启动引导冷配置，`llm`、`scanner`、`governance`、`notification` 全量入库，首次启动从 YAML 导入种子数据（Seed-Once），后续以数据库为唯一真实源（SSOT）；
-    3. **业务规则与算力层彻底解耦**：废弃并清理全部 10 个任务规则 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend`、`tier_fast_backend`、`tier_reasoning_backend` 参数，任务规则纯粹化；
+    3. **业务规则与算力层彻底解耦**：彻底移除全部 10 个任务规则 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend`、`tier_fast_backend`、`tier_reasoning_backend` 参数，贯彻内部系统实用主义，不保留无谓兼容负担；
     4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、细粒度模块化保存、操作审计与零停机动态热重载（Hot Reloading），彻底免除登录服务器修改与重启服务的运维成本。
 
 ---
@@ -144,11 +144,11 @@ graph LR
     end
 ```
 
-### 4.2 清理与平滑下线措施
+### 4.2 清理与彻底下线措施
 1. **清理全部 `tasks/*/meta.json`**：彻底移除全部 10 个任务规则元数据中的 `"ai_backend": ""` 冗余字段；
-2. **下线 `TaskType` 历史算力字段**：在数据库模型中将 `TaskType.AIBackend`、`TaskType.TierFastBackend`、`TaskType.TierReasoningBackend` 统一标记为废弃（Deprecated），运行时不再读取；
-3. **前端页面解绑**：在「任务类型管理」与「定时策略」页面中移除“AI 后端”下拉选择框；
-4. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力节点。
+2. **彻底删除 `TaskType` 历史算力字段**：遵循内部系统实用主义原则，不为版本兼容增加冗余包袱，已直接从数据库模型与接口中彻底删除 `TaskType.AIBackend`、`TaskType.TierFastBackend`、`TaskType.TierReasoningBackend` 字段；
+3. **前端页面解绑**：在「任务类型管理」与「定时策略」页面中彻底移除“AI 后端”展示列与下拉选择框；
+4. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力节点，规则层不再干涉算力分配。
 
 ---
 
@@ -572,8 +572,8 @@ type Config struct {
 
 | 方法 | API 路径 | 鉴权要求 | 描述 |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/admin/config/:category` | Admin | 获取指定模块配置（`category` 为 `llm`/`scanner`/`governance`/`notification`） |
-| `PUT` | `/api/admin/config/:category` | Admin | 更新指定模块配置并持久化 DB，即时触发热生效（避免全量提交冲突） |
+| `GET` | `/api/admin/config/category/:category` | Admin | 获取指定模块配置（`category` 为 `llm`/`scanner`/`governance`/`notification`） |
+| `PUT` | `/api/admin/config/category/:category` | Admin | 更新指定模块配置并持久化 DB，即时触发热生效（避免全量提交冲突） |
 | `GET` | `/api/admin/config/full` | Admin | 获取全量配置（用于页面首屏聚合加载或配置导出） |
 | `PUT` | `/api/admin/config/full` | Admin | 全量配置更新（用于配置一键导入） |
 | `POST`| `/api/admin/config/ping-endpoint` | Admin | 测试指定 Native 算力端点连通性与模型响应延迟 |
@@ -583,28 +583,31 @@ type Config struct {
 
 ## 八、 实施路线与修改风险防御矩阵 (Roadmap & Risk Defense)
 
-### 8.1 渐进式实施四阶段路径
+### 8.1 渐进式实施四阶段路径 (全部已落地)
 
 ```mermaid
 graph LR
-    P1["阶段 1: 模型与结构体演进<br/>(低风险: 全量编译验证与旧YAML兼容)"] --> P2["阶段 2: DB 表与 Seed-Once 引擎<br/>(按Category持久化 + 动态热生效)"]
-    P2 --> P3["阶段 3: tasks 规则解耦<br/>(下线10个meta.json与TaskType旧字段)"]
-    P3 --> P4["阶段 4: 前端配置中心交付<br/>(ConfigCenter.tsx 四 Tab 界面)"]
+    P1["阶段 1: 模型与结构体演进<br/>[已完成 100%]"] --> P2["阶段 2: DB 表与 Seed-Once 引擎<br/>[已完成 100%]"]
+    P2 --> P3["阶段 3: tasks 规则解耦<br/>[已完成 100%]"]
+    P3 --> P4["阶段 4: 前端配置中心交付<br/>[已完成 100%]"]
 ```
 
-1. **阶段 1：数据模型演进与兼容解析（低风险，需全量编译验证）**：
-   * 更新 `models/config.go`，补齐新版结构体；
-   * 在 `UnmarshalYAML` 中做好对旧版 `ai:` 字段的向后兼容，确保解析旧 `config.yaml` 不报错；
-   * 全系统编译与单元测试回归。
-2. **阶段 2：DB 持久化与 Seed-Once 引擎**：
-   * 新增 `SystemDynamicConfig` 表，在服务启动（`main.go`）时按 Category 执行 Seed-Once 检查与加载；
-   * 在 `services/dispatcher.go` 中实现 `ReloadResources()`（对齐底层 `sync.Cond` 机制），支持运行态并发槽位平滑热生效；
-   * 提供细粒度 REST API。
-3. **阶段 3：Tasks 规则与前端表单解耦**：
+1. **阶段 1：数据模型演进与兼容解析（已完成）**：
+   * 更新 `models/config.go`，建立四大顶层领域结构体；
+   * 在 `models/config.go` 中实现 `SyncLegacy()`，确保旧版 `ai:` 字段与新版顶层双向平滑兼容；
+   * 全系统编译与单元测试回归通过。
+2. **阶段 2：DB 持久化与 Seed-Once 引擎（已完成）**：
+   * 新增 `SystemDynamicConfig` 表，按 Category 进行 Seed-Once 写入与运行时 SSOT 覆盖；
+   * 在 `services/dispatcher.go` 中实现 `ReloadResources()`，热重载平滑继承正在运行的任务槽位并广播唤醒；
+   * 在 `handlers/config.go` 中实现细粒度 REST API，明文存储与测速全部就绪。
+3. **阶段 3：Tasks 规则与前端表单解耦（已完成）**：
    * 批量清理全部 10 个 `tasks/*/meta.json` 中的 `"ai_backend": ""`；
-   * 在 `TaskType` 中标记历史算力字段为 Deprecated，前端任务类型表单下线“AI 后端”下拉框。
-4. **阶段 4：交付前端配置中心控制台**：
-   * 基于 `@code/common` 与 `GEMINI.md` 规范开发 `/admin/config-center` 页面，完成端点 Ping 测速与细粒度 Tab 保存。
+   * 遵循内部系统实用主义，直接**彻底删除** `TaskType` 中历史遗留的 `AIBackend`、`TierFastBackend`、`TierReasoningBackend` 字段与处理逻辑，不引入无谓废弃兼容负担；
+   * 前端任务类型管理表格与表单彻底下线“AI 后端”列与输入控件。
+4. **阶段 4：交付前端配置中心控制台（已完成）**：
+   * 基于 `@code/common` 与 `GEMINI.md` 规范开发 `ConfigCenter.tsx` 与 `ConfigCenter.css`，支持 4 个 Tab；
+   * 集成端点加权抽屉、端点延迟在线 Ping 测试、密码明文眼睛切换；
+   * 在管理中心菜单和路由注册 `/admin/config` 入口。
 
 ### 8.2 修改风险剖析与防御对策矩阵 (Risk Defense Matrix)
 
@@ -630,3 +633,27 @@ graph LR
 | **微工具扩展** | 写死 3 个孤立场景 | 统一在 `scanner.tools` 下指定 `default_resource: "native"` | 统一直连原生集群，具备极速 $<800\text{ms}$ 响应与极简覆盖语法。 |
 | **企业治理策略** | 仅 5 个平铺布尔开关 | 分层为 `fingerprint`、`lifecycle`、`feedback_memory` | 增加 `max_rules_injected` 等保护参数，防止 Prompt 爆炸，支持项目级覆盖。 |
 | **运维效率与易用性** | 改配置需登机改文件并重启服务打断扫描 | Web 控制台细粒度修改 + 零停机热重载 + 操作审计 | 运维效率极大提升，扫描任务零中断，修改操作全链路可追溯。 |
+
+---
+
+## 十、 落地实施成果与交付归档 (Implementation & Delivery Record)
+
+### 10.1 交付清单与状态汇总
+
+本设计方案已全面实施落地并交付至 GitHub 仓库（`origin/main`）：
+
+| 交付模块 | 涉及源码文件 | 交付核心成果 | 状态 |
+| :--- | :--- | :--- | :---: |
+| **数据模型与 DB 实体** | `models/models.go`<br>`models/config.go`<br>`models/db.go` | 新增 `SystemDynamicConfig` 实体，实现 Category 级别的 Seed-Once 机制与运行时 SSOT；保留 `SyncLegacy()` 保证对历史调用 100% 透明兼容。 | ✅ **已交付** |
+| **规则算力彻底解耦** | `tasks/*/meta.json`<br>`models/models.go`<br>`handlers/task_type.go` | 遵循内部系统实用主义，清理全部 10 个任务规则元数据中的 `ai_backend`；直接从代码中彻底删除 `TaskType` 中的 `AIBackend`、`TierFastBackend`、`TierReasoningBackend` 历史字段及相关处理逻辑，不保留冗余的废弃兼容包袱。 | ✅ **已交付** |
+| **调度器动态热生效** | `services/dispatcher.go` | 实现 `ReloadResources(llmCfg)`，在互斥锁保护下平滑重建物理资源与加权轮询器，继承活跃任务槽位并通过 `sync.Cond.Broadcast()` 即时唤醒排队任务。 | ✅ **已交付** |
+| **服务端接口层** | `handlers/config.go`<br>`main.go` | 提供细粒度模块读写（`/api/admin/config/category/:category`）、全量配置读写（`/api/admin/config/full`）、端点在线 Ping 延迟探测（`/api/admin/config/ping-endpoint`）及种子重置（`/api/admin/config/reset-to-seed`）。 | ✅ **已交付** |
+| **前端配置中心** | `frontend/src/pages/ConfigCenter.tsx`<br>`frontend/src/pages/ConfigCenter.css`<br>`frontend/src/menu.ts`<br>`frontend/src/App.tsx` | 遵循 Design Tokens 与深浅双模规范开发控制台，涵盖算力池、扫描引擎、质量治理、通知 4 大 Tab，支持端点测速与加权抽屉，在管理中心挂载 `/admin/config` 入口。 | ✅ **已交付** |
+
+### 10.2 构建与自动化测试验证
+- **Go 单元测试回归**：`go test -v ./...` 全部包（`models`、`handlers`、`services`）测试 100% 通过（0 failures, 0 errors）。
+- **Go 服务端构建**：`go build main.go` 顺利编译通过。
+- **前端生产打包**：`cd frontend && npm run build`（TypeScript 静态检查 + Vite 生产构建打包）顺利完成（0 errors）。
+- **Git 提交交付**：
+  - `feat: 实现智能扫描引擎与算力动态配置中心及算力解耦 (CS-NATIVE-02)` (`39b4c19`)
+  - `refactor: 彻底删除 TaskType 中的 AIBackend 等废弃算力字段` (`9a5182e`)
