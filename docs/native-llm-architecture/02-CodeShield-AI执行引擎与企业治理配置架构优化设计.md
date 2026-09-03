@@ -5,11 +5,12 @@
 *   **文档编号**：`CS-NATIVE-02`
 *   **文档类型**：系统配置架构、数据库动态配置中心与算力治理专项设计
 *   **当前状态**：`PROPOSED`（架构方案定稿，待代码实施）
-*   **涉及模块**：`models/config.go`、`models/models.go`、`config.yaml`、`handlers/config.go`、`services/dispatcher.go`、`services/queue.go`、`services/native_cli.go`、`frontend/src/pages/ConfigCenter.tsx`
-*   **核心目标**：针对 Code-Shield 在配置管理中存在的“`ai:` 模块宽泛臃肿”、“扫描任务并发混在 HTTP Server 中”、“算力供给与扫描引擎耦合”、“改配置需登录服务器修改 YAML 并重启服务打断扫描”、“缺乏多租户配置扩展能力”等痛点，提出：
+*   **涉及模块**：`models/config.go`、`models/models.go`、`config.yaml`、`tasks/*/meta.json`、`handlers/config.go`、`services/dispatcher.go`、`services/queue.go`、`services/native_cli.go`、`frontend/src/pages/ConfigCenter.tsx`
+*   **核心目标**：针对 Code-Shield 在配置管理中存在的“`ai:` 模块宽泛臃肿”、“扫描任务并发混在 HTTP Server 中”、“算力供给与扫描引擎耦合”、“改配置需登录服务器修改 YAML 并重启服务打断扫描”、“`tasks` 规则层混杂了底层算力参数 `ai_backend`”、“缺乏多租户配置扩展能力”等痛点，提出：
     1. **顶级领域解耦**：拆分为 `server/database`（静态基础设施）、`llm`（大模型与算力资源池）、`scanner`（扫描引擎与辩论流水线）、`governance`（质量治理与生命周期）四大支柱；
     2. **数据库动态配置中心（Seed-Once & Dynamic DB Config Center）**：`config.yaml` 仅保留启动引导冷配置，`llm`、`scanner`、`governance`、`notification` 全量入库，首次启动从 YAML 导入种子数据（Seed-Once），后续以数据库为唯一真实源（SSOT）；
-    3. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），为未来多租户独立配置铺平道路。
+    3. **业务规则与算力层彻底解耦**：废弃并清理 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend` 参数，任务规则纯粹化；
+    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），为未来多租户独立配置铺平道路。
 
 ---
 
@@ -23,14 +24,16 @@
    * `server.worker_count`（扫描任务并发数）与 `server.max_queue_size`（排队上限）放在 `server:` 块中，容易误导为 HTTP 请求处理并发；实际上 `worker_count` 是 **AI 扫描任务工作池（Task Workers）**，其默认值根据大模型算力总并发动态推导 $(sum\_concurrent + 1) / 2$，理应归属于扫描引擎层。
 3. **改配置需登机改 YAML 并重启服务（运维成本高、打断扫描）**：
    * 算力扩容、节点上下线、改 API Key、调工作时间限流比例、改辩论超时等均属于高频业务行为。每次调整都需修改服务器上的 `config.yaml` 并重启 `shield-server`，导致正在运行的长耗时分片扫描任务意外中断。
-4. **缺乏多租户（Multi-Tenancy）配置扩展能力**：
+4. **`tasks` 规则层混杂了底层算力参数 `ai_backend`**：
+   * 历史单体 CLI 架构在 `tasks/*/meta.json` 中遗留了 `ai_backend` 字段。在现代化三方对抗辩论流水线（Hunter ➔ Challenger ➔ Judge ➔ Synthesis）下，单一扁平字段既无法表达多阶梯分工，又污染了安全规则的纯粹性。
+5. **缺乏多租户（Multi-Tenancy）配置扩展能力**：
    * 静态 `config.yaml` 无法支持不同租户/部门拥有专属私有 GPU 算力端点、独立任务队列或差异化 PR 门禁策略。
 
 ---
 
 ## 二、 核心重构设计：五大顶层领域与“动静冷热分离”模型
 
-系统遵循 **“领域职责单一、显式精准绑定、种子导入+数据库动态主导（Seed-Once & DB SSOT）、多租户就绪”** 的原则，将配置做清晰的动静冷热分离：
+系统遵循 **“领域职责单一、显式精准绑定、种子导入+数据库动态主导（Seed-Once & DB SSOT）、规则与算力解耦、多租户就绪”** 的原则，将配置做清晰的动静冷热分离：
 
 ```mermaid
 graph TD
@@ -104,7 +107,36 @@ sequenceDiagram
 
 ---
 
-## 四、 完整配置规范模版 (YAML Specification)
+## 四、 业务规则与算力层解耦：废弃 tasks 中的 `ai_backend` 参数
+
+### 4.1 废弃动因与冲突剖析
+在早期单体 CLI 架构中，系统通过 `tasks/*/meta.json` 及 `TaskType.ai_backend` 指定特定任务使用 `opencode` 或 `claude`。但在现行架构下暴露出三大致命冲突：
+1. **破坏动静分离流水线**：Debate 辩论流水线要求 Hunter 必须是具备源码遍历能力的 Thick Agent，而 Challenger/Judge/Synthesis 必须是纯推理的 Thin LLM。单个扁平的 `ai_backend` 无法描述多阶梯分工，强行指定会导致概念混乱；
+2. **混淆“业务规则”与“物理算力”**：`tasks` 属于安全审计规则库（定义 Prompt 模板、检测模式与评估标准），不应硬编码底层运行环境是 `opencode` 还是 `agy`；
+3. **实际早已名存实亡**：目前系统中所有 `tasks/*/meta.json` 中 `ai_backend` 字段均为空字符串 `""`。
+
+```mermaid
+graph LR
+    subgraph Old_Way ["过去模式 (规则层硬编码算力 - 冲突混乱)"]
+        Task_Old["tasks/meta.json<br/>{ name: 'memory-leak', ai_backend: 'opencode' }"]
+        Task_Old -->|硬绑定| CLI["强制拉起单一 CLI 进程"]
+    end
+
+    subgraph New_Way ["优化后模式 (规则与算力彻底解耦)"]
+        Task_New["tasks/meta.json<br/>纯粹关注 Prompt / 范围 / 判定规则"]
+        Config_Center["配置中心 (scanner.debate.tiers)<br/>统一决定 Hunter / Judge 使用哪个 Resource"]
+        Task_New --> Config_Center
+    end
+```
+
+### 4.2 清理与平滑下线措施
+1. **清理 `tasks/*/meta.json`**：彻底移除各任务元数据中的 `"ai_backend": ""` 冗余字段；
+2. **前端页面解绑**：在「任务类型管理」与「定时策略」页面中移除“AI 后端”下拉选择框；
+3. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力，数据库 `task_types.ai_backend` 标记为 Deprecated，不再读取。
+
+---
+
+## 五、 完整配置规范模版 (YAML Specification)
 
 `config.yaml` 文件完整结构如下（其中动态部分作为系统初次安装部署时的初始默认值）：
 
@@ -284,9 +316,9 @@ notification:
 
 ---
 
-## 五、 前端配置中心控制台设计 (Web UI Specification)
+## 六、 前端配置中心控制台设计 (Web UI Specification)
 
-### 5.1 页面入口与布局架构
+### 6.1 页面入口与布局架构
 页面路由：`/admin/config-center`（系统管理 ➔ 配置中心），采用卡片化、多 Tab 分组与抽屉交互：
 
 ```text
@@ -297,7 +329,7 @@ notification:
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 各 Tab 详细设计规范
+### 6.2 各 Tab 详细设计规范
 
 #### Tab 1: 🤖 大模型与算力池 (`llm`)
 * **算力节点列表（Resource Cards）**：
@@ -343,9 +375,9 @@ notification:
 
 ---
 
-## 六、 数据模型与 REST API 契约
+## 七、 数据模型与 REST API 契约
 
-### 6.1 GORM 数据模型扩展 (`models/models.go`)
+### 7.1 GORM 数据模型扩展 (`models/models.go`)
 
 ```go
 package models
@@ -367,7 +399,7 @@ type SystemDynamicConfig struct {
 }
 ```
 
-### 6.2 管理端 REST API 契约
+### 7.2 管理端 REST API 契约
 
 | 方法 | API 路径 | 鉴权要求 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -378,11 +410,12 @@ type SystemDynamicConfig struct {
 
 ---
 
-## 七、 方案收益总结对比
+## 八、 方案收益总结对比
 
 | 评估维度 | 现行配置架构 (`Current`) | 优化后配置中心架构 (`Proposed`) | 核心收益 |
 | :--- | :--- | :--- | :--- |
 | **配置存储载体** | 纯静态本地 `config.yaml` | **冷配置留在 YAML + 热配置纳入 DB 动态中心** | 免登机修改、免重启服务，界面实时修改生效。 |
+| **规则与算力解耦** | `tasks/*/meta.json` 硬编码 `ai_backend` | **彻底废弃任务级 `ai_backend`** | 安全规则与算力环境彻底解耦，Debate 阶梯语义统一。 |
 | **多租户演进能力** | 静态单文件，无法扩展租户隔离 | **DB 表挂载 TenantID 隔离** | 天然支持多租户独立算力池、独立队列与差异化质量门禁。 |
 | **顶级领域解耦** | `ai` 包含一切，庞大臃肿且词义模糊 | 拆分为 **`llm`（算力）+ `scanner`（引擎）+ `governance`（治理）** | 职责 100% 单一，概念精准自解释，篇幅均衡对称。 |
 | **HTTP 基础设施** | 混入了 `worker_count` 与 `max_queue_size` | 纯粹保留端口、数据目录与网络超时 | 职责彻底纯粹，成为纯静态低频冷配置。 |
