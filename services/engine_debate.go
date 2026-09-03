@@ -929,6 +929,9 @@ func parseJSONFromAIOutput(output string, target interface{}, workDir string) er
 		return nil
 	}
 
+	// 发现语法瑕疵，输出简明 Warning 提示进入自动修复，不倾倒完整 raw 内容以防控制台刷屏
+	log.Printf("[DebateEngine] Warning: AI output is malformed JSON (%v), attempting auto-repair...\n", err)
+
 	// 2. 内存级快速语法自愈（修复未转义反斜杠 \、\u0000、字符串内字面量换行、尾部多余逗号等常见大模型输出瑕疵）
 	fastRepaired := repairMalformedJSON(trimmed)
 	if firstB := strings.Index(fastRepaired, "{"); firstB != -1 {
@@ -964,7 +967,14 @@ func parseJSONFromAIOutput(output string, target interface{}, workDir string) er
 		}
 	}
 
-	return err
+	// 4. 所有自愈与 AI 修复均告失败，输出紧凑 Error（仅保留前 200 字符预览）
+	preview := trimmed
+	if len(preview) > 200 {
+		preview = preview[:200] + "... [truncated]"
+	}
+	log.Printf("[DebateEngine] Error: All JSON repair attempts failed (%v). Preview: %s\n", err, preview)
+
+	return fmt.Errorf("failed to parse and repair JSON (%w)", err)
 }
 
 // SanitizeJSONForPostgresJSONB 清洗 JSON 字节流，移除 PostgreSQL jsonb 不支持的 \u0000 Unicode 转义序列与控制字符
