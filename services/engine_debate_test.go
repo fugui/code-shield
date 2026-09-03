@@ -453,4 +453,3 @@ func TestDebateEngine_ChallengerPartialFailure(t *testing.T) {
 		t.Errorf("batch 2 should contain degraded note, got %s", challOut.DefenseCases[5].MitigatingFactors)
 	}
 }
-

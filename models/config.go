@@ -232,8 +232,8 @@ type ToolBackendsConfig struct {
 // ==============================================================================
 
 type Config struct {
-	Server       ServerConfig           `yaml:"server" json:"server"`
-	Storage      struct {
+	Server  ServerConfig `yaml:"server" json:"server"`
+	Storage struct {
 		Root string `yaml:"root" json:"root"`
 	} `yaml:"storage" json:"storage"`
 	Database     DatabaseConfig         `yaml:"database" json:"database"`

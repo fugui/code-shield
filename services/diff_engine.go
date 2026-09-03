@@ -157,23 +157,23 @@ func DiffAndEnrichFindings(repoID uint, taskReportID uint, taskTypeID uint, scan
 			}
 
 			for _, cand := range candidateList {
-					if claimedRecordIDs[cand.ID] {
-						continue // 已被认领，跳过
-					}
-
-					lineDiff := startLine - cand.LineStart
-					if lineDiff < 0 {
-						lineDiff = -lineDiff
-					}
-					tokenSim := CalculateTokenJaccard(cleanTrigger, cand.TriggerLine)
-					isSameCat := strings.EqualFold(strings.TrimSpace(f.Category), strings.TrimSpace(cand.Category))
-
-					// 收紧准则：(lineDiff <= 2 && tokenSim > 0.5) || tokenSim > 0.75 || (isSameCat && (lineDiff <= 15 || tokenSim > 0.65))
-					if ((lineDiff <= 2 && tokenSim > 0.5) || tokenSim > 0.75) || (isSameCat && (lineDiff <= 15 || tokenSim > 0.65)) {
-						matchedCandidate = cand
-						break
-					}
+				if claimedRecordIDs[cand.ID] {
+					continue // 已被认领，跳过
 				}
+
+				lineDiff := startLine - cand.LineStart
+				if lineDiff < 0 {
+					lineDiff = -lineDiff
+				}
+				tokenSim := CalculateTokenJaccard(cleanTrigger, cand.TriggerLine)
+				isSameCat := strings.EqualFold(strings.TrimSpace(f.Category), strings.TrimSpace(cand.Category))
+
+				// 收紧准则：(lineDiff <= 2 && tokenSim > 0.5) || tokenSim > 0.75 || (isSameCat && (lineDiff <= 15 || tokenSim > 0.65))
+				if ((lineDiff <= 2 && tokenSim > 0.5) || tokenSim > 0.75) || (isSameCat && (lineDiff <= 15 || tokenSim > 0.65)) {
+					matchedCandidate = cand
+					break
+				}
+			}
 
 			if matchedCandidate != nil {
 				// Tier 2 命中存量！自愈更新指纹与锚点，继承人工反馈

@@ -19,7 +19,7 @@ export interface ScheduleFormData {
   target_values: any[];
   auto_notify: boolean;
   is_active: boolean;
-  run_params: { ai_backend?: string; target_scope?: string };
+  run_params: { target_scope?: string };
 }
 
 const CRON_PRESETS = [

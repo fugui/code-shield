@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// validateRunParams 校验调度策略的运行参数覆盖（ai_backend / target_scope）
+// validateRunParams 校验调度策略的运行参数覆盖（target_scope）
 func validateRunParams(runParams datatypes.JSON) error {
 	if len(runParams) == 0 {
 		return nil
@@ -25,9 +25,6 @@ func validateRunParams(runParams datatypes.JSON) error {
 	var rp models.RunParams
 	if err := json.Unmarshal(runParams, &rp); err != nil {
 		return fmt.Errorf("无效的 run_params: %w", err)
-	}
-	if rp.AIBackend != nil && !services.IsValidAIBackend(*rp.AIBackend) {
-		return fmt.Errorf("无效的 AI 引擎类型，可选: claude, opencode, codex 或留空")
 	}
 	if rp.TargetScope != nil {
 		switch *rp.TargetScope {

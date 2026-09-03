@@ -641,11 +641,7 @@ func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail
 		backend = "native"
 	}
 	if !IsValidAIBackend(backend) {
-		if ctx.runParams.AIBackend != nil && *ctx.runParams.AIBackend != "" {
-			backend = *ctx.runParams.AIBackend
-		} else {
-			backend = models.AppConfig.AI.Backend
-		}
+		backend = models.AppConfig.AI.Backend
 	}
 	if backend == "" {
 		backend = "claude"

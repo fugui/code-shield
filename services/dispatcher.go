@@ -43,6 +43,47 @@ func (r *ModelResource) ModelName(backend string) string {
 	}
 }
 
+// ResourceKey 返回当前算力节点的全局唯一业务标识键。
+// 优先采用显式配置的 ID（如 "id:opencode-deepseek"），无 ID 时降级为 Driver+Model，兜底使用多驱动组合。
+func (r *ModelResource) ResourceKey() string {
+	if r == nil {
+		return ""
+	}
+	if r.ID != "" {
+		return "id:" + r.ID
+	}
+	if r.Driver != "" || r.Model != "" {
+		return "driver:" + r.Driver + "/" + r.Model
+	}
+	return "models:" + r.OpenCode + "|" + r.Claude + "|" + r.Codex + "|" + r.Agy + "|" + r.Native
+}
+
+// computeResourceConfigKey 计算 ComputeResourceConfig 对应的业务标识键，与 ModelResource.ResourceKey() 保持对齐
+func computeResourceConfigKey(res models.ComputeResourceConfig) string {
+	if res.ID != "" {
+		return "id:" + res.ID
+	}
+	if res.Driver != "" || res.Model != "" {
+		return "driver:" + res.Driver + "/" + res.Model
+	}
+	var openCode, claude, codex, agy, native string
+	switch res.Driver {
+	case "opencode":
+		openCode = res.Model
+	case "claude":
+		claude = res.Model
+	case "codex":
+		codex = res.Model
+	case "agy":
+		agy = res.Model
+	case "native":
+		native = res.Model
+	default:
+		native = res.Model
+	}
+	return "models:" + openCode + "|" + claude + "|" + codex + "|" + agy + "|" + native
+}
+
 // ThrottleInfo 封装当前流控全景状态信息
 type ThrottleInfo struct {
 	EffectiveScale  float64                        `json:"effective_scale"`   // 最终生效比例 (0.0 ~ 3.0)
@@ -574,6 +615,11 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 			return nil, "", err
 		}
 
+		// 检查调度器在等待期间是否被热重载关闭
+		if !d.enabled {
+			return nil, "", nil
+		}
+
 		// 获取当前即时生效系数
 		info := d.getEffectiveScaleInfoLocked(time.Now())
 		scale := info.EffectiveScale
@@ -582,10 +628,12 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 		//    选择当前负载（Active）最低的服务器，避免 first-fit 打满第一台导致负载不均
 		var bestRes *ModelResource
 		bestLoad := -1
+		hasSupportedServerInLoop := false
 		for _, res := range d.resources {
 			if res.ModelName(backend) == "" {
 				continue
 			}
+			hasSupportedServerInLoop = true
 			limit := calculateLimit(res.Concurrent, scale)
 			if res.Active >= limit {
 				continue
@@ -596,11 +644,16 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 			}
 		}
 
+		if !hasSupportedServerInLoop {
+			// 热重载后已无任何 server 支持当前 backend，降级直通，防止因资源变更无限等待死锁
+			return nil, "", nil
+		}
+
 		if bestRes != nil {
 			bestRes.Active++
 			limit := calculateLimit(bestRes.Concurrent, scale)
-			log.Printf("[Dispatcher] [Acquire] Server #%d allocated for backend %s (model: %s). Concurrency: %d/%d (Scale: %.2f [%s], Raw: %d)\n",
-				bestRes.Index, backend, bestRes.ModelName(backend), bestRes.Active, limit, scale, info.ThrottleMode, bestRes.Concurrent)
+			log.Printf("[Dispatcher] [Acquire] Server #%d [%s] allocated for backend %s (model: %s). Concurrency: %d/%d (Scale: %.2f [%s], Raw: %d)\n",
+				bestRes.Index, bestRes.ResourceKey(), backend, bestRes.ModelName(backend), bestRes.Active, limit, scale, info.ThrottleMode, bestRes.Concurrent)
 			return bestRes, bestRes.ModelName(backend), nil
 		}
 
@@ -609,7 +662,8 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 	}
 }
 
-// Release 释放指定的模型资源槽位，并通知其他等待中的任务
+// Release 释放指定的模型资源槽位，并通知其他等待中的任务。
+// 双重防线设计：在当前生效的 d.resources 中定位对象进行扣减，彻底防止热重载导致的孤儿槽位泄漏死锁。
 func (d *ModelDispatcher) Release(res *ModelResource, backend string) {
 	if d == nil || !d.enabled || res == nil {
 		return
@@ -618,17 +672,49 @@ func (d *ModelDispatcher) Release(res *ModelResource, backend string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// 1. 递减传入对象本身的 Active，保持其自身状态一致
 	if res.Active > 0 {
 		res.Active--
 	}
+
+	// 2. 寻找当前生效的资源池 d.resources 中对应的资源实例进行扣减
+	//    第一优先级：指针完全一致（未重载或就地复用已有指针，常态路径）
+	var cur *ModelResource
+	for _, r := range d.resources {
+		if r == res {
+			cur = r
+			break
+		}
+	}
+
+	//    第二优先级：若指针不一致（经历了热重载且历史对象被替换），通过 ResourceKey 进行精准匹配
+	if cur == nil {
+		targetKey := res.ResourceKey()
+		for _, r := range d.resources {
+			if r.ResourceKey() == targetKey {
+				cur = r
+				break
+			}
+		}
+		// 若通过 Key 匹配到了当前生效的新对象，对新对象扣减 Active，彻底解决孤儿槽位泄漏问题！
+		if cur != nil && cur.Active > 0 {
+			cur.Active--
+		}
+	}
+
+	targetForLog := cur
+	if targetForLog == nil {
+		targetForLog = res
+	}
+
 	info := d.getEffectiveScaleInfoLocked(time.Now())
-	limit := calculateLimit(res.Concurrent, info.EffectiveScale)
-	log.Printf("[Dispatcher] [Release] Server #%d released for backend %s. Concurrency: %d/%d (Scale: %.2f [%s], Raw: %d)\n",
-		res.Index, backend, res.Active, limit, info.EffectiveScale, info.ThrottleMode, res.Concurrent)
+	limit := calculateLimit(targetForLog.Concurrent, info.EffectiveScale)
+	log.Printf("[Dispatcher] [Release] Server #%d [%s] released for backend %s (model: %s). Concurrency: %d/%d (Scale: %.2f [%s], Raw: %d)\n",
+		targetForLog.Index, targetForLog.ResourceKey(), backend, targetForLog.ModelName(backend), targetForLog.Active, limit, info.EffectiveScale, info.ThrottleMode, targetForLog.Concurrent)
 	d.cond.Broadcast()
 }
 
-// ReloadResources 动态热重载算力资源池（零停机，平滑继承已有活跃任务 Active 计数）
+// ReloadResources 动态热重载算力资源池（零停机，就地复用在途任务指针并平滑继承活跃任务 Active 计数）
 func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 	if d == nil {
 		return
@@ -637,11 +723,10 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// 保存已有资源中的活跃计数映射，以便新旧平滑过渡
-	oldActives := make(map[string]int)
+	// 1. 索引已有资源，按 ResourceKey 归类（优先复用既有指针，避免对象分裂）
+	existingByKey := make(map[string]*ModelResource, len(d.resources))
 	for _, r := range d.resources {
-		key := r.OpenCode + "|" + r.Claude + "|" + r.Codex + "|" + r.Agy + "|" + r.Native
-		oldActives[key] = r.Active
+		existingByKey[r.ResourceKey()] = r
 	}
 
 	var newResources []*ModelResource
@@ -651,14 +736,33 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 			concurrent = 5
 		}
 
-		mr := &ModelResource{
-			Index:      i,
-			ID:         res.ID,
-			Driver:     res.Driver,
-			Model:      res.Model,
-			Concurrent: concurrent,
-			Endpoints:  res.Endpoints,
+		key := computeResourceConfigKey(res)
+		var mr *ModelResource
+		if existing, ok := existingByKey[key]; ok {
+			// 核心优化：就地复用已有结构体指针！
+			// 飞行中的 goroutine 持有的就是该指针，无需指针替换，Active 计数天然连续无分裂
+			mr = existing
+			mr.Index = i
+			mr.ID = res.ID
+			mr.Driver = res.Driver
+			mr.Model = res.Model
+			mr.Concurrent = concurrent
+			mr.Endpoints = res.Endpoints
+			// 清理旧的 driver/model 映射
+			mr.OpenCode, mr.Claude, mr.Codex, mr.Agy, mr.Native = "", "", "", "", ""
+		} else {
+			// 全新增加的资源，创建新实例（Active 初始为 0）
+			mr = &ModelResource{
+				Index:      i,
+				ID:         res.ID,
+				Driver:     res.Driver,
+				Model:      res.Model,
+				Concurrent: concurrent,
+				Endpoints:  res.Endpoints,
+				Active:     0,
+			}
 		}
+
 		switch res.Driver {
 		case "opencode":
 			mr.OpenCode = res.Model
@@ -685,11 +789,6 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 			mr.Native = res.Model
 		}
 
-		key := mr.OpenCode + "|" + mr.Claude + "|" + mr.Codex + "|" + mr.Agy + "|" + mr.Native
-		if act, ok := oldActives[key]; ok {
-			mr.Active = act
-		}
-
 		newResources = append(newResources, mr)
 	}
 
@@ -702,12 +801,32 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 
 	log.Printf("[Dispatcher] [HotReload] Dynamically reloaded %d compute resources in memory", len(d.resources))
 	for _, r := range d.resources {
-		log.Printf("  - Server #%d: opencode=%s, claude=%s, codex=%s, agy=%s, native=%s, concurrent=%d, active=%d\n",
-			r.Index, r.OpenCode, r.Claude, r.Codex, r.Agy, r.Native, r.Concurrent, r.Active)
+		log.Printf("  - Server #%d [%s]: opencode=%s, claude=%s, codex=%s, agy=%s, native=%s, concurrent=%d, active=%d\n",
+			r.Index, r.ResourceKey(), r.OpenCode, r.Claude, r.Codex, r.Agy, r.Native, r.Concurrent, r.Active)
 	}
 
 	// 广播唤醒可能由于并发调整而可以立即执行的任务
 	d.cond.Broadcast()
+}
+
+// ResetActiveSlots 紧急运维自愈方法：将所有算力节点的活跃槽位 Active 强制重置为 0，并广播唤醒所有等待者。
+// 当由于历史原因（如热重载孤儿槽位泄漏）导致 Active 计数器与实际进程脱节、任务挂死时，可调用此方法立刻解除死锁自愈。
+func (d *ModelDispatcher) ResetActiveSlots() int {
+	if d == nil {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	totalCleared := 0
+	for _, res := range d.resources {
+		totalCleared += res.Active
+		res.Active = 0
+	}
+	log.Printf("[Dispatcher] [ResetActiveSlots] Emergency reset completed: cleared %d active orphan slots across %d resources\n",
+		totalCleared, len(d.resources))
+	d.cond.Broadcast()
+	return totalCleared
 }
 
 // ── 异构模型多阶梯调度路由层 (TierRouter) ──
