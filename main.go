@@ -217,6 +217,16 @@ func main() {
 					admin.PATCH("/config", handlers.UpdateConfig)
 
 					// 动态配置中心 API (Dynamic Config Center)
+					adminConfig := admin.Group("/admin/config")
+					{
+						adminConfig.GET("/full", handlers.GetFullConfig)
+						adminConfig.PUT("/full", handlers.UpdateFullConfig)
+						adminConfig.GET("/category/:category", handlers.GetCategoryConfig)
+						adminConfig.PUT("/category/:category", handlers.UpdateCategoryConfig)
+						adminConfig.POST("/ping-endpoint", handlers.PingEndpoint)
+						adminConfig.POST("/reset-to-seed", handlers.ResetCategoryConfig)
+					}
+					// 兼容直接使用 /api/config/* 别名访问
 					admin.GET("/config/full", handlers.GetFullConfig)
 					admin.PUT("/config/full", handlers.UpdateFullConfig)
 					admin.GET("/config/category/:category", handlers.GetCategoryConfig)
