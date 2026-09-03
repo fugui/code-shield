@@ -64,7 +64,6 @@ type TaskType struct {
 	Description     string         `json:"description"`                            // 任务说明
 	EngineMode      string         `gorm:"default:single" json:"engine_mode"`      // 执行引擎模式: single, chunked
 	EngineConfig    datatypes.JSON `json:"engine_config"`                          // 引擎配置 {"max_files": 50, "depth": 2}
-	AIBackend       string         `gorm:"default:''" json:"ai_backend"`           // [Deprecated] 历史单体 CLI 字段，统一由 scanner.debate.tiers 接管调度
 	TargetScope     string         `gorm:"default:'business'" json:"target_scope"` // 处理范围: all (全部), business (仅业务), test (仅测试)
 	NotifyTemplate  string         `json:"notify_template"`                        // 邮件主题模板
 	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"`      // score >= 此值才通知
@@ -72,9 +71,7 @@ type TaskType struct {
 	Timeout         int            `gorm:"default:30" json:"timeout"`              // AI 执行超时（分钟）
 
 	// ── 智能体协同与异构调度扩展 (阶段二) ──
-	DebateEnabled        bool   `gorm:"default:true" json:"debate_enabled"`               // 是否启用三方对抗辩论流
-	TierFastBackend      string `gorm:"size:64;default:''" json:"tier_fast_backend"`      // [Deprecated] 历史初筛后端，统一由 scanner.debate.tiers 接管
-	TierReasoningBackend string `gorm:"size:64;default:''" json:"tier_reasoning_backend"` // [Deprecated] 历史强推理后端，统一由 scanner.debate.tiers 接管
+	DebateEnabled bool `gorm:"default:true" json:"debate_enabled"` // 是否启用三方对抗辩论流
 
 	// ── 专项分析元数据扩展 ──
 	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`                   // 是否启用为专项分析

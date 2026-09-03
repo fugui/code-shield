@@ -470,11 +470,14 @@ func TestResumeFailedChunksCumulative(t *testing.T) {
 	}
 	defer models.DB.Delete(&models.Repository{}, repo.ID)
 
+	oldDefaultBackend := models.AppConfig.AI.Backend
+	models.AppConfig.AI.Backend = "mock_success_backend"
+	defer func() { models.AppConfig.AI.Backend = oldDefaultBackend }()
+
 	taskType := models.TaskType{
 		Name:        "code_review_resume_" + ts,
 		DisplayName: "代码检视",
 		EngineMode:  "chunked",
-		AIBackend:   "mock_success_backend",
 	}
 	if err := models.DB.Create(&taskType).Error; err != nil {
 		t.Fatalf("failed to create task type: %v", err)
@@ -676,7 +679,6 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 			Name:        "code_review_eventual_success_" + ts,
 			DisplayName: "代码检视",
 			EngineMode:  "single",
-			AIBackend:   "mock_synthesis_eventual_success_backend",
 		}
 		if err := models.DB.Create(&taskType).Error; err != nil {
 			t.Fatalf("failed to create task type: %v", err)
@@ -693,10 +695,11 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 		defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
+		mockBackend := "mock_synthesis_eventual_success_backend"
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 2}
-		RegisterAIInvoker(taskType.AIBackend, invoker)
+		RegisterAIInvoker(mockBackend, invoker)
 
-		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{AIBackend: &mockBackend})
 		if err != nil {
 			t.Fatalf("expected RunTaskSync to succeed eventually, got error: %v", err)
 		}
@@ -725,7 +728,6 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 			Name:        "code_review_always_fail_" + ts,
 			DisplayName: "代码检视",
 			EngineMode:  "single",
-			AIBackend:   "mock_synthesis_always_fail_backend",
 		}
 		if err := models.DB.Create(&taskType).Error; err != nil {
 			t.Fatalf("failed to create task type: %v", err)
@@ -742,10 +744,11 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 		defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
+		mockBackend := "mock_synthesis_always_fail_backend"
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 5}
-		RegisterAIInvoker(taskType.AIBackend, invoker)
+		RegisterAIInvoker(mockBackend, invoker)
 
-		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{AIBackend: &mockBackend})
 		if err == nil {
 			t.Fatal("expected RunTaskSync to fail, got nil")
 		}
@@ -776,7 +779,6 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 			Name:        "code_review_empty_file_" + ts,
 			DisplayName: "代码检视",
 			EngineMode:  "single",
-			AIBackend:   "mock_synthesis_empty_file_backend",
 		}
 		if err := models.DB.Create(&taskType).Error; err != nil {
 			t.Fatalf("failed to create task type: %v", err)
@@ -793,10 +795,11 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 		defer models.DB.Delete(&models.TaskReport{}, report.ID)
 
+		mockBackend := "mock_synthesis_empty_file_backend"
 		invoker := &MockSynthesisAIInvoker{WriteEmpty: true}
-		RegisterAIInvoker(taskType.AIBackend, invoker)
+		RegisterAIInvoker(mockBackend, invoker)
 
-		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
+		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{AIBackend: &mockBackend})
 		if err == nil {
 			t.Fatal("expected RunTaskSync to fail, got nil")
 		}

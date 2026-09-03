@@ -141,7 +141,6 @@ func seedBuiltinTaskTypes() {
 				"description":      taskType.Description,
 				"engine_mode":      taskType.EngineMode,
 				"engine_config":    taskType.EngineConfig,
-				"ai_backend":       taskType.AIBackend,
 				"target_scope":     taskType.TargetScope,
 				"notify_template":  taskType.NotifyTemplate,
 				"notify_threshold": taskType.NotifyThreshold,
