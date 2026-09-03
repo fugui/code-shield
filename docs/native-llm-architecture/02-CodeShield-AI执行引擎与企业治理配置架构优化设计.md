@@ -6,11 +6,11 @@
 *   **文档类型**：系统配置架构、数据库动态配置中心与算力治理专项设计
 *   **当前状态**：`APPROVED`（架构评审定稿，待代码实施）
 *   **涉及模块**：`models/config.go`、`models/models.go`、`config.yaml`、`tasks/*/meta.json`、`handlers/config.go`、`services/dispatcher.go`、`services/queue.go`、`services/native_cli.go`、`frontend/src/pages/ConfigCenter.tsx`
-*   **核心目标**：针对 Code-Shield 在配置管理中存在的“`ai:` 模块宽泛臃肿”、“扫描任务并发混在 HTTP Server 中”、“算力供给与扫描引擎耦合”、“改配置需登录服务器修改 YAML 并重启服务打断扫描”、“`tasks` 规则层混杂了底层算力参数 `ai_backend`”、“缺乏多租户配置扩展能力”等痛点，提出：
+*   **核心目标**：针对 Code-Shield 在配置管理中存在的“`ai:` 模块宽泛臃肿”、“扫描任务并发混在 HTTP Server 中”、“算力供给与扫描引擎耦合”、“改配置需登录服务器修改 YAML 并重启服务打断扫描”、“`tasks` 规则层混杂了底层算力参数 `ai_backend`”等痛点，提出：
     1. **顶级领域解耦**：拆分为 `server/database`（静态基础设施）、`llm`（大模型与算力资源池）、`scanner`（扫描引擎与辩论流水线）、`governance`（质量治理与生命周期）四大支柱；
     2. **数据库动态配置中心（Seed-Once & Dynamic DB Config Center）**：`config.yaml` 仅保留启动引导冷配置，`llm`、`scanner`、`governance`、`notification` 全量入库，首次启动从 YAML 导入种子数据（Seed-Once），后续以数据库为唯一真实源（SSOT）；
-    3. **业务规则与算力层彻底解耦**：废弃并清理 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend` 参数，任务规则纯粹化；
-    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、API Key 掩码防覆盖传输、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），彻底免除登录服务器修改与重启服务的运维成本。
+    3. **业务规则与算力层彻底解耦**：废弃并清理全部 10 个任务规则 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend`、`tier_fast_backend`、`tier_reasoning_backend` 参数，任务规则纯粹化；
+    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、细粒度模块化保存、操作审计与零停机动态热重载（Hot Reloading），彻底免除登录服务器修改与重启服务的运维成本。
 
 ---
 
@@ -47,8 +47,8 @@ graph TD
         end
         subgraph S_Scan ["智能扫描引擎与调度层 (scanner)"]
             Scan_Queue["worker_count & max_queue_size: 任务并发与排队"]
-            Scan_Throttle["throttling: 工作时间避峰限流"]
-            Scan_Debate["debate.tiers: Hunter/Reasoning/Synthesis 阶梯显式绑定"]
+            Scan_Throttle["throttling: 工作时间避峰限流 + 应急 manual 手动倍率"]
+            Scan_Debate["debate.tiers: Hunter / Reasoning(Challenger+Judge) / Synthesis"]
             Scan_Tools["tools: RepairJSON / FindingMatch 直连 native"]
         end
         subgraph S_Gov ["质量治理与生命周期层 (governance)"]
@@ -80,10 +80,10 @@ sequenceDiagram
     participant AdminUI as 前端管理控制台 (ConfigCenter)
     participant Dispatcher as ModelDispatcher 调度器
 
-    Server->>DB: 1. 查询 system_dynamic_configs 表记录数
+    Server->>DB: 1. 按 Category 查询 system_dynamic_configs 表记录数
     alt 场景 A: 首次部署启动 (DB 记录为空)
         Server->>YAML: 读取 config.yaml 中的 llm, scanner, governance, notification 初始模版
-        Server->>DB: 写入 DB 作为初始种子数据 (Seed-Once)
+        Server->>DB: 按 Category 写入 DB 作为初始种子数据 (Seed-Once)
         Server->>Dispatcher: 基于初始种子数据初始化算力池与调度器
         Server->>Server: 打印日志: [Config] Initialized seed configs from YAML into Database SSOT
     else 场景 B: 日常运行启动 (DB 已有持久化配置)
@@ -95,8 +95,8 @@ sequenceDiagram
         Server->>Server: 打印告警: [Config WARNING] DB unreachable, fallback to local YAML in read-only mode
     end
 
-    AdminUI->>Server: 2. 管理员在前端修改配置并保存 (PUT /api/admin/config/full)
-    Server->>DB: 持久化新配置 (记录 sys_audit_logs 操作审计，处理 API Key 掩码防覆盖)
+    AdminUI->>Server: 2. 管理员在前端修改配置 (PUT /api/admin/config/:category)
+    Server->>DB: 持久化新配置 (记录 sys_audit_logs 操作审计)
     Server->>Dispatcher: 调用 Dispatcher.ReloadResources() 动态热生效 (零停机)
     Server-->>AdminUI: 返回成功，界面即刻呈现最新状态
 ```
@@ -106,7 +106,7 @@ sequenceDiagram
 | 层次 | 归属位置 | 包含模块与字段 | 存储与生效方式 |
 | :--- | :--- | :--- | :--- |
 | **静态引导冷配置** | `config.yaml` | `server.port`, `server.data_dir`, `server.read_timeout`<br>`database.*`（主机/端口/账号密码/连接池）<br>`auth.jwt_secret`, `auth.oauth2.*` | 服务启动前必需，仅通过修改文件并重启服务生效。 |
-| **动态业务热配置** | **PostgreSQL 数据库**<br>(初次从 YAML 导入) | **`llm`**（算力节点、模型名称、Native Endpoints 集群、并发与权重）<br>**`scanner`**（任务 Worker 数、排队上限、避峰时段、辩论阶梯与超时、微工具路由）<br>**`governance`**（指纹防抖、范围守卫、消退、PR 门禁、负样本规则数）<br>**`notification`**（Webhook 地址） | 首次从 YAML Seed 导入；后续由 Web UI 实时修改、持久化并**零停机动态热生效**。 |
+| **动态业务热配置** | **PostgreSQL 数据库**<br>(初次从 YAML 导入) | **`llm`**（算力节点、模型名称、Native Endpoints 集群、并发与权重）<br>**`scanner`**（任务 Worker 数、排队上限、避峰时段、辩论阶梯与超时、微工具路由）<br>**`governance`**（指纹防抖、范围守卫、消退、PR 门禁、负样本规则数）<br>**`notification`**（Webhook 地址） | 首次从 YAML Seed 导入；后续由 Web UI 实时修改、持久化并**零停机动态热生效**。明文密码与 API Key 在内网环境完全可接受，直存直取。 |
 
 ### 3.2 防配置漂移机制（Anti-Drift Guard）
 为防止运维人员修改 `config.yaml` 中的动态项未生效而产生困惑，系统提供双重保障：
@@ -122,13 +122,13 @@ sequenceDiagram
 
 ---
 
-## 四、 业务规则与算力层解耦：废弃 tasks 中的 `ai_backend` 参数
+## 四、 业务规则与算力层解耦：全面废弃 tasks 算力参数
 
 ### 4.1 废弃动因与冲突剖析
-在早期单体 CLI 架构中，系统通过 `tasks/*/meta.json` 及 `TaskType.ai_backend` 指定特定任务使用 `opencode` 或 `claude`。但在现行架构下暴露出三大致命冲突：
+在早期单体 CLI 架构中，系统通过 `tasks/*/meta.json` 及 `TaskType` 字段指定特定任务使用 `opencode` 或 `claude`。但在现行架构下暴露出三大致命冲突：
 1. **破坏动静分离流水线**：Debate 辩论流水线要求 Hunter 必须是具备源码遍历能力的 Thick Agent，而 Challenger/Judge/Synthesis 必须是纯推理的 Thin LLM。单个扁平的 `ai_backend` 无法描述多阶梯分工，强行指定会导致概念混乱；
 2. **混淆“业务规则”与“物理算力”**：`tasks` 属于安全审计规则库（定义 Prompt 模板、检测模式与评估标准），不应硬编码底层运行环境是 `opencode` 还是 `agy`；
-3. **实际早已名存实亡**：目前系统中所有 `tasks/*/meta.json` 中 `ai_backend` 字段均为空字符串 `""`。
+3. **实际早已名存实亡**：目前系统中**全部 10 个任务目录**（`change-review`、`cjson-scan`、`coredump-risk`、`deep-review`、`float-comparison`、`memory-leak`、`thread-create`、`unordered-collection`、`ut-effectiveness`、`ut-quality`）中的 `meta.json`，其 `ai_backend` 字段均为空字符串 `""`。
 
 ```mermaid
 graph LR
@@ -139,15 +139,16 @@ graph LR
 
     subgraph New_Way ["优化后模式 (规则与算力彻底解耦)"]
         Task_New["tasks/meta.json<br/>纯粹关注 Prompt / 范围 / 判定规则"]
-        Config_Center["配置中心 (scanner.debate.tiers)<br/>统一决定 Hunter / Judge 使用哪个 Resource"]
+        Config_Center["配置中心 (scanner.debate.tiers)<br/>统一决定 Hunter / Reasoning / Synthesis 使用哪个 Resource"]
         Task_New --> Config_Center
     end
 ```
 
 ### 4.2 清理与平滑下线措施
-1. **清理 `tasks/*/meta.json`**：彻底移除各任务元数据中的 `"ai_backend": ""` 冗余字段；
-2. **前端页面解绑**：在「任务类型管理」与「定时策略」页面中移除“AI 后端”下拉选择框；
-3. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力，数据库 `task_types.ai_backend` 标记为 Deprecated，运行时不再读取。
+1. **清理全部 `tasks/*/meta.json`**：彻底移除全部 10 个任务规则元数据中的 `"ai_backend": ""` 冗余字段；
+2. **下线 `TaskType` 历史算力字段**：在数据库模型中将 `TaskType.AIBackend`、`TaskType.TierFastBackend`、`TaskType.TierReasoningBackend` 统一标记为废弃（Deprecated），运行时不再读取；
+3. **前端页面解绑**：在「任务类型管理」与「定时策略」页面中移除“AI 后端”下拉选择框；
+4. **后端调度归一**：扫描执行时统一由 `scanner.debate.tiers` 决定各阶段算力节点。
 
 ---
 
@@ -162,14 +163,14 @@ graph LR
 # ⚠️ 注意事项：
 # 1. server, database, auth 属于静态引导冷配置，启动时加载，修改需重启服务；
 # 2. llm, scanner, governance, notification 仅在系统首次启动时作为种子数据导入数据库；
-#    后续系统以数据库 (DB SSOT) 为准，建议直接通过 Web 管理界面实时修改，无需重启服务。
+#    后续系统以数据库 (DB SSOT) 为准，直接通过 Web 管理界面实时修改，无需重启服务。
 # ==============================================================================
 
 # ── 1. 基础设施层 (纯粹的静态低频冷配置) ──
 server:
-  port: ":8080"                         # HTTP 服务监听端口
+  port: ":8082"                         # HTTP 服务监听端口 (示例值，依环境而定)
   data_dir: "./data"                    # 运行时数据根目录 (自动存放 codes/ 与 reports/)
-  external_url: "http://192.168.56.18:8080" # 外部访问基准 URL (邮件与外链跳转)
+  external_url: "http://192.168.56.18:8082" # 外部访问基准 URL (邮件与外链跳转)
   read_timeout: 120s                    # 读取请求超时
   write_timeout: 120s                   # 写入响应超时
   idle_timeout: 180s                    # 空闲连接保持超时
@@ -179,7 +180,7 @@ database:
   host: "127.0.0.1"
   port: 5432
   user: "code_shield"
-  password: "${DB_PASSWORD:-code_shield_password}" # 支持环境变量动态注入
+  password: "${DB_PASSWORD:-code_shield_password}" # 支持环境变量动态注入或明文
   dbname: "code_shield"
   sslmode: "disable"
   timezone: "Asia/Shanghai"
@@ -237,25 +238,25 @@ llm:
       max_retries: 3                   # 最大重试次数
       retry_backoff_ms: 500            # 指数退避基准时长 (毫秒)
 
-      # ── 多端点算力集群 (支持负载打散、权重分流与故障转移) ──
+      # ── 多端点算力集群 (支持加权负载打散与故障转移，weight 为相对比例) ──
       endpoints:
         - name: "local-vllm-primary"    # 内网主 GPU 节点
           base_url: "http://192.168.56.18:8000/v1/chat/completions"
           api_key: "${NATIVE_PRIMARY_KEY:-sk-internal}"
           model: "glm-4-flash"
           concurrent: 30                # 专有 30 高并发槽位
-          weight: 80                    # 负载权重 80%
+          weight: 80                    # 相对权重 80 (与 backup 80:20 分配)
 
         - name: "cloud-deepseek-backup"  # 云端备用推理节点 (异构大模型)
           base_url: "https://api.deepseek.com/v1/chat/completions"
           api_key: "${DEEPSEEK_API_KEY}"
           model: "deepseek-chat"
           concurrent: 5
-          weight: 20
+          weight: 20                    # 相对权重 20
 
 # ==============================================================================
 # 3. 智能扫描引擎与任务调度 (Scanner & Debate Pipeline Engine - 初次导入模版)
-# 职责：专注解决“任务如何排队、如何避峰、Hunter/Judge 阶梯流水线如何执行”
+# 职责：专注解决“任务如何排队、如何避峰、Hunter/Reasoning/Synthesis 阶梯流水线如何执行”
 # ==============================================================================
 scanner:
   # 任务并发与排队队列
@@ -264,6 +265,7 @@ scanner:
   mock_on_missing_cli: false           # CLI 未就绪时是否阻断或模拟 (生产建议 false)
 
   # 全局流控与避峰策略 (Throttling & Work Hours)
+  # 优先级决断：manual(手动临时限流) > work_hours(工作时间避峰) > normal(日常基线)
   throttling:
     work_hours:
       enabled: true                    # 开启工作时间自动限流
@@ -283,16 +285,18 @@ scanner:
     log_retention_days: 30             # 辩论轨迹日志保留天数
 
     # 各阶段阶梯显式绑定 llm.resources 节点
+    # 注：01号文档的 4 角色在配置中清晰归一为 3 层：
+    # Hunter -> tier1_hunter; Challenger 与 Judge -> tier2_reasoning; Synthesis -> tier3_synthesis
     tiers:
-      tier1_hunter:                    # Tier 1 快模型初筛 (必须 Thick Agent，自主遍历源码)
+      tier1_hunter:                    # Tier 1 初筛 (Hunter 角色，必须 Thick Agent 自主遍历源码)
         resource: "agy-gemini"         # 显式精确绑定 agy-gemini 节点
         timeout_seconds: 1200          # 初筛单片超时 (秒)
 
-      tier2_reasoning:                 # Tier 2 辩护与终审 (Challenger & Judge，深度逻辑推理)
+      tier2_reasoning:                 # Tier 2 推理与仲裁 (统一承载 Challenger 与 Judge 深度推理)
         resource: "native"             # 显式精确绑定 native 原生集群
         timeout_seconds: 600           # 辩论仲裁单片超时 (秒)
 
-      tier3_synthesis:                 # Tier 3 全仓报告汇总与态势总结 (纯文本聚合)
+      tier3_synthesis:                 # Tier 3 全仓态势汇总 (Synthesis 角色，纯文本报告聚合)
         resource: "native"             # 显式精确绑定 native 原生集群
         timeout_seconds: 300           # 报告汇总超时 (秒)
 
@@ -337,11 +341,11 @@ notification:
 ## 六、 前端配置中心控制台设计 (Web UI Specification)
 
 ### 6.1 页面入口与布局架构
-页面路由：`/admin/config-center`（系统管理 ➔ 配置中心），采用卡片化、多 Tab 分组与抽屉交互：
+页面路由：`/admin/config-center`（系统管理 ➔ 配置中心），遵循 `GEMINI.md` 的代码风格与 UI 规范（严格适配深浅主题双模、语义 Design Tokens、扁平 BEM 命名空间）：
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  ⚙️ 系统配置中心 (System Config Center)                               [重置模块为模版]  [保存生效] │
+│  ⚙️ 系统配置中心 (System Config Center)                               [重置模块为模版]  [保存当前模块] │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  [ 🤖 大模型与算力池 ]   [ ⚙️ 扫描引擎与流水线 ]   [ 🛡️ 质量治理与门禁 ]   [ 🔔 通知服务 ]               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -355,7 +359,7 @@ notification:
   * 具备 **「➕ 新增算力节点」** 抽屉。
 * **Native REST 算力集群管理（Endpoints Manager Panel）**：
   * 点击 `native` 节点展开集群抽屉，可视化管理多个物理端点（`local-vllm-primary`、`cloud-deepseek-backup`）。
-  * 字段项：端点名称、BaseURL、API Key（密文掩码显示，支持点击眼睛查看与修改）、模型名、并发数、权重滑块（`0% ~ 100%`）。
+  * 字段项：端点名称、BaseURL、API Key（明文密码输入框，支持显示/隐藏切换）、模型名、并发数、权重滑块（相对比例，实时显示流量占比计算值）。
   * **「🔌 测试连接 (Ping API)」按钮**：点击向对应端点发送一次探测请求，展示延迟（如 `🟢 218ms HTTP 200 OK`）或错误提示。
 
 #### Tab 2: ⚙️ 扫描引擎与流水线 (`scanner`)
@@ -365,14 +369,14 @@ notification:
 * **工作时间自动避峰（Work Hours Throttling）**：
   * 开关、生效星期多选（周一至周五）、时段范围选择（`09:00 ~ 22:00`）、限流比例滑块（`10% ~ 100%`）。
 * **多智能体对抗辩论流水线（Debate Pipeline）**：
-  * 0 候选快速放行开关（Switch，附带效益说明：*“初筛无缺陷时跳过后续辩论，节省 80%+ 算力”*）。
+  * 0 候选快速放行开关（Switch，附带效益说明：*“初筛无缺陷时跳过后续辩论，节省 80%+ 辩论算力”*）。
   * 单分片最大仲裁候选数、全局阶段硬超时（秒）、跨 Tier 背压触发阈值。
 * **阶梯角色显式绑定表（Debate Tiers Binding）**：
   * | 阶段角色 | 职责定位 | 绑定算力节点 (下拉选择 `llm.resources`) | 阶段单片超时 (秒) |
     | :--- | :--- | :--- | :--- |
     | **Tier 1 Hunter** | 缺陷初筛 (Thick Agent 自主探索) | `[ agy-gemini ▼ ]` | `1200` |
-    | **Tier 2 Reasoning** | 辩护与终审 (Thin LLM 深度推理) | `[ native ▼ ]` | `600` |
-    | **Tier 3 Synthesis** | 态势汇总 (Thin LLM 报告排版) | `[ native ▼ ]` | `300` |
+    | **Tier 2 Reasoning** | 辩护与终审 (Challenger & Judge 深度推理) | `[ native ▼ ]` | `600` |
+    | **Tier 3 Synthesis** | 态势汇总 (Synthesis 报告排版) | `[ native ▼ ]` | `300` |
 * **微任务工具直连（Tools Routing）**：
   * 默认节点选择下拉框（默认 `native`）。
 
@@ -391,15 +395,6 @@ notification:
 #### Tab 4: 🔔 通知服务 (`notification`)
 * Webhook 回调地址输入框、测试发送通知按钮。
 
-### 6.3 安全交互与防覆盖核心规范 (Security & Masking Protocol)
-1. **API Key 掩码回显与非破坏性提交**：
-   * `GET /api/admin/config/full`：所有节点的 `api_key` 进行掩码脱敏（格式如 `sk-******a3b` 或固定占位符 `******`）；
-   * `PUT /api/admin/config/full`：后端保存时执行**智能合并**：
-     * 若前端传入的 `api_key` 为空字符串或包含掩码占位符 `*`，**严格保留数据库中现有的原始真实 API Key**；
-     * 仅当检测到管理员输入了不含掩码的全新明文字符串时，才替换更新该 Key。
-2. **模块级精准重置（Granular Reset）**：
-   * 支持按当前激活的 Tab 单独重置（如仅重置 `scanner` 避峰限流，不影响 `llm` 算力 Key），避免全系统配置被一刀切清空。
-
 ---
 
 ## 七、 数据模型与 Go 内存结构体定义
@@ -414,23 +409,49 @@ import (
 	"gorm.io/datatypes"
 )
 
-// SystemDynamicConfig 数据库持久化动态配置表 (按 Category 独立持久化结构化 JSON，面向未来多库隔离天然纯净)
+// SystemDynamicConfig 数据库持久化动态配置表 (按 Category 独立存储结构化 JSON，单库天然唯一)
 type SystemDynamicConfig struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
 	Category  string         `gorm:"size:50;not null;uniqueIndex" json:"category"` // "llm", "scanner", "governance", "notification"
 	Data      datatypes.JSON `gorm:"type:jsonb;not null" json:"data"`              // 对应的结构化 JSON 数据
 	Version   int            `gorm:"default:1" json:"version"`                     // 乐观锁版本号
 	UpdatedBy string         `gorm:"size:100" json:"updated_by"`                   // 最后修改人
+	CreatedAt time.Time      `json:"created_at"`                                   // 首次 Seed 导入时间
 	UpdatedAt time.Time      `json:"updated_at"`
 }
 ```
 
-### 7.2 后端 Go 内存聚合结构体 (`models/config.go`)
+### 7.2 后端 Go 内存结构体升级与映射关系 (`models/config.go`)
+
+#### 1. 结构体迁移映射表
+
+| 设计文档目标结构体 | 现有代码结构体 | 变更性质 | 迁移说明 |
+| :--- | :--- | :--- | :--- |
+| `LLMConfig` | `AIConfig` (部分字段) | 拆分与重命名 | 仅保留算力资源供给，剔除流控与辩论流水线 |
+| `ScannerConfig` | `ServerConfig` + `AIConfig` | 聚合新建 | 迁入 `WorkerCount`、`MaxQueueSize`，聚合 `Throttling` 与 `Debate` |
+| `GovernancePolicyConfig` | `GovernanceSystemConfig` | 结构化升级 | 扁平字段升级为 `fingerprint`/`lifecycle`/`feedback_memory` 嵌套 |
+| `NotificationConfig` | `NotificationConfig` | 保持 | 维持 Webhook 配置 |
+
+#### 2. 完整 Go 内存结构体定义
 
 ```go
 package models
 
 import "time"
+
+// WorkHoursConfig 工作时间限流时段配置
+type WorkHoursConfig struct {
+	Enabled   bool    `yaml:"enabled" json:"enabled"`
+	Workdays  []int   `yaml:"workdays" json:"workdays"`
+	StartTime string  `yaml:"start_time" json:"start_time"`
+	EndTime   string  `yaml:"end_time" json:"end_time"`
+	Scale     float64 `yaml:"scale" json:"scale"`
+}
+
+// ThrottlingConfig 全局流控策略
+type ThrottlingConfig struct {
+	WorkHours WorkHoursConfig `yaml:"work_hours" json:"work_hours"`
+}
 
 // ResourceEndpointConfig 原生算力端点配置
 type ResourceEndpointConfig struct {
@@ -439,7 +460,7 @@ type ResourceEndpointConfig struct {
 	APIKey      string  `yaml:"api_key" json:"api_key"`
 	Model       string  `yaml:"model" json:"model"`
 	Concurrent  int     `yaml:"concurrent" json:"concurrent"`
-	Weight      int     `yaml:"weight" json:"weight"`
+	Weight      int     `yaml:"weight" json:"weight"` // 相对权重比例
 	Temperature float64 `yaml:"temperature" json:"temperature"`
 }
 
@@ -470,11 +491,11 @@ type TierBindingConfig struct {
 	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"`
 }
 
-// DebateTiersConfig 辩论阶梯流水线配置
+// DebateTiersConfig 辩论阶梯流水线配置 (3 层组织映射 4 大角色)
 type DebateTiersConfig struct {
-	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`
-	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"`
-	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"`
+	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`       // Hunter
+	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"` // Challenger & Judge
+	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"` // Synthesis
 }
 
 // DebateConfig 辩论流水线流控与阶梯配置
@@ -505,7 +526,7 @@ type ScannerConfig struct {
 	Tools            ToolsConfig      `yaml:"tools" json:"tools"`
 }
 
-// GovernancePolicyConfig 企业治理策略定义
+// GovernancePolicyConfig 企业治理策略定义 (升级自 GovernanceSystemConfig)
 type GovernancePolicyConfig struct {
 	Fingerprint struct {
 		Enabled             bool    `yaml:"enabled" json:"enabled"`
@@ -524,7 +545,12 @@ type GovernancePolicyConfig struct {
 	} `yaml:"feedback_memory" json:"feedback_memory"`
 }
 
-// Config 系统全局配置 (冷配置由 YAML 读取，热配置由 DB 动态覆盖并实时同步)
+// NotificationConfig 通知配置
+type NotificationConfig struct {
+	Webhook string `yaml:"webhook" json:"webhook"`
+}
+
+// Config 系统全局配置
 type Config struct {
 	Server       ServerConfig           `yaml:"server"`
 	Database     DatabaseConfig         `yaml:"database"`
@@ -536,19 +562,22 @@ type Config struct {
 }
 ```
 
-### 7.3 与现有 `SystemConfig` 表的融合演进
-当前系统中 `system_configs` 表已持久化 `concurrency_scale`、`scale_expires_at` 等运行态数据。演进策略如下：
-* **结构统一**：`system_dynamic_configs` 统一承载所有类别的静态与动态 JSON；
-* **透明桥接**：在代码层为 `SystemConfig` 保留兼容代理访问，其值透明代理至 `scanner.throttling`，既保持原有 `/api/admin/config` 兼容，又无缝接入全新的配置中心。
+### 7.3 与现有 `SystemConfig` 表的融合过渡策略
+当前系统中 `system_configs` 表持久化了 `concurrency_scale`、`scale_expires_at` 等数据：
+* **阶段 2 实施时**：新增 `system_dynamic_configs` 表，旧 `/api/admin/config` 保持不动；
+* **透明代理**：`SystemConfig` 的运行时限流倍率透明代理至 `Dispatcher` 内存，与配置中心中 `scanner.throttling` 的基线时段规则形成双层流控（应急 manual > 定时 work_hours > 基线 normal）；
+* **阶段 4 交付后**：旧接口标记为 `Deprecated`，推荐全面使用细粒度配置中心接口。
 
-### 7.4 管理端 REST API 契约
+### 7.4 管理端细粒度 REST API 契约
 
 | 方法 | API 路径 | 鉴权要求 | 描述 |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/admin/config/full` | Admin | 获取当前生效的全量动态配置（Key 已自动掩码脱敏） |
-| `PUT` | `/api/admin/config/full` | Admin | 保存全量配置（含 Key 防覆盖机制），持久化 DB 并触发 `ReloadResources` 动态热重载 |
+| `GET` | `/api/admin/config/:category` | Admin | 获取指定模块配置（`category` 为 `llm`/`scanner`/`governance`/`notification`） |
+| `PUT` | `/api/admin/config/:category` | Admin | 更新指定模块配置并持久化 DB，即时触发热生效（避免全量提交冲突） |
+| `GET` | `/api/admin/config/full` | Admin | 获取全量配置（用于页面首屏聚合加载或配置导出） |
+| `PUT` | `/api/admin/config/full` | Admin | 全量配置更新（用于配置一键导入） |
 | `POST`| `/api/admin/config/ping-endpoint` | Admin | 测试指定 Native 算力端点连通性与模型响应延迟 |
-| `POST`| `/api/admin/config/reset-to-seed` | Admin | 将配置（支持单 Category 或全局）重置为 `config.yaml` 初始模版 |
+| `POST`| `/api/admin/config/reset-to-seed` | Admin | 将指定 Category 或全量重置为 `config.yaml` 初始种子模版 |
 
 ---
 
@@ -558,28 +587,30 @@ type Config struct {
 
 ```mermaid
 graph LR
-    P1["阶段 1: 模型与结构体演进<br/>(models/config.go 兼容新旧解析)"] --> P2["阶段 2: DB 表与 Seed-Once 引擎<br/>(启动加载 DB SSOT + 动态热生效)"]
-    P2 --> P3["阶段 3: tasks 规则解耦<br/>(下线 tasks/meta.json ai_backend)"]
+    P1["阶段 1: 模型与结构体演进<br/>(低风险: 全量编译验证与旧YAML兼容)"] --> P2["阶段 2: DB 表与 Seed-Once 引擎<br/>(按Category持久化 + 动态热生效)"]
+    P2 --> P3["阶段 3: tasks 规则解耦<br/>(下线10个meta.json与TaskType旧字段)"]
     P3 --> P4["阶段 4: 前端配置中心交付<br/>(ConfigCenter.tsx 四 Tab 界面)"]
 ```
 
-1. **阶段 1：数据模型与兼容解析（零风险）**：
-   * 更新 `models/config.go`，补齐新版结构体，`UnmarshalYAML` 对旧版 `config.yaml` 字段实现 100% 平滑兼容。
+1. **阶段 1：数据模型演进与兼容解析（低风险，需全量编译验证）**：
+   * 更新 `models/config.go`，补齐新版结构体；
+   * 在 `UnmarshalYAML` 中做好对旧版 `ai:` 字段的向后兼容，确保解析旧 `config.yaml` 不报错；
+   * 全系统编译与单元测试回归。
 2. **阶段 2：DB 持久化与 Seed-Once 引擎**：
-   * 新增 `SystemDynamicConfig` 表，在服务启动（`main.go`）初始化时执行 Seed-Once 检查与加载；
-   * 在 `services/dispatcher.go` 中实现 `ReloadResources()`，支持运行态槽位热生效。
+   * 新增 `SystemDynamicConfig` 表，在服务启动（`main.go`）时按 Category 执行 Seed-Once 检查与加载；
+   * 在 `services/dispatcher.go` 中实现 `ReloadResources()`（对齐底层 `sync.Cond` 机制），支持运行态并发槽位平滑热生效；
+   * 提供细粒度 REST API。
 3. **阶段 3：Tasks 规则与前端表单解耦**：
-   * 批量清理 `tasks/*/meta.json` 中的 `"ai_backend": ""`；
-   * 前端任务类型表单与定时策略表单中下线该字段。
+   * 批量清理全部 10 个 `tasks/*/meta.json` 中的 `"ai_backend": ""`；
+   * 在 `TaskType` 中标记历史算力字段为 Deprecated，前端任务类型表单下线“AI 后端”下拉框。
 4. **阶段 4：交付前端配置中心控制台**：
-   * 开发 `/admin/config-center` 页面，完成 API 联调、Ping 测速与操作审计记录。
+   * 基于 `@code/common` 与 `GEMINI.md` 规范开发 `/admin/config-center` 页面，完成端点 Ping 测速与细粒度 Tab 保存。
 
 ### 8.2 修改风险剖析与防御对策矩阵 (Risk Defense Matrix)
 
 | 潜在风险点 | 风险等级 | 影响表现 | 架构防御对策 (Mitigation) |
 | :--- | :---: | :--- | :--- |
 | **配置漂移与认知混淆** | **中** | 运维人员习惯性登机修改 `config.yaml`，但系统已以 DB 为准，导致修改未生效产生困惑。 | 1. 终端启动高亮打印 `[Config Source: Database SSOT]`。<br>2. 在 `config.yaml` 动态章节顶部增加醒目警告注释。 |
-| **密钥意外覆盖** | **高** | 前端拉取配置展示脱敏后的 `sk-***`，管理员修改其他参数点击保存时，真实的 API Key 被掩码串覆盖导致失效。 | **非破坏性合并机制**：后端比对传入的 Key，若包含掩码 `*` 或为空，严格保留 DB 中原值，仅传入全新非掩码明文字符串时才执行替换。 |
 | **数据库离线导致服务瘫痪** | **中** | 首次部署或日常重启时若 PostgreSQL 暂时不可达，无法加载动态配置。 | **本地双重回退**：若连接 DB 失败，自动降级读取本地 `config.yaml` 作为只读紧急降级配置启动，记录 ERROR 告警，待 DB 恢复后自动重试。 |
 | **运行时并发缩容震荡** | **低** | 管理员在 UI 上将某节点并发从 30 骤降为 5，导致活跃中的 Goroutine 槽位越界。 | `calculateLimit` 在 `dispatcher.go` 中已有平滑保护：缩容时不强制 kill 正在运行的任务，等待其执行完毕 `Release` 后自然平滑回落到新限制下。 |
 
@@ -594,8 +625,8 @@ graph LR
 | **面向未来演进** | 静态单文件，配置强依赖宿主机 | **配置与数据库绑定 (DB SSOT)** | 将动态配置从宿主机文件解耦并持久化于数据库，未来向多数据库隔离演进时天然自洽，无需调整表结构。 |
 | **顶级领域解耦** | `ai` 包含一切，庞大臃肿且词义模糊 | 拆分为 **`llm`（算力）+ `scanner`（引擎）+ `governance`（治理）** | 职责 100% 单一，概念精准自解释，篇幅均衡对称。 |
 | **HTTP 基础设施** | 混入了 `worker_count` 与 `max_queue_size` | 纯粹保留端口、数据目录与网络超时 | 职责彻底纯粹，成为纯静态低频冷配置。 |
-| **算力资源管理** | `models` / `native.endpoints` 割裂 | 统一收拢为 `llm.resources` 算力池，`native` 作为一等公民内聚 `endpoints` | 结构极简统一，内部原生支持权重分流与 Failover，外部显式引用。 |
-| **辩论流水线编排** | `debate` 与 `tiers` 平级，缺少上下文聚合 | 扁平收拢为 `scanner.debate` 流水线编排，各阶梯 100% 显式绑定 `resource: "<id>"` | 消除无意义多层嵌套，所见即所得，业务角色与算力清晰解耦。 |
+| **算力资源管理** | `models` / `native.endpoints` 割裂 | 统一收拢为 `llm.resources` 算力池，`native` 作为一等公民内聚 `endpoints` | 结构极简统一，内部原生支持相对权重加权分流与 Failover，外部显式引用。 |
+| **辩论流水线编排** | `debate` 与 `tiers` 平级，缺少上下文聚合 | 扁平收拢为 `scanner.debate` 流水线编排，各阶梯 100% 显式绑定 `resource: "<id>"` | 消除无意义多层嵌套，所见即所得，3 层结构清晰承载 Hunter/Reasoning/Synthesis 角色。 |
 | **微工具扩展** | 写死 3 个孤立场景 | 统一在 `scanner.tools` 下指定 `default_resource: "native"` | 统一直连原生集群，具备极速 $<800\text{ms}$ 响应与极简覆盖语法。 |
 | **企业治理策略** | 仅 5 个平铺布尔开关 | 分层为 `fingerprint`、`lifecycle`、`feedback_memory` | 增加 `max_rules_injected` 等保护参数，防止 Prompt 爆炸，支持项目级覆盖。 |
-| **运维与安全性** | 敏感 Key 易明文泄露，改配置需重启 | 支持 `${ENV}` 占位符 + 数据库持久化 + 动态热重载 + 操作审计 Diff | 提高安全性，修改算力、Worker 并发与阈值无需重启服务，扫描任务零中断。 |
+| **运维效率与易用性** | 改配置需登机改文件并重启服务打断扫描 | Web 控制台细粒度修改 + 零停机热重载 + 操作审计 | 运维效率极大提升，扫描任务零中断，修改操作全链路可追溯。 |
