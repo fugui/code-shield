@@ -221,7 +221,6 @@ function TaskTypeManagement() {
               <th style={{ padding: '1rem' }}>名称</th>
               <th style={{ padding: '1rem' }}>标识</th>
               <th style={{ padding: '1rem' }}>执行引擎</th>
-              <th style={{ padding: '1rem' }}>AI 后端</th>
               <th style={{ padding: '1rem' }}>超时(分钟)</th>
               <th style={{ padding: '1rem' }}>通知阈值</th>
               <th style={{ padding: '1rem' }}>状态</th>
@@ -232,7 +231,7 @@ function TaskTypeManagement() {
             {taskTypes.length === 0 ? (
               <EmptyState
                 inTable
-                colSpan={8}
+                colSpan={7}
                 type="data"
                 title="暂无任务类型"
                 description="任务类型定义了扫描与分析规则的执行引擎、AI 后端与处理流程。"
@@ -276,17 +275,6 @@ function TaskTypeManagement() {
                     <span style={{ color: '#0284c7', background: 'rgba(2,132,199,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>分片引擎</span>
                   ) : (
                     <span style={{ color: '#64748b', background: 'rgba(100,116,139,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>单引擎</span>
-                  )}
-                </td>
-                <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
-                  {tt.ai_backend === 'claude' ? (
-                    <span className="code-badge code-badge-backend--claude">Claude</span>
-                  ) : tt.ai_backend === 'opencode' ? (
-                    <span className="code-badge code-badge-backend--opencode">OpenCode</span>
-                  ) : tt.ai_backend === 'codex' ? (
-                    <span className="code-badge code-badge-backend--codex">Codex</span>
-                  ) : (
-                    <span className="code-badge code-badge-backend--default">跟随全局</span>
                   )}
                 </td>
                 <td style={{ padding: '1rem' }}>{tt.timeout}</td>
@@ -436,49 +424,13 @@ function TaskTypeManagement() {
               />
             </div>
           </div>
-          {(form.engine_mode === 'debate_full' || form.engine_mode === 'debate_selective') && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: 'rgba(124,58,237,0.04)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(124,58,237,0.15)' }}>
-              <div>
-                <label style={labelStyle}>Tier-1 初筛猎手模型 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(快模型)</span></label>
-                <select style={fieldStyle} value={form.tier_fast_backend} onChange={e => setForm({...form, tier_fast_backend: e.target.value})}>
-                  <option value="">跟随全局 Tier-1 配置</option>
-                  <option value="opencode">OpenCode</option>
-                  <option value="claude">Claude</option>
-                  <option value="codex">Codex</option>
-                  <option value="agy">Antigravity (agy)</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Tier-2 辩论与法官模型 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(深度推理)</span></label>
-                <select style={fieldStyle} value={form.tier_reasoning_backend} onChange={e => setForm({...form, tier_reasoning_backend: e.target.value})}>
-                  <option value="">跟随全局 Tier-2 配置</option>
-                  <option value="claude">Claude</option>
-                  <option value="opencode">OpenCode</option>
-                  <option value="codex">Codex</option>
-                  <option value="agy">Antigravity (agy)</option>
-                </select>
-              </div>
-            </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div>
-              <label style={labelStyle}>AI 后端 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(默认值，定时策略可覆盖)</span></label>
-              <select style={fieldStyle} value={form.ai_backend} onChange={e => setForm({...form, ai_backend: e.target.value})}>
-                <option value="">跟随全局配置</option>
-                <option value="claude">Claude</option>
-                <option value="opencode">OpenCode</option>
-                <option value="codex">Codex</option>
-                <option value="agy">Antigravity (agy)</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>处理范围 <span style={{ fontWeight: 400, color: '#94a3b8' }}>(默认值，可被覆盖)</span></label>
-              <select style={fieldStyle} value={form.target_scope} onChange={e => setForm({...form, target_scope: e.target.value})}>
-                <option value="all">全部代码 (源码与测试)</option>
-                <option value="business">仅业务代码 (跳过测试)</option>
-                <option value="test">仅测试代码</option>
-              </select>
-            </div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={labelStyle}>处理范围 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(默认值，可被覆盖)</span></label>
+            <select style={fieldStyle} value={form.target_scope} onChange={e => setForm({...form, target_scope: e.target.value})}>
+              <option value="all">全部代码 (源码与测试)</option>
+              <option value="business">仅业务代码 (跳过测试)</option>
+              <option value="test">仅测试代码</option>
+            </select>
           </div>
           <div style={{ background: 'var(--color-success-subtle)', border: '1px solid var(--color-success-border)', borderRadius: '6px', padding: '0.6rem 1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
               💡 提示词和脚本文件位于 <code style={{ background: 'var(--color-success-border)', padding: '0.1rem 0.3rem', borderRadius: '3px', color: 'var(--color-success)' }}>tasks/{(form.name || '<标识名>').replace(/_/g, '-')}/</code> 目录下{editingId ? '，可通过「编辑脚本」修改内容' : '，创建后可通过「编辑脚本」修改内容'}。

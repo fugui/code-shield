@@ -8,6 +8,7 @@ import PublicReportFindings from './pages/PublicReportFindings';
 import ScanManagement from './pages/ScanManagement';
 import TaskTypeManagement from './pages/TaskTypeManagement';
 import SystemDebug from './pages/SystemDebug';
+import ConfigCenter from './pages/ConfigCenter';
 import UniversalCampaignPage from './pages/UniversalCampaignPage';
 import Workbench from './pages/Workbench';
 
@@ -232,6 +233,7 @@ function AppContent() {
             <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
+            <Route path="/admin/config" element={<PrivateRoute><ConfigCenter /></PrivateRoute>} />
             <Route path="/admin/debug" element={<PrivateRoute><SystemDebug /></PrivateRoute>} />
             <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 

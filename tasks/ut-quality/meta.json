@@ -20,7 +20,6 @@
       "thirdparts"
     ]
   },
-  "ai_backend": "",
   "target_scope": "test",
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,

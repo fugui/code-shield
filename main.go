@@ -50,6 +50,9 @@ func main() {
 	// Initialize database
 	models.InitDB()
 
+	// 初始化动态配置中心并完成 Seed-Once 检查与数据库 SSOT 加载
+	models.InitDynamicConfigs(models.AppConfig)
+
 	// 初始化系统全局操作审计引擎
 	commonAudit.Init(models.DB)
 
@@ -212,6 +215,14 @@ func main() {
 					admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
 					admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
 					admin.PATCH("/config", handlers.UpdateConfig)
+
+					// 动态配置中心 API (Dynamic Config Center)
+					admin.GET("/config/full", handlers.GetFullConfig)
+					admin.PUT("/config/full", handlers.UpdateFullConfig)
+					admin.GET("/config/category/:category", handlers.GetCategoryConfig)
+					admin.PUT("/config/category/:category", handlers.UpdateCategoryConfig)
+					admin.POST("/config/ping-endpoint", handlers.PingEndpoint)
+					admin.POST("/config/reset-to-seed", handlers.ResetCategoryConfig)
 
 					// 系统性能与堆栈诊断 (Admin Debug & PProf)
 					debugGroup := admin.Group("/admin/debug")
