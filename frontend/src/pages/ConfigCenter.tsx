@@ -302,6 +302,133 @@ export default function ConfigCenter() {
     }
   };
 
+  // 辅助渲染各阶段算力资源池多选选择器
+  const renderTierResourcePoolSelector = (
+    tierKey: 'tier1_hunter' | 'tier2_reasoning' | 'tier3_synthesis',
+    badgeText: string,
+    badgeBg: string,
+    badgeColor: string,
+    title: string,
+    defaultSeconds: number
+  ) => {
+    const tierItem = scannerConfig.debate.tiers?.[tierKey] || { resource: 'native', timeout_seconds: defaultSeconds };
+    const selected = (tierItem.resources && tierItem.resources.length > 0)
+      ? tierItem.resources
+      : (tierItem.resource ? [tierItem.resource] : []);
+
+    let totalSlots = 0;
+    selected.forEach(id => {
+      const res = llmConfig.resources.find(r => r.id === id);
+      if (res) totalSlots += (res.concurrent || 5);
+      else totalSlots += 5;
+    });
+
+    const toggleRes = (resId: string) => {
+      let next: string[];
+      if (selected.includes(resId)) {
+        if (selected.length === 1) {
+          showToast('至少需要保留 1 个算力节点', 'warning');
+          return;
+        }
+        next = selected.filter(x => x !== resId);
+      } else {
+        next = [...selected, resId];
+      }
+      setScannerConfig({
+        ...scannerConfig,
+        debate: {
+          ...scannerConfig.debate,
+          tiers: {
+            ...scannerConfig.debate.tiers,
+            [tierKey]: {
+              ...tierItem,
+              resource: next[0] || '',
+              resources: next,
+            }
+          }
+        }
+      });
+    };
+
+    return (
+      <div style={{ background: 'var(--color-bg-muted)', padding: '1rem', borderRadius: '8px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.8rem', background: badgeBg, color: badgeColor, padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
+              {badgeText}
+            </span>
+            <strong>{title}</strong>
+          </div>
+          {selected.length > 1 && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-primary, #2563eb)', fontWeight: 600 }}>
+              池化并发: {totalSlots} 槽
+            </span>
+          )}
+        </div>
+
+        <div className="code-config-field" style={{ marginBottom: '0.75rem' }}>
+          <label className="code-config-label" style={{ marginBottom: '0.35rem' }}>
+            绑定算力资源 (点击勾选多节点池化负载打散)
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+            {llmConfig.resources.map(r => {
+              const isChecked = selected.includes(r.id);
+              return (
+                <button
+                  type="button"
+                  key={r.id}
+                  onClick={() => toggleRes(r.id)}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: isChecked ? '1px solid var(--color-primary, #2563eb)' : '1px solid var(--color-border-primary, #cbd5e1)',
+                    background: isChecked ? 'rgba(37, 99, 235, 0.12)' : 'var(--color-bg-surface, #fff)',
+                    color: isChecked ? 'var(--color-primary, #2563eb)' : 'var(--color-text-secondary, #64748b)',
+                    fontSize: '0.8rem',
+                    fontWeight: isChecked ? 600 : 400,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <span>{isChecked ? '✓' : '+'}</span>
+                  <span>{r.id}</span>
+                  <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>({r.driver} / {r.concurrent || 5}槽)</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #94a3b8)', marginTop: '0.35rem' }}>
+            {selected.length > 1 
+              ? `已选 ${selected.length} 个算力节点，分片将由 ModelDispatcher 动态 Least-Loaded 负载均衡。`
+              : '单节点模式，可点击追加其他节点形成高并发资源池。'}
+          </div>
+        </div>
+
+        <div className="code-config-field" style={{ marginTop: 'auto' }}>
+          <label className="code-config-label">超时时间 (秒)</label>
+          <input
+            type="number"
+            className="code-config-input"
+            value={tierItem.timeout_seconds}
+            onChange={e => setScannerConfig({
+              ...scannerConfig,
+              debate: {
+                ...scannerConfig.debate,
+                tiers: {
+                  ...scannerConfig.debate.tiers,
+                  [tierKey]: { ...tierItem, timeout_seconds: parseInt(e.target.value) || defaultSeconds }
+                }
+              }
+            })}
+          />
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="code-config-container" style={{ alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
@@ -881,155 +1008,9 @@ export default function ConfigCenter() {
             <div style={{ marginTop: '1rem', borderTop: '1px solid var(--color-border-subtle)', paddingTop: '1rem' }}>
               <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem' }}>各阶段算力阶梯绑定 (Tiers Binding)</h4>
               <div className="code-config-grid-3">
-                {/* Tier 1 */}
-                <div style={{ background: 'var(--color-bg-muted)', padding: '1rem', borderRadius: '8px' }}>
-                  <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ fontSize: '0.8rem', background: 'var(--color-primary-subtle)', color: 'var(--color-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>Tier 1</span>
-                    <strong>Hunter 初筛角色</strong>
-                  </div>
-                  <div className="code-config-field" style={{ marginBottom: '0.75rem' }}>
-                    <label className="code-config-label">绑定算力资源 (Resource)</label>
-                    <select
-                      className="code-config-select"
-                      value={scannerConfig.debate.tiers.tier1_hunter.resource}
-                      onChange={e => setScannerConfig({
-                        ...scannerConfig,
-                        debate: {
-                          ...scannerConfig.debate,
-                          tiers: {
-                            ...scannerConfig.debate.tiers,
-                            tier1_hunter: { ...scannerConfig.debate.tiers.tier1_hunter, resource: e.target.value }
-                          }
-                        }
-                      })}
-                    >
-                      {llmConfig.resources.map(r => (
-                        <option key={r.id} value={r.id}>{r.id} ({r.driver} / {r.model})</option>
-                      ))}
-                      <option value="claude">claude (CLI)</option>
-                      <option value="opencode">opencode (CLI)</option>
-                      <option value="native">native</option>
-                    </select>
-                  </div>
-                  <div className="code-config-field">
-                    <label className="code-config-label">超时时间 (秒)</label>
-                    <input
-                      type="number"
-                      className="code-config-input"
-                      value={scannerConfig.debate.tiers.tier1_hunter.timeout_seconds}
-                      onChange={e => setScannerConfig({
-                        ...scannerConfig,
-                        debate: {
-                          ...scannerConfig.debate,
-                          tiers: {
-                            ...scannerConfig.debate.tiers,
-                            tier1_hunter: { ...scannerConfig.debate.tiers.tier1_hunter, timeout_seconds: parseInt(e.target.value) || 600 }
-                          }
-                        }
-                      })}
-                    />
-                  </div>
-                </div>
-
-                {/* Tier 2 */}
-                <div style={{ background: 'var(--color-bg-muted)', padding: '1rem', borderRadius: '8px' }}>
-                  <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ fontSize: '0.8rem', background: 'var(--color-warning-subtle)', color: 'var(--color-warning)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>Tier 2</span>
-                    <strong>Challenger & Judge 角色</strong>
-                  </div>
-                  <div className="code-config-field" style={{ marginBottom: '0.75rem' }}>
-                    <label className="code-config-label">绑定算力资源 (Resource)</label>
-                    <select
-                      className="code-config-select"
-                      value={scannerConfig.debate.tiers.tier2_reasoning.resource}
-                      onChange={e => setScannerConfig({
-                        ...scannerConfig,
-                        debate: {
-                          ...scannerConfig.debate,
-                          tiers: {
-                            ...scannerConfig.debate.tiers,
-                            tier2_reasoning: { ...scannerConfig.debate.tiers.tier2_reasoning, resource: e.target.value }
-                          }
-                        }
-                      })}
-                    >
-                      {llmConfig.resources.map(r => (
-                        <option key={r.id} value={r.id}>{r.id} ({r.driver} / {r.model})</option>
-                      ))}
-                      <option value="claude">claude (CLI)</option>
-                      <option value="opencode">opencode (CLI)</option>
-                      <option value="native">native</option>
-                    </select>
-                  </div>
-                  <div className="code-config-field">
-                    <label className="code-config-label">超时时间 (秒)</label>
-                    <input
-                      type="number"
-                      className="code-config-input"
-                      value={scannerConfig.debate.tiers.tier2_reasoning.timeout_seconds}
-                      onChange={e => setScannerConfig({
-                        ...scannerConfig,
-                        debate: {
-                          ...scannerConfig.debate,
-                          tiers: {
-                            ...scannerConfig.debate.tiers,
-                            tier2_reasoning: { ...scannerConfig.debate.tiers.tier2_reasoning, timeout_seconds: parseInt(e.target.value) || 900 }
-                          }
-                        }
-                      })}
-                    />
-                  </div>
-                </div>
-
-                {/* Tier 3 */}
-                <div style={{ background: 'var(--color-bg-muted)', padding: '1rem', borderRadius: '8px' }}>
-                  <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ fontSize: '0.8rem', background: 'var(--color-success-subtle)', color: 'var(--color-success)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>Tier 3</span>
-                    <strong>Synthesis 终审汇总角色</strong>
-                  </div>
-                  <div className="code-config-field" style={{ marginBottom: '0.75rem' }}>
-                    <label className="code-config-label">绑定算力资源 (Resource)</label>
-                    <select
-                      className="code-config-select"
-                      value={scannerConfig.debate.tiers.tier3_synthesis.resource}
-                      onChange={e => setScannerConfig({
-                        ...scannerConfig,
-                        debate: {
-                          ...scannerConfig.debate,
-                          tiers: {
-                            ...scannerConfig.debate.tiers,
-                            tier3_synthesis: { ...scannerConfig.debate.tiers.tier3_synthesis, resource: e.target.value }
-                          }
-                        }
-                      })}
-                    >
-                      {llmConfig.resources.map(r => (
-                        <option key={r.id} value={r.id}>{r.id} ({r.driver} / {r.model})</option>
-                      ))}
-                      <option value="claude">claude (CLI)</option>
-                      <option value="opencode">opencode (CLI)</option>
-                      <option value="native">native</option>
-                    </select>
-                  </div>
-                  <div className="code-config-field">
-                    <label className="code-config-label">超时时间 (秒)</label>
-                    <input
-                      type="number"
-                      className="code-config-input"
-                      value={scannerConfig.debate.tiers.tier3_synthesis.timeout_seconds}
-                      onChange={e => setScannerConfig({
-                        ...scannerConfig,
-                        debate: {
-                          ...scannerConfig.debate,
-                          tiers: {
-                            ...scannerConfig.debate.tiers,
-                            tier3_synthesis: { ...scannerConfig.debate.tiers.tier3_synthesis, timeout_seconds: parseInt(e.target.value) || 600 }
-                          }
-                        }
-                      })}
-                    />
-                  </div>
-                </div>
+                {renderTierResourcePoolSelector('tier1_hunter', 'Tier 1', 'var(--color-primary-subtle)', 'var(--color-primary)', 'Hunter 初筛角色', 1200)}
+                {renderTierResourcePoolSelector('tier2_reasoning', 'Tier 2', 'var(--color-warning-subtle)', 'var(--color-warning)', 'Challenger & Judge 角色', 1800)}
+                {renderTierResourcePoolSelector('tier3_synthesis', 'Tier 3', 'var(--color-success-subtle)', 'var(--color-success)', 'Synthesis 终审汇总角色', 300)}
               </div>
             </div>
           </div>

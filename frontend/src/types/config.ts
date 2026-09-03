@@ -36,7 +36,8 @@ export interface WorkHoursConfig {
 }
 
 export interface TierBinding {
-  resource: string;
+  resource?: string;
+  resources?: string[];
   timeout_seconds: number;
 }
 

@@ -167,7 +167,7 @@ func TestLoadConfigNewFormat(t *testing.T) {
 		t.Errorf("expected non-empty Notification.Webhook")
 	}
 
-	// 5. 验证 GetTierConfig 正常从新格式解析
+	// 5. 验证 GetTierConfig 与 GetTierResources 正常从新格式解析
 	tier1 := AppConfig.GetTierConfig("tier1_fast")
 	if tier1.Backend != "agy" || tier1.TimeoutSeconds != 1200 {
 		t.Errorf("unexpected tier1 config: %+v", tier1)
@@ -175,5 +175,11 @@ func TestLoadConfigNewFormat(t *testing.T) {
 	tier3 := AppConfig.GetTierConfig("tier3_synthesis")
 	if tier3.Backend != "native" || tier3.TimeoutSeconds != 300 {
 		t.Errorf("unexpected tier3 config: %+v", tier3)
+	}
+
+	// 6. 验证 Tier 1 多资源池切片
+	tier1Res := AppConfig.GetTierResources("tier1_hunter")
+	if len(tier1Res) != 2 || tier1Res[0] != "agy" || tier1Res[1] != "opencode" {
+		t.Errorf("expected tier1 resources ['agy', 'opencode'], got %+v", tier1Res)
 	}
 }

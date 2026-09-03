@@ -130,18 +130,21 @@ scanner:
     backpressure_timeout_seconds: 120  # 背压超时兜底 (秒)
     log_retention_days: 30             # 辩论轨迹日志保留天数
 
-    # 各阶段阶梯显式绑定 llm.resources 节点
+    # 各阶段阶梯显式绑定 llm.resources 节点 (支持单一 resource 或 resources 候选资源池多选)
     tiers:
       tier1_hunter:                    # Tier 1 初筛 (Hunter 角色，Thick Agent 探索遍历源码)
-        resource: "agy"                # 显式精确绑定 agy 节点
+        resource: "agy"                # 兼容旧版字段
+        resources: ["agy", "opencode"] # 多 Thick Agent 资源池化负载打散 (10 并发初筛)
         timeout_seconds: 1200          # 初筛单片超时 (秒)
 
       tier2_reasoning:                 # Tier 2 推理与仲裁 (统一承载 Challenger 与 Judge 深度推理)
-        resource: "agy"                # 显式精确绑定 agy 节点 (或 native)
+        resource: "agy"                # 兼容旧版字段
+        resources: ["agy", "native"]   # 深度推理候选算力池
         timeout_seconds: 1800          # 辩论仲裁单片超时 (秒)
 
       tier3_synthesis:                 # Tier 3 全仓态势汇总 (Synthesis 角色，报告聚合)
         resource: "native"             # 显式精确绑定 native 算力集群
+        resources: ["native"]
         timeout_seconds: 300           # 报告汇总超时 (秒)
 
   # 内置场景微任务路由 (Utility Tools Routing)

@@ -459,3 +459,58 @@ func TestDispatchingInvoker_PreserveExplicitModelName(t *testing.T) {
 		t.Fatalf("expected ModelName to be preserved as 'explicit-model-name', got '%s'", req.ModelName)
 	}
 }
+
+func TestTierRouter_MultiResourcePooling(t *testing.T) {
+	d := &ModelDispatcher{
+		cond:        sync.NewCond(&sync.Mutex{}),
+		enabled:     true,
+		manualScale: 1.0,
+		resources: []*ModelResource{
+			{
+				Index:      0,
+				ID:         "agy",
+				Driver:     "agy",
+				Model:      "gemini-3.7-flash",
+				Agy:        "gemini-3.7-flash",
+				Concurrent: 5,
+				Active:     3, // 负载较高
+			},
+			{
+				Index:      1,
+				ID:         "opencode",
+				Driver:     "opencode",
+				Model:      "models/glm5.1",
+				OpenCode:   "models/glm5.1",
+				Concurrent: 5,
+				Active:     0, // 完全空闲
+			},
+		},
+	}
+
+	// 1. 测试 PickBestCandidateResource: 应优先选出空闲的 opencode
+	backend, model := d.PickBestCandidateResource([]string{"agy", "opencode"})
+	if backend != "opencode" || model != "models/glm5.1" {
+		t.Fatalf("expected opencode to be picked, got backend=%s, model=%s", backend, model)
+	}
+
+	// 2. 当 opencode 打满 (Active=5)，应自动切换/故障转移至 agy
+	d.resources[1].Active = 5
+	backend2, model2 := d.PickBestCandidateResource([]string{"agy", "opencode"})
+	if backend2 != "agy" || model2 != "gemini-3.7-flash" {
+		t.Fatalf("expected agy to be picked when opencode is full, got backend=%s, model=%s", backend2, model2)
+	}
+
+	// 3. 测试通过 TierRouter 绑定多资源池调度
+	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{
+		Resources:      []string{"agy", "opencode"},
+		TimeoutSeconds: 1200,
+	}
+	tr := &TierRouter{dispatcher: d}
+	acq, err := tr.AcquireTier(context.Background(), "tier1_hunter", "")
+	if err != nil {
+		t.Fatalf("AcquireTier failed: %v", err)
+	}
+	if acq.Backend != "agy" {
+		t.Fatalf("expected TierRouter to select agy, got %s", acq.Backend)
+	}
+}

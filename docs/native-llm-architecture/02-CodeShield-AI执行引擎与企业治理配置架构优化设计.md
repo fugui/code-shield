@@ -284,21 +284,31 @@ scanner:
     backpressure_timeout_seconds: 120  # 背压超时兜底 (秒)
     log_retention_days: 30             # 辩论轨迹日志保留天数
 
-    # 各阶段阶梯显式绑定 llm.resources 节点
+    # 各阶段阶梯显式绑定 llm.resources 节点 (支持单一 resource 或 resources 多节点池化打散)
     # 注：01号文档的 4 角色在配置中清晰归一为 3 层：
     # Hunter -> tier1_hunter; Challenger 与 Judge -> tier2_reasoning; Synthesis -> tier3_synthesis
     tiers:
       tier1_hunter:                    # Tier 1 初筛 (Hunter 角色，必须 Thick Agent 自主遍历源码)
-        resource: "agy-gemini"         # 显式精确绑定 agy-gemini 节点
+        resource: "agy"                # 兼容旧版单一节点绑定
+        resources: ["agy", "opencode"] # 多 Thick Agent 资源池化负载打散 (10 并发初筛)
         timeout_seconds: 1200          # 初筛单片超时 (秒)
 
       tier2_reasoning:                 # Tier 2 推理与仲裁 (统一承载 Challenger 与 Judge 深度推理)
-        resource: "native"             # 显式精确绑定 native 原生集群
-        timeout_seconds: 600           # 辩论仲裁单片超时 (秒)
+        resource: "agy"                # 兼容旧版单一节点绑定
+        resources: ["agy", "native"]   # 深度推理候选算力池 (兼顾模型多样性与集群吞吐)
+        timeout_seconds: 1800          # 辩论仲裁单片超时 (秒)
 
       tier3_synthesis:                 # Tier 3 全仓态势汇总 (Synthesis 角色，纯文本报告聚合)
         resource: "native"             # 显式精确绑定 native 原生集群
+        resources: ["native"]
         timeout_seconds: 300           # 报告汇总超时 (秒)
+
+  #### 3.3.1 初筛与推理阶段的多资源池化 (Multi-Resource Pooling) 与动态分流
+  * **背景痛点**：全系统可能接入多个异构 Thick Agent 节点（如 `agy` 拥有 5 并发、`opencode` 拥有 5 并发）。若各阶段阶梯仅允许单选绑定，会导致非绑定节点（如 `opencode`）长期空转闲置，而 Hunter 初筛阶段面临数十个代码分片排队时却无法借力分流。
+  * **调度机制 (Least-Loaded Pooling)**：
+    * 当分片任务到达 Tier 1 或 Tier 2 时，`TierRouter.AcquireTier()` 检索该阶段配置的候选资源列表 `resources: ["agy", "opencode"]`；
+    * 调度器 `ModelDispatcher.PickBestCandidateResource()` 在候选节点间基于当前活跃槽位与配额水位进行实时探测，优先将分片指派给负载率最低、有可用余量的节点；
+    * 各分片并行在不同算力节点上执行，全仓初筛吞吐翻倍（由 5 槽跃升至 10 槽），且当单一节点异常或达流控上限时自动实现故障转移 (Failover)。
 
   # 内置场景微任务路由 (Utility Tools Routing)
   tools:
@@ -485,10 +495,11 @@ type LLMConfig struct {
 	Resources       []ComputeResourceConfig `yaml:"resources" json:"resources"`
 }
 
-// TierBindingConfig 阶梯绑定配置
+// TierBindingConfig 阶梯绑定配置 (支持单一资源或多候选资源池)
 type TierBindingConfig struct {
-	Resource       string `yaml:"resource" json:"resource"`
-	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"`
+	Resource       string   `yaml:"resource" json:"resource"`
+	Resources      []string `yaml:"resources" json:"resources"`
+	TimeoutSeconds int      `yaml:"timeout_seconds" json:"timeout_seconds"`
 }
 
 // DebateTiersConfig 辩论阶梯流水线配置 (3 层组织映射 4 大角色)
