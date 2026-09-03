@@ -514,13 +514,14 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 	log.Printf("[TaskRunner] Invoking AI via %s (ReportID: %d, Output: %s)\n", invoker.Name(), ctx.report.ID, outputPath)
 
 	return invoker.Invoke(AIRequest{
-		ParentContext: ctx.ctx,
-		WorkDir:       ctx.codesPath,
-		PromptFile:    absPrompt,
-		PromptMsg:     promptMsg,
-		InputFiles:    fileList,
-		OutputPath:    outputPath,
-		TimeoutMin:    ctx.taskType.Timeout,
+		ParentContext:  ctx.ctx,
+		WorkDir:        ctx.codesPath,
+		PromptFile:     absPrompt,
+		PromptMsg:      promptMsg,
+		InputFiles:     fileList,
+		OutputPath:     outputPath,
+		TimeoutMin:     ctx.taskType.Timeout,
+		ResponseFormat: "json",
 	})
 }
 
@@ -1116,33 +1117,76 @@ func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPr
 	}
 
 	req := AIRequest{
-		ParentContext: ctx.ctx,
-		WorkDir:       ctx.codesPath,
-		PromptFile:    absPrompt,
-		PromptMsg:     promptMsg,
-		InputFiles:    []string{synthesisInputPath},
-		OutputPath:    ctx.reportPath,
-		TimeoutMin:    timeoutMin,
-		ModelName:     tierCfg.Model,
+		ParentContext:  ctx.ctx,
+		WorkDir:        ctx.codesPath,
+		PromptFile:     absPrompt,
+		PromptMsg:      promptMsg,
+		InputFiles:     []string{synthesisInputPath},
+		OutputPath:     ctx.reportPath,
+		TimeoutMin:     timeoutMin,
+		ModelName:      tierCfg.Model,
+		ResponseFormat: "text",
 	}
 
 	if err := invoker.Invoke(req); err != nil {
 		return err
 	}
 
-	// 校验最终报告是否成功生成且不为空
-	info, err := os.Stat(ctx.reportPath)
+	// 校验并清洗最终报告（确保为纯净 Markdown，处理模型可能返回的 JSON 包裹或代码块包裹）
+	reportBytes, err := os.ReadFile(ctx.reportPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("report file %s was not generated", ctx.reportPath)
 		}
-		return fmt.Errorf("failed to check report file: %w", err)
+		return fmt.Errorf("failed to read report file: %w", err)
 	}
-	if info.Size() == 0 {
+	if len(bytes.TrimSpace(reportBytes)) == 0 {
 		return fmt.Errorf("generated report file is empty")
 	}
 
+	cleanedReport := sanitizeMarkdownReport(reportBytes)
+	if !bytes.Equal(cleanedReport, reportBytes) {
+		if writeErr := os.WriteFile(ctx.reportPath, cleanedReport, 0644); writeErr != nil {
+			log.Printf("[TaskRunner] Warning: failed to save sanitized markdown report: %v\n", writeErr)
+		}
+	}
+
 	return nil
+}
+
+// sanitizeMarkdownReport 智能清洗大模型生成的 Markdown 报告。
+// 若模型因极端幻觉输出为 JSON（如 {"report": "..."} 或 {"markdown": "..."}），尝试解包提取正文；
+// 若模型用 ```markdown ... ``` 整个包裹，剥除最外层标记。
+func sanitizeMarkdownReport(raw []byte) []byte {
+	s := strings.TrimSpace(string(raw))
+
+	// 1. 如果内容为 JSON 对象，尝试提取常见 Markdown 键
+	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(s), &obj); err == nil {
+			for _, key := range []string{"report", "markdown", "content", "summary", "result", "text"} {
+				if val, ok := obj[key].(string); ok && len(strings.TrimSpace(val)) > 0 {
+					s = strings.TrimSpace(val)
+					break
+				}
+			}
+		}
+	}
+
+	// 2. 剥除最外层的 ```markdown ... ``` 或 ``` ... ``` 标记
+	if strings.HasPrefix(s, "```") {
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			firstLine := strings.TrimSpace(s[:idx])
+			if firstLine == "```" || firstLine == "```markdown" || firstLine == "```md" {
+				if strings.HasSuffix(s, "```") {
+					s = strings.TrimSuffix(s, "```")
+					s = strings.TrimSpace(s[idx+1:])
+				}
+			}
+		}
+	}
+
+	return []byte(s)
 }
 
 // cleanSynthesisTempFiles cleans up temporary files generated during a failed synthesis attempt.

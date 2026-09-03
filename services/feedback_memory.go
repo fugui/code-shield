@@ -63,9 +63,10 @@ func ExtractFeedbackRuleViaNative(filePath, codeSnippet, defectTitle, userReason
 	defer os.Remove(tmpPath)
 
 	req := AIRequest{
-		PromptMsg:  prompt,
-		OutputPath: tmpPath,
-		TimeoutMin: 1,
+		PromptMsg:      prompt,
+		OutputPath:     tmpPath,
+		TimeoutMin:     1,
+		ResponseFormat: "json",
 	}
 
 	if err := invoker.Invoke(req); err != nil {

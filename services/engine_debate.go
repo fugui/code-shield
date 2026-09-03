@@ -945,12 +945,13 @@ func callAITier(ctx context.Context, backend string, modelName string, prompt st
 	}
 
 	req := AIRequest{
-		ParentContext: ctx,
-		WorkDir:       workDir,
-		PromptMsg:     prompt,
-		OutputPath:    outputPath,
-		TimeoutMin:    timeoutMin,
-		ModelName:     modelName,
+		ParentContext:  ctx,
+		WorkDir:        workDir,
+		PromptMsg:      prompt,
+		OutputPath:     outputPath,
+		TimeoutMin:     timeoutMin,
+		ModelName:      modelName,
+		ResponseFormat: "json",
 	}
 
 	if err := invoker.Invoke(req); err != nil {

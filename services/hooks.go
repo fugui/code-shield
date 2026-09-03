@@ -693,11 +693,12 @@ func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail
 	}()
 
 	req := AIRequest{
-		ParentContext: ctx.ctx,
-		WorkDir:       ctx.codesPath,
-		PromptMsg:     prompt,
-		OutputPath:    outputPath,
-		TimeoutMin:    10,
+		ParentContext:  ctx.ctx,
+		WorkDir:        ctx.codesPath,
+		PromptMsg:      prompt,
+		OutputPath:     outputPath,
+		TimeoutMin:     10,
+		ResponseFormat: "json",
 	}
 
 	log.Printf("[askLLMIfSameFinding] Invoking LLM to double-check finding similarity (Report ID: %d)...", ctx.report.ID)
