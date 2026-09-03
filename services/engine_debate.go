@@ -152,11 +152,18 @@ bundleLoop:
 			details.Status = "success"
 			chunkDetailsList[idx-1] = details
 
-			// 保存辩论日志到数据库
+			// 保存辩论日志到数据库（清洗 jsonb 字段，并逐条容错保存，避免单条 jsonb 格式异常拖累 bundle）
 			if len(debateLogs) > 0 && models.DB != nil {
 				for _, dl := range debateLogs {
 					dl.TaskReportID = ctx.report.ID
-					models.DB.Create(&dl)
+					dl.HunterOutput = SanitizeJSONForPostgresJSONB([]byte(dl.HunterOutput))
+					dl.ChallengerOutput = SanitizeJSONForPostgresJSONB([]byte(dl.ChallengerOutput))
+					dl.JudgeOutput = SanitizeJSONForPostgresJSONB([]byte(dl.JudgeOutput))
+					dl.TokenUsage = SanitizeJSONForPostgresJSONB([]byte(dl.TokenUsage))
+
+					if err := models.DB.Create(&dl).Error; err != nil {
+						log.Printf("[DebateEngine] Warning: Failed to insert TaskDebateLog for candidate %s: %v (skipping to protect bundle)", dl.CandidateID, err)
+					}
 				}
 			}
 
@@ -714,16 +721,29 @@ func parseJSONFromAIOutput(output string, target interface{}, workDir string) er
 		trimmed = trimmed[firstBrace : lastBrace+1]
 	}
 
+	// 1. 尝试直接标准反序列化
 	err := json.Unmarshal([]byte(trimmed), target)
 	if err == nil {
 		return nil
 	}
 
-	// 第一次解析失败（可能存在未转义引号、尾部多余逗号等轻微语法瑕疵），尝试调用 RepairJSON 自动修复
+	// 2. 内存级快速语法自愈（修复未转义反斜杠 \、\u0000、字符串内字面量换行、尾部多余逗号等常见大模型输出瑕疵）
+	fastRepaired := repairMalformedJSON(trimmed)
+	if firstB := strings.Index(fastRepaired, "{"); firstB != -1 {
+		if lastB := strings.LastIndex(fastRepaired, "}"); lastB != -1 && lastB > firstB {
+			fastRepaired = fastRepaired[firstB : lastB+1]
+		}
+	}
+	if unmarshalErr := json.Unmarshal([]byte(fastRepaired), target); unmarshalErr == nil {
+		log.Printf("[DebateEngine] Successfully fast-repaired malformed AI JSON output in memory\n")
+		return nil
+	}
+
+	// 3. 仍解析失败时，回退调用外部 AI RepairJSON 修复
 	tmpFile, tmpErr := os.CreateTemp("", "debate-parse-repair-*.json")
 	if tmpErr == nil {
 		tmpPath := tmpFile.Name()
-		_ = os.WriteFile(tmpPath, []byte(trimmed), 0644)
+		_ = os.WriteFile(tmpPath, []byte(fastRepaired), 0644)
 		tmpFile.Close()
 		defer os.Remove(tmpPath)
 
@@ -743,6 +763,151 @@ func parseJSONFromAIOutput(output string, target interface{}, workDir string) er
 	}
 
 	return err
+}
+
+// SanitizeJSONForPostgresJSONB 清洗 JSON 字节流，移除 PostgreSQL jsonb 不支持的 \u0000 Unicode 转义序列与控制字符
+func SanitizeJSONForPostgresJSONB(data []byte) datatypes.JSON {
+	if len(data) == 0 {
+		return datatypes.JSON([]byte("{}"))
+	}
+	s := string(data)
+	// 消除 PostgreSQL jsonb 严禁的 \u0000 及空字符
+	s = strings.ReplaceAll(s, `\u0000`, " ")
+	s = strings.ReplaceAll(s, `\U0000`, " ")
+	s = strings.ReplaceAll(s, "\x00", "")
+
+	cleaned := []byte(s)
+	if !json.Valid(cleaned) {
+		// 若已有语法瑕疵，尝试快速自愈
+		repaired := repairMalformedJSON(s)
+		if json.Valid([]byte(repaired)) {
+			cleaned = []byte(repaired)
+		} else {
+			// 极端兜底：包装为包含 raw 字段的合法 JSON，确保 jsonb 字段安全落库而不丢失日志
+			type fallbackWrap struct {
+				Raw string `json:"raw"`
+			}
+			fb, _ := json.Marshal(fallbackWrap{Raw: s})
+			cleaned = fb
+		}
+	}
+	return datatypes.JSON(cleaned)
+}
+
+// repairMalformedJSON 对大模型输出的非标 JSON 进行内存级语法清洗与自愈
+func repairMalformedJSON(input string) string {
+	runes := []rune(input)
+	n := len(runes)
+	var sb strings.Builder
+	sb.Grow(n + 64)
+
+	inString := false
+	var isEscaped bool
+
+	for i := 0; i < n; i++ {
+		r := runes[i]
+
+		if inString {
+			if isEscaped {
+				isEscaped = false
+				// 检查合规的标准转义字符: ", \, /, b, f, n, r, t, u
+				switch r {
+				case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+					sb.WriteRune('\\')
+					sb.WriteRune(r)
+				case 'u', 'U':
+					// 检查是否为 4 位十六进制
+					if i+4 < n && isHex4(runes[i+1:i+5]) {
+						hexStr := string(runes[i+1 : i+5])
+						if hexStr == "0000" {
+							// PostgreSQL jsonb 严禁 \u0000，替换为空格
+							sb.WriteString(" ")
+						} else {
+							sb.WriteString("\\u")
+							sb.WriteString(hexStr)
+						}
+						i += 4
+					} else {
+						// 伪 Unicode 转义，将前置反斜杠转义保护
+						sb.WriteString("\\\\")
+						sb.WriteRune(r)
+					}
+				default:
+					// 非标准转义符（如 \s, \d, \0, \x, 路径斜杠等），双反斜杠转义保护
+					sb.WriteString("\\\\")
+					sb.WriteRune(r)
+				}
+				continue
+			}
+
+			if r == '\\' {
+				isEscaped = true
+				continue
+			}
+
+			if r == '"' {
+				inString = false
+				sb.WriteRune('"')
+				continue
+			}
+
+			// 处理字符串字面量内部未转义的原始控制字符
+			switch r {
+			case '\n':
+				sb.WriteString("\\n")
+			case '\r':
+				sb.WriteString("\\r")
+			case '\t':
+				sb.WriteString("\\t")
+			default:
+				if r < 0x20 {
+					// 忽略其他不可打印 ASCII 控制字符
+					continue
+				}
+				sb.WriteRune(r)
+			}
+		} else {
+			if r == '"' {
+				inString = true
+				sb.WriteRune('"')
+				continue
+			}
+
+			// 处理非字符串区域的尾部多余逗号 (trailing commas: `, }` 或 `, ]`)
+			if r == ',' {
+				// 前瞻下一个非空字符
+				j := i + 1
+				for j < n && (runes[j] == ' ' || runes[j] == '\t' || runes[j] == '\r' || runes[j] == '\n') {
+					j++
+				}
+				if j < n && (runes[j] == '}' || runes[j] == ']') {
+					// 忽略该多余逗号
+					continue
+				}
+			}
+
+			sb.WriteRune(r)
+		}
+	}
+
+	// 若字符串未正常闭合，补全闭合引号
+	if inString {
+		sb.WriteRune('"')
+	}
+
+	return sb.String()
+}
+
+func isHex4(runes []rune) bool {
+	if len(runes) < 4 {
+		return false
+	}
+	for _, r := range runes {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // callAITier 底层调用指定后端和模型的 AI Invoker 工具

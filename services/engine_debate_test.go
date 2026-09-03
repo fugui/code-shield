@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -139,5 +140,50 @@ func TestCallAITier_ChunkDirPersistence(t *testing.T) {
 	}
 	if len(content) == 0 {
 		t.Fatalf("persisted chunk file is empty")
+	}
+}
+
+func TestParseJSONFromAIOutput_MalformedEscapesAndNullBytes(t *testing.T) {
+	// 模拟大模型输出含有不合规的反斜杠转义（\s, \0, \d）、Windows 路径（\test）、Unicode \u0000、字面量换行与尾部逗号
+	malformedJSON := `{
+  "candidates": [
+    {
+      "candidate_id": "H-001",
+      "file_path": "src\dir\file.cc",
+      "trigger_line": "if (*p == '\0') { regex = \d+; }",
+      "cwe_category": "CWE-476",
+      "title": "测试缺陷\u0000包含空字节",
+      "attack_hypothesis": "成因描述第一行
+成因描述第二行",
+    },
+  ],
+}`
+
+	var out HunterOutput
+	err := parseJSONFromAIOutput(malformedJSON, &out, t.TempDir())
+	if err != nil {
+		t.Fatalf("parseJSONFromAIOutput should repair and parse malformed JSON successfully, got error: %v", err)
+	}
+
+	if len(out.Candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(out.Candidates))
+	}
+	cand := out.Candidates[0]
+	if cand.CandidateID != "H-001" {
+		t.Errorf("expected H-001, got %s", cand.CandidateID)
+	}
+	if cand.CWECategory != "CWE-476" {
+		t.Errorf("expected CWE-476, got %s", cand.CWECategory)
+	}
+}
+
+func TestSanitizeJSONForPostgresJSONB(t *testing.T) {
+	// 测试包含 \u0000 及空字符的 jsonb 兼容性清洗
+	raw := []byte(`{"hunter_output": "candidate\u0000detail", "code": "\x00test"}`)
+	sanitized := SanitizeJSONForPostgresJSONB(raw)
+
+	s := string(sanitized)
+	if strings.Contains(s, `\u0000`) || strings.Contains(s, "\x00") {
+		t.Errorf("sanitized JSON should not contain null bytes or \\u0000, got: %s", s)
 	}
 }

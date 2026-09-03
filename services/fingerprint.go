@@ -10,8 +10,8 @@ import (
 )
 
 // CalculateDefectFingerprint 计算抗代码行号与上下文抖动的通用缺陷强指纹 (L1 强指纹)
-// 公式: SHA256(RepoID + TaskTypeID + NormalizedPath + ScopeSymbol + NormalizedTriggerLine)
-func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scopeSymbol string) string {
+// 公式: SHA256(RepoID + TaskTypeID + NormalizedPath + ScopeSymbol + Category? + NormalizedTriggerLine)
+func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scopeSymbol string, category ...string) string {
 	// 1. 规范化相对路径 (统一正斜杠，小写)
 	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
 
@@ -24,9 +24,21 @@ func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, t
 		normScope = filepath.Base(normPath)
 	}
 
-	// 4. 组合特征计算 SHA-256 强指纹
-	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|trigger:%s",
-		repoID, taskTypeID, normPath, normScope, normTrigger)
+	// 4. 规范化类别 (参与指纹计算以区分同一位置不同类别的缺陷)
+	var normCat string
+	if len(category) > 0 && strings.TrimSpace(category[0]) != "" {
+		normCat = strings.ToLower(strings.TrimSpace(category[0]))
+	}
+
+	// 5. 组合特征计算 SHA-256 强指纹
+	var rawKey string
+	if normCat != "" {
+		rawKey = fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|cat:%s|trigger:%s",
+			repoID, taskTypeID, normPath, normScope, normCat, normTrigger)
+	} else {
+		rawKey = fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|trigger:%s",
+			repoID, taskTypeID, normPath, normScope, normTrigger)
+	}
 
 	hash := sha256.Sum256([]byte(rawKey))
 	return hex.EncodeToString(hash[:])
