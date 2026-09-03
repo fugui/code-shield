@@ -119,3 +119,61 @@ storage:
 		t.Errorf("expected Storage.Root %q, got %q", expectedLegacyAbs, AppConfig.Storage.Root)
 	}
 }
+
+func TestLoadConfigNewFormat(t *testing.T) {
+	// 测试直接加载实际根目录的 config.yaml
+	repoRoot := GetAppBaseDir()
+	configPath := filepath.Join(repoRoot, "config.yaml")
+
+	if err := LoadConfig(configPath); err != nil {
+		t.Fatalf("LoadConfig(%s) failed: %v", configPath, err)
+	}
+
+	// 1. 验证 LLM
+	if AppConfig.LLM.DefaultResource != "native" {
+		t.Errorf("expected DefaultResource 'native', got %q", AppConfig.LLM.DefaultResource)
+	}
+	if len(AppConfig.LLM.Resources) < 3 {
+		t.Errorf("expected at least 3 resources, got %d", len(AppConfig.LLM.Resources))
+	}
+
+	// 2. 验证 Scanner
+	if AppConfig.Scanner.WorkerCount != 5 {
+		t.Errorf("expected WorkerCount 5, got %d", AppConfig.Scanner.WorkerCount)
+	}
+	if !AppConfig.Scanner.Debate.Enabled {
+		t.Errorf("expected Debate.Enabled to be true")
+	}
+	if AppConfig.Scanner.Debate.Tiers.Tier1Hunter.Resource != "agy" {
+		t.Errorf("expected Tier1Hunter resource 'agy', got %q", AppConfig.Scanner.Debate.Tiers.Tier1Hunter.Resource)
+	}
+	if AppConfig.Scanner.Debate.Tiers.Tier2Reasoning.Resource != "agy" {
+		t.Errorf("expected Tier2Reasoning resource 'agy', got %q", AppConfig.Scanner.Debate.Tiers.Tier2Reasoning.Resource)
+	}
+	if AppConfig.Scanner.Debate.Tiers.Tier3Synthesis.Resource != "native" {
+		t.Errorf("expected Tier3Synthesis resource 'native', got %q", AppConfig.Scanner.Debate.Tiers.Tier3Synthesis.Resource)
+	}
+
+	// 3. 验证 Governance
+	if !AppConfig.Governance.Fingerprint.Enabled {
+		t.Errorf("expected Fingerprint.Enabled to be true")
+	}
+	if AppConfig.Governance.Fingerprint.SimilarityThreshold != 0.85 {
+		t.Errorf("expected SimilarityThreshold 0.85, got %f", AppConfig.Governance.Fingerprint.SimilarityThreshold)
+	}
+
+	// 4. 验证 Notification
+	if AppConfig.Notification.Webhook == "" {
+		t.Errorf("expected non-empty Notification.Webhook")
+	}
+
+	// 5. 验证 GetTierConfig 正常从新格式解析
+	tier1 := AppConfig.GetTierConfig("tier1_fast")
+	if tier1.Backend != "agy" || tier1.TimeoutSeconds != 1200 {
+		t.Errorf("unexpected tier1 config: %+v", tier1)
+	}
+	tier3 := AppConfig.GetTierConfig("tier3_synthesis")
+	if tier3.Backend != "native" || tier3.TimeoutSeconds != 300 {
+		t.Errorf("unexpected tier3 config: %+v", tier3)
+	}
+}

@@ -1,196 +1,55 @@
 # ==============================================================================
-# Code-Shield 🛡️ 服务端完整配置模版 (config.yaml.example)
+# Code-Shield 🛡️ 服务端配置规范模版 (config.yaml.example)
 #
-# 使用指南：
-#   1. 复制本文件为 config.yaml：cp config.yaml.example config.yaml
-#   2. 根据实际部署环境（数据库、LLM 算力网关、企业 SSO 等）修改配置项
-#   3. 支持通过环境变量动态覆盖核心敏感参数（如 CODE_SHIELD_AI_NATIVE_API_KEY）
+# 架构规范版本: CS-NATIVE-02
+#
+# ⚠️ 注意事项与动静分层：
+# 1. 基础设施层 (server, storage, database, auth)：
+#    属于静态引导冷配置，系统启动时直接从本文件加载。修改需重启服务。
+# 2. 动态业务中心层 (llm, scanner, governance, notification)：
+#    本文件中的内容仅在系统首次安装部署（数据库为空）时作为初始种子数据导入数据库；
+#    系统初始化后，以数据库 (DB SSOT) 为唯一真值源，请直接在 Web 管理界面 (/admin/config) 实时调整，无需重启服务。
 # ==============================================================================
 
 # ==============================================================================
-# 1. HTTP 服务与任务队列 (Server & Task Queue)
+# 1. 基础设施层 (纯粹的静态低频冷配置)
 # ==============================================================================
 server:
   port: ":8080"                         # HTTP 服务监听端口
-  data_dir: "./data"                    # 运行时数据根目录 (自动存放 codes/ 源码缓存与 reports/ 分析报告)
-  # external_url: "http://192.168.56.18:8080" # 外部访问基准 URL (用于邮件通知与报告外链跳转，缺省为本地端口)
-  # worker_count: 5                     # 全局任务并发 Worker 数 (若配置了 ai.models，系统会自动基于 LLM 总并发扩展)
-  # max_queue_size: 2000                # 待处理任务排队最大上限 (默认 2000，-1 为无上限；超限返回 HTTP 429)
-  # gin_log: false                      # 是否打印 GIN 框架底层 HTTP 请求路由日志，默认 false
-  read_timeout: 120s                    # HTTP 请求头及 Body 读取超时时间
-  write_timeout: 120s                   # HTTP 响应写入超时时间
-  idle_timeout: 180s                    # HTTP Keep-Alive 空闲连接保持超时时间
+  external_url: "http://192.168.56.18:8080" # 外部访问基准 URL (用于邮件通知与报告外链跳转)
+  read_timeout: 120s                    # HTTP 请求读取超时
+  write_timeout: 120s                   # HTTP 响应写入超时
+  idle_timeout: 180s                    # HTTP Keep-Alive 空闲保持超时
 
-# ==============================================================================
-# 2. 关系型数据库持久化 (PostgreSQL Database)
-# ==============================================================================
+storage:
+  root: "."                             # 数据根目录，下设 codes/ (缓存) 与 reports/ (报告)
+
 database:
-  driver: "postgres"                    # 数据库驱动，当前固定为 postgres
-  host: "127.0.0.1"                     # PostgreSQL 主机 IP 或域名
+  driver: "postgres"                    # 数据库驱动，固定为 postgres
+  host: "127.0.0.1"                     # PostgreSQL 主机地址
   port: 5432                            # PostgreSQL 端口
-  user: "code_shield"                   # 数据库用户名
-  password: "code_shield_password"      # 数据库密码
+  user: "postgres"                      # 数据库用户名
+  password: "CodeShield618!"            # 数据库密码
   dbname: "code_shield"                 # 数据库名称
   sslmode: "disable"                    # SSL 模式: disable, require, verify-ca, verify-full
   timezone: "Asia/Shanghai"             # 会话时区
   max_open_conns: 50                    # 连接池最大打开连接数
   max_idle_conns: 10                    # 连接池最大空闲连接数
 
-# ==============================================================================
-# 3. AI 调度与执行引擎总控 (AI Engine Architecture)
-# ==============================================================================
-ai:
-  backend: "agy"                        # 全局兜底 AI 驱动后端：可选 agy / claude / opencode / codex
-  # debug_logs: false                   # 是否输出 AI 引擎底层的 debug 交互日志，开启后在报告同级目录生成 .debug.log
-  # output_format: "text"               # AI 输出格式契约：text 或 json，默认 text
-  # mock_on_missing_cli: false          # CLI 未安装时是否生成模拟空报告 (生产环境必须显式设为 false，防止误报全绿)
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # 3.1 原生轻量大模型引擎 (Thin LLM Engine / NativeInvoker)
-  # 基于 HTTP/2 REST 协议直连大模型 API，毫秒级连接池复用，支持强类型 JSON Schema 约束与断路器容灾
-  # 适用于：JSON 语法修复、缺陷指纹比对、辩护抗辩、法官仲裁、报告排版汇总等确定性单轮推理任务
-  # ────────────────────────────────────────────────────────────────────────────
-  native:
-    base_url: "http://192.168.56.18:8000/v1/chat/completions" # 原生兼容 REST API 端点 (OpenAI / vLLM / LiteLLM 规范)
-    api_key: "sk-code-shield-internal"                        # API Key (亦可通过环境变量 CODE_SHIELD_AI_NATIVE_API_KEY 注入)
-    default_model: "glm-4-flash"                              # 默认轻量模型名称
-    # max_tokens: 0                                           # 默认 0 不限制 (由模型服务端自适应最大输出容量，避免长报告截断)
-    # temperature: 0.1                                        # 节点级温度 (若未配置则继承模型默认值；确定性工具内部自动设为 0.0)
-    response_format_json: true                                # 是否强制开启原生 JSON Mode 约束 (response_format: json_object)
-    max_retries: 3                                            # 请求失败 (429 限流 / 5xx 宕机) 时的最大重试次数
-    retry_backoff_ms: 500                                     # 指数退避重试的基础等待时间 (毫秒)，内含随机 Jitter 错峰削峰
-
-    # ── 多异构算力端点集群 (可选：配置后自动执行节点负载打散与故障转移 Failover) ──
-    # endpoints:
-    #   - name: "local-vllm-primary"                           # 内网主 GPU 节点
-    #     base_url: "http://192.168.56.18:8000/v1/chat/completions"
-    #     api_key: "sk-token-primary"
-    #     model: "glm-4-flash"
-    #     concurrent: 30
-    #     weight: 80
-    #   - name: "local-vllm-backup"                            # 内网备用 GPU 节点 (异构大模型)
-    #     base_url: "http://192.168.56.19:8000/v1/chat/completions"
-    #     api_key: "sk-token-backup"
-    #     model: "qwen-2.5-72b-instruct"
-    #     concurrent: 15
-    #     weight: 20
-    #   - name: "cloud-fallback-gateway"                       # 外部云端兜底冷备节点
-    #     base_url: "https://api.deepseek.com/v1/chat/completions"
-    #     api_key: "sk-deepseek-prod-token"
-    #     model: "deepseek-chat"
-    #     concurrent: 5
-    #     weight: 0
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # 3.2 场景级内嵌工具专有后端路由 (Tool Backends)
-  # 为轻量级确定性内嵌工具指定专属的 AI 执行后端 (默认均为 native，实现毫秒级极速响应)
-  # ────────────────────────────────────────────────────────────────────────────
-  tool_backends:
-    repair_json: "native"               # JSON 语法修复工具 -> 强制使用 native (耗时由 8s 降至 <800ms)
-    finding_match: "native"             # 缺陷指纹跨周期语义二分类比对 -> 强制使用 native (消除 CLI 子进程)
-    feedback_extraction: "native"       # 研发标记误报时负样本特征规则提炼 -> 强制使用 native
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # 3.3 异构模型多阶梯资源池 (Tiers - 动静分离混合调用流水线)
-  # 为代码检视流水线的不同业务阶段配置专属的快/强模型与执行引擎：
-  #   • 动 (Thick Agent)：Hunter 自主遍历与穿透代码仓，按需读取磁盘源码
-  #   • 静 (Thin LLM)   ：Challenger / Judge / Synthesis 基于内联上下文做纯逻辑推理
-  # ────────────────────────────────────────────────────────────────────────────
-  tiers:
-    tier1_fast:                         # Tier 1 Hunter 缺陷初筛：Prompt 仅传文件名，需自主读取源码
-      backend: "agy"                    # → 必须使用 Thick Agent (agy / claude / opencode / codex)
-      model: "gemini-3.7-flash"         # 轻量快模型，高召回、低成本
-      concurrent: 5                     # 初筛并发槽位数
-      timeout_seconds: 600              # 初筛阶段单片超时时限 (秒)
-
-    tier2_reasoning:                    # Tier 2 辩护与仲裁 (Challenger & Judge)：Prompt 已内联代码片段
-      backend: "native"                 # → 推荐使用 native (Thin LLM 高速纯推理) 或 agy (Thick Agent)
-      model: "gemini-3.7-pro"           # 深度推理大模型，事实链推演与反向仲裁
-      concurrent: 10                    # 辩论与仲裁并发槽位数
-      timeout_seconds: 600              # 辩论与裁决阶段单片超时时限 (秒)
-
-    tier3_synthesis:                    # Tier 3 全仓报告排版与态势汇总：纯文本与 JSON 聚合
-      backend: "native"                 # → 推荐使用 native (Thin LLM 零进程开销、直传直出)
-      model: "glm-4-flash"              # 具备良好结构化排版与归纳能力
-      concurrent: 5                     # 综合汇总并发槽位数
-      timeout_seconds: 300              # 报告汇总阶段超时时限 (秒)
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # 3.4 多智能体对抗辩论与流水线流控 (Debate Pipeline & Flow Control)
-  # ────────────────────────────────────────────────────────────────────────────
-  debate:
-    enabled: true                       # 是否开启三方交叉对抗辩论流水线
-    fast_pass_enabled: true             # 开启零候选快速放行 (初筛无疑点直接跳过后续辩论，节省 80%+ 算力)
-    max_candidates_per_chunk: 20        # 单分片进入辩论的最大候选点上限 (防异常 Prompt 爆炸)
-    stage_timeout_seconds: 1800         # 单阶段全局硬超时兜底 (秒，如 1800 代表 30 分钟)
-    log_retention_days: 30              # 辩论轨迹 JSON 审计日志保留天数
-    backpressure_threshold: 30          # 跨 Tier 背压触发积压阈值 (超过后触发背压保护)
-    backpressure_timeout_seconds: 120   # 背压超时兜底 (秒)，超时后平滑降级为 Hunter 初筛直出
-    log_redaction_enabled: false        # 是否启用辩论日志敏感信息脱敏
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # 3.5 工作时间智能限流与自动避峰 (Work Hours Concurrency Throttle - 可选)
-  # 开启后，在工作时间内自动降低扫描并发 (如 10% 算力或完全暂停)，夜间自动恢复 100% 满速
-  # ────────────────────────────────────────────────────────────────────────────
-  # work_hours_throttle:
-  #   enabled: true                     # 是否启用工作时间自动限流，默认 false
-  #   workdays: [1, 2, 3, 4, 5]         # 生效星期: 1=周一, 2=周二, ..., 5=周五
-  #   start_time: "09:00"               # 开始限流时刻 (HH:MM)
-  #   end_time: "22:00"                 # 结束限流时刻 (HH:MM)
-  #   scale: 0.10                       # 工作时间内的并发比例 (0.10 代表 10%，0.0 代表完全暂停)
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # 3.6 多 LLM 物理算力节点负载均衡池 (Models - 算力供给端 - 可选)
-  # 启用后，全局任务并发由各节点 concurrent 之和自动拓展，并按 Least-Loaded 负载打散
-  # ────────────────────────────────────────────────────────────────────────────
-  # models:
-  #   - opencode: "models/glm5.1"
-  #     claude: "glm5.1"
-  #     codex: "gpt-5.6-sol"
-  #     agy: "gemini-3.7-flash"
-  #     native: "glm-4-flash"
-  #     concurrent: 5
-  #   - codex: "o3-mini"
-  #     agy: "gemini-3.7-pro"
-  #     native: "qwen-2.5-72b-instruct"
-  #     concurrent: 3
-
-# ==============================================================================
-# 4. 企业多任务治理与历史记忆闭环 (Enterprise Governance & SSOT Memory)
-# ==============================================================================
-governance:
-  fingerprint_enabled: true             # 开启跨扫描缺陷抗行号抖动的唯一指纹计算
-  scope_guard_enabled: true             # 启用扫描范围守卫 (仅在文件成功被扫描时才允许自动标记 RESOLVED)
-  auto_resolve_missing: true            # 本次未出现的历史存量缺陷自动标记为已修复 (RESOLVED)
-  feedback_injection: true              # 自动将研发人员标记的误报/豁免规则注入下次 Prompt
-  diff_gate_strict: true                # MR/PR 门禁流水线模式下是否仅阻断 [NEW] 增量缺陷
-
-# ==============================================================================
-# 5. 事件通知服务 (Notification)
-# ==============================================================================
-notification:
-  webhook: "http://127.0.0.1:8081/api/notify/email" # 分析完毕后发送报告卡片通知的回调 Webhook 地址
-
-# ==============================================================================
-# 6. 认证与单点登录 (Authentication & Enterprise SSO)
-# ==============================================================================
 auth:
-  standalone_mode: false                # 是否以独立系统模式运行 (false: 微前端模式，依赖主门户; true: 独立部署运行)
-  jwt_secret: ""                        # JWT 签名密钥 (用于校验 Token；留空则启动时随机生成临时密钥)
-  password_login_enabled: true          # 独立模式下是否启用本地账号密码登录
-  oauth2:                               # 独立模式下的企业 OAuth2 / OIDC 单点登录配置
-    enabled: false                      # 是否启用企业 SSO
-    client_id: ""                       # Client ID
-    client_secret: ""                   # Client Secret
-    auth_url: ""                        # Authorization Endpoint
-    token_url: ""                       # Token Endpoint
-    userinfo_url: ""                    # UserInfo Endpoint
-    redirect_url: ""                    # 回调地址，如 http://192.168.56.18:8080/api/oauth2/callback
+  jwt_secret: "ABCDEFGHIJKLMNOPQRSTVUWXYZ0987654321" # JWT 签名密钥 (生产环境请务必修改)
+  password_login_enabled: true         # 是否启用账号密码登录
+
+  oauth2:
+    enabled: true                      # 是否启用 OAuth2 / OIDC 单点登录
+    client_id: "code-shield"           # Client ID
+    client_secret: ""                  # Client Secret
+    auth_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/auth"
+    token_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/token"
+    userinfo_url: "https://sso.yourcompany.com/realms/main/protocol/openid-connect/userinfo"
+    redirect_url: ""                   # 回调地址，留空自动推导
     scopes: ["openid", "profile", "email"]
-    admin_list:                         # 默认自动赋予管理员权限的邮箱列表
-      - "admin@code-shield.com"
-    allowed_email_domains:              # 允许通过 SSO 登录的邮箱后缀白名单，留空表示不限制
-      - "@yourcompany.com"
+    admin_list: ["fugui", "admin@company.com"] # SSO 登录自动提权为系统管理员的邮箱/用户名白名单
     field_mapping:
       username: "preferred_username"
       email: "email"
@@ -198,3 +57,124 @@ auth:
       employee_id: "employee_id"
       unique_id: "unique_id"
       employee_type: "employee_type"
+    dept_api_url: "https://sso.yourcompany.com/realms/main/custom/department"
+
+# ==============================================================================
+# 2. 大模型与算力供给池 (LLM Compute Resources & Endpoints - 初次导入种子模版)
+# 职责：专注解决“模型是什么、API在何处、物理并发多大、如何负载分流”
+# ==============================================================================
+llm:
+  default_resource: "native"           # 全局兜底 Resource ID
+  debug_logs: false                    # 是否输出大模型底层交互调试日志
+
+  # 算力节点资源池
+  resources:
+    # 节点 1: Antigravity CLI 探索型 Thick Agent (初筛与复杂代码探索)
+    - id: "agy"
+      driver: "agy"                     # 驱动类型: agy / opencode / claude / codex / native
+      model: "gemini-3.7-flash"
+      concurrent: 5                     # 该节点最大物理并发槽位
+
+    # 节点 2: OpenCode 算力节点 (备选 Thick Agent)
+    - id: "opencode"
+      driver: "opencode"
+      model: "models/glm5.1"
+      concurrent: 5
+
+    # 节点 3: 原生 Thin LLM 执行引擎 (统一 ID 为 native，内含高并发算力集群 endpoints)
+    - id: "native"
+      driver: "native"
+      model: "deepseek-v4-flash-vision-exp"
+      concurrent: 10
+      base_url: "https://api.deepseek.com/v1/chat/completions"
+      api_key: "sk-be919fc7cb9d429abffbf7e2c0aabb3a"
+      response_format_json: false
+      max_retries: 3                   # 最大重试次数
+      retry_backoff_ms: 500            # 指数退避基准时长 (毫秒)
+
+      # ── 多端点算力集群 (支持加权负载打散与故障转移，weight 为相对比例) ──
+      endpoints:
+        - name: "deepseek-primary"
+          base_url: "https://api.deepseek.com/v1/chat/completions"
+          api_key: "sk-be919fc7cb9d429abffbf7e2c0aabb3a"
+          model: "deepseek-v4-flash-vision-exp"
+          concurrent: 10
+          weight: 100
+
+# ==============================================================================
+# 3. 智能扫描引擎与任务调度 (Scanner & Debate Pipeline Engine - 初次导入种子模版)
+# 职责：专注解决“任务如何排队、如何避峰、Hunter/Reasoning/Synthesis 阶梯流水线如何执行”
+# ==============================================================================
+scanner:
+  # 任务并发与排队队列
+  worker_count: 5                      # 全局扫描任务并发 Worker 数 (根据大模型并发综合推导)
+  max_queue_size: 2000                 # 待处理扫描任务排队最大上限 (超限返回 HTTP 429，-1 为无上限)
+  mock_on_missing_cli: false           # CLI 未就绪时是否阻断或模拟 (生产建议 false)
+
+  # 全局流控与避峰策略 (Throttling & Work Hours)
+  throttling:
+    work_hours:
+      enabled: false                   # 是否开启工作时间自动限流
+      workdays: [1, 2, 3, 4, 5]        # 生效星期 (周一至周五)
+      start_time: "09:00"              # 限流开始时刻 (HH:MM)
+      end_time: "22:00"                # 限流结束时刻 (HH:MM)
+      scale: 0.10                      # 工作时间并发比例 (0.10 代表 10%，0.0 代表完全暂停)
+
+  # 多智能体对抗辩论流水线 (Debate Pipeline)
+  debate:
+    enabled: true                      # 是否启用多智能体对抗辩论流水线
+    fast_pass_enabled: true            # 0 候选快速放行 (节省 80%+ 辩论算力)
+    max_candidates_per_chunk: 20       # 单分片最大仲裁候选数
+    stage_timeout_seconds: 1800        # 单阶段全局硬超时兜底 (秒，默认 30 分钟)
+    backpressure_threshold: 30         # 跨 Tier 背压触发积压阈值
+    backpressure_timeout_seconds: 120  # 背压超时兜底 (秒)
+    log_retention_days: 30             # 辩论轨迹日志保留天数
+
+    # 各阶段阶梯显式绑定 llm.resources 节点
+    tiers:
+      tier1_hunter:                    # Tier 1 初筛 (Hunter 角色，Thick Agent 探索遍历源码)
+        resource: "agy"                # 显式精确绑定 agy 节点
+        timeout_seconds: 1200          # 初筛单片超时 (秒)
+
+      tier2_reasoning:                 # Tier 2 推理与仲裁 (统一承载 Challenger 与 Judge 深度推理)
+        resource: "agy"                # 显式精确绑定 agy 节点 (或 native)
+        timeout_seconds: 1800          # 辩论仲裁单片超时 (秒)
+
+      tier3_synthesis:                 # Tier 3 全仓态势汇总 (Synthesis 角色，报告聚合)
+        resource: "native"             # 显式精确绑定 native 算力集群
+        timeout_seconds: 300           # 报告汇总超时 (秒)
+
+  # 内置场景微任务路由 (Utility Tools Routing)
+  tools:
+    default_resource: "native"         # 默认统一走 native
+    overrides:
+      repair_json: "native"
+      finding_match: "native"
+      feedback_extraction: "native"
+
+# ==============================================================================
+# 4. 企业多任务治理与历史记忆闭环 (Enterprise Governance - 初次导入种子模版)
+# 职责：专注解决“质量红线、缺陷指纹防抖、范围守卫、PR门禁与知识沉淀”
+# ==============================================================================
+governance:
+  # 跨扫描缺陷抗抖动指纹
+  fingerprint:
+    enabled: true                      # 启用抗行号抖动的语义缺陷指纹
+    similarity_threshold: 0.85         # 跨版本模糊匹配相似度门限
+
+  # 缺陷生命周期与门禁状态
+  lifecycle:
+    scope_guard_enabled: true          # 扫描范围守卫 (杜绝局部扫描产生的假修复)
+    auto_resolve_missing: true         # 守卫范围内消失的缺陷自动标记为 RESOLVED
+    diff_gate_strict: true             # PR/MR 门禁流水线仅阻断 [NEW] 增量缺陷
+
+  # 研发误报记忆与反馈注入
+  feedback_memory:
+    injection_enabled: true            # 自动将研发标记的误报规则注入 Prompt
+    max_rules_injected: 10             # 单次扫描最大注入负样本规则数 (防 Prompt 溢出)
+
+# ==============================================================================
+# 5. 事件通知服务 (Notification - 初次导入种子模版)
+# ==============================================================================
+notification:
+  webhook: "http://127.0.0.1:8081/api/notify/email" # 通知回调地址
