@@ -70,10 +70,22 @@ type ThrottlingConfig struct {
 	WorkHours WorkHoursConfig `yaml:"work_hours" json:"work_hours"`
 }
 
-// TierBindingConfig 阶梯绑定配置
+// TierBindingConfig 阶梯绑定配置 (支持单一资源或多资源池化绑定)
 type TierBindingConfig struct {
-	Resource       string `yaml:"resource" json:"resource"`
-	TimeoutSeconds int    `yaml:"timeout_seconds" json:"timeout_seconds"`
+	Resource       string   `yaml:"resource" json:"resource"`
+	Resources      []string `yaml:"resources" json:"resources"`
+	TimeoutSeconds int      `yaml:"timeout_seconds" json:"timeout_seconds"`
+}
+
+// GetResources 获取该阶段绑定的所有候选算力节点列表（兼容旧版单选与新版多选）
+func (tb *TierBindingConfig) GetResources() []string {
+	if len(tb.Resources) > 0 {
+		return tb.Resources
+	}
+	if tb.Resource != "" {
+		return []string{tb.Resource}
+	}
+	return nil
 }
 
 // DebateTiersConfig 辩论阶梯流水线配置 (3 层组织映射 4 大角色)
@@ -385,6 +397,30 @@ func (c *Config) SyncLegacy() {
 	}
 }
 
+// FindResource 根据 ID 或 Driver 查找匹配的算力资源配置
+func (c *Config) FindResource(id string) *ComputeResourceConfig {
+	for i := range c.LLM.Resources {
+		if c.LLM.Resources[i].ID == id || c.LLM.Resources[i].Driver == id {
+			return &c.LLM.Resources[i]
+		}
+	}
+	return nil
+}
+
+// GetTierResources 获取指定阶段阶梯配置的候选资源列表
+func (c *Config) GetTierResources(tier string) []string {
+	var binding TierBindingConfig
+	switch tier {
+	case "tier1_fast", "tier1_hunter":
+		binding = c.Scanner.Debate.Tiers.Tier1Hunter
+	case "tier2_reasoning":
+		binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+	case "tier3_synthesis":
+		binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+	}
+	return binding.GetResources()
+}
+
 // GetTierConfig 智能获取指定 Tier 的配置（支持新版绑定与旧版向后兼容兜底）
 func (c *Config) GetTierConfig(tier string) TierConfig {
 	// 1. 优先从新版 Scanner.Debate.Tiers 中查找对应 Resource
@@ -398,25 +434,25 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 		binding = c.Scanner.Debate.Tiers.Tier3Synthesis
 	}
 
-	if binding.Resource != "" {
-		// 在 LLM.Resources 中定位对应资源
-		for _, res := range c.LLM.Resources {
-			if res.ID == binding.Resource {
-				timeout := binding.TimeoutSeconds
-				if timeout <= 0 {
-					timeout = 600
-				}
-				return TierConfig{
-					Backend:        res.Driver,
-					Model:          res.Model,
-					Concurrent:     res.Concurrent,
-					TimeoutSeconds: timeout,
-				}
+	resources := binding.GetResources()
+	if len(resources) > 0 {
+		primaryResID := resources[0]
+		// 在 LLM.Resources 中定位首选资源
+		if res := c.FindResource(primaryResID); res != nil {
+			timeout := binding.TimeoutSeconds
+			if timeout <= 0 {
+				timeout = 600
+			}
+			return TierConfig{
+				Backend:        res.Driver,
+				Model:          res.Model,
+				Concurrent:     res.Concurrent,
+				TimeoutSeconds: timeout,
 			}
 		}
 		// 若 Resource ID 为 driver 名称（如 "agy", "native", "opencode"）
 		return TierConfig{
-			Backend:        binding.Resource,
+			Backend:        primaryResID,
 			Concurrent:     5,
 			TimeoutSeconds: binding.TimeoutSeconds,
 		}

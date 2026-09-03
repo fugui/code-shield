@@ -91,7 +91,8 @@ interface RunningTaskInfo {
 }
 
 interface DebateTierItem {
-  resource: string;
+  resource?: string;
+  resources?: string[];
   timeout_seconds: number;
 }
 
@@ -670,16 +671,23 @@ export default function SystemDebug() {
               <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
                 Tier 1: 初筛猎手 (Hunter)
               </strong>
-              <span className="code-debug-tier-box__badge">
-                {data?.debate_pipeline?.tiers?.tier1_hunter?.resource || 'agy'}
-              </span>
+              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                {(data?.debate_pipeline?.tiers?.tier1_hunter?.resources?.length
+                  ? data.debate_pipeline.tiers.tier1_hunter.resources
+                  : [data?.debate_pipeline?.tiers?.tier1_hunter?.resource || 'agy']
+                ).map(r => (
+                  <span key={r} className="code-debug-tier-box__badge">
+                    {r}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="code-debug-tier-box__role">
               角色职责：Thick Agent 自主遍历文件树，初筛可疑代码片段并生成初始候选点
             </div>
             <div className="code-debug-tier-box__meta">
               <span>单片时限: {data?.debate_pipeline?.tiers?.tier1_hunter?.timeout_seconds || 1200} 秒</span>
-              <span>执行引擎: Thick Agent</span>
+              <span>执行引擎: Thick Agent {(data?.debate_pipeline?.tiers?.tier1_hunter?.resources?.length || 0) > 1 ? '(多节点负载打散)' : ''}</span>
             </div>
           </div>
 
@@ -689,16 +697,23 @@ export default function SystemDebug() {
               <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
                 Tier 2: 深度对抗与裁决 (Reasoning)
               </strong>
-              <span className="code-debug-tier-box__badge" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
-                {data?.debate_pipeline?.tiers?.tier2_reasoning?.resource || 'agy'}
-              </span>
+              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                {(data?.debate_pipeline?.tiers?.tier2_reasoning?.resources?.length
+                  ? data.debate_pipeline.tiers.tier2_reasoning.resources
+                  : [data?.debate_pipeline?.tiers?.tier2_reasoning?.resource || 'agy']
+                ).map(r => (
+                  <span key={r} className="code-debug-tier-box__badge" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
+                    {r}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="code-debug-tier-box__role">
               角色职责：统一承载 Challenger 辩护与 Judge 终审，事实链交叉推演与反向仲裁
             </div>
             <div className="code-debug-tier-box__meta">
               <span>单片时限: {data?.debate_pipeline?.tiers?.tier2_reasoning?.timeout_seconds || 1800} 秒</span>
-              <span>执行引擎: 逻辑强推理</span>
+              <span>执行引擎: 逻辑强推理 {(data?.debate_pipeline?.tiers?.tier2_reasoning?.resources?.length || 0) > 1 ? '(候选池分流)' : ''}</span>
             </div>
           </div>
 
@@ -708,9 +723,16 @@ export default function SystemDebug() {
               <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
                 Tier 3: 全仓态势汇总 (Synthesis)
               </strong>
-              <span className="code-debug-tier-box__badge" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
-                {data?.debate_pipeline?.tiers?.tier3_synthesis?.resource || 'native'}
-              </span>
+              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                {(data?.debate_pipeline?.tiers?.tier3_synthesis?.resources?.length
+                  ? data.debate_pipeline.tiers.tier3_synthesis.resources
+                  : [data?.debate_pipeline?.tiers?.tier3_synthesis?.resource || 'native']
+                ).map(r => (
+                  <span key={r} className="code-debug-tier-box__badge" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
+                    {r}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="code-debug-tier-box__role">
               角色职责：纯文本与 JSON 结构化排版汇总，风险评分与全仓扫描诊断报告聚合

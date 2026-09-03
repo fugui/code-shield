@@ -717,6 +717,66 @@ type TierRouter struct {
 	dispatcher *ModelDispatcher
 }
 
+// PickBestCandidateResource 在多个候选 Resource ID / Driver 中根据实时活跃槽位和并发水位选择当前最空闲的算力节点
+func (d *ModelDispatcher) PickBestCandidateResource(candidateIDs []string) (string, string) {
+	if d == nil || !d.enabled || len(candidateIDs) == 0 {
+		return "", ""
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	info := d.getEffectiveScaleInfoLocked(time.Now())
+	scale := info.EffectiveScale
+
+	var bestRes *ModelResource
+	var bestBackend string
+	var bestModelName string
+	bestLoadRatio := 999.0
+	minActive := 999999
+
+	for _, id := range candidateIDs {
+		for _, res := range d.resources {
+			matches := (res.ID != "" && res.ID == id) ||
+				(res.Driver != "" && res.Driver == id) ||
+				(res.ModelName(id) != "")
+
+			if !matches {
+				continue
+			}
+
+			driver := res.Driver
+			if driver == "" {
+				driver = id
+			}
+			model := res.Model
+			if model == "" {
+				model = res.ModelName(driver)
+			}
+
+			limit := calculateLimit(res.Concurrent, scale)
+			loadRatio := float64(res.Active)
+			if limit > 0 {
+				loadRatio = float64(res.Active) / float64(limit)
+			}
+			hasCapacity := limit > 0 && res.Active < limit
+			bestHasCapacity := (bestRes != nil && bestRes.Active < calculateLimit(bestRes.Concurrent, scale))
+
+			// 优先选择有空余槽位 (Active < limit) 且负载率更低的节点
+			if bestRes == nil || (hasCapacity && !bestHasCapacity) ||
+				(hasCapacity == bestHasCapacity && (loadRatio < bestLoadRatio || (loadRatio == bestLoadRatio && res.Active < minActive))) {
+				bestRes = res
+				bestBackend = driver
+				bestModelName = model
+				bestLoadRatio = loadRatio
+				minActive = res.Active
+			}
+		}
+	}
+
+	return bestBackend, bestModelName
+}
+
 // GlobalTierRouter 全局阶梯路由器实例
 var GlobalTierRouter *TierRouter
 
@@ -736,18 +796,34 @@ func GetTierRouter() *TierRouter {
 	return GlobalTierRouter
 }
 
-// AcquireTier 解析指定阶梯的路由配置（物理槽位并发由底层的 DispatchingInvoker 统一安全管理，避免双重加锁自锁）
+// AcquireTier 解析指定阶梯的路由配置，支持多资源池化（Multi-Resource Pooling）动态择优调度
 func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, overrideBackend string) (*TierAcquisition, error) {
 	tierCfg := models.AppConfig.GetTierConfig(tierName)
 	backend := tierCfg.Backend
+	modelName := tierCfg.Model
+
 	if overrideBackend != "" {
 		backend = overrideBackend
+	} else {
+		// 检查该阶梯是否配置了多个资源候选池 (例如 tier1_hunter 绑定 ["agy", "opencode"])
+		candidateResources := models.AppConfig.GetTierResources(tierName)
+		if len(candidateResources) > 1 && tr.dispatcher != nil && tr.dispatcher.enabled {
+			bestBackend, bestModel := tr.dispatcher.PickBestCandidateResource(candidateResources)
+			if bestBackend != "" {
+				backend = bestBackend
+				modelName = bestModel
+			}
+		} else if len(candidateResources) == 1 {
+			if res := models.AppConfig.FindResource(candidateResources[0]); res != nil {
+				backend = res.Driver
+				modelName = res.Model
+			}
+		}
 	}
+
 	if backend == "" {
 		backend = models.AppConfig.AI.Backend
 	}
-
-	modelName := tierCfg.Model
 
 	acq := &TierAcquisition{
 		Backend:   backend,
