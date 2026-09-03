@@ -47,13 +47,13 @@ func NewNativeInvoker() *NativeInvoker {
 		client: &http.Client{
 			Transport: &http.Transport{
 				DialContext: (&net.Dialer{
-					Timeout:   5 * time.Second,
-					KeepAlive: 30 * time.Second,
+					Timeout:   30 * time.Second,
+					KeepAlive: 60 * time.Second,
 				}).DialContext,
-				TLSHandshakeTimeout: 5 * time.Second,
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 20,
-				IdleConnTimeout:     90 * time.Second,
+				TLSHandshakeTimeout: 15 * time.Second,
+				MaxIdleConns:        200,
+				MaxIdleConnsPerHost: 50,
+				IdleConnTimeout:     120 * time.Second,
 				DisableKeepAlives:   false,
 			},
 		},
@@ -204,17 +204,37 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 
 	userContent := req.PromptMsg
 	// 若传递了 InputFiles 且 Prompt 中未包含对应文件内容，且文件存在，附带作为上下文
+	// 加入 Token 软截断守卫：单文件最多保留 64KB，总附加文件内容最多保留 256KB，防止撑爆 128K 窗口
 	if len(req.InputFiles) > 0 && userContent != "" {
+		const (
+			maxSingleFileSize = 64 * 1024  // 64KB
+			maxTotalExtraSize = 256 * 1024 // 256KB
+		)
+		totalExtraSize := 0
 		for _, f := range req.InputFiles {
+			if totalExtraSize >= maxTotalExtraSize {
+				userContent += fmt.Sprintf("\n\n--- 附带输入文件 (%s) 已省略 (超出 256KB 上下文保护上限) ---\n", f)
+				continue
+			}
 			absPath := f
 			if !filepath.IsAbs(absPath) && req.WorkDir != "" {
 				absPath = filepath.Join(req.WorkDir, f)
 			}
-			if fi, err := os.Stat(absPath); err == nil && !fi.IsDir() && fi.Size() < 512*1024 {
+			if fi, err := os.Stat(absPath); err == nil && !fi.IsDir() {
 				if fileBytes, err := os.ReadFile(absPath); err == nil {
+					isTruncated := false
+					if len(fileBytes) > maxSingleFileSize {
+						fileBytes = fileBytes[:maxSingleFileSize]
+						isTruncated = true
+					}
 					// 仅在 userContent 尚未包含文件正文时追加
-					if !strings.Contains(userContent, string(fileBytes)) {
-						userContent += fmt.Sprintf("\n\n--- 附带输入文件内容 (%s) ---\n%s\n", f, string(fileBytes))
+					contentStr := string(fileBytes)
+					if !strings.Contains(userContent, contentStr) {
+						if isTruncated {
+							contentStr += "\n... [单文件超过 64KB 已自动软截断，保护 128K 上下文] ..."
+						}
+						userContent += fmt.Sprintf("\n\n--- 附带输入文件内容 (%s) ---\n%s\n", f, contentStr)
+						totalExtraSize += len(fileBytes)
 					}
 				}
 			}

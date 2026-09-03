@@ -495,8 +495,15 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle, o
 	return &hunterOut, tokens, nil
 }
 
-// runChallengerStage 运行辩护人对抗阶段 (Tier 2 强推理模型)
+// defaultMaxCandidatesPerBatch 辩论与仲裁阶段单批次处理候选数上限（防 128K 溢出并显著降低单次推理延迟）
+const defaultMaxCandidatesPerBatch = 5
+
+// runChallengerStage 运行辩护人对抗阶段 (Tier 2 强推理模型，支持分批切拆与聚合以防御 128K 窗口溢出与超时)
 func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, outPath string) (*ChallengerOutput, int64, error) {
+	if len(hunterOut.Candidates) == 0 {
+		return &ChallengerOutput{}, 0, nil
+	}
+
 	router := GetTierRouter()
 	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", "")
 	if err != nil {
@@ -504,22 +511,95 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 	}
 	defer acq.Release()
 
-	prompt := buildChallengerPrompt(ctx, bundle, hunterOut)
 	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds)
-	if err != nil {
-		return nil, tokens, err
+
+	// 1. 拆分批次 (Batching)
+	var batches [][]HunterCandidate
+	for i := 0; i < len(hunterOut.Candidates); i += defaultMaxCandidatesPerBatch {
+		end := i + defaultMaxCandidatesPerBatch
+		if end > len(hunterOut.Candidates) {
+			end = len(hunterOut.Candidates)
+		}
+		batches = append(batches, hunterOut.Candidates[i:end])
 	}
 
-	var challOut ChallengerOutput
-	if parseErr := parseJSONFromAIOutput(rawOutput, &challOut, ctx.codesPath); parseErr != nil {
-		challOut.Summary = rawOutput
+	var mergedChallengerOut ChallengerOutput
+	var totalTokens int64
+	var batchSummaries []string
+
+	// 2. 逐批调用辩护人
+	for bIdx, batch := range batches {
+		subHunterOut := &HunterOutput{
+			Candidates: sanitizeCandidatesForPrompt(batch),
+			Summary:    hunterOut.Summary,
+		}
+		prompt := buildChallengerPrompt(ctx, bundle, subHunterOut)
+
+		// 为避免多批次输出覆盖，生成子批次临时输出路径
+		subOutPath := outPath
+		if len(batches) > 1 && outPath != "" {
+			subOutPath = fmt.Sprintf("%s.batch-%d.tmp", outPath, bIdx+1)
+		}
+
+		if len(batches) > 1 {
+			log.Printf("[DebateEngine] Bundle [%s]: Invoking Challenger Batch %d/%d (Candidates: %d)...",
+				bundle.Name, bIdx+1, len(batches), len(batch))
+		}
+
+		rawOutput, tokens, callErr := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, subOutPath, tierCfg.TimeoutSeconds)
+		if len(batches) > 1 && subOutPath != "" && subOutPath != outPath {
+			_ = os.Remove(subOutPath)
+		}
+
+		totalTokens += tokens
+		if callErr != nil {
+			log.Printf("[DebateEngine] Warning: Challenger Batch %d/%d failed (%v), degrading this batch", bIdx+1, len(batches), callErr)
+			// 该批次降级，为该批次内的每个候选缺陷生成兜底辩护记录
+			for _, cand := range batch {
+				mergedChallengerOut.DefenseCases = append(mergedChallengerOut.DefenseCases, ChallengerDefenseCase{
+					CandidateID:       cand.CandidateID,
+					DefenseVerdict:    "CHALLENGE_FAILED",
+					MitigatingFactors: "[Challenger Degraded: 辩护人该批次调用超时，请法官独立基于源码客观裁决]",
+				})
+			}
+			batchSummaries = append(batchSummaries, fmt.Sprintf("[Batch %d Degraded: %v]", bIdx+1, callErr))
+			continue
+		}
+
+		var challSubOut ChallengerOutput
+		if parseErr := parseJSONFromAIOutput(rawOutput, &challSubOut, ctx.codesPath); parseErr != nil {
+			challSubOut.Summary = rawOutput
+		}
+
+		mergedChallengerOut.DefenseCases = append(mergedChallengerOut.DefenseCases, challSubOut.DefenseCases...)
+		if challSubOut.Summary != "" {
+			batchSummaries = append(batchSummaries, challSubOut.Summary)
+		}
 	}
-	return &challOut, tokens, nil
+
+	mergedChallengerOut.Summary = strings.Join(batchSummaries, " | ")
+
+	// 若所有批次全部失败且没有有效结果
+	if len(mergedChallengerOut.DefenseCases) == 0 {
+		return nil, totalTokens, fmt.Errorf("all challenger batches failed")
+	}
+
+	// 最终聚合写入 outPath
+	if outPath != "" {
+		if outBytes, jsonErr := json.MarshalIndent(mergedChallengerOut, "", "  "); jsonErr == nil {
+			_ = os.WriteFile(outPath, outBytes, 0644)
+		}
+	}
+
+	return &mergedChallengerOut, totalTokens, nil
 }
 
-// runJudgeStage 运行终审法官阶段 (Tier 2 强推理模型)
+// runJudgeStage 运行终审法官阶段 (Tier 2 强推理模型，支持分批切拆与聚合以防御 128K 窗口溢出与超时)
 func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, challengerOut *ChallengerOutput, outPath string) (*JudgeOutput, int64, error) {
+	if len(hunterOut.Candidates) == 0 {
+		return &JudgeOutput{}, 0, nil
+	}
+
 	router := GetTierRouter()
 	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", "")
 	if err != nil {
@@ -527,18 +607,99 @@ func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hu
 	}
 	defer acq.Release()
 
-	prompt := buildJudgePrompt(ctx, bundle, hunterOut, challengerOut)
 	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds)
-	if err != nil {
-		return nil, tokens, err
+
+	// 建立 Case 查找映射以方便子批次提取
+	caseMap := make(map[string]ChallengerDefenseCase)
+	if challengerOut != nil {
+		for _, dc := range challengerOut.DefenseCases {
+			caseMap[dc.CandidateID] = dc
+		}
 	}
 
-	var judgeOut JudgeOutput
-	if parseErr := parseJSONFromAIOutput(rawOutput, &judgeOut, ctx.codesPath); parseErr != nil {
-		return nil, tokens, fmt.Errorf("failed to parse judge JSON: %w (raw: %s)", parseErr, rawOutput)
+	// 1. 拆分批次 (Batching)
+	var batches [][]HunterCandidate
+	for i := 0; i < len(hunterOut.Candidates); i += defaultMaxCandidatesPerBatch {
+		end := i + defaultMaxCandidatesPerBatch
+		if end > len(hunterOut.Candidates) {
+			end = len(hunterOut.Candidates)
+		}
+		batches = append(batches, hunterOut.Candidates[i:end])
 	}
-	return &judgeOut, tokens, nil
+
+	var mergedJudgeOut JudgeOutput
+	var totalTokens int64
+
+	// 2. 逐批调用法官裁决
+	for bIdx, batch := range batches {
+		var subDefenseCases []ChallengerDefenseCase
+		for _, c := range batch {
+			if dc, ok := caseMap[c.CandidateID]; ok {
+				subDefenseCases = append(subDefenseCases, dc)
+			}
+		}
+
+		subHunterOut := &HunterOutput{
+			Candidates: sanitizeCandidatesForPrompt(batch),
+			Summary:    hunterOut.Summary,
+		}
+		var summary string
+		if challengerOut != nil {
+			summary = challengerOut.Summary
+		}
+		subChallOut := &ChallengerOutput{
+			DefenseCases: subDefenseCases,
+			Summary:      summary,
+		}
+
+		prompt := buildJudgePrompt(ctx, bundle, subHunterOut, subChallOut)
+
+		subOutPath := outPath
+		if len(batches) > 1 && outPath != "" {
+			subOutPath = fmt.Sprintf("%s.judge-batch-%d.tmp", outPath, bIdx+1)
+		}
+
+		if len(batches) > 1 {
+			log.Printf("[DebateEngine] Bundle [%s]: Invoking Judge Batch %d/%d (Candidates: %d)...",
+				bundle.Name, bIdx+1, len(batches), len(batch))
+		}
+
+		rawOutput, tokens, callErr := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, subOutPath, tierCfg.TimeoutSeconds)
+		if len(batches) > 1 && subOutPath != "" && subOutPath != outPath {
+			_ = os.Remove(subOutPath)
+		}
+
+		totalTokens += tokens
+		if callErr != nil {
+			log.Printf("[DebateEngine] Warning: Judge Batch %d/%d failed (%v), fallback this batch to Hunter claims", bIdx+1, len(batches), callErr)
+			fbJudge := fallbackJudgeFromHunter(&HunterOutput{Candidates: batch})
+			mergedJudgeOut.FinalVerdicts = append(mergedJudgeOut.FinalVerdicts, fbJudge.FinalVerdicts...)
+			continue
+		}
+
+		var subJudgeOut JudgeOutput
+		if parseErr := parseJSONFromAIOutput(rawOutput, &subJudgeOut, ctx.codesPath); parseErr != nil {
+			log.Printf("[DebateEngine] Warning: Judge Batch %d/%d JSON parse failed (%v), fallback this batch", bIdx+1, len(batches), parseErr)
+			fbJudge := fallbackJudgeFromHunter(&HunterOutput{Candidates: batch})
+			mergedJudgeOut.FinalVerdicts = append(mergedJudgeOut.FinalVerdicts, fbJudge.FinalVerdicts...)
+			continue
+		}
+
+		mergedJudgeOut.FinalVerdicts = append(mergedJudgeOut.FinalVerdicts, subJudgeOut.FinalVerdicts...)
+	}
+
+	if len(mergedJudgeOut.FinalVerdicts) == 0 {
+		return nil, totalTokens, fmt.Errorf("all judge batches failed")
+	}
+
+	// 最终聚合写入 outPath
+	if outPath != "" {
+		if outBytes, jsonErr := json.MarshalIndent(mergedJudgeOut, "", "  "); jsonErr == nil {
+			_ = os.WriteFile(outPath, outBytes, 0644)
+		}
+	}
+
+	return &mergedJudgeOut, totalTokens, nil
 }
 
 // fallbackJudgeFromHunter 当法官或辩论失败时的兜底构造
@@ -649,8 +810,44 @@ func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
 	return sb.String()
 }
 
+// sanitizeCandidateSnippet 对单个候选缺陷的原始代码片段进行上下文保护软截断（防超长代码撑爆 128K 窗口）
+func sanitizeCandidateSnippet(snippet string) string {
+	lines := strings.Split(snippet, "\n")
+	const maxLines = 150
+	const maxChars = 4000
+	if len(lines) <= maxLines && len(snippet) <= maxChars {
+		return snippet
+	}
+
+	if len(lines) > maxLines {
+		keepHead := 80
+		keepTail := 40
+		omitted := len(lines) - keepHead - keepTail
+		headPart := strings.Join(lines[:keepHead], "\n")
+		tailPart := strings.Join(lines[len(lines)-keepTail:], "\n")
+		snippet = fmt.Sprintf("%s\n\n// ... [代码片段过长已自动折叠截断，已省略 %d 行，保护 128K 上下文] ...\n\n%s", headPart, omitted, tailPart)
+	}
+
+	if len(snippet) > maxChars {
+		snippet = snippet[:maxChars] + "\n// ... [代码字符超过 4000 已软截断] ..."
+	}
+	return snippet
+}
+
+// sanitizeCandidatesForPrompt 返回经过 Snippet 软截断保护的候选列表拷贝
+func sanitizeCandidatesForPrompt(candidates []HunterCandidate) []HunterCandidate {
+	sanitized := make([]HunterCandidate, len(candidates))
+	for i, c := range candidates {
+		cCopy := c
+		cCopy.CodeSnippet = sanitizeCandidateSnippet(c.CodeSnippet)
+		sanitized[i] = cCopy
+	}
+	return sanitized
+}
+
 func buildChallengerPrompt(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput) string {
-	candJSON, _ := json.MarshalIndent(hunterOut.Candidates, "", "  ")
+	candidates := sanitizeCandidatesForPrompt(hunterOut.Candidates)
+	candJSON, _ := json.MarshalIndent(candidates, "", "  ")
 
 	var sb strings.Builder
 	sb.WriteString("# Role: Code-Shield 代码安全辩护人 (Challenger Agent)\n\n")
@@ -665,8 +862,13 @@ func buildChallengerPrompt(ctx *taskContext, bundle SemanticBundle, hunterOut *H
 }
 
 func buildJudgePrompt(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, challOut *ChallengerOutput) string {
-	hJSON, _ := json.MarshalIndent(hunterOut.Candidates, "", "  ")
-	cJSON, _ := json.MarshalIndent(challOut.DefenseCases, "", "  ")
+	candidates := sanitizeCandidatesForPrompt(hunterOut.Candidates)
+	hJSON, _ := json.MarshalIndent(candidates, "", "  ")
+	var cCases []ChallengerDefenseCase
+	if challOut != nil {
+		cCases = challOut.DefenseCases
+	}
+	cJSON, _ := json.MarshalIndent(cCases, "", "  ")
 
 	var sb strings.Builder
 	sb.WriteString("# Role: Code-Shield 漏洞终审法官 (Judge Agent)\n\n")

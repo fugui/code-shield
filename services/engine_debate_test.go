@@ -3,6 +3,8 @@ package services
 import (
 	"code-shield/models"
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,3 +189,268 @@ func TestSanitizeJSONForPostgresJSONB(t *testing.T) {
 		t.Errorf("sanitized JSON should not contain null bytes or \\u0000, got: %s", s)
 	}
 }
+
+func TestSanitizeCandidateSnippet(t *testing.T) {
+	// 1. 短片段不应被截断
+	shortCode := "int x = 1;\nint y = 2;\nreturn x + y;"
+	if got := sanitizeCandidateSnippet(shortCode); got != shortCode {
+		t.Errorf("short snippet should not be modified, got: %s", got)
+	}
+
+	// 2. 超长行数应被折叠，保留首尾
+	var sb strings.Builder
+	for i := 1; i <= 200; i++ {
+		sb.WriteString("line " + string(rune('0'+(i%10))) + "\n")
+	}
+	longCode := sb.String()
+	sanitized := sanitizeCandidateSnippet(longCode)
+	if !strings.Contains(sanitized, "代码片段过长已自动折叠截断") {
+		t.Errorf("long snippet should contain folding message, got: %s", sanitized)
+	}
+	if !strings.HasPrefix(sanitized, "line 1") {
+		t.Errorf("sanitized snippet should retain head lines")
+	}
+}
+
+// debateMockInvoker 用于测试分批调用时的 Mock Invoker
+type debateMockInvoker struct {
+	name      string
+	callCount int
+	handler   func(req AIRequest) error
+}
+
+func (m *debateMockInvoker) Name() string { return m.name }
+func (m *debateMockInvoker) Invoke(req AIRequest) error {
+	m.callCount++
+	if m.handler != nil {
+		return m.handler(req)
+	}
+	return nil
+}
+
+func TestDebateEngine_ChallengerBatching(t *testing.T) {
+	// 模拟 12 个候选缺陷，预期被切分为 3 批（5 + 5 + 2）
+	var candidates []HunterCandidate
+	for i := 1; i <= 12; i++ {
+		candidates = append(candidates, HunterCandidate{
+			CandidateID: fmt.Sprintf("CAND-%03d", i),
+			FilePath:    "src/test.cc",
+			TriggerLine: "int *p = nullptr;",
+			CodeSnippet: "short snippet",
+		})
+	}
+
+	mockBackend := "mock-challenger-batch"
+	mock := &debateMockInvoker{
+		name: mockBackend,
+		handler: func(req AIRequest) error {
+			// 根据 prompt 中包含的 candidate 生成对应的辩护结果
+			var cases []ChallengerDefenseCase
+			for i := 1; i <= 12; i++ {
+				cid := fmt.Sprintf("CAND-%03d", i)
+				if strings.Contains(req.PromptMsg, cid) {
+					cases = append(cases, ChallengerDefenseCase{
+						CandidateID:    cid,
+						DefenseVerdict: "DEFENSE_SUCCESSFUL",
+					})
+				}
+			}
+			out := ChallengerOutput{
+				DefenseCases: cases,
+				Summary:      "batch summary",
+			}
+			data, _ := json.Marshal(out)
+			return os.WriteFile(req.OutputPath, data, 0644)
+		},
+	}
+	RegisterAIInvoker(mockBackend, mock)
+
+	models.AppConfig.AI.Tiers.Tier2Reasoning = models.TierConfig{
+		Backend:        mockBackend,
+		TimeoutSeconds: 10,
+	}
+
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "merged_challenger.json")
+	engine := &DebateEngine{}
+	taskCtx := &taskContext{
+		ctx:       context.Background(),
+		codesPath: tempDir,
+	}
+
+	hunterOut := &HunterOutput{
+		Candidates: candidates,
+		Summary:    "12 candidates found",
+	}
+
+	challOut, tokens, err := engine.runChallengerStage(taskCtx, SemanticBundle{Name: "test-bundle"}, hunterOut, outPath)
+	if err != nil {
+		t.Fatalf("runChallengerStage failed: %v", err)
+	}
+
+	// 预期调用次数为 3 次（12 / 5 向上取整）
+	if mock.callCount != 3 {
+		t.Errorf("expected 3 batch invocations, got %d", mock.callCount)
+	}
+
+	// 预期合并后的辩护案例数量为 12 个
+	if len(challOut.DefenseCases) != 12 {
+		t.Errorf("expected 12 defense cases merged, got %d", len(challOut.DefenseCases))
+	}
+
+	if tokens <= 0 {
+		t.Errorf("expected tokens > 0, got %d", tokens)
+	}
+
+	// 验证最终合并文件被正确写入
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Fatalf("merged output file %s does not exist", outPath)
+	}
+}
+
+func TestDebateEngine_JudgeBatching(t *testing.T) {
+	// 模拟 12 个候选缺陷及对应的辩护结果
+	var candidates []HunterCandidate
+	var defenseCases []ChallengerDefenseCase
+	for i := 1; i <= 12; i++ {
+		cid := fmt.Sprintf("CAND-%03d", i)
+		candidates = append(candidates, HunterCandidate{
+			CandidateID: cid,
+			FilePath:    "src/test.cc",
+			TriggerLine: "int *p = nullptr;",
+		})
+		defenseCases = append(defenseCases, ChallengerDefenseCase{
+			CandidateID:    cid,
+			DefenseVerdict: "DEFENSE_SUCCESSFUL",
+		})
+	}
+
+	mockBackend := "mock-judge-batch"
+	mock := &debateMockInvoker{
+		name: mockBackend,
+		handler: func(req AIRequest) error {
+			var verdicts []JudgeFinalVerdict
+			for i := 1; i <= 12; i++ {
+				cid := fmt.Sprintf("CAND-%03d", i)
+				if strings.Contains(req.PromptMsg, cid) {
+					verdicts = append(verdicts, JudgeFinalVerdict{
+						CandidateID:        cid,
+						Verdict:            models.DebateVerdictConfirmed,
+						Title:              "Title for " + cid,
+						JudgementRationale: "Confirmed based on facts",
+					})
+				}
+			}
+			out := JudgeOutput{FinalVerdicts: verdicts}
+			data, _ := json.Marshal(out)
+			return os.WriteFile(req.OutputPath, data, 0644)
+		},
+	}
+	RegisterAIInvoker(mockBackend, mock)
+
+	models.AppConfig.AI.Tiers.Tier2Reasoning = models.TierConfig{
+		Backend:        mockBackend,
+		TimeoutSeconds: 10,
+	}
+
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "merged_judge.json")
+	engine := &DebateEngine{}
+	taskCtx := &taskContext{
+		ctx:       context.Background(),
+		codesPath: tempDir,
+	}
+
+	hunterOut := &HunterOutput{Candidates: candidates}
+	challOut := &ChallengerOutput{DefenseCases: defenseCases}
+
+	judgeOut, tokens, err := engine.runJudgeStage(taskCtx, SemanticBundle{Name: "test-bundle"}, hunterOut, challOut, outPath)
+	if err != nil {
+		t.Fatalf("runJudgeStage failed: %v", err)
+	}
+
+	if mock.callCount != 3 {
+		t.Errorf("expected 3 judge batch invocations, got %d", mock.callCount)
+	}
+
+	if len(judgeOut.FinalVerdicts) != 12 {
+		t.Errorf("expected 12 final verdicts merged, got %d", len(judgeOut.FinalVerdicts))
+	}
+
+	if tokens <= 0 {
+		t.Errorf("expected tokens > 0, got %d", tokens)
+	}
+
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Fatalf("merged judge output file %s does not exist", outPath)
+	}
+}
+
+func TestDebateEngine_ChallengerPartialFailure(t *testing.T) {
+	// 模拟 10 个候选（2 批，各 5 个），第 2 批调用失败，验证第 1 批正常保留、第 2 批降级容错
+	var candidates []HunterCandidate
+	for i := 1; i <= 10; i++ {
+		candidates = append(candidates, HunterCandidate{
+			CandidateID: string(rune('A'+i-1)) + "-001",
+			FilePath:    "src/test.cc",
+		})
+	}
+
+	callIdx := 0
+	mockBackend := "mock-challenger-partial"
+	mock := &debateMockInvoker{
+		name: mockBackend,
+		handler: func(req AIRequest) error {
+			callIdx++
+			if callIdx == 2 {
+				return context.DeadlineExceeded // 模拟第 2 批超时
+			}
+			// 第 1 批正常成功
+			var cases []ChallengerDefenseCase
+			for i := 1; i <= 5; i++ {
+				cases = append(cases, ChallengerDefenseCase{
+					CandidateID:    string(rune('A'+i-1)) + "-001",
+					DefenseVerdict: "DEFENSE_SUCCESSFUL",
+				})
+			}
+			data, _ := json.Marshal(ChallengerOutput{DefenseCases: cases})
+			return os.WriteFile(req.OutputPath, data, 0644)
+		},
+	}
+	RegisterAIInvoker(mockBackend, mock)
+
+	models.AppConfig.AI.Tiers.Tier2Reasoning = models.TierConfig{
+		Backend:        mockBackend,
+		TimeoutSeconds: 10,
+	}
+
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "partial_challenger.json")
+	engine := &DebateEngine{}
+	taskCtx := &taskContext{
+		ctx:       context.Background(),
+		codesPath: tempDir,
+	}
+
+	hunterOut := &HunterOutput{Candidates: candidates}
+	challOut, _, err := engine.runChallengerStage(taskCtx, SemanticBundle{Name: "test-bundle"}, hunterOut, outPath)
+	if err != nil {
+		t.Fatalf("expected partial degradation success, but got error: %v", err)
+	}
+
+	if len(challOut.DefenseCases) != 10 {
+		t.Fatalf("expected 10 total cases (5 normal + 5 degraded), got %d", len(challOut.DefenseCases))
+	}
+
+	// 检查第 1 批与第 2 批的判定状态
+	if challOut.DefenseCases[0].DefenseVerdict != "DEFENSE_SUCCESSFUL" {
+		t.Errorf("batch 1 should be DEFENSE_SUCCESSFUL, got %s", challOut.DefenseCases[0].DefenseVerdict)
+	}
+	if challOut.DefenseCases[5].DefenseVerdict != "CHALLENGE_FAILED" {
+		t.Errorf("batch 2 should be CHALLENGE_FAILED, got %s", challOut.DefenseCases[5].DefenseVerdict)
+	}
+	if !strings.Contains(challOut.DefenseCases[5].MitigatingFactors, "Challenger Degraded") {
+		t.Errorf("batch 2 should contain degraded note, got %s", challOut.DefenseCases[5].MitigatingFactors)
+	}
+}
+
