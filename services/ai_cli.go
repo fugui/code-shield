@@ -12,16 +12,17 @@ import (
 
 // AIRequest 封装一次 AI CLI 调用所需的全部参数（与具体 CLI 无关）
 type AIRequest struct {
-	ParentContext context.Context // 父 context，支持提前取消
-	WorkDir       string          // 执行目录（代码仓根目录）
-	PromptFile    string          // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
-	PromptMsg     string          // 用户提示消息
-	InputFiles    []string        // 需要分析的文件列表（相对路径），AI 自行读取
-	OutputPath    string          // AI 输出文档的目标路径
-	TimeoutMin    int             // 执行超时（分钟），0 表示默认 60 分钟
-	ModelName     string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
-	Temperature   *float64        // 新增：可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
-	Env           []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
+	ParentContext  context.Context // 父 context，支持提前取消
+	WorkDir        string          // 执行目录（代码仓根目录）
+	PromptFile     string          // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
+	PromptMsg      string          // 用户提示消息
+	InputFiles     []string        // 需要分析的文件列表（相对路径），AI 自行读取
+	OutputPath     string          // AI 输出文档的目标路径
+	TimeoutMin     int             // 执行超时（分钟），0 表示默认 60 分钟
+	ModelName      string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
+	Temperature    *float64        // 新增：可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
+	ResponseFormat string          // 请求期望输出格式："json"（强制 json_object 结构化模式）、"text"/"markdown"（普通文本排版模式）或 ""（默认文本）
+	Env            []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
 }
 
 // AIInvoker 定义了 AI CLI 调用的统一接口。
@@ -132,12 +133,13 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 
 	zeroTemp := 0.0
 	req := AIRequest{
-		WorkDir:     workDir,
-		PromptMsg:   repairMsg + "\n\n" + string(rawContent),
-		InputFiles:  []string{jsonFilePath},
-		OutputPath:  fixedPath,
-		TimeoutMin:  2,
-		Temperature: &zeroTemp,
+		WorkDir:        workDir,
+		PromptMsg:      repairMsg + "\n\n" + string(rawContent),
+		InputFiles:     []string{jsonFilePath},
+		OutputPath:     fixedPath,
+		TimeoutMin:     2,
+		Temperature:    &zeroTemp,
+		ResponseFormat: "json",
 	}
 
 	if err := invoker.Invoke(req); err != nil {

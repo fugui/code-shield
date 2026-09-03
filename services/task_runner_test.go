@@ -1886,3 +1886,25 @@ func TestHandleGenericCampaignHook_PartialFailureTolerance(t *testing.T) {
 		t.Fatalf("expected 2 findings saved, got %d", count)
 	}
 }
+
+func TestSanitizeMarkdownReport(t *testing.T) {
+	// 1. 正常 Markdown 保持不变
+	normalMD := "# 报告标题\n\n## 一、检视结果概要\n\n正常内容"
+	if got := string(sanitizeMarkdownReport([]byte(normalMD))); got != normalMD {
+		t.Errorf("expected unchanged markdown, got: %q", got)
+	}
+
+	// 2. 剥除最外层 ```markdown ... ```
+	fencedMD := "```markdown\n# 报告标题\n\n## 一、检视结果概要\n```"
+	expectedFenced := "# 报告标题\n\n## 一、检视结果概要"
+	if got := string(sanitizeMarkdownReport([]byte(fencedMD))); got != expectedFenced {
+		t.Errorf("expected un-fenced markdown %q, got: %q", expectedFenced, got)
+	}
+
+	// 3. 解包 JSON 对象中的 report / markdown 字段
+	jsonReport := `{"report": "# 解包后的 Markdown 报告\n\n## 一、检视结果概要"}`
+	expectedJSON := "# 解包后的 Markdown 报告\n\n## 一、检视结果概要"
+	if got := string(sanitizeMarkdownReport([]byte(jsonReport))); got != expectedJSON {
+		t.Errorf("expected extracted markdown %q, got: %q", expectedJSON, got)
+	}
+}

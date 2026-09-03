@@ -280,7 +280,15 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 			requestBody["temperature"] = cfg.Temperature
 		}
 
-		if cfg.ResponseFormatJSON {
+		// 动态控制 ResponseFormat：优先使用请求级声明，未指定时回退至全局配置
+		isJSONMode := false
+		if strings.EqualFold(req.ResponseFormat, "json") {
+			isJSONMode = true
+		} else if req.ResponseFormat == "" && cfg.ResponseFormatJSON {
+			isJSONMode = true
+		}
+
+		if isJSONMode {
 			requestBody["response_format"] = map[string]string{"type": "json_object"}
 		}
 		if cfg.MaxTokens > 0 {

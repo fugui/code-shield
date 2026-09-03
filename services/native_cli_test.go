@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -489,5 +490,74 @@ func TestNativeInvoker_UnauthorizedFailover(t *testing.T) {
 	}
 	if string(content) != `{"auth_failover": "success"}` {
 		t.Fatalf("unexpected content: %s", string(content))
+	}
+}
+
+func TestNativeInvoker_ResponseFormatDynamic(t *testing.T) {
+	var lastReceivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(bodyBytes, &lastReceivedBody)
+
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						"content": "# Markdown 报告正文\n\n## 一、检视结果概要\n\n正常完成",
+					},
+				},
+			},
+			"usage": map[string]interface{}{
+				"total_tokens": 100,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	origCfg := models.AppConfig
+	defer func() { models.AppConfig = origCfg }()
+
+	// 1. 全局开启 ResponseFormatJSON=true，但请求显式声明 ResponseFormat="text"
+	models.AppConfig.AI.Native = models.NativeLLMConfig{
+		BaseURL:            server.URL,
+		APIKey:             "test-key",
+		DefaultModel:       "glm-4-flash",
+		ResponseFormatJSON: true,
+	}
+
+	invoker := NewNativeInvoker()
+	tmpOut := filepath.Join(t.TempDir(), "report.md")
+
+	err := invoker.Invoke(AIRequest{
+		PromptMsg:      "生成 Markdown 报告",
+		OutputPath:     tmpOut,
+		TimeoutMin:     1,
+		ResponseFormat: "text",
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+
+	if _, exists := lastReceivedBody["response_format"]; exists {
+		t.Errorf("expected NO response_format in request body when ResponseFormat='text', got: %v", lastReceivedBody["response_format"])
+	}
+
+	// 2. 全局关闭 ResponseFormatJSON=false，但请求显式声明 ResponseFormat="json"
+	models.AppConfig.AI.Native.ResponseFormatJSON = false
+	err = invoker.Invoke(AIRequest{
+		PromptMsg:      "输出结构化 JSON",
+		OutputPath:     tmpOut,
+		TimeoutMin:     1,
+		ResponseFormat: "json",
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+
+	rf, exists := lastReceivedBody["response_format"].(map[string]interface{})
+	if !exists || rf["type"] != "json_object" {
+		t.Errorf("expected response_format type json_object when ResponseFormat='json', got: %v", lastReceivedBody["response_format"])
 	}
 }
