@@ -1791,3 +1791,98 @@ func TestHandleGenericCampaignHook_LongTitle(t *testing.T) {
 		t.Errorf("expected saved detail to preserve long title context, got %s", saved.Detail)
 	}
 }
+
+func TestHandleGenericCampaignHook_PartialFailureTolerance(t *testing.T) {
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
+	}
+	oldDB := models.DB
+	models.DB = testDB
+	defer func() {
+		models.DB = oldDB
+	}()
+
+	mustMigrate(t, models.DB,
+		&models.Department{},
+		&models.Repository{},
+		&models.TaskReport{},
+		&models.TaskType{},
+		&models.User{},
+		&models.CampaignFinding{},
+	)
+
+	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	dept := models.Department{Name: "test-dept-tol-" + uniqueSuffix}
+	models.DB.Create(&dept)
+	defer models.DB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "user-tol-" + uniqueSuffix, Name: "UserTol", Email: "user_tol_" + uniqueSuffix + "@test.com", Password: "pwd"}
+	models.DB.Create(&user)
+	defer models.DB.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-repo-tol-" + uniqueSuffix,
+		URL:          "http://xxx.git",
+	}
+	models.DB.Create(&repo)
+	defer models.DB.Delete(&models.Repository{}, repo.ID)
+
+	taskType := models.TaskType{
+		Name:           "tolerance_scan_" + uniqueSuffix,
+		DisplayName:    "容错测试专项",
+		IsCampaign:     true,
+		GovernanceMode: models.GovernanceModeDefectTracking,
+	}
+	models.DB.Create(&taskType)
+	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
+
+	defer func() {
+		models.DB.Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).Delete(&models.CampaignFinding{})
+		models.DB.Where("repo_id = ?", repo.ID).Delete(&models.TaskReport{})
+	}()
+
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
+	models.DB.Create(&report)
+
+	ctx := &taskContext{
+		repo:     repo,
+		report:   report,
+		taskType: taskType,
+	}
+
+	findings := []models.AnalysisFinding{
+		{
+			FilePath:    "src/file1.cpp",
+			LineNumber:  "10-15",
+			Title:       "正常缺陷1",
+			Detail:      "正常缺陷描述1",
+			Severity:    "严重",
+			Category:    "mem_leak",
+			CodeSnippet: "char* p = malloc(10);",
+		},
+		{
+			FilePath:    "src/file2.cpp",
+			LineNumber:  "20-25",
+			Title:       "正常缺陷2",
+			Detail:      "正常缺陷描述2",
+			Severity:    "一般",
+			Category:    "null_deref",
+			CodeSnippet: "int *p = nullptr;",
+		},
+	}
+
+	err := handleGenericCampaignHook(ctx, findings)
+	if err != nil {
+		t.Fatalf("handleGenericCampaignHook failed: %v", err)
+	}
+
+	var count int64
+	models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).Count(&count)
+	if count != 2 {
+		t.Fatalf("expected 2 findings saved, got %d", count)
+	}
+}
