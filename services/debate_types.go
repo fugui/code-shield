@@ -13,6 +13,7 @@ type HunterCandidate struct {
 	ScopeSymbol      string `json:"scope_symbol"`      // AST 作用域符号（函数名/类名签名）
 	CodeSnippet      string `json:"code_snippet"`      // 原始代码片段
 	CWECategory      string `json:"cwe_category"`      // CWE 分类
+	Title            string `json:"title,omitempty"`   // 简明缺陷标题（如：析构中释放单例导致悬空指针）
 	AttackHypothesis string `json:"attack_hypothesis"` // 攻击路径假设与漏洞成因
 	SuspectedTrigger string `json:"suspected_trigger"` // 疑似触发条件
 }

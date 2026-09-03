@@ -1632,3 +1632,162 @@ func TestGetRepoSyncLock(t *testing.T) {
 		t.Errorf("expected different mutex instances for different repo paths")
 	}
 }
+
+func TestSanitizeFindingTitle(t *testing.T) {
+	// 1. 空标题
+	if got := SanitizeFindingTitle("   "); got != "未命名缺陷" {
+		t.Errorf("expected '未命名缺陷', got %q", got)
+	}
+
+	// 2. 换行清洗
+	multiLine := "这是第一行标题\n这是第二行描述\r\n这是第三行"
+	gotClean := SanitizeFindingTitle(multiLine)
+	if strings.Contains(gotClean, "\n") || strings.Contains(gotClean, "\r") {
+		t.Errorf("expected newlines removed, got %q", gotClean)
+	}
+
+	// 3. 超长字符截断 (超过 500 字符)
+	longTitle := strings.Repeat("长标题测试内容abc123", 50) // ~750 runes
+	gotTrunc := SanitizeFindingTitle(longTitle)
+	if len([]rune(gotTrunc)) > 500 {
+		t.Errorf("expected length <= 500 runes, got %d", len([]rune(gotTrunc)))
+	}
+	if !strings.HasSuffix(gotTrunc, "...") {
+		t.Errorf("expected suffix '...', got %q", gotTrunc)
+	}
+}
+
+func TestDeriveConciseTitle(t *testing.T) {
+	// 1. 空文本回退到分类
+	if got := deriveConciseTitle("", "CWE-476"); got != "CWE-476" {
+		t.Errorf("expected 'CWE-476', got %q", got)
+	}
+
+	// 2. 换行文本截取第一行
+	multiline := "m_diskLoop 取自服务初始化结构体存在空指针隐患\n后续第二行详细分析..."
+	if got := deriveConciseTitle(multiline, ""); got != "m_diskLoop 取自服务初始化结构体存在空指针隐患" {
+		t.Errorf("expected first line, got %q", got)
+	}
+
+	// 3. 句号截断首个语义完整句
+	longSentence := "m_diskLoop 取自全局上下文指针，存在解引用前未判空风险。在函数内部若传入 NULL 会触发 coredump，导致服务不可用。"
+	expected := "m_diskLoop 取自全局上下文指针，存在解引用前未判空风险。"
+	if got := deriveConciseTitle(longSentence, ""); got != expected {
+		t.Errorf("expected first sentence %q, got %q", expected, got)
+	}
+
+	// 4. 超长无断句截断 <= 200 runes
+	veryLong := strings.Repeat("无断句超长成因描述文本测试内容", 30)
+	got := deriveConciseTitle(veryLong, "")
+	if len([]rune(got)) > 200 {
+		t.Errorf("expected length <= 200, got %d", len([]rune(got)))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("expected suffix '...', got %q", got)
+	}
+
+	// 5. 真实长文本攻击假设截取 (用户报错用例)
+	userLogText := "m_diskLoop 取自单例 CPaDiskExtractionZoneGainControl::GetInstance()（函数内 static 局部指针，每次 new 一次 并返回同一个地址）。该对象同时是任务线程宿主：Initialize() 通过 m_taskManager->CreateTask 注册了周期任务 AgentEntry（闭环保底偏离心控制），并且 CPaDeviceManager::InitLoop/UnInitLoop 也通过同样的 GetInstance() 获取并使用该指针。一旦 CPPPAPServiceTImpl 析构（服务卸载/重载/进程 teardown 路径）执行 delete m_diskLoop 释放单例，static sInstance 仍指向已释放内存（delete 不会清空 static 局部指针）。此后任何一次后续的 GetInstance()（例如 CPaDeviceManager::UnInitLoop、或仍处于活动状态周期任务 AgentEntry 继续运行）都会对悬空指针解引用，产生 use-after-free，访问已释放对象内存，在取到非法地址或 vtable 已回收时触发 SIGSEGV 导致 coredump。"
+	userTitle := deriveConciseTitle(userLogText, "CWE-416")
+	if len([]rune(userTitle)) > 150 {
+		t.Errorf("expected concise title <= 150 runes, got %d (%s)", len([]rune(userTitle)), userTitle)
+	}
+	expectedUserTitle := "m_diskLoop 取自单例 CPaDiskExtractionZoneGainControl::GetInstance()（函数内 static 局部指针，每次 new 一次 并返回同一个地址）。"
+	if userTitle != expectedUserTitle {
+		t.Errorf("expected %q, got %q", expectedUserTitle, userTitle)
+	}
+}
+
+func TestHandleGenericCampaignHook_LongTitle(t *testing.T) {
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
+	}
+	oldDB := models.DB
+	models.DB = testDB
+	defer func() {
+		models.DB = oldDB
+	}()
+
+	mustMigrate(t, models.DB,
+		&models.Department{},
+		&models.Repository{},
+		&models.TaskReport{},
+		&models.TaskType{},
+		&models.User{},
+		&models.CampaignFinding{},
+	)
+
+	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	dept := models.Department{Name: "test-dept-long-" + uniqueSuffix}
+	models.DB.Create(&dept)
+	defer models.DB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "user-long-" + uniqueSuffix, Name: "UserLong", Email: "user_long_" + uniqueSuffix + "@test.com", Password: "pwd"}
+	models.DB.Create(&user)
+	defer models.DB.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-repo-long-" + uniqueSuffix,
+		URL:          "http://xxx.git",
+	}
+	models.DB.Create(&repo)
+	defer models.DB.Delete(&models.Repository{}, repo.ID)
+
+	taskType := models.TaskType{
+		Name:           "coredump_scan_" + uniqueSuffix,
+		DisplayName:    "Coredump风险",
+		IsCampaign:     true,
+		GovernanceMode: models.GovernanceModeDefectTracking,
+	}
+	models.DB.Create(&taskType)
+	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
+
+	defer func() {
+		models.DB.Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).Delete(&models.CampaignFinding{})
+		models.DB.Where("repo_id = ?", repo.ID).Delete(&models.TaskReport{})
+	}()
+
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
+	models.DB.Create(&report)
+
+	ctx := &taskContext{
+		repo:     repo,
+		report:   report,
+		taskType: taskType,
+	}
+
+	// 构造一个超过 500 字符的超长标题（模拟真实大模型输出的段落级分析内容）
+	originalLongTitle := "m_diskLoop 取自 " + strings.Repeat("服务上下文全局单例对象的属性指针并直接进行访问，未进行显式有效性校验与判空保护，可能在极端并发或初始化未完成场景下产生严重内存崩溃；", 10)
+	finding := models.AnalysisFinding{
+		FilePath:    "dlPrePulseLaser/pppacp/src/CPPPAPServiceTImpl.cpp",
+		LineNumber:  "41-49",
+		Title:       originalLongTitle,
+		Detail:      "现有代码存在直接解引用风险。",
+		CodeSnippet: "m_diskLoop->process();",
+		Severity:    "严重",
+		Category:    "coredump_risk",
+		Suggestion:  "建议在调用前增加 if (m_diskLoop != nullptr) 校验保护。",
+	}
+
+	err := handleGenericCampaignHook(ctx, []models.AnalysisFinding{finding})
+	if err != nil {
+		t.Fatalf("handleGenericCampaignHook failed with long title: %v", err)
+	}
+
+	var saved models.CampaignFinding
+	err = models.DB.Where("task_type_id = ? AND repo_id = ? AND file_path = ?", taskType.ID, repo.ID, finding.FilePath).First(&saved).Error
+	if err != nil {
+		t.Fatalf("failed to query saved CampaignFinding: %v", err)
+	}
+
+	if len([]rune(saved.Title)) > 500 {
+		t.Errorf("expected saved title length <= 500, got %d", len([]rune(saved.Title)))
+	}
+	if !strings.Contains(saved.Detail, "原始问题描述") && !strings.Contains(saved.Detail, "m_diskLoop") {
+		t.Errorf("expected saved detail to preserve long title context, got %s", saved.Detail)
+	}
+}

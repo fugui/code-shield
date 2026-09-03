@@ -282,6 +282,17 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 	if e.Mode == "chunked_fast" {
 		var fastFindings []models.AnalysisFinding
 		for _, c := range hunterOut.Candidates {
+			titleCandidate := c.Title
+			if titleCandidate == "" {
+				titleCandidate = c.AttackHypothesis
+			}
+			conciseTitle := deriveConciseTitle(titleCandidate, c.CWECategory)
+			detail := c.SuspectedTrigger
+			if detail == "" {
+				detail = c.AttackHypothesis
+			} else if !strings.Contains(detail, c.AttackHypothesis) {
+				detail = fmt.Sprintf("【成因与攻击假设】: %s\n\n【疑似触发条件】: %s", c.AttackHypothesis, detail)
+			}
 			fastFindings = append(fastFindings, models.AnalysisFinding{
 				FilePath:    c.FilePath,
 				LineNumber:  c.LineRange,
@@ -289,8 +300,8 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 				ScopeSymbol: c.ScopeSymbol,
 				CodeSnippet: c.CodeSnippet,
 				Category:    c.CWECategory,
-				Title:       c.AttackHypothesis,
-				Detail:      c.SuspectedTrigger,
+				Title:       conciseTitle,
+				Detail:      detail,
 				HunterClaim: c.AttackHypothesis,
 				CreatedAt:   time.Now(),
 			})
@@ -390,7 +401,7 @@ func (e *DebateEngine) ProcessBundle(ctx *taskContext, bundle SemanticBundle, ch
 				ScopeSymbol:   jv.ScopeSymbol,
 				CodeSnippet:   jv.CodeSnippet,
 				Category:      jv.Category,
-				Title:         jv.Title,
+				Title:         deriveConciseTitle(jv.Title, jv.Category),
 				Detail:        fmt.Sprintf("%s\n\n【仲裁法官裁决词】: %s", jv.Title, jv.JudgementRationale),
 				Suggestion:    jv.Suggestion,
 				HunterClaim:   origCand.AttackHypothesis,
@@ -527,6 +538,15 @@ func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hu
 func fallbackJudgeFromHunter(hunterOut *HunterOutput) *JudgeOutput {
 	var verdicts []JudgeFinalVerdict
 	for _, c := range hunterOut.Candidates {
+		titleCandidate := c.Title
+		if titleCandidate == "" {
+			titleCandidate = c.AttackHypothesis
+		}
+		conciseTitle := deriveConciseTitle(titleCandidate, c.CWECategory)
+		rationale := "[Fallback: 智能体辩论超时，保留猎手原始判定]"
+		if c.AttackHypothesis != "" {
+			rationale = fmt.Sprintf("【成因与攻击假设】: %s\n\n%s", c.AttackHypothesis, rationale)
+		}
 		verdicts = append(verdicts, JudgeFinalVerdict{
 			CandidateID:         c.CandidateID,
 			Verdict:             models.DebateVerdictConfirmed,
@@ -536,13 +556,44 @@ func fallbackJudgeFromHunter(hunterOut *HunterOutput) *JudgeOutput {
 			LineNumber:          c.LineRange,
 			TriggerLine:         c.TriggerLine,
 			ScopeSymbol:         c.ScopeSymbol,
-			Title:               c.AttackHypothesis,
-			JudgementRationale:  "[Fallback: 智能体辩论超时，保留猎手原始判定]",
+			Title:               conciseTitle,
+			JudgementRationale:  rationale,
 			CodeSnippet:         c.CodeSnippet,
 			Suggestion:          "建议人工复核此可疑风险点",
 		})
 	}
 	return &JudgeOutput{FinalVerdicts: verdicts}
+}
+
+// deriveConciseTitle 从漏洞成因假设或长文本中提炼简明扼要的标题，防止长段落文本污染标题或溢出
+func deriveConciseTitle(rawTitle, fallbackCategory string) string {
+	t := strings.TrimSpace(rawTitle)
+	if t == "" {
+		if fallbackCategory != "" {
+			return fallbackCategory
+		}
+		return "潜在代码缺陷"
+	}
+	// 剔除换行，优先取第一行
+	if idx := strings.IndexAny(t, "\r\n"); idx != -1 {
+		t = strings.TrimSpace(t[:idx])
+	}
+	// 若首行依然过长，按中文或英文标点断句截取首个完整语义子句
+	for _, sep := range []string{"。", "；", ";", ". "} {
+		if idx := strings.Index(t, sep); idx != -1 && idx+len(sep) < len(t) {
+			candidate := strings.TrimSpace(t[:idx+len(sep)])
+			if len([]rune(candidate)) >= 6 {
+				t = candidate
+				break
+			}
+		}
+	}
+	// 长度软截断 (最多 200 个字符)
+	runes := []rune(t)
+	if len(runes) > 200 {
+		t = string(runes[:197]) + "..."
+	}
+	return t
 }
 
 func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
@@ -586,7 +637,7 @@ func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
 		sb.WriteString(fmt.Sprintf("- %s\n", f))
 	}
 	sb.WriteString("\n### 输出格式规范 (JSON Only):\n")
-	sb.WriteString("```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/file.cc\",\n      \"line_range\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"code_snippet\": \"...\",\n      \"cwe_category\": \"CWE-125: Out-of-bounds Read\",\n      \"attack_hypothesis\": \"漏洞成因与攻击假设\",\n      \"suspected_trigger\": \"触发输入条件\"\n    }\n  ],\n  \"summary\": \"概括\"\n}\n```\n")
+	sb.WriteString("```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/file.cc\",\n      \"line_range\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"code_snippet\": \"...\",\n      \"cwe_category\": \"CWE-125: Out-of-bounds Read\",\n      \"title\": \"精确简明的缺陷标题（一句话概括，如：析构中delete单例指针导致悬空指针与UAF，严禁输出长段落）\",\n      \"attack_hypothesis\": \"漏洞成因与攻击假设\",\n      \"suspected_trigger\": \"触发输入条件\"\n    }\n  ],\n  \"summary\": \"概括\"\n}\n```\n")
 
 	return sb.String()
 }

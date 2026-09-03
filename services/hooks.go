@@ -66,6 +66,22 @@ func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFindi
 	log.Printf("[TaskHooks] Processing generic campaign hook for Task: %s, Mode: %s, Repo ID: %d, findings count: %d",
 		ctx.taskType.Name, ctx.taskType.GovernanceMode, ctx.repo.ID, len(findings))
 
+	// 规范化并清洗 findings 字段（防御性清洗超长标题/多行换行，防止超长字符串破坏数据库、索引及前端展示）
+	for i := range findings {
+		rawTitle := strings.TrimSpace(findings[i].Title)
+		if len([]rune(rawTitle)) > 500 {
+			if findings[i].Detail == "" {
+				findings[i].Detail = rawTitle
+			} else if !strings.Contains(findings[i].Detail, rawTitle) {
+				findings[i].Detail = fmt.Sprintf("【原始问题描述】: %s\n\n%s", rawTitle, findings[i].Detail)
+			}
+		}
+		findings[i].Title = SanitizeFindingTitle(rawTitle)
+		findings[i].FilePath = strings.TrimSpace(findings[i].FilePath)
+		findings[i].LineNumber = strings.TrimSpace(findings[i].LineNumber)
+		findings[i].Category = strings.TrimSpace(findings[i].Category)
+	}
+
 	var allOldFindings []models.CampaignFinding
 	if err := models.DB.Where("task_type_id = ? AND repo_id = ?", ctx.taskType.ID, ctx.repo.ID).Find(&allOldFindings).Error; err != nil {
 		log.Printf("[TaskHooks] Failed to load old CampaignFinding for repo: %v", err)
@@ -711,4 +727,22 @@ func askLLMIfSameFinding(ctx *taskContext, oldPath, oldLine, oldTitle, oldDetail
 
 	log.Printf("[askLLMIfSameFinding] LLM Match result: is_same=%t", res.IsSame)
 	return res.IsSame
+}
+
+// SanitizeFindingTitle 规范化缺陷标题：去除首尾空白、清洗换行符并进行安全长度截断（最多 500 个字符）
+func SanitizeFindingTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "未命名缺陷"
+	}
+	// 清洗换行符，单行呈现
+	title = strings.ReplaceAll(title, "\r\n", " ")
+	title = strings.ReplaceAll(title, "\n", " ")
+	title = strings.ReplaceAll(title, "\r", " ")
+	// 安全截断防止单字段超限及 B-Tree 索引溢出
+	runes := []rune(title)
+	if len(runes) > 500 {
+		return string(runes[:497]) + "..."
+	}
+	return title
 }
