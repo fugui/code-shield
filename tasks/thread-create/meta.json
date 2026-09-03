@@ -35,5 +35,17 @@
   "is_campaign": true,
   "campaign_path": "thread",
   "governance_mode": "defect_tracking",
+  "categories": [
+    "无问题",
+    "必要性-频繁创建",
+    "必要性-未使用平台调度组",
+    "必要性-未使用平台定时器",
+    "生命周期-join遗漏",
+    "生命周期-未安全退出",
+    "异常安全-析构崩溃",
+    "数据安全-悬空引用",
+    "同步安全-数据竞争",
+    "其它"
+  ],
   "is_active": true
 }

@@ -25,5 +25,11 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
+  "categories": [
+    "健壮性与稳定性",
+    "资源与生命周期管理",
+    "代码坏味道与重构问题",
+    "其它缺陷"
+  ],
   "is_active": true
 }

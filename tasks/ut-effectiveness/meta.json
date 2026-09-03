@@ -28,5 +28,17 @@
   "is_campaign": true,
   "campaign_path": "ut",
   "governance_mode": "entity_assessment",
+  "categories": [
+    "无问题",
+    "断言有效性-空测试",
+    "断言有效性-永真断言",
+    "断言有效性-无效捕获",
+    "断言有效性-Mock遗漏",
+    "提前返回-非法退出",
+    "提前返回-静默跳过",
+    "功能单一性-面条测试",
+    "功能单一性-路径混合",
+    "其它"
+  ],
   "is_active": true
 }

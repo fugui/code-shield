@@ -818,7 +818,7 @@ func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
 	allowedCats := ctx.taskType.GetAllowedCategories()
 	if len(allowedCats) > 0 {
 		sb.WriteString("### 必须严格遵守的缺陷分类受控白名单 (Strict Categories):\n")
-		sb.WriteString("候选输出中的分类（cwe_category）**必须且只能严格从以下受控列表中选择**，严禁输出非列表中的自由发散文本：\n")
+		sb.WriteString("候选输出中的分类（category）**必须且只能严格从以下受控列表中选择**，严禁输出非列表中的自由发散文本：\n")
 		for _, cat := range allowedCats {
 			sb.WriteString(fmt.Sprintf("- `%s`\n", cat))
 		}
@@ -830,7 +830,7 @@ func buildHunterPrompt(ctx *taskContext, bundle SemanticBundle) string {
 		sb.WriteString(fmt.Sprintf("- %s\n", f))
 	}
 	sb.WriteString("\n### 输出格式规范 (JSON Only):\n")
-	sb.WriteString("```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/file.cc\",\n      \"line_range\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"code_snippet\": \"...\",\n      \"cwe_category\": \"CWE-125: Out-of-bounds Read\",\n      \"title\": \"精确简明的缺陷标题（一句话概括，如：析构中delete单例指针导致悬空指针与UAF，严禁输出长段落）\",\n      \"attack_hypothesis\": \"漏洞成因与攻击假设\",\n      \"suspected_trigger\": \"触发输入条件\"\n    }\n  ],\n  \"summary\": \"概括\"\n}\n```\n")
+	sb.WriteString("```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/file.cc\",\n      \"line_range\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"code_snippet\": \"...\",\n      \"category\": \"受控分类（必须从上述受控列表中多选一）\",\n      \"title\": \"精确简明的缺陷标题（一句话概括，如：析构中delete单例指针导致悬空指针与UAF，严禁输出长段落）\",\n      \"attack_hypothesis\": \"漏洞成因与攻击假设\",\n      \"suspected_trigger\": \"触发输入条件\"\n    }\n  ],\n  \"summary\": \"概括\"\n}\n```\n")
 
 	return sb.String()
 }
@@ -915,6 +915,17 @@ func buildJudgePrompt(ctx *taskContext, bundle SemanticBundle, hunterOut *Hunter
 	sb.WriteString("- 【缓和因素】：触发前提约束与影响范围限制\n\n")
 	sb.WriteString("## 严重等级定义规约\n")
 	sb.WriteString("字段 `severity_preliminary` 的取值必须严格限定为系统四大标准等级之一：`致命`（破坏内存/写越界/UAF）、`严重`（确定性空指针/段错误/崩溃/读越界）、`一般`（条件宏保护/资源耗尽/DoS/锁竞争）、`建议`（架构风格/防御性缺失）。严禁输出除此四者之外的其他词汇。\n\n")
+
+	allowedCats := ctx.taskType.GetAllowedCategories()
+	if len(allowedCats) > 0 {
+		sb.WriteString("## 缺陷分类受控规约 (Strict Categories)\n")
+		sb.WriteString("裁决输出中 `category` 的取值**必须严格限定为以下受控标准分类之一**，严禁自由捏造：\n")
+		for _, cat := range allowedCats {
+			sb.WriteString(fmt.Sprintf("- `%s`\n", cat))
+		}
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("### 输出格式规范 (JSON Only):\n")
 	sb.WriteString("```json\n{\n  \"final_verdicts\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"verdict\": \"CONFIRMED\",\n      \"severity_preliminary\": \"严重\",\n      \"category\": \"内存管理问题-越界访问\",\n      \"file_path\": \"src/file.cc\",\n      \"line_number\": \"10-20\",\n      \"trigger_line\": \"c = *++it;\",\n      \"scope_symbol\": \"Class::Method\",\n      \"title\": \"精确漏洞标题\",\n      \"judgement_rationale\": \"【综合裁决】: ...\\n\\n【源码事实】: ...\\n\\n【实测验证】: ...\\n\\n【决定性证据】: ...\\n\\n【抗辩响应】: ...\\n\\n【缓和因素】: ...\",\n      \"code_snippet\": \"...\",\n      \"suggestion\": \"修复建议代码\"\n    }\n  ]\n}\n```\n")
 
