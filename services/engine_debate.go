@@ -473,7 +473,7 @@ func summarizeRationale(text string) string {
 // runHunterStage 运行猎手初筛阶段 (Tier 1 快模型)
 func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle, outPath string) (*HunterOutput, int64, error) {
 	router := GetTierRouter()
-	acq, err := router.AcquireTier(ctx.ctx, "tier1_fast", ctx.taskType.TierFastBackend)
+	acq, err := router.AcquireTier(ctx.ctx, "tier1_fast", "")
 	if err != nil {
 		return nil, 0, err
 	}
@@ -498,7 +498,7 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle, o
 // runChallengerStage 运行辩护人对抗阶段 (Tier 2 强推理模型)
 func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, outPath string) (*ChallengerOutput, int64, error) {
 	router := GetTierRouter()
-	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", ctx.taskType.TierReasoningBackend)
+	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", "")
 	if err != nil {
 		return nil, 0, err
 	}
@@ -521,7 +521,7 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 // runJudgeStage 运行终审法官阶段 (Tier 2 强推理模型)
 func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hunterOut *HunterOutput, challengerOut *ChallengerOutput, outPath string) (*JudgeOutput, int64, error) {
 	router := GetTierRouter()
-	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", ctx.taskType.TierReasoningBackend)
+	acq, err := router.AcquireTier(ctx.ctx, "tier2_reasoning", "")
 	if err != nil {
 		return nil, 0, err
 	}

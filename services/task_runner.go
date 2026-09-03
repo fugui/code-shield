@@ -136,9 +136,6 @@ func CancelAllRunningTasks() {
 // 优先级：外部 RunParams > TaskType 默认值 > 全局配置
 func (ctx *taskContext) resolveRunParams(input models.RunParams) {
 	ctx.runParams = input
-	if ctx.runParams.AIBackend == nil && ctx.taskType.AIBackend != "" {
-		ctx.runParams.AIBackend = &ctx.taskType.AIBackend
-	}
 	if ctx.runParams.TargetScope == nil {
 		ctx.runParams.TargetScope = &ctx.taskType.TargetScope
 	}

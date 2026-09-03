@@ -56,11 +56,6 @@ func CreateTaskType(c *gin.Context) {
 		return
 	}
 
-	if !services.IsValidAIBackend(req.AIBackend) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 AI 引擎类型，可选: claude, opencode, codex 或留空"})
-		return
-	}
-
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
 	}
@@ -193,7 +188,6 @@ func UpdateTaskType(c *gin.Context) {
 		Description          *string          `json:"description"`
 		EngineMode           *string          `json:"engine_mode"`
 		EngineConfig         *json.RawMessage `json:"engine_config"`
-		AIBackend            *string          `json:"ai_backend"`
 		TargetScope          *string          `json:"target_scope"`
 		NotifyTemplate       *string          `json:"notify_template"`
 		NotifyThreshold      *int             `json:"notify_threshold"`
@@ -205,16 +199,9 @@ func UpdateTaskType(c *gin.Context) {
 		GovernanceMode       *string          `json:"governance_mode"`
 		CampaignIcon         *string          `json:"campaign_icon"`
 		CampaignConfig       *json.RawMessage `json:"campaign_config"`
-		TierFastBackend      *string          `json:"tier_fast_backend"`
-		TierReasoningBackend *string          `json:"tier_reasoning_backend"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.AIBackend != nil && !services.IsValidAIBackend(*req.AIBackend) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 AI 引擎类型，可选: claude, opencode, codex 或留空"})
 		return
 	}
 
@@ -231,17 +218,8 @@ func UpdateTaskType(c *gin.Context) {
 	if req.EngineConfig != nil {
 		updates["engine_config"] = string(*req.EngineConfig)
 	}
-	if req.AIBackend != nil {
-		updates["ai_backend"] = *req.AIBackend
-	}
 	if req.TargetScope != nil {
 		updates["target_scope"] = *req.TargetScope
-	}
-	if req.TierFastBackend != nil {
-		updates["tier_fast_backend"] = *req.TierFastBackend
-	}
-	if req.TierReasoningBackend != nil {
-		updates["tier_reasoning_backend"] = *req.TierReasoningBackend
 	}
 	if req.NotifyTemplate != nil {
 		updates["notify_template"] = *req.NotifyTemplate
