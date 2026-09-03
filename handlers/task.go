@@ -487,24 +487,32 @@ func TriggerMissingTasks(c *gin.Context) {
 		// 全量扫描：不限时间范围，覆盖所有匹配的活跃仓库
 		targetRepos = repos
 	} else {
-		// 2. Query repo IDs that have scan reports of this task type in the last N days
-		var scannedRepoIDs []uint
+		// 2. Query repo IDs whose latest scan report in the last N days is not failed (i.e. success, skipped, or in progress)
+		// 过去 N 天内，按 repo_id 分组找出每个代码仓最新的一条任务报告 ID
 		timeLimit := time.Now().AddDate(0, 0, -req.Days)
-		if err := models.DB.Model(&models.TaskReport{}).
+		latestSubQuery := models.DB.Model(&models.TaskReport{}).
+			Select("MAX(id)").
 			Where("task_type_id = ? AND created_at >= ?", req.TaskTypeID, timeLimit).
-			Pluck("repo_id", &scannedRepoIDs).Error; err != nil {
+			Group("repo_id")
+
+		// 排除掉那些“最新报告不是 failed”的代码仓（即已成功 success、已跳过 skipped 或正在运行中的代码仓）；
+		// 若过去 N 天内未曾扫描，或最新一次扫描结果为 failed（执行失败未恢复），则必须纳入补扫
+		var excludedRepoIDs []uint
+		if err := models.DB.Model(&models.TaskReport{}).
+			Where("id IN (?) AND status != ?", latestSubQuery, models.StatusFailed).
+			Pluck("repo_id", &excludedRepoIDs).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务报告失败: " + err.Error()})
 			return
 		}
 
-		// 3. Filter repos to only those that have not been checked in the last N days
-		scannedMap := make(map[uint]bool)
-		for _, rid := range scannedRepoIDs {
-			scannedMap[rid] = true
+		// 3. Filter repos: 仅保留未扫描或最新扫描失败的代码仓进行补扫
+		excludedMap := make(map[uint]bool, len(excludedRepoIDs))
+		for _, rid := range excludedRepoIDs {
+			excludedMap[rid] = true
 		}
 
 		for _, r := range repos {
-			if !scannedMap[r.ID] {
+			if !excludedMap[r.ID] {
 				targetRepos = append(targetRepos, r)
 			}
 		}
