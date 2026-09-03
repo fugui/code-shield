@@ -12,6 +12,9 @@ import (
 // ModelResource 代表单台 LLM 服务器的模型资源以及并发追踪
 type ModelResource struct {
 	Index      int
+	ID         string
+	Driver     string
+	Model      string
 	OpenCode   string
 	Claude     string
 	Codex      string
@@ -19,6 +22,7 @@ type ModelResource struct {
 	Native     string
 	Concurrent int
 	Active     int // 当前正在运行的并发数
+	Endpoints  []models.ResourceEndpointConfig
 }
 
 // ModelName 根据后端类型返回当前服务器映射的具体模型名
@@ -114,7 +118,11 @@ func InitModelDispatcher() {
 			}
 			mr := &ModelResource{
 				Index:      i,
+				ID:         res.ID,
+				Driver:     res.Driver,
+				Model:      res.Model,
 				Concurrent: concurrent,
+				Endpoints:  res.Endpoints,
 			}
 			switch res.Driver {
 			case "opencode":
@@ -453,15 +461,19 @@ func (d *ModelDispatcher) GetThrottleInfo() ThrottleInfo {
 
 // ModelResourceStatus 封装单台 LLM 服务器的状态快照
 type ModelResourceStatus struct {
-	Index      int    `json:"index"`
-	OpenCode   string `json:"opencode"`
-	Claude     string `json:"claude"`
-	Codex      string `json:"codex"`
-	Agy        string `json:"agy"`
-	Native     string `json:"native"`
-	Concurrent int    `json:"concurrent"`
-	Active     int    `json:"active"`
-	Limit      int    `json:"limit"`
+	Index      int                             `json:"index"`
+	ID         string                          `json:"id"`
+	Driver     string                          `json:"driver"`
+	Model      string                          `json:"model"`
+	OpenCode   string                          `json:"opencode"`
+	Claude     string                          `json:"claude"`
+	Codex      string                          `json:"codex"`
+	Agy        string                          `json:"agy"`
+	Native     string                          `json:"native"`
+	Concurrent int                             `json:"concurrent"`
+	Active     int                             `json:"active"`
+	Limit      int                             `json:"limit"`
+	Endpoints  []models.ResourceEndpointConfig `json:"endpoints,omitempty"`
 }
 
 // GetResourcesStatus 返回所有 LLM 服务器当前的并发状态快照
@@ -478,6 +490,9 @@ func (d *ModelDispatcher) GetResourcesStatus() []ModelResourceStatus {
 		limit := calculateLimit(r.Concurrent, info.EffectiveScale)
 		list = append(list, ModelResourceStatus{
 			Index:      r.Index,
+			ID:         r.ID,
+			Driver:     r.Driver,
+			Model:      r.Model,
 			OpenCode:   r.OpenCode,
 			Claude:     r.Claude,
 			Codex:      r.Codex,
@@ -486,6 +501,7 @@ func (d *ModelDispatcher) GetResourcesStatus() []ModelResourceStatus {
 			Concurrent: r.Concurrent,
 			Active:     r.Active,
 			Limit:      limit,
+			Endpoints:  r.Endpoints,
 		})
 	}
 	return list
@@ -637,7 +653,11 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 
 		mr := &ModelResource{
 			Index:      i,
+			ID:         res.ID,
+			Driver:     res.Driver,
+			Model:      res.Model,
 			Concurrent: concurrent,
+			Endpoints:  res.Endpoints,
 		}
 		switch res.Driver {
 		case "opencode":

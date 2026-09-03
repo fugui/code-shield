@@ -1,0 +1,340 @@
+/* SystemDebug.css - 扫描任务与 AI 算力实时诊断中心 */
+
+.code-debug-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-bottom: 2rem;
+}
+
+/* 顶部状态与工具栏 */
+.code-debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--color-bg-surface, #ffffff);
+  border-radius: 12px;
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+}
+
+.code-debug-header__left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.code-debug-header__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(79, 70, 229, 0.15));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-color, #2563eb);
+}
+
+.code-debug-header__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.code-debug-header__subtitle {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #64748b);
+  margin-top: 2px;
+}
+
+.code-debug-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.code-debug-header__select {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-primary, #cbd5e1);
+  background: var(--color-bg-input, var(--color-bg-surface, #ffffff));
+  color: var(--color-text-primary, #0f172a);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* 四格核心卡片网格 */
+.code-debug-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.code-debug-card {
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.code-debug-card:hover {
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+}
+
+.code-debug-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.code-debug-card__title {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary, #64748b);
+  font-weight: 600;
+}
+
+.code-debug-card__badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.code-debug-card__badge--success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.code-debug-card__badge--warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.code-debug-card__badge--danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.code-debug-card__badge--info {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.code-debug-card__value {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--color-text-primary, #0f172a);
+  line-height: 1.2;
+}
+
+.code-debug-card__subtext {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* 进度条 */
+.code-debug-progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-bg-muted, #f1f5f9);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.code-debug-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* 区域通用面板 */
+.code-debug-section {
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.code-debug-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.code-debug-section__title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.code-debug-section__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.code-debug-section__desc {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #64748b);
+}
+
+/* 算力服务器网格 */
+.code-debug-resources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.code-debug-resource-card {
+  padding: 1.15rem;
+  border-radius: 10px;
+  background: var(--color-bg-muted, rgba(248, 250, 252, 0.7));
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.code-debug-resource-card--full {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.code-debug-resource-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.code-debug-resource-card__id {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-text-primary, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.code-debug-resource-card__slots {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.code-debug-endpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--color-border-primary, #e2e8f0);
+}
+
+.code-debug-endpoint-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #64748b);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--color-bg-surface, #ffffff);
+}
+
+/* 在途任务表格 */
+.code-debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.code-debug-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg-muted, #f8fafc);
+  color: var(--color-text-secondary, #64748b);
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border-primary, #e2e8f0);
+}
+
+.code-debug-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border-primary, #e2e8f0);
+  color: var(--color-text-primary, #0f172a);
+  vertical-align: middle;
+}
+
+.code-debug-table tr:last-child td {
+  border-bottom: none;
+}
+
+.code-debug-table tr:hover td {
+  background: var(--color-bg-hover, rgba(241, 245, 249, 0.5));
+}
+
+/* 辩论流水线 Tier 步骤卡片流 */
+.code-debug-tiers-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.code-debug-tier-box {
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  background: var(--color-bg-muted, rgba(248, 250, 252, 0.7));
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.code-debug-tier-box__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.code-debug-tier-box__badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.code-debug-tier-box__role {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #64748b);
+  line-height: 1.4;
+}
+
+.code-debug-tier-box__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #94a3b8);
+  margin-top: 0.25rem;
+}
