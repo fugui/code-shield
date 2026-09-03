@@ -10,7 +10,7 @@
     1. **顶级领域解耦**：拆分为 `server/database`（静态基础设施）、`llm`（大模型与算力资源池）、`scanner`（扫描引擎与辩论流水线）、`governance`（质量治理与生命周期）四大支柱；
     2. **数据库动态配置中心（Seed-Once & Dynamic DB Config Center）**：`config.yaml` 仅保留启动引导冷配置，`llm`、`scanner`、`governance`、`notification` 全量入库，首次启动从 YAML 导入种子数据（Seed-Once），后续以数据库为唯一真实源（SSOT）；
     3. **业务规则与算力层彻底解耦**：废弃并清理 `tasks/*/meta.json` 及 `TaskType` 中历史遗留的 `ai_backend` 参数，任务规则纯粹化；
-    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、API Key 掩码防覆盖传输、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），为未来多租户独立配置铺平道路。
+    4. **前端可视化配置控制台（Web UI Config Center）**：提供多 Tab 实时可视化配置、端点 Ping 测速、API Key 掩码防覆盖传输、显式阶梯绑定、操作审计与零停机动态热重载（Hot Reloading），彻底免除登录服务器修改与重启服务的运维成本。
 
 ---
 
@@ -26,14 +26,12 @@
    * 算力扩容、节点上下线、改 API Key、调工作时间限流比例、改辩论超时等均属于高频业务行为。每次调整都需修改服务器上的 `config.yaml` 并重启 `shield-server`，导致正在运行的长耗时分片扫描任务意外中断。
 4. **`tasks` 规则层混杂了底层算力参数 `ai_backend`**：
    * 历史单体 CLI 架构在 `tasks/*/meta.json` 中遗留了 `ai_backend` 字段。在现代化三方对抗辩论流水线（Hunter ➔ Challenger ➔ Judge ➔ Synthesis）下，单一扁平字段既无法表达多阶梯分工，又污染了安全规则的纯粹性。
-5. **缺乏多租户（Multi-Tenancy）配置扩展能力**：
-   * 静态 `config.yaml` 无法支持不同租户/部门拥有专属私有 GPU 算力端点、独立任务队列或差异化 PR 门禁策略。
 
 ---
 
 ## 二、 核心重构设计：五大顶层领域与“动静冷热分离”模型
 
-系统遵循 **“领域职责单一、显式精准绑定、种子导入+数据库动态主导（Seed-Once & DB SSOT）、规则与算力解耦、多租户就绪”** 的原则，将配置做清晰的动静冷热分离：
+系统遵循 **“领域职责单一、显式精准绑定、种子导入+数据库动态主导（Seed-Once & DB SSOT）、规则与算力解耦、面向未来多库平滑演进”** 的原则，将配置做清晰的动静冷热分离：
 
 ```mermaid
 graph TD
@@ -416,14 +414,13 @@ import (
 	"gorm.io/datatypes"
 )
 
-// SystemDynamicConfig 数据库持久化动态配置表 (ID=1 为全局系统基线，预留 TenantID 支持多租户)
+// SystemDynamicConfig 数据库持久化动态配置表 (按 Category 独立持久化结构化 JSON，面向未来多库隔离天然纯净)
 type SystemDynamicConfig struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
-	TenantID  uint           `gorm:"default:0;index" json:"tenant_id"` // 0=全局系统配置，>0=指定租户专属配置
-	Category  string         `gorm:"size:50;not null;index" json:"category"` // "llm", "scanner", "governance", "notification"
-	Data      datatypes.JSON `gorm:"type:jsonb;not null" json:"data"`        // 对应的结构化 JSON 数据
-	Version   int            `gorm:"default:1" json:"version"`               // 乐观锁版本号
-	UpdatedBy string         `gorm:"size:100" json:"updated_by"`             // 最后修改人
+	Category  string         `gorm:"size:50;not null;uniqueIndex" json:"category"` // "llm", "scanner", "governance", "notification"
+	Data      datatypes.JSON `gorm:"type:jsonb;not null" json:"data"`              // 对应的结构化 JSON 数据
+	Version   int            `gorm:"default:1" json:"version"`                     // 乐观锁版本号
+	UpdatedBy string         `gorm:"size:100" json:"updated_by"`                   // 最后修改人
 	UpdatedAt time.Time      `json:"updated_at"`
 }
 ```
@@ -594,7 +591,7 @@ graph LR
 | :--- | :--- | :--- | :--- |
 | **配置存储载体** | 纯静态本地 `config.yaml` | **冷配置留在 YAML + 热配置纳入 DB 动态中心** | 免登机修改、免重启服务，界面实时修改生效。 |
 | **规则与算力解耦** | `tasks/*/meta.json` 硬编码 `ai_backend` | **彻底废弃任务级 `ai_backend`** | 安全规则与算力环境彻底解耦，Debate 阶梯语义统一。 |
-| **多租户演进能力** | 静态单文件，无法扩展租户隔离 | **DB 表挂载 TenantID 隔离** | 天然支持多租户独立算力池、独立队列与差异化质量门禁。 |
+| **面向未来演进** | 静态单文件，配置强依赖宿主机 | **配置与数据库绑定 (DB SSOT)** | 将动态配置从宿主机文件解耦并持久化于数据库，未来向多数据库隔离演进时天然自洽，无需调整表结构。 |
 | **顶级领域解耦** | `ai` 包含一切，庞大臃肿且词义模糊 | 拆分为 **`llm`（算力）+ `scanner`（引擎）+ `governance`（治理）** | 职责 100% 单一，概念精准自解释，篇幅均衡对称。 |
 | **HTTP 基础设施** | 混入了 `worker_count` 与 `max_queue_size` | 纯粹保留端口、数据目录与网络超时 | 职责彻底纯粹，成为纯静态低频冷配置。 |
 | **算力资源管理** | `models` / `native.endpoints` 割裂 | 统一收拢为 `llm.resources` 算力池，`native` 作为一等公民内聚 `endpoints` | 结构极简统一，内部原生支持权重分流与 Failover，外部显式引用。 |
