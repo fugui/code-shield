@@ -118,20 +118,25 @@ func projectAndGroupFiles(files []string, cfg ChunkConfig) []SemanticBundle {
 	}
 	sort.Strings(keys)
 
+	maxFiles := cfg.MaxFiles
+	if maxFiles <= 0 {
+		maxFiles = 8 // 调优收敛：单分片默认 8 个文件，防止大模型上下文注意力衰减与长尾文件漏扫
+	}
+
 	for _, name := range keys {
 		grp := rawGroups[name]
 		allGroupFiles := append([]string{}, grp.primary...)
 		allGroupFiles = append(allGroupFiles, grp.headers...)
 
-		if cfg.MaxFiles > 0 && len(allGroupFiles) > cfg.MaxFiles {
+		if len(allGroupFiles) > maxFiles {
 			// 超额拆分
-			for i := 0; i < len(allGroupFiles); i += cfg.MaxFiles {
-				end := i + cfg.MaxFiles
+			for i := 0; i < len(allGroupFiles); i += maxFiles {
+				end := i + maxFiles
 				if end > len(allGroupFiles) {
 					end = len(allGroupFiles)
 				}
 				subSlice := allGroupFiles[i:end]
-				subName := fmt.Sprintf("%s-%d", name, i/cfg.MaxFiles+1)
+				subName := fmt.Sprintf("%s-%d", name, i/maxFiles+1)
 
 				var subPrimary, subHeaders []string
 				for _, sf := range subSlice {
