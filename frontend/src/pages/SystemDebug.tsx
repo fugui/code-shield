@@ -106,28 +106,6 @@ interface LLMSlotLease {
   duration_seconds: number;
 }
 
-interface DebateTierItem {
-  resource?: string;
-  resources?: string[];
-  timeout_seconds: number;
-}
-
-interface DebatePipelineInfo {
-  enabled: boolean;
-  fast_pass_enabled: boolean;
-  stage_timeout_seconds: number;
-  backpressure_threshold: number;
-  tiers: {
-    tier1_hunter?: DebateTierItem;
-    tier2_reasoning?: DebateTierItem;
-    tier3_synthesis?: DebateTierItem;
-  };
-  tools: {
-    default_resource: string;
-    overrides?: Record<string, string>;
-  };
-}
-
 interface DailyStatsInfo {
   today_total: number;
   today_success: number;
@@ -151,7 +129,6 @@ interface DebugOverviewData {
   active_leases?: LLMSlotLease[];
   workers: WorkerPoolInfo;
   active_tasks: RunningTaskInfo[];
-  debate_pipeline: DebatePipelineInfo;
   daily_stats: DailyStatsInfo;
 }
 
@@ -742,141 +719,6 @@ export default function SystemDebug() {
             </table>
           </div>
         )}
-      </div>
-
-      {/* 版块 3: 多智能体对抗辩论流水线阶梯编排与微任务路由 */}
-      <div className="code-debug-section">
-        <div className="code-debug-section__header">
-          <div className="code-debug-section__title-group">
-            <h3 className="code-debug-section__title">
-              多智能体对抗辩论流水线 (Debate Pipeline) 阶梯编排与微任务路由
-            </h3>
-            <span style={{
-              fontSize: '0.75rem',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              background: data?.debate_pipeline?.fast_pass_enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-              color: data?.debate_pipeline?.fast_pass_enabled ? '#10b981' : '#64748b',
-              fontWeight: 600
-            }}>
-              {data?.debate_pipeline?.fast_pass_enabled ? '0 候选快速放行已开启 (节能 80%+)' : '全候选辩论'}
-            </span>
-          </div>
-
-          <span className="code-debug-section__desc">
-            单阶段超时兜底: {data?.debate_pipeline?.stage_timeout_seconds || 1800} 秒 · 背压阈值: {data?.debate_pipeline?.backpressure_threshold || 30} 分片
-          </span>
-        </div>
-
-        <div className="code-debug-tiers-flow">
-          {/* Tier 1 Hunter */}
-          <div className="code-debug-tier-box">
-            <div className="code-debug-tier-box__head">
-              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
-                Tier 1: 初筛猎手 (Hunter)
-              </strong>
-              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                {(data?.debate_pipeline?.tiers?.tier1_hunter?.resources?.length
-                  ? data.debate_pipeline.tiers.tier1_hunter.resources
-                  : [data?.debate_pipeline?.tiers?.tier1_hunter?.resource || 'agy']
-                ).map(r => (
-                  <span key={r} className="code-debug-tier-box__badge">
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="code-debug-tier-box__role">
-              角色职责：Thick Agent 自主遍历文件树，初筛可疑代码片段并生成初始候选点
-            </div>
-            <div className="code-debug-tier-box__meta">
-              <span>单片时限: {data?.debate_pipeline?.tiers?.tier1_hunter?.timeout_seconds || 1200} 秒</span>
-              <span>执行引擎: Thick Agent {(data?.debate_pipeline?.tiers?.tier1_hunter?.resources?.length || 0) > 1 ? '(多节点负载打散)' : ''}</span>
-            </div>
-          </div>
-
-          {/* Tier 2 Reasoning */}
-          <div className="code-debug-tier-box">
-            <div className="code-debug-tier-box__head">
-              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
-                Tier 2: 深度对抗与裁决 (Reasoning)
-              </strong>
-              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                {(data?.debate_pipeline?.tiers?.tier2_reasoning?.resources?.length
-                  ? data.debate_pipeline.tiers.tier2_reasoning.resources
-                  : [data?.debate_pipeline?.tiers?.tier2_reasoning?.resource || 'agy']
-                ).map(r => (
-                  <span key={r} className="code-debug-tier-box__badge" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' }}>
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="code-debug-tier-box__role">
-              角色职责：统一承载 Challenger 辩护与 Judge 终审，事实链交叉推演与反向仲裁
-            </div>
-            <div className="code-debug-tier-box__meta">
-              <span>单片时限: {data?.debate_pipeline?.tiers?.tier2_reasoning?.timeout_seconds || 1800} 秒</span>
-              <span>执行引擎: 逻辑强推理 {(data?.debate_pipeline?.tiers?.tier2_reasoning?.resources?.length || 0) > 1 ? '(候选池分流)' : ''}</span>
-            </div>
-          </div>
-
-          {/* Tier 3 Synthesis */}
-          <div className="code-debug-tier-box">
-            <div className="code-debug-tier-box__head">
-              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary, #0f172a)' }}>
-                Tier 3: 全仓态势汇总 (Synthesis)
-              </strong>
-              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                {(data?.debate_pipeline?.tiers?.tier3_synthesis?.resources?.length
-                  ? data.debate_pipeline.tiers.tier3_synthesis.resources
-                  : [data?.debate_pipeline?.tiers?.tier3_synthesis?.resource || 'native']
-                ).map(r => (
-                  <span key={r} className="code-debug-tier-box__badge" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="code-debug-tier-box__role">
-              角色职责：纯文本与 JSON 结构化排版汇总，风险评分与全仓扫描诊断报告聚合
-            </div>
-            <div className="code-debug-tier-box__meta">
-              <span>汇总时限: {data?.debate_pipeline?.tiers?.tier3_synthesis?.timeout_seconds || 300} 秒</span>
-              <span>执行引擎: Thin LLM 原生直连</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 微任务工具路由 */}
-        <div style={{
-          marginTop: '0.5rem',
-          padding: '0.85rem 1rem',
-          borderRadius: '8px',
-          background: 'var(--color-bg-muted, #f8fafc)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '0.75rem',
-          fontSize: '0.8rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>场景微任务专有路由:</span>
-            <span style={{ color: 'var(--color-text-secondary, #64748b)' }}>默认走 {data?.debate_pipeline?.tools?.default_resource || 'native'}</span>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'var(--color-bg-surface, #fff)', border: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)' }}>
-              JSON 语法修复 ➔ <strong>native</strong>
-            </span>
-            <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'var(--color-bg-surface, #fff)', border: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)' }}>
-              缺陷指纹语义比对 ➔ <strong>native</strong>
-            </span>
-            <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'var(--color-bg-surface, #fff)', border: '1px solid var(--color-border-primary, #e2e8f0)', color: 'var(--color-text-secondary, #64748b)' }}>
-              研发负样本特征提炼 ➔ <strong>native</strong>
-            </span>
-          </div>
-        </div>
       </div>
     </div>
   );

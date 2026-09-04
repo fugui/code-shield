@@ -151,14 +151,6 @@ func GetDebugOverview(c *gin.Context) {
 			"is_paused":      services.IsQueuePaused(),
 		},
 		"active_tasks": runningTasks,
-		"debate_pipeline": gin.H{
-			"enabled":                models.AppConfig.Scanner.Debate.Enabled,
-			"fast_pass_enabled":      models.AppConfig.Scanner.Debate.FastPassEnabled,
-			"stage_timeout_seconds":  models.AppConfig.Scanner.Debate.StageTimeoutSeconds,
-			"backpressure_threshold": models.AppConfig.Scanner.Debate.BackpressureThreshold,
-			"tiers":                  models.AppConfig.Scanner.Debate.Tiers,
-			"tools":                  models.AppConfig.Scanner.Tools,
-		},
 		"daily_stats": gin.H{
 			"today_total":        todayTotal,
 			"today_success":      todaySuccess,
