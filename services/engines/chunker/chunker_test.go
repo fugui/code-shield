@@ -1,20 +1,16 @@
-package services
+package chunker
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"code-shield/services/engines"
 )
 
 func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 构建目录结构:
-	// include/fmt/posix.h
-	// include/fmt/format.h
-	// src/posix.cc
-	// src/format.cc
-	// CMakeLists.txt
 	os.MkdirAll(filepath.Join(tmpDir, "include", "fmt"), 0755)
 	os.MkdirAll(filepath.Join(tmpDir, "src"), 0755)
 
@@ -24,7 +20,7 @@ func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "src", "format.cc"), []byte("#include <fmt/format.h>\nvoid parse() {}"), 0644)
 	_ = os.WriteFile(filepath.Join(tmpDir, "CMakeLists.txt"), []byte("set(FMT_USE_GRISU 0)\nadd_definitions(-DFMT_HEADER_ONLY=1)"), 0644)
 
-	cfg := ChunkConfig{
+	cfg := engines.ChunkConfig{
 		MaxFiles:    10,
 		Depth:       1,
 		Concurrency: 2,
@@ -76,7 +72,7 @@ func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
 	}
 
 	// 传入 MaxFiles: 0，测试自动生效默认值 8
-	cfg := ChunkConfig{
+	cfg := engines.ChunkConfig{
 		MaxFiles:    0,
 		Depth:       1,
 		Concurrency: 2,
@@ -100,5 +96,23 @@ func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
 	}
 	if len(bundles[2].AllFiles) != 2 {
 		t.Errorf("Expected bundle 2 to have 2 files, got %d", len(bundles[2].AllFiles))
+	}
+}
+
+func TestIsSourceFileAndTestFile(t *testing.T) {
+	if !IsSourceFile("main.go", nil) {
+		t.Errorf("expected main.go to be source file")
+	}
+	if IsSourceFile(".hidden/main.go", nil) {
+		t.Errorf("expected .hidden to be skipped")
+	}
+	if IsSourceFile("vendor/dep.go", nil) {
+		t.Errorf("expected vendor to be skipped")
+	}
+	if !IsTestFile("main_test.go") {
+		t.Errorf("expected main_test.go to be test file")
+	}
+	if IsTestFile("main.go") {
+		t.Errorf("expected main.go not to be test file")
 	}
 }
