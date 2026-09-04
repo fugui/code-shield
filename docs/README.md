@@ -39,7 +39,8 @@ docs/
     ├── README.md                                      # 重构方案总览、量化目标与导航
     ├── 01-Services核心服务层代码现状全景与技术债务诊断报告.md # 46个平铺文件现状、1.6万行代码分布与6大技术债务深度剖析
     ├── 02-Services领域驱动子包化重构设计与契约规范.md  # 7大自治领域子包划分、EngineContext解耦契约与Facade门面设计
-    └── 03-分阶段平滑演进路线图与安全落地实施方案.md    # 4阶段渐进演进计划、甘特图、零破坏验证指令与回滚防线
+    ├── 03-分阶段平滑演进路线图与安全落地实施方案.md    # 4阶段渐进演进计划、甘特图、零破坏验证指令与回滚防线
+    └── 04-扫描引擎与执行流水线职责边界与协同模型深度设计.md # 引擎与流水线正交解耦、6大执行阶段、断点续跑归位与协同协议
 ```
 
 ---
@@ -57,5 +58,5 @@ docs/
 5. 🧬 **[确定性源码指纹与抗抖动增量生命周期架构 (deterministic-fingerprint-architecture/README.md)](deterministic-fingerprint-architecture/README.md)**
    收录物理源码真实源提取（`SourceEnricher`）、三级指纹分层体系、受控 Taxonomy 归一化与代码变更守卫防假修复状态机。
 6. 🏗️ **[Services 核心服务层领域模块化与解耦重构设计 (services-modular-architecture/README.md)](services-modular-architecture/README.md)**
-   收录 Services 核心服务层 46 个平铺文件量化体检画像、6 大核心技术债务诊断、7 大领域子包规范、EngineContext 解耦契约与分阶段演进路线图（01~03）。
+   收录 Services 核心服务层 46 个平铺文件量化体检画像、6 大核心技术债务诊断、7 大领域子包规范、EngineContext 解耦契约、扫描引擎与执行流水线职责边界与协同模型（01~04）。
 
