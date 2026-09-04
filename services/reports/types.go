@@ -131,6 +131,14 @@ type ReportMetaDTO struct {
 	Tier1Tokens          int64 `json:"tier1_tokens"`
 	Tier2Tokens          int64 `json:"tier2_tokens"`
 
+	// ── 跨轮次对账统计与台账汇总 ──
+	BaseReportID          uint `json:"base_report_id,omitempty"`
+	VanishedCoverageGap   int  `json:"vanished_coverage_gap,omitempty"`
+	TemplateFamilyCount   int  `json:"template_family_count,omitempty"`
+	ActiveWorkingCount    int  `json:"active_working_count,omitempty"`
+	DormantArchivedCount  int  `json:"dormant_archived_count,omitempty"`
+	ResolvedByChangeCount int  `json:"resolved_by_change_count,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -185,6 +193,16 @@ type FindingItemDTO struct {
 	HunterClaim   string `json:"hunter_claim,omitempty"`
 	ChallengerArg string `json:"challenger_arg,omitempty"`
 	JudgeVerdict  string `json:"judge_verdict,omitempty"`
+
+	// ── 报告间对账与台账治理字段 ──
+	ItemUID          string `json:"item_uid,omitempty"`
+	LifecycleStatus  string `json:"lifecycle_status,omitempty"`
+	CoverageGap      bool   `json:"coverage_gap,omitempty"`
+	TemplateFamilyID string `json:"template_family_id,omitempty"`
+	ReconRelation    string `json:"recon_relation,omitempty"`
+	SeverityRange    string `json:"severity_range,omitempty"`
+	SeverityTriage   bool   `json:"severity_triage,omitempty"`
+	Note             string `json:"note,omitempty"`
 
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"code-shield/models"
 	"code-shield/services/reports"
 	"fmt"
 	"net/http"
@@ -130,7 +131,11 @@ func ExportReportHandler(c *gin.Context) {
 		exporter = &reports.ExcelExporter{IsCSV: true}
 		categoryName = "findings"
 	case "json":
-		exporter = &reports.JSONExporter{}
+		if scope == "reconcile" {
+			exporter = &reports.ReconciliationExporter{}
+		} else {
+			exporter = &reports.JSONExporter{}
+		}
 		categoryName = scope
 	case "md", "markdown":
 		exporter = &reports.MarkdownExporter{}
@@ -161,4 +166,28 @@ func ExportReportHandler(c *gin.Context) {
 		fmt.Printf("[ExportReportHandler] Failed to export report %d: %v\n", taskID, err)
 		return
 	}
+}
+
+// GetReportReconciliationHandler 获取指定任务报告的跨轮对账详情
+func GetReportReconciliationHandler(c *gin.Context) {
+	idStr := c.Param("id")
+	taskID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task report ID"})
+		return
+	}
+
+	var recon models.ScanReconciliation
+	if err := models.DB.Where("current_report_id = ?", taskID).Order("id desc").First(&recon).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No reconciliation session found for this report"})
+		return
+	}
+
+	var links []models.ReconciliationLink
+	_ = models.DB.Where("recon_id = ?", recon.ID).Find(&links).Error
+
+	c.JSON(http.StatusOK, gin.H{
+		"session": recon,
+		"links":   links,
+	})
 }

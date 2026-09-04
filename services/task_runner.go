@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"code-shield/models"
+	"code-shield/services/reconciliation"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -976,16 +977,119 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	// 及时更新 TaskReport 和 TaskExecutionLog 状态为 synthesis (报告总结中)
 	updateTaskStatus(ctx.report.ID, models.StatusSynthesis)
 
-	// 1. Serialize all findings (complete list) to synthesisInputPath for Outlook attachment and database records.
-	findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
 	safeRepoName := strings.ReplaceAll(ctx.repo.Name, "/", "-")
-	synthesisInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("report-%d-synthesis-%s.json", ctx.report.ID, safeRepoName))
-	if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
-		return fmt.Errorf("failed to write synthesis input: %w", err)
+	reportDir := filepath.Dir(ctx.reportPath)
+
+	// 1. 【原生检出物理解耦】第一动作将本轮 raw findings 只读落盘为不可变证据
+	rawFindingsPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-raw-findings.json", ctx.report.ID))
+	rawFindingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
+	if err := os.WriteFile(rawFindingsPath, rawFindingsJSON, 0644); err != nil {
+		log.Printf("[TaskRunner] Warning: Failed to write raw findings: %v\n", err)
 	}
 
-	// 如果没有发现任何缺陷，直接跳过大模型综合报告合成阶段，写入静态报告快照并直接返回成功
-	if len(allFindings) == 0 {
+	// 2. 动态发现同仓同任务基线报告 (用于 R2R 报告间系统化对账)
+	var baseReport models.TaskReport
+	var baseSynthesisBytes []byte
+	var hasBaseReport bool
+	if models.DB != nil {
+		err := models.DB.Where("repo_id = ? AND task_type_id = ? AND id < ? AND status = ?",
+			ctx.repo.ID, ctx.taskType.ID, ctx.report.ID, models.StatusSuccess).
+			Order("id desc").First(&baseReport).Error
+		if err == nil && baseReport.ID > 0 {
+			hasBaseReport = true
+			basePath := baseReport.GetSynthesisJSONPath()
+			if bBytes, bErr := os.ReadFile(basePath); bErr == nil {
+				baseSynthesisBytes = bBytes
+			}
+		}
+	}
+
+	// 3. 执行纯函数报告间对账 (R2R Reconciliation)
+	repoUnchanged := false
+	if hasBaseReport && baseReport.HeadCommit != "" && ctx.report.HeadCommit != "" {
+		repoUnchanged = (baseReport.HeadCommit == ctx.report.HeadCommit)
+	}
+
+	reconReq := &reconciliation.ReconcileRequest{
+		RepoID:            ctx.repo.ID,
+		TaskTypeID:        ctx.taskType.ID,
+		TaskName:          ctx.taskType.Name,
+		CurrentReportID:   ctx.report.ID,
+		BaseReportID:      baseReport.ID,
+		CurrentFindings:   allFindings,
+		BaseSynthesisJSON: baseSynthesisBytes,
+		RepoRoot:          ctx.codesPath,
+		BaseCommit:        baseReport.HeadCommit,
+		HeadCommit:        ctx.report.HeadCommit,
+		RepoUnchanged:     repoUnchanged,
+		GovernanceMode:    ctx.taskType.GovernanceMode,
+	}
+
+	reconResult, reconErr := reconciliation.Reconcile(reconReq)
+	if reconErr != nil {
+		log.Printf("[TaskRunner] Warning: Reconciliation failed, using raw findings: %v\n", reconErr)
+	}
+
+	// 4. 持久化完整问题台账 SSOT (report-{id}-synthesis-{repo}.json) 与对账过程明细
+	synthesisInputPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-synthesis-%s.json", ctx.report.ID, safeRepoName))
+	if reconResult != nil {
+		ledgerJSON, _ := json.MarshalIndent(reconResult.Ledger, "", "  ")
+		if err := os.WriteFile(synthesisInputPath, ledgerJSON, 0644); err != nil {
+			return fmt.Errorf("failed to write synthesis input: %w", err)
+		}
+
+		if hasBaseReport {
+			reconPath := filepath.Join(reportDir, fmt.Sprintf("recon-%d-vs-%d.json", ctx.report.ID, baseReport.ID))
+			diffJSON, _ := json.MarshalIndent(reconResult.DiffPayload, "", "  ")
+			_ = os.WriteFile(reconPath, diffJSON, 0644)
+		}
+
+		// 持久化到 DB
+		if models.DB != nil && hasBaseReport {
+			_ = models.DB.Create(&reconResult.Reconciliation).Error
+			if reconResult.Reconciliation.ID > 0 && len(reconResult.Links) > 0 {
+				for i := range reconResult.Links {
+					reconResult.Links[i].ReconID = reconResult.Reconciliation.ID
+				}
+				_ = models.DB.Create(&reconResult.Links).Error
+			}
+			// 变更模式下顺带核销历史存量
+			if len(reconResult.ResolvedByChange) > 0 {
+				for _, rf := range reconResult.ResolvedByChange {
+					_ = models.DB.Model(&models.DefectFingerprintRecord{}).
+						Where("repo_id = ? AND task_type_id = ? AND fingerprint = ?", ctx.repo.ID, ctx.taskType.ID, rf.Fingerprint).
+						Updates(map[string]interface{}{
+							"status":             models.DiffStatusResolved,
+							"resolved_at":        time.Now(),
+							"resolved_diff_hunk": ctx.report.HeadCommit,
+						}).Error
+				}
+			}
+		}
+	} else {
+		findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
+		if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
+			return fmt.Errorf("failed to write synthesis input: %w", err)
+		}
+	}
+
+	// 5. 确定供 AI 报告合成的活动条目集合 (从热工作集中取，严格 100% 隔离冷归档池)
+	var activeItems []models.AnalysisFinding
+	if reconResult != nil && len(reconResult.Ledger.Items) > 0 {
+		for _, it := range reconResult.Ledger.Items {
+			f := it.Payload
+			f.DiffStatus = it.DiffStatus
+			if it.CoverageGap {
+				f.DiffStatus = "COVERAGE_GAP"
+			}
+			activeItems = append(activeItems, f)
+		}
+	} else {
+		activeItems = allFindings
+	}
+
+	// 如果活动集中没有任何缺陷，直接跳过大模型综合报告合成阶段，写入静态报告快照并直接返回成功
+	if len(activeItems) == 0 {
 		emptyReportMarkdown := fmt.Sprintf(`# Code-Shield 代码检视报告
 
 ## 一、检视结果概要
@@ -1010,7 +1114,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 			return fmt.Errorf("failed to write static empty report: %w", err)
 		}
 
-		log.Printf("[TaskRunner] No findings detected. Skipped LLM synthesis and wrote static empty report for ReportID %d", ctx.report.ID)
+		log.Printf("[TaskRunner] No findings detected in active ledger. Skipped LLM synthesis and wrote static empty report for ReportID %d", ctx.report.ID)
 		ctx.Summary.Synthesis.Status = "success"
 		ctx.Summary.Synthesis.StartTime = time.Now()
 		ctx.Summary.Synthesis.EndTime = time.Now()
@@ -1018,7 +1122,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		return nil
 	}
 
-	// 2. Count all findings by severity for 100% accurate prompt injection
+	// 6. 统计严重度并生成精准注入的 Prompt 约束
 	counts := map[string]int{
 		"致命":          0,
 		"fatal":       0,
@@ -1052,7 +1156,7 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		"low":         0,
 		"low_risk":    0,
 	}
-	for _, f := range allFindings {
+	for _, f := range activeItems {
 		counts[strings.ToLower(f.Severity)]++
 	}
 
@@ -1065,10 +1169,17 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n致命：%d，严重：%d，一般：%d，建议：%d\n```",
 		fatalCount, criticalCount, minorCount, suggestionCount)
 
-	// 3. Build a simplified list of findings for the AI if count exceeds the threshold to avoid context and output limit issues.
-	var aiFindings []models.AnalysisFinding
+	if reconResult != nil && hasBaseReport {
+		if reconResult.Ledger.Meta.GovernanceMode == models.GovernanceModeChangeFocus {
+			suffixPrompt += fmt.Sprintf("\n\n【本次变更质量结论】：本次为变更增量卡点检视。涉及变动文件：%d 个，本次引入新缺陷：%d 条，顺带实质修复历史存量：%d 条。请在报告第一节清晰呈现变更质量结论！",
+				len(reconResult.Ledger.Meta.ChangedFiles), reconResult.Ledger.Meta.NewIntroducedCount, reconResult.Ledger.Meta.ResolvedHistoryCount)
+		} else {
+			suffixPrompt += fmt.Sprintf("\n\n【跨轮对账与增量治理概要】：相比上一轮基线（报告 ID: %d），本次对账结论如下：真正新增缺陷 %d 条，确认存量缺陷 %d 条，本轮未复现覆盖缺口 %d 条（非代码修复，仍需持续关注），跨组件模板族 %d 处。请在报告中为相应问题条目标注对账徽标（如 [NEW]、[EXISTED]、[COVERAGE_GAP] 等）并在跨轮治理结论中体现！",
+				baseReport.ID, reconResult.Reconciliation.NewCount, reconResult.Reconciliation.ExistedCount, reconResult.Reconciliation.VanishedCoverageGap, reconResult.Reconciliation.TemplateFamilyCount)
+		}
+	}
 
-	// Weight mapping for sorting severities (higher weight = higher priority)
+	// 7. 【AI 输入硬预算防溢出断路器】排序、截断 Top 60 与 Token 压缩
 	severityWeight := map[string]int{
 		"致命":          4,
 		"fatal":       4,
@@ -1103,43 +1214,47 @@ func (ctx *taskContext) executeSynthesis(allFindings []models.AnalysisFinding) e
 		"low_risk":    1,
 	}
 
-	// Sort findings by severity weight descending
-	sortedFindings := make([]models.AnalysisFinding, len(allFindings))
-	copy(sortedFindings, allFindings)
+	sortedFindings := make([]models.AnalysisFinding, len(activeItems))
+	copy(sortedFindings, activeItems)
 	sort.Slice(sortedFindings, func(i, j int) bool {
 		wI := severityWeight[strings.ToLower(sortedFindings[i].Severity)]
 		wJ := severityWeight[strings.ToLower(sortedFindings[j].Severity)]
 		if wI != wJ {
 			return wI > wJ
 		}
-		// Sort alphabetically by file path on equal severity
 		return sortedFindings[i].FilePath < sortedFindings[j].FilePath
 	})
 
 	const maxFullDetailThreshold = 25
+	const maxFindingsCap = 60
+	if len(sortedFindings) > maxFindingsCap {
+		log.Printf("[TaskRunner] Active findings count %d exceeds cap %d. Truncating to top %d to protect AI context.\n",
+			len(sortedFindings), maxFindingsCap, maxFindingsCap)
+		sortedFindings = sortedFindings[:maxFindingsCap]
+	}
+
+	var aiFindings []models.AnalysisFinding
 	if len(sortedFindings) <= maxFullDetailThreshold {
 		aiFindings = sortedFindings
 	} else {
 		log.Printf("[TaskRunner] Findings count %d exceeds %d. Generating simplified findings payload for AI synthesis...\n", len(sortedFindings), maxFullDetailThreshold)
 		for i, f := range sortedFindings {
 			if i < maxFullDetailThreshold {
-				// Keep full details for top 25 high-priority findings
 				aiFindings = append(aiFindings, f)
 			} else {
-				// Stripping large fields (code snippets and details) for lower-priority findings to compress tokens
 				f.CodeSnippet = ""
 				f.Detail = "详细内容请查阅随附的完整版 JSON 发现清单附件。"
 				f.Suggestion = "请查阅完整清单文件获取本项的具体修改建议。"
 				aiFindings = append(aiFindings, f)
 			}
 		}
-		suffixPrompt += fmt.Sprintf("\n\n此外，本次分析发现的问题总数较多（共 %d 处）。为了精炼报告，我们在输入的 JSON 中对排在第 %d 位以后的次要或低风险发现进行了简化（隐去了代码片段和详细分析）。在生成『三、发现的问题』章节时，请仅对前 %d 个高风险问题进行详细罗列展示；对于其余的简化问题，请按照文件、分类或影响进行归聚归集（例如：『* 其它低危问题：共 X 处，位于 http_client.go:12 等地方，影响代码健壮性...』），或者简要列举它们的类别及位置，切勿逐个平铺列出，以避免因内容过长而被大模型强制截断。",
+		suffixPrompt += fmt.Sprintf("\n\n此外，本次分析发现的问题总数较多（共 %d 处）。为了精炼报告，我们在输入的 JSON 中对排在第 %d 位以后的次要或低风险发现进行了简化（隐去了代码片段和详细分析）。在生成『三、发现的问题』章节时，请仅对前 %d 个高风险问题进行详细罗列展示；对于其余的简化问题，请按照文件、分类或影响进行归聚归集，切勿逐个平铺列出，以避免因内容过长而被大模型强制截断。",
 			len(sortedFindings), maxFullDetailThreshold+1, maxFullDetailThreshold)
 	}
 
-	// 4. Serialize simplified findings to a temporary file for AI input
+	// 8. 序列化简化后的 findings 为临时文件供 AI 输入
 	aiFindingsJSON, _ := json.MarshalIndent(aiFindings, "", "  ")
-	synthesisAIInputPath := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("report-%d-synthesis-%s-for-ai.json", ctx.report.ID, safeRepoName))
+	synthesisAIInputPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-synthesis-%s-for-ai.json", ctx.report.ID, safeRepoName))
 	if err := os.WriteFile(synthesisAIInputPath, aiFindingsJSON, 0644); err != nil {
 		return fmt.Errorf("failed to write AI synthesis input: %w", err)
 	}

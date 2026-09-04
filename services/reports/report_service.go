@@ -33,32 +33,52 @@ func BuildMetaDTO(report *models.TaskReport) ReportMetaDTO {
 		}
 	}
 
+	var baseReportID uint
+	var vanishedGap, templateFam, activeWork, dormantArch, resolvedChg int
+	if models.DB != nil {
+		var recon models.ScanReconciliation
+		if err := models.DB.Where("current_report_id = ?", report.ID).Order("id desc").First(&recon).Error; err == nil {
+			baseReportID = recon.BaseReportID
+			vanishedGap = recon.VanishedCoverageGap
+			templateFam = recon.TemplateFamilyCount
+			activeWork = recon.ActiveWorkingCount
+			dormantArch = recon.DormantArchivedCount
+			resolvedChg = recon.ResolvedByChangeCount
+		}
+	}
+
 	return ReportMetaDTO{
-		ID:                   report.ID,
-		RepoID:               report.RepoID,
-		RepoName:             report.Repo.Name,
-		RepoURL:              report.Repo.URL,
-		Branch:               report.Repo.Branch,
-		TaskTypeID:           report.TaskTypeID,
-		TaskTypeName:         report.TaskType.Name,
-		TaskTypeDisplay:      report.TaskType.DisplayName,
-		EngineMode:           report.TaskType.EngineMode,
-		GovernanceMode:       govMode,
-		Status:               report.Status,
-		Score:                report.Score,
-		Rating:               CalculateRating(report.Score),
-		TotalChunks:          report.TotalChunks,
-		ProcessedChunks:      report.ProcessedChunks,
-		SuccessChunks:        report.SuccessChunks,
-		DurationSeconds:      durationSec,
-		BaseCommit:           report.BaseCommit,
-		HeadCommit:           report.HeadCommit,
-		NewDefectsCount:      report.NewDefectsCount,
-		ExistedDefectsCount:  report.ExistedDefectsCount,
-		ResolvedDefectsCount: report.ResolvedDefectsCount,
-		Tier1Tokens:          report.Tier1Tokens,
-		Tier2Tokens:          report.Tier2Tokens,
-		CreatedAt:            report.CreatedAt,
+		ID:                    report.ID,
+		RepoID:                report.RepoID,
+		RepoName:              report.Repo.Name,
+		RepoURL:               report.Repo.URL,
+		Branch:                report.Repo.Branch,
+		TaskTypeID:            report.TaskTypeID,
+		TaskTypeName:          report.TaskType.Name,
+		TaskTypeDisplay:       report.TaskType.DisplayName,
+		EngineMode:            report.TaskType.EngineMode,
+		GovernanceMode:        govMode,
+		Status:                report.Status,
+		Score:                 report.Score,
+		Rating:                CalculateRating(report.Score),
+		TotalChunks:           report.TotalChunks,
+		ProcessedChunks:       report.ProcessedChunks,
+		SuccessChunks:         report.SuccessChunks,
+		DurationSeconds:       durationSec,
+		BaseCommit:            report.BaseCommit,
+		HeadCommit:            report.HeadCommit,
+		NewDefectsCount:       report.NewDefectsCount,
+		ExistedDefectsCount:   report.ExistedDefectsCount,
+		ResolvedDefectsCount:  report.ResolvedDefectsCount,
+		BaseReportID:          baseReportID,
+		VanishedCoverageGap:   vanishedGap,
+		TemplateFamilyCount:   templateFam,
+		ActiveWorkingCount:    activeWork,
+		DormantArchivedCount:  dormantArch,
+		ResolvedByChangeCount: resolvedChg,
+		Tier1Tokens:           report.Tier1Tokens,
+		Tier2Tokens:           report.Tier2Tokens,
+		CreatedAt:             report.CreatedAt,
 	}
 }
 
@@ -75,12 +95,34 @@ func GetTaskReportEntity(taskID uint) (*models.TaskReport, error) {
 func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 	isEntityMode := report.TaskType.GovernanceMode == models.GovernanceModeEntityAssessment
 
-	// 1. 读取 disk 上 synthesis findings json
+	// 1. 读取 disk 上 synthesis findings json (支持新版台账 SSOT 与旧版平铺数组双模解析)
 	jsonPath := report.GetSynthesisJSONPath()
 	var rawList []map[string]interface{}
 
 	if jsonBytes, err := os.ReadFile(jsonPath); err == nil {
-		_ = json.Unmarshal(jsonBytes, &rawList)
+		if errUnmarshal := json.Unmarshal(jsonBytes, &rawList); errUnmarshal != nil || len(rawList) == 0 {
+			var ledgerMap map[string]interface{}
+			if errLedger := json.Unmarshal(jsonBytes, &ledgerMap); errLedger == nil {
+				if itemsRaw, ok := ledgerMap["items"].([]interface{}); ok {
+					for _, it := range itemsRaw {
+						if itm, ok := it.(map[string]interface{}); ok {
+							flattened := make(map[string]interface{})
+							if p, ok := itm["payload"].(map[string]interface{}); ok {
+								for k, v := range p {
+									flattened[k] = v
+								}
+							}
+							for k, v := range itm {
+								if k != "payload" {
+									flattened[k] = v
+								}
+							}
+							rawList = append(rawList, flattened)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 2. 查询 DB 中的流转状态与责任人信息 (优先 CampaignFinding，回退 AnalysisFinding)
@@ -193,33 +235,57 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 			idVal = uint(rawID)
 		}
 
+		// 报告对账与台账治理字段
+		itemUID := getMapString(raw, "item_uid", "ItemUID")
+		lifecycleStatus := getMapString(raw, "lifecycle_status", "LifecycleStatus")
+		templateFamilyID := getMapString(raw, "template_family_id", "TemplateFamilyID")
+		reconRelation := getMapString(raw, "recon_relation", "ReconRelation")
+		severityRange := getMapString(raw, "severity_range", "SeverityRange")
+		note := getMapString(raw, "note", "Note")
+		coverageGap := false
+		if cg, ok := raw["coverage_gap"].(bool); ok {
+			coverageGap = cg
+		}
+		severityTriage := false
+		if st, ok := raw["severity_triage"].(bool); ok {
+			severityTriage = st
+		}
+
 		items = append(items, FindingItemDTO{
-			ID:              idVal,
-			TaskReportID:    report.ID,
-			TaskTypeID:      report.TaskTypeID,
-			RepoID:          report.RepoID,
-			Severity:        canonicalSev,
-			SeverityDisplay: sevDisplay,
-			Category:        category,
-			FilePath:        filePath,
-			LineNumber:      lineNumber,
-			Title:           title,
-			Detail:          detail,
-			CodeSnippet:     codeSnippet,
-			Suggestion:      suggestion,
-			Status:          statusVal,
-			StatusDisplay:   statusDisplay,
-			AssigneeID:      assigneeID,
-			AssigneeName:    assigneeName,
-			LatestComment:   latestComment,
-			Fingerprint:     fingerprint,
-			DiffStatus:      diffStatus,
-			TriggerLine:     triggerLine,
-			ScopeSymbol:     scopeSymbol,
-			HunterClaim:     hunterClaim,
-			ChallengerArg:   challengerArg,
-			JudgeVerdict:    judgeVerdict,
-			CreatedAt:       createdAt,
+			ID:               idVal,
+			TaskReportID:     report.ID,
+			TaskTypeID:       report.TaskTypeID,
+			RepoID:           report.RepoID,
+			Severity:         canonicalSev,
+			SeverityDisplay:  sevDisplay,
+			Category:         category,
+			FilePath:         filePath,
+			LineNumber:       lineNumber,
+			Title:            title,
+			Detail:           detail,
+			CodeSnippet:      codeSnippet,
+			Suggestion:       suggestion,
+			Status:           statusVal,
+			StatusDisplay:    statusDisplay,
+			AssigneeID:       assigneeID,
+			AssigneeName:     assigneeName,
+			LatestComment:    latestComment,
+			Fingerprint:      fingerprint,
+			DiffStatus:       diffStatus,
+			TriggerLine:      triggerLine,
+			ScopeSymbol:      scopeSymbol,
+			HunterClaim:      hunterClaim,
+			ChallengerArg:    challengerArg,
+			JudgeVerdict:     judgeVerdict,
+			ItemUID:          itemUID,
+			LifecycleStatus:  lifecycleStatus,
+			CoverageGap:      coverageGap,
+			TemplateFamilyID: templateFamilyID,
+			ReconRelation:    reconRelation,
+			SeverityRange:    severityRange,
+			SeverityTriage:   severityTriage,
+			Note:             note,
+			CreatedAt:        createdAt,
 		})
 	}
 

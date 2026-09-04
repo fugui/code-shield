@@ -26,9 +26,25 @@ const (
 
 // ── GovernanceMode 枚举常量 ──
 const (
-	GovernanceModeDefectTracking   = "defect_tracking"   // 缺陷攻关模式
+	GovernanceModeDefectTracking   = "defect_tracking"   // 缺陷攻关模式 (存量向后兼容)
 	GovernanceModeEntityAssessment = "entity_assessment" // 全量实体评估模式
+	GovernanceModeFullLedger       = "full_ledger"       // 全量基线台账模式
+	GovernanceModeChangeFocus      = "change_focus"      // 变更增量焦点模式
 )
+
+// ResolveGovernanceMode 运行时解构治理模式，保障旧枚举与空配置安全向后兼容
+func ResolveGovernanceMode(raw string) string {
+	switch raw {
+	case GovernanceModeChangeFocus:
+		return GovernanceModeChangeFocus
+	case GovernanceModeEntityAssessment:
+		return GovernanceModeEntityAssessment
+	case GovernanceModeFullLedger, GovernanceModeDefectTracking, "":
+		return GovernanceModeFullLedger
+	default:
+		return GovernanceModeFullLedger
+	}
+}
 
 type Repository struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
@@ -115,11 +131,11 @@ func (t *TaskType) validate() error {
 			t.GovernanceMode = GovernanceModeDefectTracking
 		}
 		switch t.GovernanceMode {
-		case GovernanceModeDefectTracking, GovernanceModeEntityAssessment:
+		case GovernanceModeDefectTracking, GovernanceModeEntityAssessment, GovernanceModeFullLedger, GovernanceModeChangeFocus:
 			// valid
 		default:
-			return fmt.Errorf("invalid governance_mode: %q, must be %q or %q",
-				t.GovernanceMode, GovernanceModeDefectTracking, GovernanceModeEntityAssessment)
+			return fmt.Errorf("invalid governance_mode: %q, must be one of: %q, %q, %q, %q",
+				t.GovernanceMode, GovernanceModeDefectTracking, GovernanceModeEntityAssessment, GovernanceModeFullLedger, GovernanceModeChangeFocus)
 		}
 		if len(t.CampaignConfig) > 0 {
 			var cfg CampaignConfigSchema
@@ -540,4 +556,76 @@ type RepoFeedbackRule struct {
 	CreatedBy  string     `gorm:"size:64" json:"created_by"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+// ScanReconciliation 报告对报告对账会话记录 (R2R Reconciliation Session)
+type ScanReconciliation struct {
+	ID         uint `gorm:"primaryKey;autoIncrement" json:"id"`
+	RepoID     uint `gorm:"index;not null" json:"repo_id"`
+	TaskTypeID uint `gorm:"index;not null" json:"task_type_id"`
+
+	// 两份报告工件路径（跨磁盘可复现）
+	BaseReportID         uint   `gorm:"index" json:"base_report_id"`
+	CurrentReportID      uint   `gorm:"index" json:"current_report_id"`
+	BaseSynthesisPath    string `gorm:"size:512" json:"base_synthesis_path"`
+	CurrentSynthesisPath string `gorm:"size:512" json:"current_synthesis_path"`
+
+	// 代码变更证据（修复判定输入）
+	BaseCommit    string `gorm:"size:64" json:"base_commit"`
+	HeadCommit    string `gorm:"size:64" json:"head_commit"`
+	RepoUnchanged bool   `json:"repo_unchanged"` // true ⇒ 永不产生 RESOLVED_FROM_VANISHED
+
+	// 汇总统计
+	NewCount             int `json:"new_count"`
+	ExistedCount         int `json:"existed_count"`
+	VanishedCoverageGap  int `json:"vanished_coverage_gap"`
+	VanishedFixCandidate int `json:"vanished_fix_candidate"`
+	MultiViewMerged      int `json:"multi_view_merged"`
+	SplitCount           int `json:"split_count"`
+	TemplateFamilyCount  int `json:"template_family_count"`
+
+	// 膨胀治理与归档统计 (Phase 3.5)
+	ActiveWorkingCount   int `json:"active_working_count"`   // 当前活动工作集条目数 (items[])
+	DormantArchivedCount int `json:"dormant_archived_count"` // 连续未复现退火休眠数 (archived_items[])
+	ObsoleteDeletedCount int `json:"obsolete_deleted_count"` // 物理文件已删除清理数
+
+	// 任务模式与变更焦点 (Phase 3.7)
+	GovernanceMode        string `gorm:"size:32;default:'full_ledger';index" json:"governance_mode"` // full_ledger (全量基线台账) / change_focus (变更增量焦点)
+	ResolvedByChangeCount int    `json:"resolved_by_change_count"`                                   // 变更焦点模式下顺带核销历史缺陷数
+
+	Status    string    `gorm:"size:32;default:'pending';index" json:"status"` // pending / confirmed / archived
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ReconciliationLink 报告间对账链接（B↔A 或 A 侧 VANISHED，含置信与拓扑关系）
+type ReconciliationLink struct {
+	ID      uint `gorm:"primaryKey;autoIncrement" json:"id"`
+	ReconID uint `gorm:"index;not null" json:"recon_id"`
+
+	// 稳定物理身份绑定（长哈希用于机器索引，item_uid 用于人类可读引用）
+	BaseFP         string `gorm:"size:64;index" json:"base_fp"`          // A 侧 L1 强指纹
+	CurrentFP      string `gorm:"size:64;index" json:"current_fp"`       // B 侧 L1 强指纹
+	BaseItemUID    string `gorm:"size:64;index" json:"base_item_uid"`    // A 条目稳定业务编号（如 F19371-12f5a8b9）
+	CurrentItemUID string `gorm:"size:64;index" json:"current_item_uid"` // B 条目稳定业务编号（如 F19375-bcf6103a）
+	BaseScope      string `gorm:"size:256" json:"base_scope"`
+	CurrScope      string `gorm:"size:256" json:"curr_scope"`
+
+	MatchedTier int     `gorm:"default:0" json:"matched_tier"` // R1..R6 = 1..6; 0 = 无匹配
+	Confidence  float64 `gorm:"default:0" json:"confidence"`   // 0~1
+	// Relation 严格收敛为纯粹的两端拓扑对账关系，条目自身生命周期由 lifecycle_status 承载
+	Relation string `gorm:"size:32;index" json:"relation"` // SAME / SAME_MULTI_VIEW / PROBABLE / SPLIT_FROM / MERGED_INTO / TEMPLATE / VANISHED / NEW
+
+	// 模板族 (TEMPLATE 关系时)
+	TemplateFamilyID string `gorm:"size:40;index" json:"template_family_id"`
+
+	// 严重度跨轮跟踪与冲突仲裁
+	SeverityRange  string `gorm:"size:64" json:"severity_range"`        // 跨轮严重度极值区间 JSON，如 "[\"建议\",\"致命\"]"
+	SeverityTriage bool   `gorm:"default:false" json:"severity_triage"` // true 表示跨轮严重度冲突需人工介入仲裁
+
+	Reason      string     `gorm:"type:text" json:"reason"` // 匹配依据或 LLM 仲裁摘要
+	Confirmed   bool       `gorm:"default:false" json:"confirmed"`
+	ConfirmedBy *uint      `json:"confirmed_by"`
+	ConfirmedAt *time.Time `json:"confirmed_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
