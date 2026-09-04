@@ -20,7 +20,7 @@
   "tier_reasoning_backend": "",
   "is_campaign": false,
   "campaign_path": "",
-  "governance_mode": "defect_tracking",
+  "governance_mode": "change_focus",
   "categories": [
     "内存与并发安全-资源泄漏",
     "内存与并发安全-数据竞争",

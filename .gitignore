@@ -29,6 +29,12 @@ code_shield.db-wal
 codes/
 review-reports/
 /reports/
+task-reports/
+
+# Reconciliation intermediate artifacts
+recon-*.json
+*-for-ai.json
+*-raw-findings.json
 
 # Binary executables
 code-shield-server
