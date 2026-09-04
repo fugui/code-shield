@@ -1,4 +1,4 @@
-package services
+package governance
 
 import (
 	"testing"

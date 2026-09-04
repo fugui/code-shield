@@ -2,6 +2,7 @@ package services
 
 import (
 	"code-shield/models"
+	"code-shield/services/dispatcher"
 	"code-shield/services/invoker"
 	"context"
 	"fmt"
@@ -65,51 +66,11 @@ func CleanupLegacyTaskAgents() {
 	invoker.CleanupLegacyTaskAgents()
 }
 
-// DispatchingInvoker 是 AIInvoker 的代理，自动在调用前后向 ModelDispatcher 申请/释放并发槽位
-type DispatchingInvoker struct {
-	delegate AIInvoker
-}
-
-func (w *DispatchingInvoker) Name() string {
-	return w.delegate.Name()
-}
-
-func (w *DispatchingInvoker) Invoke(req AIRequest) error {
-	backend := w.delegate.Name()
-	ctx := req.ParentContext
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	workCtx := req.WorkContext
-	if workCtx == nil {
-		workCtx = LLMWorkContextFromContext(ctx)
-	}
-
-	// 1. 申请 LLM 服务器资源（支持模型亲和性与容量加权优先分配）
-	res, modelName, err := Dispatcher.AcquireWithPreference(ctx, backend, req.ModelName)
-	if err != nil {
-		return fmt.Errorf("failed to acquire LLM server slot: %w", err)
-	}
-
-	if res != nil {
-		defer Dispatcher.Release(res, backend)
-		if req.ModelName == "" && modelName != "" {
-			req.ModelName = modelName
-		}
-		// 登记活跃槽位租约，并在调用退出时自动注销
-		leaseID := Dispatcher.RegisterSlotLease(res, backend, modelName, workCtx)
-		if leaseID != "" {
-			defer Dispatcher.UnregisterSlotLease(leaseID)
-		}
-	}
-
-	// 2. 调用真正的底层 AI 后端
-	return w.delegate.Invoke(req)
-}
+// DispatchingInvoker 是 AIInvoker 的代理，委托至 dispatcher 子包
+type DispatchingInvoker = dispatcher.DispatchingInvoker
 
 // GetAIInvoker 根据名称返回对应的 AIInvoker，未找到则回退到 claude。
-// 当调度器启用时，自动返回 DispatchingInvoker 包装实例。
+// 当调度器启用时，自动返回经过调度器并发配额管理的包装实例。
 func GetAIInvoker(name string) AIInvoker {
 	inv, ok := invoker.GetRawInvoker(name)
 	if !ok || inv == nil {
@@ -117,10 +78,7 @@ func GetAIInvoker(name string) AIInvoker {
 		inv, _ = invoker.GetRawInvoker("claude")
 	}
 
-	if Dispatcher != nil && Dispatcher.enabled {
-		return &DispatchingInvoker{delegate: inv}
-	}
-	return inv
+	return dispatcher.WrapInvoker(inv)
 }
 
 // RepairJSON calls AI to fix syntax errors in a JSON file.
