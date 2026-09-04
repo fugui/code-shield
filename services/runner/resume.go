@@ -1,4 +1,4 @@
-package services
+package runner
 
 import (
 	"context"
@@ -20,16 +20,16 @@ import (
 // ResumeFailedChunks 读取指定报告的 chunk 执行摘要 JSON，找到失败的 chunk 进行重试，
 // 全部完成后重新汇总 findings 并生成最终报告。
 func ResumeFailedChunks(reportID uint) error {
-	ctx := &taskContext{}
+	ctx := &TaskContext{}
 
 	// 1. 加载 report、taskType、repo
 	var report models.TaskReport
 	if err := models.DB.Preload("Repo").Preload("TaskType").First(&report, reportID).Error; err != nil {
 		return fmt.Errorf("report %d not found: %w", reportID, err)
 	}
-	ctx.report = report
-	ctx.taskType = report.TaskType
-	ctx.repo = report.Repo
+	ctx.Report = report
+	ctx.TaskType = report.TaskType
+	ctx.Repo = report.Repo
 
 	// 2. 解析引擎配置
 	cfg := engines.ChunkConfig{
@@ -37,8 +37,8 @@ func ResumeFailedChunks(reportID uint) error {
 		Depth:       engines.DefaultChunkDepth,
 		Concurrency: engines.DefaultChunkConcurrency,
 	}
-	if len(ctx.taskType.EngineConfig) > 0 {
-		_ = json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
+	if len(ctx.TaskType.EngineConfig) > 0 {
+		_ = json.Unmarshal(ctx.TaskType.EngineConfig, &cfg)
 	}
 	if cfg.MaxFiles <= 0 {
 		cfg.MaxFiles = engines.DefaultChunkMaxFiles
@@ -49,8 +49,8 @@ func ResumeFailedChunks(reportID uint) error {
 
 	// 3. 构造上下文并准备路径
 	taskCtx, cancel := context.WithCancel(context.Background())
-	ctx.ctx = taskCtx
-	ctx.cancel = cancel
+	ctx.Ctx = taskCtx
+	ctx.Cancel = cancel
 
 	activeTasksMu.Lock()
 	activeTasks[reportID] = ctx
@@ -62,23 +62,23 @@ func ResumeFailedChunks(reportID uint) error {
 		cancel()
 	}()
 
-	// 解析 RunParams（从关联的执行日志恢复）
+	// 解析 RunParams
 	var execLog models.TaskExecutionLog
 	if err := models.DB.Preload("Schedule").Where("task_report_id = ?", reportID).First(&execLog).Error; err == nil {
 		if execLog.Schedule != nil && len(execLog.Schedule.RunParams) > 0 {
 			var rp models.RunParams
 			if err := json.Unmarshal(execLog.Schedule.RunParams, &rp); err == nil {
-				ctx.resolveRunParams(rp)
+				ctx.ResolveRunParams(rp)
 			}
 		}
 	}
-	if ctx.runParams.TargetScope == nil {
-		ctx.resolveRunParams(models.RunParams{})
+	if ctx.RunParams.TargetScope == nil {
+		ctx.ResolveRunParams(models.RunParams{})
 	}
 
-	ctx.prepareOutputPaths()
+	ctx.PrepareOutputPaths()
 
-	// 4. 更新状态为 analyzing，并重置已处理分片数为已成功分片数，以便前端正确显示重试进度
+	// 4. 更新状态为 analyzing，并重置已处理分片数为已成功分片数
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(map[string]interface{}{
 		"status":           models.StatusAnalyzing,
 		"processed_chunks": report.SuccessChunks,
@@ -86,23 +86,25 @@ func ResumeFailedChunks(reportID uint) error {
 	})
 
 	// 5. 同步代码
-	if err := ctx.prepareAndSync(ctx.repo.URL); err != nil {
-		ctx.markFailed(err.Error())
+	codesPath, err := PrepareAndSync(ctx.Ctx, ctx.Repo, ctx.Report.ID, ctx.Repo.URL)
+	if err != nil {
+		MarkFailed(ctx, err.Error())
 		return err
 	}
+	ctx.CodesPath = codesPath
 
 	// 6. 读取 summary JSON
-	summaryData, err := os.ReadFile(ctx.jsonPath)
+	summaryData, err := os.ReadFile(ctx.JsonPath)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed to read chunk summary JSON (%s): %v", ctx.jsonPath, err)
-		ctx.markFailed(errMsg)
+		errMsg := fmt.Sprintf("failed to read chunk summary JSON (%s): %v", ctx.JsonPath, err)
+		MarkFailed(ctx, errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
 
 	var taskSummary TaskSummaryReport
 	if err := json.Unmarshal(summaryData, &taskSummary); err != nil {
 		errMsg := fmt.Sprintf("failed to parse task summary JSON: %v", err)
-		ctx.markFailed(errMsg)
+		MarkFailed(ctx, errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
 	ctx.Summary = taskSummary
@@ -116,16 +118,16 @@ func ResumeFailedChunks(reportID uint) error {
 	}
 
 	if len(failedChunks) == 0 {
-		log.Printf("[ResumeFailedChunks] No failed chunks found for ReportID %d, nothing to resume\n", reportID)
+		log.Printf("[Resume] No failed chunks found for ReportID %d, nothing to resume\n", reportID)
 		return fmt.Errorf("no failed chunks to resume")
 	}
 
-	log.Printf("[ResumeFailedChunks] Found %d failed chunks to retry for ReportID %d\n", len(failedChunks), reportID)
+	log.Printf("[Resume] Found %d failed chunks to retry for ReportID %d\n", len(failedChunks), reportID)
 
 	// 8. 准备 chunk 输出目录
-	nameParts := strings.Split(ctx.repo.Name, "/")
+	nameParts := strings.Split(ctx.Repo.Name, "/")
 	repoShort := nameParts[len(nameParts)-1]
-	chunkDir := filepath.Join(filepath.Dir(ctx.reportPath), fmt.Sprintf("chunks-%d-%s", ctx.report.ID, repoShort))
+	chunkDir := filepath.Join(filepath.Dir(ctx.ReportPath), fmt.Sprintf("chunks-%d-%s", ctx.Report.ID, repoShort))
 	_ = os.MkdirAll(chunkDir, 0755)
 
 	// 9. 并发重试失败的 chunk
@@ -143,20 +145,20 @@ func ResumeFailedChunks(reportID uint) error {
 
 loop:
 	for idx, failedChunk := range failedChunks {
-		if ctx.ctx.Err() != nil {
+		if ctx.Ctx.Err() != nil {
 			break loop
 		}
 
 		wg.Add(1)
 
 		select {
-		case <-ctx.ctx.Done():
+		case <-ctx.Ctx.Done():
 			wg.Done()
 			break loop
 		case semaphore <- struct{}{}:
 		}
 
-		if ctx.ctx.Err() != nil {
+		if ctx.Ctx.Err() != nil {
 			select {
 			case <-semaphore:
 			default:
@@ -175,25 +177,25 @@ loop:
 			}()
 
 			safeName := strings.ReplaceAll(chunk.ChunkName, "/", "-")
-			chunkCtx := &taskContext{
-				report:     ctx.report,
-				taskType:   ctx.taskType,
-				repo:       ctx.repo,
-				codesPath:  ctx.codesPath,
-				runParams:  ctx.runParams,
-				ctx:        ctx.ctx,
-				reportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.md", ctx.report.ID, safeName)),
-				jsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.report.ID, safeName)),
+			chunkCtx := &TaskContext{
+				Report:     ctx.Report,
+				TaskType:   ctx.TaskType,
+				Repo:       ctx.Repo,
+				CodesPath:  ctx.CodesPath,
+				RunParams:  ctx.RunParams,
+				Ctx:        ctx.Ctx,
+				ReportPath: filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.md", ctx.Report.ID, safeName)),
+				JsonPath:   filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.Report.ID, safeName)),
 			}
-			chunkCtx.report.ChunkName = chunk.ChunkName
+			chunkCtx.Report.ChunkName = chunk.ChunkName
 
-			log.Printf("[ResumeFailedChunks] Retrying chunk %d/%d [%s] (%d files)\n",
+			log.Printf("[Resume] Retrying chunk %d/%d [%s] (%d files)\n",
 				chunkIdx+1, len(failedChunks), chunk.ChunkName, len(chunk.Files))
 
-			cleanAnalysisTempFiles(chunkCtx.jsonPath)
+			CleanAnalysisTempFiles(chunkCtx.JsonPath)
 
 			chunkStartTime := time.Now()
-			findings, err := chunkCtx.executeAnalysis(chunk.Files)
+			findings, err := ExecuteAnalysis(chunkCtx, chunk.Files)
 			chunkEndTime := time.Now()
 
 			if detail, ok := chunkStatusMap[chunk.ChunkName]; ok {
@@ -213,7 +215,7 @@ loop:
 			}
 
 			if err != nil {
-				log.Printf("[ResumeFailedChunks] Chunk [%s] retry failed: %v\n", chunk.ChunkName, err)
+				log.Printf("[Resume] Chunk [%s] retry failed: %v\n", chunk.ChunkName, err)
 				errMu.Lock()
 				chunkErrors = append(chunkErrors, fmt.Sprintf("Chunk [%s] failed: %v", chunk.ChunkName, err))
 				errMu.Unlock()
@@ -228,8 +230,8 @@ loop:
 
 	wg.Wait()
 
-	if ctx.ctx.Err() != nil {
-		return ctx.ctx.Err()
+	if ctx.Ctx.Err() != nil {
+		return ctx.Ctx.Err()
 	}
 
 	// 10. 更新 summary JSON
@@ -254,17 +256,17 @@ loop:
 	}
 
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Update("success_chunks", successCount)
-	ctx.writeSummaryReport()
+	WriteSummaryReport(ctx)
 
 	// 11. 提取所有成功分片的发现
 	var existingFindings []models.AnalysisFinding
 	for _, chunk := range ctx.Summary.Analysis.Chunks {
 		if chunk.Status == "success" {
 			safeName := strings.ReplaceAll(chunk.ChunkName, "/", "-")
-			chunkJsonPath := filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.report.ID, safeName))
-			findings, err := ctx.loadFindingsFromChunkFile(chunkJsonPath)
+			chunkJsonPath := filepath.Join(chunkDir, fmt.Sprintf("chunk-%d-%s.json", ctx.Report.ID, safeName))
+			findings, err := LoadFindingsFromChunkFile(ctx, chunkJsonPath)
 			if err != nil {
-				log.Printf("[ResumeFailedChunks] Warning: failed to load findings for successful chunk [%s]: %v\n", chunk.ChunkName, err)
+				log.Printf("[Resume] Warning: failed to load findings for successful chunk [%s]: %v\n", chunk.ChunkName, err)
 				continue
 			}
 			existingFindings = append(existingFindings, findings...)
@@ -274,22 +276,22 @@ loop:
 	if len(chunkErrors) > 0 {
 		if len(newFindings) == 0 && len(existingFindings) == 0 {
 			errMsg := fmt.Sprintf("resume failed: all retried chunks failed: %s", strings.Join(chunkErrors, "; "))
-			ctx.markFailed(errMsg)
+			MarkFailed(ctx, errMsg)
 			return fmt.Errorf("%s", errMsg)
 		}
-		log.Printf("[ResumeFailedChunks] Warning: %d chunks still failed, proceeding with available findings\n", len(chunkErrors))
+		log.Printf("[Resume] Warning: %d chunks still failed, proceeding with available findings\n", len(chunkErrors))
 	}
 
 	var allFindings []models.AnalysisFinding
 	allFindings = append(allFindings, existingFindings...)
 	allFindings = append(allFindings, newFindings...)
 
-	ctx.findings = allFindings
-	if err := ctx.executeSynthesis(allFindings); err != nil {
-		ctx.markFailed(err.Error())
+	ctx.Findings = allFindings
+	if err := ExecuteSynthesis(ctx, allFindings); err != nil {
+		MarkFailed(ctx, err.Error())
 		return err
 	}
 
-	result := ctx.runPostProcess()
-	return ctx.finalize(result)
+	result := RunPostProcess(ctx.Findings, ctx.TaskType)
+	return Finalize(ctx, result)
 }

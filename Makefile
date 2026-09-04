@@ -15,7 +15,7 @@ COMMON_SRCS     := $(shell find $(COMMON_DIR) -type f 2>/dev/null)
 FRONTEND_SRCS   := $(shell find $(FRONTEND_DIR) -type f -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null) $(COMMON_SRCS)
 BACKEND_SRCS    := $(shell find . -type f \( -name "*.go" -o -name "go.mod" -o -name "go.sum" \) -not -path "*/$(FRONTEND_DIR)/*" -not -path "*/.git/*")
 
-.PHONY: all build install frontend backend clean run test lint
+.PHONY: all build install frontend backend clean run test lint lint-arch
 
 # 默认运行目标
 all: build
@@ -57,6 +57,23 @@ run: build
 	./$(BINARY)
 
 # 执行代码风格与语法检查
-lint: $(NODE_MODULES)
+lint: $(NODE_MODULES) lint-arch
 	@echo "Running linter..."
 	cd $(FRONTEND_DIR) && npm run lint
+
+# 执行架构防腐静态门禁检查
+lint-arch:
+	@echo "Checking architecture boundaries (ArchGuard)..."
+	@if grep -rn "models\.DB" services/engines/; then \
+		echo "❌ [ArchGuard Failed] Execution engines must not access models.DB directly!"; \
+		exit 1; \
+	fi
+	@if grep -rn "code-shield/services/engines\|code-shield/services/runner" services/invoker/; then \
+		echo "❌ [ArchGuard Failed] Invoker driver must not depend on engines or runner!"; \
+		exit 1; \
+	fi
+	@if grep -rn "code-shield/services\"" services/runner/; then \
+		echo "❌ [ArchGuard Failed] Runner must not circularly depend on root services package!"; \
+		exit 1; \
+	fi
+	@echo "✅ [ArchGuard Passed] All architectural boundaries are clean and valid."

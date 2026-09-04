@@ -155,17 +155,17 @@ func TestExecuteSynthesisOnce_Tier3Native(t *testing.T) {
 	}
 
 	ctx := &taskContext{
-		reportPath: reportPath,
-		codesPath:  tempDir,
-		taskType: models.TaskType{
+		ReportPath: reportPath,
+		CodesPath:  tempDir,
+		TaskType: models.TaskType{
 			Name:        "security_audit",
 			DisplayName: "安全审计",
 			Timeout:     5,
 		},
-		report: models.TaskReport{ID: 999},
+		Report: models.TaskReport{ID: 999},
 	}
 
-	err := ctx.executeSynthesisOnce(jsonPath, "")
+	err := ctx.ExecuteSynthesisOnce(jsonPath, "")
 	if err != nil {
 		t.Fatalf("executeSynthesisOnce failed: %v", err)
 	}
