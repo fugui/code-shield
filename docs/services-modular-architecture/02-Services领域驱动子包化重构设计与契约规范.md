@@ -84,7 +84,13 @@ code-shield/services/
 
 ## 3. 分层依赖关系拓扑 (单向无环 DAG)
 
-系统自底向上严格遵循单向依赖，杜绝循环引用：
+系统自底向上严格划分为四个清晰的依赖层级，单向依赖，从物理层面彻底杜绝 Go 语言循环引用（`import cycle not allowed`）：
+
+1. **基础设施层 (Infrastructure)**：`services/invoker`（AI CLI / Native 驱动）、`services/dispatcher`（算力池动态加权与租约）；
+2. **核心领域层 (Domain Core)**：`services/defects`（物理源码锚点 SSOT 与指纹比对）、`services/governance`（规则树与治理归并）、`services/reconciliation`（多模型复核对账）；
+3. **扫描引擎层 (Analysis Engines)**：`services/engines`（单仓/分片/多智能体三权分立辩论引擎、语义感知分片器）；
+4. **任务管线与调度层 (Pipeline & Orchestration)**：`services/queue`（Worker队列）、`services/runner`（生命周期大调度管线）、`services/reports`（多格式导出）；
+5. **顶层门面 (Facade)**：`services/services.go`（保持向后兼容的无状态包装函数）。
 
 ```mermaid
 graph TD
@@ -167,8 +173,8 @@ graph TD
 
 ## 5. 关键契约与核心接口设计规范
 
-### 5.1 契约一：解耦 `taskContext`，定义干净的 `EngineContext`
-将原有臃肿的包私有 `taskContext` 提炼为面向引擎的公开参数契约 `EngineContext`：
+### 5.1 契约一：解耦 `taskContext`，定义纯净的 `EngineContext` 与 `TaskEngine`
+将原有臃肿的包私有 `taskContext` 提炼为面向引擎的纯数据参数契约 `EngineContext`，并遵循 Go 语言最佳实践将 `context.Context` 提升为函数的**第一参数**：
 
 ```go
 package engines
@@ -183,37 +189,35 @@ import (
 // ProgressCallback 用于引擎向外层管线汇报分片或环节进展
 type ProgressCallback func(current, total int, stage, detail string)
 
-// EngineContext 封装静态分析引擎执行所需的最小必要上下文（只读环境，剥离生命周期控制）
+// EngineContext 封装静态分析引擎执行所需的最小必要上下文（只读数据对象，剥离 DB 与生命周期控制）
 type EngineContext struct {
-    Ctx          context.Context
-    ReportID     uint
-    RepoID       uint
-    RepoName     string
-    CodesPath    string
-    ReportPath   string
-    JsonPath     string
-    TargetScope  string
-    RunParams    models.RunParams
-    EngineConfig json.RawMessage
-    Invoker      invoker.AIInvoker
-    OnProgress   ProgressCallback
+    ReportID        uint             // 关联任务报告 ID（用于业务透视，非 DB 外键操作）
+    RepoID          uint             // 代码仓 ID
+    RepoName        string           // 仓库名称
+    CodesPath       string           // 代码检出根目录（只读）
+    IntermediateDir string           // 仅用于分片模式持久化局部 Checkpoint 缓存文件的临时目录
+    TargetScope     string           // 扫描范围约束（"all" 或指定路径）
+    RunParams       models.RunParams // 运行时合并参数
+    EngineConfig    json.RawMessage  // 引擎私有扩展配置 JSON
+    Invoker         invoker.AIInvoker// 底层 AI 调用器实例
+    OnProgress      ProgressCallback // 进度汇报回调函数
 }
 
 // TaskEngine 定义所有静态扫描引擎的统一纯粹接口
 type TaskEngine interface {
     // Mode 返回该引擎对应的执行模式名称（如 "debate_full", "chunked", "single"）
     Mode() string
-    // Run 执行扫描分析，产出标准化 findings 列表，写入中间文件并返回
-    Run(ctx *EngineContext) ([]models.AnalysisFinding, error)
+    // Run 执行扫描分析，产出标准化 findings 列表并以纯内存形式交还流水线
+    Run(ctx context.Context, engineCtx *EngineContext) ([]models.AnalysisFinding, error)
 }
 ```
 
-*   **架构收益**：
-    1.  引擎不再接触 DB 连接与事务提交；
-    2.  引擎不再接触外层的 `markFailed` 或 `finalize`；
-    3.  引擎可使用模拟的 `EngineContext` 进行**纯粹的高速单元测试**，彻底摆脱外部数据库与 Git 依赖。
+*   **架构收益与持久化分工**：
+    1.  **首参规范**：遵循 Go 标准库规范，超时控制与外部取消信号统一通过 `ctx context.Context` 传递，避免将 `Context` 塞进结构体字段；
+    2.  **持久化职责明确**：`TaskEngine` 只返回纯内存结果 `[]models.AnalysisFinding`。最终报告（`report.json`、`report.md`）的组装、序列化与落盘统一由外层管线（Runner）集中收口；`IntermediateDir` 仅供引擎在分片超大时做局部 Checkpoint 容灾使用；
+    3.  **单元测试脱敏**：引擎不再接触 DB 连接与事物提交，使用构造的 `EngineContext` 即可实现毫秒级的内存单元测试。
 
-### 4.2 契约二：物理源码锚点统一真实源 (SSOT)
+### 5.2 契约二：物理源码锚点统一真实源 (SSOT)
 在 `services/defects/anchor.go` 中统一定义物理源码锚点数据模型与清洗函数，废弃所有雷同拷贝：
 
 ```go
@@ -229,6 +233,7 @@ import (
 )
 
 // SourceAnchor 确定性物理源码锚点（缺陷的绝对物理身份证）
+// 注：结构体字段的 json 标签为本次重构新增的架构增强点，用于支持分片中间产物的结构化序列化与分布式缓存。
 type SourceAnchor struct {
     NormalizedPath  string `json:"normalized_path"`  // 相对仓根目录正斜杠小写路径
     NormalizedScope string `json:"normalized_scope"` // 规范化后的核心作用域 (剥离外部namespace)
@@ -253,8 +258,59 @@ func NormalizeScopeSymbol(rawScope string) string {
 *   **架构收益**：
     `services/reconciliation` 直接通过 `import "code-shield/services/defects"` 复用此定义，彻底消除近百行重复代码，并确保整个系统使用完全一致的代码清洗行为。
 
-### 4.3 契约三：断点续跑回归 Runner 管辖 (`runner/resume.go`)
-将原有混在 `engine_chunked.go` 中的续跑逻辑抽离，形成标准化的续跑执行器：
+### 5.3 契约三：微观算力调度器契约 (`services/dispatcher`)
+为了保证双层调度体系契约闭环，算力池对外暴露最小化的租约申请与状态透视接口：
+
+```go
+package dispatcher
+
+import (
+    "code-shield/services/invoker"
+    "context"
+)
+
+// SlotLease 代表获取到的单次算力执行槽位租约
+type SlotLease interface {
+    // Release 释放当前槽位，归还并发计数
+    Release()
+    // ServerID 返回当前分配到的后端服务器节点标识
+    ServerID() string
+    // Model 返回当前节点实际承载的模型名称
+    Model() string
+}
+
+// LLMDispatcher 定义算力调度池统一接口
+type LLMDispatcher interface {
+    // AcquireSlot 依据 SWRR 算法平滑加权申请一个可用并发槽位，支持 context 取消与排队阻塞
+    AcquireSlot(ctx context.Context, backend string, workCtx *invoker.LLMWorkContext) (SlotLease, error)
+    // Snapshot 返回当前算力池的活跃租约快照，供系统诊断看板使用
+    Snapshot() []LLMSlotLease
+    // ReloadConfig 动态热加载服务器配置，实现零停机运维
+    ReloadConfig() error
+}
+```
+
+### 5.4 契约四：专项治理与规则后处理契约 (`services/governance`)
+统一治理引擎负责缺陷收敛、确定性定级与负样本记忆：
+
+```go
+package governance
+
+import "code-shield/models"
+
+// GovernanceEngine 专项治理核心契约
+type GovernanceEngine interface {
+    // MergeCampaignFindings 执行专项治理缺陷合并与状态机流转 (全量覆写 vs 增量更新)
+    MergeCampaignFindings(repoID, taskTypeID, reportID uint, findings []models.AnalysisFinding) error
+    // CalibrateSeverity 依据 CWE 与宏隔离规则树进行确定性定级，剥夺模型自由裁量权
+    CalibrateSeverity(category, verdict, codeSnippet string) (severity string, ruleCode string)
+    // SanitizeCategory 将大模型自由发散的类别收敛至受控白名单字典
+    SanitizeCategory(rawCategory string, allowedCategories []string) string
+}
+```
+
+### 5.5 契约五：断点续跑回归 Runner 管辖与可观测性 (`runner/resume.go`)
+将原有混在 `engine_chunked.go` 中的续跑逻辑抽离，形成标准化的续跑执行器，并内置全链路阶段耗时指标（Metrics）：
 
 ```go
 package runner
@@ -262,25 +318,36 @@ package runner
 import (
     "code-shield/models"
     "code-shield/services/engines"
+    "context"
     "fmt"
-    "log"
+    "time"
 )
 
+// PipelineMetrics 收集单个任务执行在各个阶段的耗时与健康指标
+type PipelineMetrics struct {
+    GitSyncDurationSec    float64 `json:"git_sync_duration_sec"`
+    EngineExecutionSec    float64 `json:"engine_execution_sec"`
+    DiffEngineDurationSec float64 `json:"diff_engine_duration_sec"`
+    PostProcessSec        float64 `json:"post_process_sec"`
+    FinalizeDurationSec   float64 `json:"finalize_duration_sec"`
+}
+
 // ResumeTask 执行失败任务或部分分片失败任务的断点续跑
-func (r *PipelineRunner) ResumeTask(reportID uint) error {
+func (r *PipelineRunner) ResumeTask(ctx context.Context, reportID uint) error {
     // 1. 从 DB 加载任务与前序状态
-    // 2. 检查 Git 仓库状态与环境锁
-    // 3. 读取已执行的 Chunk 记录，找出失败的分片
-    // 4. 初始化 EngineContext，仅针对失败的分片调用 Engine 重新执行
-    // 5. 重新聚合全量 Findings，触发 DiffEngine 与 Governance Hook
-    // 6. 执行 PostProcess 脚本与 Finalize 提交
+    // 2. 检查 Git 仓库状态与环境互斥锁
+    // 3. 读取已持久化的分片 Checkpoint，识别失败分片
+    // 4. 组装 EngineContext，仅针对失败分片调用 engines 局部补扫
+    // 5. 将补扫产物与历史成功分片聚合，触发 DiffEngine 与 Governance Hook
+    // 6. 执行 PostProcess 脚本与 Finalize 事务提交
 }
 ```
 *   **架构收益**：
-    引擎专注“怎么扫”，Runner 专注“怎么调度与恢复”，职责严格正交。
+    1.  引擎专注“怎么扫”，Runner 专注“怎么调度与恢复”，职责严格正交；
+    2.  内置阶段指标透视，任何一个 Stage（如 Git 锁卡死、Diff 耗时突增）均可被系统诊断中心精准捕获。
 
-### 4.4 契约四：门面层向后兼容设计 (`services/services.go`)
-在 `services/` 根目录下，保留最薄的一层门面转发，外部调用方（如 `handlers` 等）完全无须改动任何代码：
+### 5.6 契约六：门面层向后兼容与安全包装设计 (`services/services.go`)
+在 `services/` 根目录下，保留最薄的一层门面转发。**为防止全局可变变量（`var` 代理）在运行时被意外篡改或被注入恶意逻辑，全面采用无状态的显式函数包装转发（Thin Function Wrappers）**：
 
 ```go
 package services
@@ -291,9 +358,10 @@ import (
     "code-shield/services/invoker"
     "code-shield/services/queue"
     "code-shield/services/runner"
+    "context"
 )
 
-// 向后兼容类型别名
+// 向后兼容类型别名（编译期完全透明映射）
 type (
     Task            = queue.Task
     AIInvoker       = invoker.AIInvoker
@@ -303,17 +371,41 @@ type (
     RunningTaskInfo = runner.RunningTaskInfo
 )
 
-// 向后兼容全局函数代理
-var (
-    RunTaskSync          = runner.RunTaskSync
-    ResumeFailedChunks   = runner.ResumeFailedChunks
-    CancelRunningTask    = runner.CancelRunningTask
-    CancelAllRunningTasks = runner.CancelAllRunningTasks
-    GetRunningTasks      = runner.GetRunningTasks
-    NotifyWorker         = queue.NotifyWorker
-    GetAIInvoker         = invoker.GetAIInvoker
-    IsValidAIBackend     = invoker.IsValidAIBackend
-    RegisterAIInvoker    = invoker.RegisterAIInvoker
-)
+// 向后兼容显式函数包装（安全转发，杜绝全局变量被篡改风险）
+func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool, runParams models.RunParams) error {
+    return runner.RunTaskSync(reportID, repoURL, taskTypeID, autoNotify, runParams)
+}
+
+func ResumeFailedChunks(reportID uint) error {
+    return runner.ResumeFailedChunks(reportID)
+}
+
+func CancelRunningTask(reportID uint) bool {
+    return runner.CancelRunningTask(reportID)
+}
+
+func CancelAllRunningTasks() {
+    runner.CancelAllRunningTasks()
+}
+
+func GetRunningTasks() []RunningTaskInfo {
+    return runner.GetRunningTasks()
+}
+
+func NotifyWorker() {
+    queue.NotifyWorker()
+}
+
+func GetAIInvoker(name string) AIInvoker {
+    return invoker.GetAIInvoker(name)
+}
+
+func IsValidAIBackend(name string) bool {
+    return invoker.IsValidAIBackend(name)
+}
+
+func RegisterAIInvoker(name string, invoker AIInvoker) {
+    invoker.RegisterAIInvoker(name, invoker)
+}
 ```
-*   **架构收益**：外部 8 个调用文件完全不受任何重构冲击，系统在重构全过程中始终具备可编译、可测试的平滑特性。
+*   **架构收益**：外部 8 个调用文件完全不受任何重构冲击，系统在重构全过程中既享有子包编译隔离的安全性，又拥有向前兼容的零迁移成本。
