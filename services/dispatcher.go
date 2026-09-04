@@ -20,9 +20,10 @@ type ModelResource struct {
 	Codex      string
 	Agy        string
 	Native     string
-	Concurrent int
-	Active     int // 当前正在运行的并发数
-	Endpoints  []models.ResourceEndpointConfig
+	Concurrent    int
+	Active        int // 当前正在运行的并发数
+	CurrentWeight int // 运行时平滑加权轮询 (SWRR) 动态权重
+	Endpoints     []models.ResourceEndpointConfig
 }
 
 // ModelName 根据后端类型返回当前服务器映射的具体模型名
@@ -560,10 +561,15 @@ func calculateLimit(rawConcurrent int, scale float64) int {
 	return limit
 }
 
-// Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位。
-// 如果目前所有槽位已满或处于暂停状态（scale=0），则阻塞等待，直到有槽位空出、限速恢复或 Context 被取消。
-// 返回 nil, "", nil 表示调度器未启用，或没有任何 server 资源支持该 backend（两种情况均降级回默认直通行为，不做并发调度）。
+// Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位（向后兼容接口）。
 func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelResource, string, error) {
+	return d.AcquireWithPreference(ctx, backend, "")
+}
+
+// AcquireWithPreference 动态请求支持指定后端类型的空闲 LLM 模型资源槽位。
+// 优先亲和指定的模型或资源；在未指定或首选已满时，采用容量加权负载率（Active/Limit 最小优先）动态分配，彻底解决大池小池负载失衡问题。
+// 如果目前所有槽位已满或处于暂停状态（scale=0），则阻塞等待，直到有槽位空出、限速恢复或 Context 被取消。
+func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend string, preferredModel string) (*ModelResource, string, error) {
 	if d == nil || !d.enabled {
 		return nil, "", nil
 	}
@@ -625,22 +631,47 @@ func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelRe
 		scale := info.EffectiveScale
 
 		// 2. 寻找有可用配额且支持当前后端的 LLM 配置：
-		//    选择当前负载（Active）最低的服务器，避免 first-fit 打满第一台导致负载不均
 		var bestRes *ModelResource
-		bestLoad := -1
+		bestLoadRatio := 999.0
+		minActive := 999999
 		hasSupportedServerInLoop := false
-		for _, res := range d.resources {
-			if res.ModelName(backend) == "" {
-				continue
+
+		// 阶段 A: 若提供了 preferredModel，优先亲和分配指定模型/资源的槽位
+		if preferredModel != "" {
+			for _, res := range d.resources {
+				model := res.ModelName(backend)
+				if model == "" {
+					continue
+				}
+				hasSupportedServerInLoop = true
+				if model == preferredModel || res.Model == preferredModel || res.ID == preferredModel {
+					limit := calculateLimit(res.Concurrent, scale)
+					if limit > 0 && res.Active < limit {
+						bestRes = res
+						break
+					}
+				}
 			}
-			hasSupportedServerInLoop = true
-			limit := calculateLimit(res.Concurrent, scale)
-			if res.Active >= limit {
-				continue
-			}
-			if bestRes == nil || res.Active < bestLoad {
-				bestRes = res
-				bestLoad = res.Active
+		}
+
+		// 阶段 B: 未指定亲和模型，或首选资源已满载，按容量负载率（Active / Limit）择优加权分配
+		if bestRes == nil {
+			for _, res := range d.resources {
+				if res.ModelName(backend) == "" {
+					continue
+				}
+				hasSupportedServerInLoop = true
+				limit := calculateLimit(res.Concurrent, scale)
+				if res.Active >= limit || limit <= 0 {
+					continue
+				}
+				loadRatio := float64(res.Active) / float64(limit)
+				// 优先选择容量负载率最低的服务器；若负载率相等，选绝对活跃数更小的节点平滑打破
+				if bestRes == nil || loadRatio < bestLoadRatio || (loadRatio == bestLoadRatio && res.Active < minActive) {
+					bestRes = res
+					bestLoadRatio = loadRatio
+					minActive = res.Active
+				}
 			}
 		}
 
@@ -836,7 +867,8 @@ type TierRouter struct {
 	dispatcher *ModelDispatcher
 }
 
-// PickBestCandidateResource 在多个候选 Resource ID / Driver 中根据实时活跃槽位和并发水位选择当前最空闲的算力节点
+// PickBestCandidateResource 在多个候选 Resource ID / Driver 中采用平滑加权轮询 (SWRR)
+// 与实时可用容量动态择优，确保多算力池按容量加权比例平滑打散（彻底避免瞬时并发全部击穿到同一节点）。
 func (d *ModelDispatcher) PickBestCandidateResource(candidateIDs []string) (string, string) {
 	if d == nil || !d.enabled || len(candidateIDs) == 0 {
 		return "", ""
@@ -848,52 +880,118 @@ func (d *ModelDispatcher) PickBestCandidateResource(candidateIDs []string) (stri
 	info := d.getEffectiveScaleInfoLocked(time.Now())
 	scale := info.EffectiveScale
 
-	var bestRes *ModelResource
-	var bestBackend string
-	var bestModelName string
-	bestLoadRatio := 999.0
-	minActive := 999999
-
+	// 1. 匹配并去重收集所有候选资源实例
+	var candidates []*ModelResource
+	seenKeys := make(map[string]bool)
 	for _, id := range candidateIDs {
 		for _, res := range d.resources {
 			matches := (res.ID != "" && res.ID == id) ||
 				(res.Driver != "" && res.Driver == id) ||
 				(res.ModelName(id) != "")
-
 			if !matches {
 				continue
 			}
-
-			driver := res.Driver
-			if driver == "" {
-				driver = id
-			}
-			model := res.Model
-			if model == "" {
-				model = res.ModelName(driver)
-			}
-
-			limit := calculateLimit(res.Concurrent, scale)
-			loadRatio := float64(res.Active)
-			if limit > 0 {
-				loadRatio = float64(res.Active) / float64(limit)
-			}
-			hasCapacity := limit > 0 && res.Active < limit
-			bestHasCapacity := (bestRes != nil && bestRes.Active < calculateLimit(bestRes.Concurrent, scale))
-
-			// 优先选择有空余槽位 (Active < limit) 且负载率更低的节点
-			if bestRes == nil || (hasCapacity && !bestHasCapacity) ||
-				(hasCapacity == bestHasCapacity && (loadRatio < bestLoadRatio || (loadRatio == bestLoadRatio && res.Active < minActive))) {
-				bestRes = res
-				bestBackend = driver
-				bestModelName = model
-				bestLoadRatio = loadRatio
-				minActive = res.Active
+			key := res.ResourceKey()
+			if !seenKeys[key] {
+				seenKeys[key] = true
+				candidates = append(candidates, res)
 			}
 		}
 	}
 
-	return bestBackend, bestModelName
+	if len(candidates) == 0 {
+		return "", ""
+	}
+
+	// 2. 区分有可用配额的节点与已满载节点
+	type availableCandidate struct {
+		res    *ModelResource
+		weight int
+	}
+	var availList []availableCandidate
+	var totalWeight int
+
+	var fallbackRes *ModelResource
+	bestLoadRatio := 999.0
+
+	for _, res := range candidates {
+		limit := calculateLimit(res.Concurrent, scale)
+		loadRatio := float64(res.Active)
+		if limit > 0 {
+			loadRatio = float64(res.Active) / float64(limit)
+		}
+
+		if fallbackRes == nil || loadRatio < bestLoadRatio {
+			fallbackRes = res
+			bestLoadRatio = loadRatio
+		}
+
+		// 有剩余空闲槽位且未被限流置零
+		if limit > 0 && res.Active < limit {
+			// 动态可用权重以实时剩余空闲槽位数为主，大池子剩余多则动态权重大
+			availSlots := limit - res.Active
+			if availSlots < 1 {
+				availSlots = 1
+			}
+			availList = append(availList, availableCandidate{
+				res:    res,
+				weight: availSlots,
+			})
+			totalWeight += availSlots
+		}
+	}
+
+	// 若所有候选节点均已满载，降级返回相对负载率最低的节点，交由底层 Acquire 排队
+	if len(availList) == 0 {
+		if fallbackRes != nil {
+			return resolveResourceDriverAndModel(fallbackRes, candidateIDs)
+		}
+		return "", ""
+	}
+
+	// 若只有 1 个可用节点，直接返回
+	if len(availList) == 1 {
+		return resolveResourceDriverAndModel(availList[0].res, candidateIDs)
+	}
+
+	// 3. 多个可用节点：采用经典 Nginx 平滑加权轮询 (Smooth Weighted Round-Robin)
+	var selectedRes *ModelResource
+	maxCurrentWeight := -999999999
+
+	for i := range availList {
+		ac := &availList[i]
+		ac.res.CurrentWeight += ac.weight
+		if ac.res.CurrentWeight > maxCurrentWeight {
+			maxCurrentWeight = ac.res.CurrentWeight
+			selectedRes = ac.res
+		}
+	}
+
+	if selectedRes != nil {
+		selectedRes.CurrentWeight -= totalWeight
+		return resolveResourceDriverAndModel(selectedRes, candidateIDs)
+	}
+
+	return resolveResourceDriverAndModel(availList[0].res, candidateIDs)
+}
+
+// resolveResourceDriverAndModel 解析资源的有效 driver 和 model 名称
+func resolveResourceDriverAndModel(res *ModelResource, candidateIDs []string) (string, string) {
+	driver := res.Driver
+	model := res.Model
+	if driver == "" {
+		for _, id := range candidateIDs {
+			if res.ModelName(id) != "" {
+				driver = id
+				model = res.ModelName(id)
+				break
+			}
+		}
+	}
+	if model == "" && driver != "" {
+		model = res.ModelName(driver)
+	}
+	return driver, model
 }
 
 // GlobalTierRouter 全局阶梯路由器实例

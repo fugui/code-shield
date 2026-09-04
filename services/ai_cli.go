@@ -67,8 +67,8 @@ func (w *DispatchingInvoker) Invoke(req AIRequest) error {
 		ctx = context.Background()
 	}
 
-	// 1. 申请 LLM 服务器资源
-	res, modelName, err := Dispatcher.Acquire(ctx, backend)
+	// 1. 申请 LLM 服务器资源（支持模型亲和性与容量加权优先分配）
+	res, modelName, err := Dispatcher.AcquireWithPreference(ctx, backend, req.ModelName)
 	if err != nil {
 		return fmt.Errorf("failed to acquire LLM server slot: %w", err)
 	}
