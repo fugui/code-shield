@@ -46,6 +46,7 @@ func GetDebugOverview(c *gin.Context) {
 	// 1. 获取模型调度器并发状态与总槽位统计
 	var throttleInfo services.ThrottleInfo
 	var resourceList []services.ModelResourceStatus
+	var activeLeases []services.LLMSlotLease
 	totalActiveSlots := 0
 	totalLimitSlots := 0
 	totalRawSlots := 0
@@ -53,11 +54,15 @@ func GetDebugOverview(c *gin.Context) {
 	if services.Dispatcher != nil {
 		throttleInfo = services.Dispatcher.GetThrottleInfo()
 		resourceList = services.Dispatcher.GetResourcesStatus()
+		activeLeases = services.Dispatcher.GetActiveLeases()
 		for _, r := range resourceList {
 			totalActiveSlots += r.Active
 			totalLimitSlots += r.Limit
 			totalRawSlots += r.Concurrent
 		}
+	}
+	if activeLeases == nil {
+		activeLeases = []services.LLMSlotLease{}
 	}
 
 	// 2. 获取当前正在运行的在途任务快照
@@ -135,7 +140,9 @@ func GetDebugOverview(c *gin.Context) {
 			"total_active_slots": totalActiveSlots,
 			"total_limit_slots":  totalLimitSlots,
 			"total_raw_slots":    totalRawSlots,
+			"active_leases":      activeLeases,
 		},
+		"active_leases": activeLeases,
 		"workers": gin.H{
 			"worker_count":   workerCount,
 			"active_workers": len(runningTasks),

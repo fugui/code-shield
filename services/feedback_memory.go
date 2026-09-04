@@ -67,6 +67,10 @@ func ExtractFeedbackRuleViaNative(filePath, codeSnippet, defectTitle, userReason
 		OutputPath:     tmpPath,
 		TimeoutMin:     1,
 		ResponseFormat: "json",
+		WorkContext: &LLMWorkContext{
+			Stage:   "知识沉淀: 负样本特征提炼",
+			SubTask: fmt.Sprintf("提炼规则 (%s)", filePath),
+		},
 	}
 
 	if err := invoker.Invoke(req); err != nil {

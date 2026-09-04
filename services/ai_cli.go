@@ -10,6 +10,37 @@ import (
 	"strings"
 )
 
+// LLMWorkContext 承载单次 LLM 调用的业务归属与当前微任务环节（用于算力看板透视）
+type LLMWorkContext struct {
+	ReportID uint   `json:"report_id"`
+	RepoName string `json:"repo_name"`
+	TaskType string `json:"task_type"`
+	Stage    string `json:"stage"`    // 执行环节/阶段，如 "Tier 1: 初筛猎手"、"Tier 2: 裁判终审"、"Tier 3: 全仓汇总"、"系统工具: JSON 语法修复"
+	SubTask  string `json:"sub_task"` // 当前微任务描述，如 "分片 2/5 (src/runtime/sys.go)"、"批次 1 (候选点 1~3 终审)"
+	Detail   string `json:"detail,omitempty"`
+}
+
+type llmWorkContextKey struct{}
+
+// WithLLMWorkContext 将 LLMWorkContext 注入 context.Context 中
+func WithLLMWorkContext(ctx context.Context, work *LLMWorkContext) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, llmWorkContextKey{}, work)
+}
+
+// LLMWorkContextFromContext 从 context.Context 中提取 LLMWorkContext
+func LLMWorkContextFromContext(ctx context.Context) *LLMWorkContext {
+	if ctx == nil {
+		return nil
+	}
+	if val, ok := ctx.Value(llmWorkContextKey{}).(*LLMWorkContext); ok {
+		return val
+	}
+	return nil
+}
+
 // AIRequest 封装一次 AI CLI 调用所需的全部参数（与具体 CLI 无关）
 type AIRequest struct {
 	ParentContext  context.Context // 父 context，支持提前取消
@@ -23,6 +54,7 @@ type AIRequest struct {
 	Temperature    *float64        // 新增：可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
 	ResponseFormat string          // 请求期望输出格式："json"（强制 json_object 结构化模式）、"text"/"markdown"（普通文本排版模式）或 ""（默认文本）
 	Env            []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
+	WorkContext    *LLMWorkContext // 业务溯源与算力监控上下文 (用于系统诊断中心 LLM 算力池实时看板精准定位)
 }
 
 // AIInvoker 定义了 AI CLI 调用的统一接口。
@@ -67,6 +99,11 @@ func (w *DispatchingInvoker) Invoke(req AIRequest) error {
 		ctx = context.Background()
 	}
 
+	workCtx := req.WorkContext
+	if workCtx == nil {
+		workCtx = LLMWorkContextFromContext(ctx)
+	}
+
 	// 1. 申请 LLM 服务器资源（支持模型亲和性与容量加权优先分配）
 	res, modelName, err := Dispatcher.AcquireWithPreference(ctx, backend, req.ModelName)
 	if err != nil {
@@ -77,6 +114,11 @@ func (w *DispatchingInvoker) Invoke(req AIRequest) error {
 		defer Dispatcher.Release(res, backend)
 		if req.ModelName == "" && modelName != "" {
 			req.ModelName = modelName
+		}
+		// 登记活跃槽位租约，并在调用退出时自动注销
+		leaseID := Dispatcher.RegisterSlotLease(res, backend, modelName, workCtx)
+		if leaseID != "" {
+			defer Dispatcher.UnregisterSlotLease(leaseID)
 		}
 	}
 
@@ -140,6 +182,10 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		TimeoutMin:     2,
 		Temperature:    &zeroTemp,
 		ResponseFormat: "json",
+		WorkContext: &LLMWorkContext{
+			Stage:   "系统工具: JSON 语法修复",
+			SubTask: fmt.Sprintf("修复输出文件 (%s)", filepath.Base(jsonFilePath)),
+		},
 	}
 
 	if err := invoker.Invoke(req); err != nil {

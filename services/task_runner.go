@@ -605,6 +605,14 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		}
 	}
 
+	stage := "Tier 1: 初筛猎手"
+	subTask := "单仓全量分析"
+	if ctx.report.ChunkName != "" {
+		subTask = fmt.Sprintf("分片分析: %s (%d 个文件)", ctx.report.ChunkName, len(fileList))
+	} else if len(fileList) > 0 {
+		subTask = fmt.Sprintf("全量分析 (%d 个文件)", len(fileList))
+	}
+
 	return invoker.Invoke(AIRequest{
 		ParentContext:  ctx.ctx,
 		WorkDir:        ctx.codesPath,
@@ -615,6 +623,13 @@ func (ctx *taskContext) executeAI(fileList []string, customPromptSuffix string, 
 		TimeoutMin:     timeoutMin,
 		ModelName:      modelName,
 		ResponseFormat: "json",
+		WorkContext: &LLMWorkContext{
+			ReportID: ctx.report.ID,
+			RepoName: ctx.repo.Name,
+			TaskType: ctx.taskType.DisplayName,
+			Stage:    stage,
+			SubTask:  subTask,
+		},
 	})
 }
 
@@ -1338,6 +1353,13 @@ func (ctx *taskContext) executeSynthesisOnce(synthesisInputPath string, suffixPr
 		TimeoutMin:     timeoutMin,
 		ModelName:      tierCfg.Model,
 		ResponseFormat: "text",
+		WorkContext: &LLMWorkContext{
+			ReportID: ctx.report.ID,
+			RepoName: ctx.repo.Name,
+			TaskType: ctx.taskType.DisplayName,
+			Stage:    "Tier 3: 全仓态势汇总",
+			SubTask:  "聚合分片发现并生成 Markdown 诊断报告",
+		},
 	}
 
 	if err := invoker.Invoke(req); err != nil {

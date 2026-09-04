@@ -90,6 +90,22 @@ interface RunningTaskInfo {
   attempts: number;
 }
 
+interface LLMSlotLease {
+  lease_id: string;
+  server_index: number;
+  server_id: string;
+  driver: string;
+  model: string;
+  report_id: number;
+  repo_name: string;
+  task_type: string;
+  stage: string;
+  sub_task: string;
+  detail?: string;
+  start_time: string;
+  duration_seconds: number;
+}
+
 interface DebateTierItem {
   resource?: string;
   resources?: string[];
@@ -130,7 +146,9 @@ interface DebugOverviewData {
     total_active_slots: number;
     total_limit_slots: number;
     total_raw_slots: number;
+    active_leases?: LLMSlotLease[];
   };
+  active_leases?: LLMSlotLease[];
   workers: WorkerPoolInfo;
   active_tasks: RunningTaskInfo[];
   debate_pipeline: DebatePipelineInfo;
@@ -251,6 +269,9 @@ export default function SystemDebug() {
   const activeSlots = data?.dispatcher?.total_active_slots || 0;
   const limitSlots = data?.dispatcher?.total_limit_slots || 1;
   const slotPercent = Math.min(100, Math.round((activeSlots / limitSlots) * 100));
+
+  // 获取当前正在运行的 LLM 算力槽位租约列表
+  const activeLeases: LLMSlotLease[] = data?.dispatcher?.active_leases || data?.active_leases || [];
 
   return (
     <div className="code-debug-container">
@@ -422,137 +443,7 @@ export default function SystemDebug() {
         </div>
       </div>
 
-      {/* 版块 1: 在途扫描任务实时看板 */}
-      <div className="code-debug-section">
-        <div className="code-debug-section__header">
-          <div className="code-debug-section__title-group">
-            <h3 className="code-debug-section__title">
-              在途扫描任务实时看板 (Live Running Scan Tasks)
-            </h3>
-            <span style={{
-              fontSize: '0.75rem',
-              padding: '2px 8px',
-              borderRadius: '999px',
-              background: (data?.active_tasks?.length || 0) > 0 ? 'rgba(37, 99, 235, 0.12)' : 'rgba(148, 163, 184, 0.15)',
-              color: (data?.active_tasks?.length || 0) > 0 ? '#2563eb' : '#64748b',
-              fontWeight: 600
-            }}>
-              {(data?.active_tasks?.length || 0)} 个任务正在分析中
-            </span>
-          </div>
-          <span className="code-debug-section__desc">
-            实时捕获当前正在执行大模型推理、分片并发或全仓汇总的任务进展
-          </span>
-        </div>
-
-        {(!data?.active_tasks || data.active_tasks.length === 0) ? (
-          <div style={{ padding: '2rem 1rem' }}>
-            <EmptyState
-              title="当前无正在执行的扫描任务"
-              description="Worker 工作池与 AI 大模型算力节点全部就绪，等待新扫描触发。"
-            />
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="code-debug-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '90px' }}>报告 ID</th>
-                  <th>目标仓库</th>
-                  <th>扫描专项任务</th>
-                  <th style={{ width: '110px' }}>引擎模式</th>
-                  <th style={{ width: '220px' }}>分片执行进度</th>
-                  <th style={{ width: '120px' }}>已运行持续时长</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.active_tasks.map((task) => {
-                  const chunkPercent = task.total_chunks > 0
-                    ? Math.min(100, Math.round((task.processed_chunks / task.total_chunks) * 100))
-                    : 0;
-                  return (
-                    <tr key={task.report_id}>
-                      <td>
-                        <strong style={{ fontFamily: 'monospace', color: 'var(--color-text-primary, #0f172a)' }}>
-                          #{task.report_id}
-                        </strong>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--color-text-secondary, #64748b)', flexShrink: 0 }}>
-                            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.53 1.03 1.53 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />
-                          </svg>
-                          <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>
-                            {task.repo_name || `Repo #${task.repo_id}`}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          background: 'var(--color-bg-muted, #f1f5f9)',
-                          color: 'var(--color-text-primary, #0f172a)',
-                          fontWeight: 500,
-                          fontSize: '0.8rem'
-                        }}>
-                          {task.task_display_name || task.task_type}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{
-                          fontSize: '0.75rem',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontWeight: 600,
-                          background: task.engine_mode === 'chunked' ? 'rgba(168, 85, 247, 0.12)' : 'rgba(37, 99, 235, 0.12)',
-                          color: task.engine_mode === 'chunked' ? '#a855f7' : '#2563eb'
-                        }}>
-                          {task.engine_mode === 'chunked' ? '分片并发' : '单仓分析'}
-                        </span>
-                      </td>
-                      <td>
-                        {task.total_chunks > 0 ? (
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
-                              <span>{task.processed_chunks} / {task.total_chunks} 分片</span>
-                              <span>{chunkPercent}%</span>
-                            </div>
-                            <div className="code-debug-progress-bar" style={{ margin: 0 }}>
-                              <div
-                                className="code-debug-progress-fill"
-                                style={{
-                                  width: `${chunkPercent}%`,
-                                  background: chunkPercent === 100 ? '#10b981' : '#2563eb'
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <span style={{ color: 'var(--color-text-secondary, #64748b)', fontSize: '0.8rem' }}>
-                            代码检出中或单次分析
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <span style={{
-                          fontFamily: 'monospace',
-                          fontWeight: 600,
-                          color: task.duration_seconds > 300 ? '#f59e0b' : 'var(--color-text-primary, #0f172a)'
-                        }}>
-                          {formatDuration(task.duration_seconds)}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* 版块 2: LLM 模型调度器 (ModelDispatcher) 槽位实时负载与集群端点 */}
+      {/* 版块 1: LLM 模型调度器 (ModelDispatcher) 算力池实时负载 (颠倒提升至上方) */}
       <div className="code-debug-section">
         <div className="code-debug-section__header">
           <div className="code-debug-section__title-group">
@@ -680,6 +571,175 @@ export default function SystemDebug() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* 版块 2: LLM 算力池实时看板 (Live LLM Compute Pool Leases) */}
+      <div className="code-debug-section">
+        <div className="code-debug-section__header">
+          <div className="code-debug-section__title-group">
+            <h3 className="code-debug-section__title">
+              LLM 算力池实时看板 (Live LLM Compute Pool Leases)
+            </h3>
+            <span style={{
+              fontSize: '0.75rem',
+              padding: '2px 8px',
+              borderRadius: '999px',
+              background: activeLeases.length > 0 ? 'rgba(37, 99, 235, 0.12)' : 'rgba(148, 163, 184, 0.15)',
+              color: activeLeases.length > 0 ? '#2563eb' : '#64748b',
+              fontWeight: 600
+            }}>
+              {activeLeases.length} 个算力槽位正在运行
+            </span>
+          </div>
+          <span className="code-debug-section__desc">
+            实时透视当前分配出去的每个 AI 算力槽位、对应模型、承载微任务与已运行持续时长
+          </span>
+        </div>
+
+        {activeLeases.length === 0 ? (
+          <div style={{ padding: '2rem 1rem' }}>
+            <EmptyState
+              title="当前无正在运行的 LLM 算力槽位"
+              description="所有 AI 模型算力节点处于就绪空闲状态，等待任务分配。"
+            />
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="code-debug-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '220px' }}>分配算力节点与模型</th>
+                  <th style={{ width: '180px' }}>所属任务 / 仓库</th>
+                  <th style={{ width: '150px' }}>执行环节 / 阶段</th>
+                  <th>当前微任务内容</th>
+                  <th style={{ width: '130px' }}>已工作持续时长</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeLeases.map((lease) => {
+                  const isLongRunning = lease.duration_seconds > 300; // > 5分钟
+                  const isCritical = lease.duration_seconds > 900; // > 15分钟
+                  const driverName = lease.driver || 'custom';
+
+                  return (
+                    <tr key={lease.lease_id}>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              background: driverName === 'native' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(37, 99, 235, 0.15)',
+                              color: driverName === 'native' ? '#a855f7' : '#2563eb'
+                            }}>
+                              {driverName}
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                              {lease.server_id || `Server #${lease.server_index}`}
+                            </span>
+                          </div>
+                          <span style={{
+                            fontFamily: 'monospace',
+                            fontSize: '0.78rem',
+                            color: 'var(--color-text-secondary, #64748b)'
+                          }}>
+                            {lease.model || '-'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        {lease.repo_name ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--color-text-secondary, #64748b)', flexShrink: 0 }}>
+                                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.53 1.03 1.53 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />
+                              </svg>
+                              <strong style={{ fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                                {lease.repo_name}
+                              </strong>
+                              {lease.report_id > 0 && (
+                                <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                                  #{lease.report_id}
+                                </span>
+                              )}
+                            </div>
+                            {lease.task_type && (
+                              <span style={{
+                                fontSize: '0.72rem',
+                                color: 'var(--color-text-secondary, #64748b)'
+                              }}>
+                                {lease.task_type}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                            系统后台任务
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontWeight: 600,
+                          background: lease.stage.includes('Hunter') || lease.stage.includes('初筛')
+                            ? 'rgba(37, 99, 235, 0.12)'
+                            : lease.stage.includes('Challenger') || lease.stage.includes('辩护')
+                            ? 'rgba(168, 85, 247, 0.12)'
+                            : lease.stage.includes('Judge') || lease.stage.includes('终审')
+                            ? 'rgba(99, 102, 241, 0.12)'
+                            : lease.stage.includes('Synthesis') || lease.stage.includes('汇总')
+                            ? 'rgba(16, 185, 129, 0.12)'
+                            : 'var(--color-bg-muted, #f1f5f9)',
+                          color: lease.stage.includes('Hunter') || lease.stage.includes('初筛')
+                            ? '#2563eb'
+                            : lease.stage.includes('Challenger') || lease.stage.includes('辩护')
+                            ? '#a855f7'
+                            : lease.stage.includes('Judge') || lease.stage.includes('终审')
+                            ? '#6366f1'
+                            : lease.stage.includes('Synthesis') || lease.stage.includes('汇总')
+                            ? '#10b981'
+                            : 'var(--color-text-primary, #0f172a)'
+                        }}>
+                          {lease.stage || '推理执行中'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                          {lease.sub_task || lease.detail || '-'}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{
+                            fontFamily: 'monospace',
+                            fontWeight: 600,
+                            fontSize: '0.85rem',
+                            color: isCritical
+                              ? 'var(--color-danger, #ef4444)'
+                              : (isLongRunning ? 'var(--color-warning, #f59e0b)' : 'var(--color-text-primary, #0f172a)')
+                          }}>
+                            {formatDuration(lease.duration_seconds)}
+                          </span>
+                          {isCritical && (
+                            <span title="持续执行超过 15 分钟，疑似超长任务或异常堵塞" style={{ color: 'var(--color-danger, #ef4444)' }}>
+                              ⚠️
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
