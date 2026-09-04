@@ -169,7 +169,9 @@ graph TD
 
 ### 3.6 坏味道六：死代码与运行期脏文件混杂
 *   **孤立文件**：`services/rules/domain_rules.go`（103 行），定义了 `BuiltinThreadRules`、`BuiltinUnorderedRules` 等多语言代码规则库，但通过全项目检索发现，**没有任何外部或内部 Go 文件引用该 package 或结构体**，属于未被驱动接入的残留死代码。
-*   **脏文件污染**：`services/data/reports/` 目录下散落了 9 个 `code_review_early_fail_*` 文件。经排查，这些是 `task_runner_test.go` 运行单元测试时生成的临时崩溃记录。由于测试使用了相对路径且未在 `.gitignore` 中规避，导致测试运行后脏文件常驻在源码版本库中。
+*   **脏文件污染与根治方案**：`services/data/reports/` 目录下散落了 9 个 `code_review_early_fail_*` 文件。经排查，这些是 `task_runner_test.go` 运行单元测试时生成的临时崩溃记录。
+    *   *问题根因*：测试代码使用了硬编码的相对路径，生成了未经清理的落盘文件；
+    *   *根治措施*：不能仅靠 `.gitignore` 被动忽略，必须在重构阶段改造所有单元测试，强制使用 Go 标准库提供的 `t.TempDir()` 作为临时测试沙箱目录，测试完成后由操作系统自动回收，彻底从源头上杜绝脏文件残留。
 
 ---
 
