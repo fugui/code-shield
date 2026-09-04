@@ -1,12 +1,14 @@
-package services
+package dispatcher
 
 import (
-	"code-shield/models"
 	"context"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"code-shield/models"
+	"code-shield/services/invoker"
 )
 
 func setupTestDispatcher(rawConcurrent int) *ModelDispatcher {
@@ -23,28 +25,26 @@ func setupTestDispatcher(rawConcurrent int) *ModelDispatcher {
 			Claude:     "test-claude",
 			Codex:      "test-codex",
 			Agy:        "test-agy",
+			Native:     "test-native",
 			Concurrent: rawConcurrent,
 			Active:     0,
 		},
 	}
-	Dispatcher = d
+	GlobalDispatcher = d
 	return d
 }
 
 func TestDispatcher_CeilCalculation(t *testing.T) {
-	// 当 rawConcurrent = 1, scale = 0.25 时，limit 应当向上取整为 1
 	limit := calculateLimit(1, 0.25)
 	if limit != 1 {
 		t.Fatalf("expected calculateLimit(1, 0.25) == 1, got %d", limit)
 	}
 
-	// 当 scale = 0 时，limit 应当为 0（暂停）
 	limit0 := calculateLimit(5, 0.0)
 	if limit0 != 0 {
 		t.Fatalf("expected calculateLimit(5, 0.0) == 0, got %d", limit0)
 	}
 
-	// 当 rawConcurrent = 2, scale = 0.5 时，limit 为 1
 	limitHalf := calculateLimit(2, 0.5)
 	if limitHalf != 1 {
 		t.Fatalf("expected calculateLimit(2, 0.5) == 1, got %d", limitHalf)
@@ -57,7 +57,6 @@ func TestDispatcher_AutoWakeupOnExpiration(t *testing.T) {
 		close(d.stopHeartbeat)
 	}()
 
-	// 1. 设置限速为 0%（完全暂停），持续 150 毫秒
 	duration := 150 * time.Millisecond
 	d.SetScale(0.0, duration)
 
@@ -75,7 +74,6 @@ func TestDispatcher_AutoWakeupOnExpiration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 2. 启动协程尝试 Acquire，此时应当被阻塞
 	start := time.Now()
 	go func() {
 		res, model, err := d.Acquire(ctx, "claude")
@@ -89,7 +87,6 @@ func TestDispatcher_AutoWakeupOnExpiration(t *testing.T) {
 		}
 	}()
 
-	// 3. 等待获取结果
 	select {
 	case err := <-errChan:
 		t.Fatalf("Acquire returned error: %v", err)
@@ -98,7 +95,6 @@ func TestDispatcher_AutoWakeupOnExpiration(t *testing.T) {
 		if elapsed < 100*time.Millisecond {
 			t.Fatalf("Acquired too quickly before expiration (%v)", elapsed)
 		}
-		// 校验过期后 scale 是否已恢复为 1.0
 		scaleAfter, _ := d.GetScaleAndExpiration()
 		if scaleAfter != 1.0 {
 			t.Fatalf("expected scale to be restored to 1.0, got %f", scaleAfter)
@@ -114,7 +110,6 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 		close(d.stopHeartbeat)
 	}()
 
-	// 设置 scale = 0 永久暂停
 	d.SetScale(0.0, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -157,7 +152,6 @@ func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 		close(d.stopHeartbeat)
 	}()
 
-	// 模拟配置：周一到周五 09:00 ~ 22:00 自动限速至 10% (0.10)
 	models.AppConfig.AI.WorkHoursThrottle = models.WorkHoursThrottleConfig{
 		Enabled:   true,
 		Workdays:  []int{1, 2, 3, 4, 5},
@@ -165,9 +159,9 @@ func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 		EndTime:   "22:00",
 		Scale:     0.10,
 	}
+	d.SetWorkHoursThrottle(models.AppConfig.AI.WorkHoursThrottle)
 
-	// 1. 模拟周一上午 10:00（应当命中工作时间）
-	monday10am := time.Date(2026, 8, 17, 10, 0, 0, 0, time.Local) // 2026-08-17 is Monday
+	monday10am := time.Date(2026, 8, 17, 10, 0, 0, 0, time.Local)
 	infoWork := d.getEffectiveScaleInfoLocked(monday10am)
 	if infoWork.ThrottleMode != "work_hours" {
 		t.Fatalf("expected mode 'work_hours', got %s", infoWork.ThrottleMode)
@@ -179,7 +173,6 @@ func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 		t.Fatalf("expected IsWorkHours == true")
 	}
 
-	// 2. 模拟周一晚上 23:00（非工作时间，应当恢复 1.0）
 	monday11pm := time.Date(2026, 8, 17, 23, 0, 0, 0, time.Local)
 	infoOff := d.getEffectiveScaleInfoLocked(monday11pm)
 	if infoOff.ThrottleMode != "normal" {
@@ -192,8 +185,7 @@ func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 		t.Fatalf("expected IsWorkHours == false")
 	}
 
-	// 3. 模拟周六（周末非工作日，应当为 1.0）
-	saturday := time.Date(2026, 8, 22, 14, 0, 0, 0, time.Local) // 2026-08-22 is Saturday
+	saturday := time.Date(2026, 8, 22, 14, 0, 0, 0, time.Local)
 	infoWeekend := d.getEffectiveScaleInfoLocked(saturday)
 	if infoWeekend.ThrottleMode != "normal" || infoWeekend.EffectiveScale != 1.0 {
 		t.Fatalf("expected weekend to be normal mode with 1.0, got mode=%s, scale=%f",
@@ -222,14 +214,13 @@ func TestDispatcher_ManualOverrideWorkHours(t *testing.T) {
 		EndTime:   endHM,
 		Scale:     0.10,
 	}
+	d.SetWorkHoursThrottle(models.AppConfig.AI.WorkHoursThrottle)
 
-	// 1. 当前时刻无手动覆盖时，应当命中工作时间限速 0.10
 	infoWork := d.getEffectiveScaleInfoLocked(now)
 	if infoWork.ThrottleMode != "work_hours" || infoWork.EffectiveScale != 0.10 {
 		t.Fatalf("expected work_hours (0.10), got mode=%s, scale=%f", infoWork.ThrottleMode, infoWork.EffectiveScale)
 	}
 
-	// 2. 管理员手动调节为 50% (0.50)，持续 1 小时
 	d.SetScale(0.50, 1*time.Hour)
 
 	infoManual := d.getEffectiveScaleInfoLocked(now)
@@ -243,7 +234,6 @@ func TestDispatcher_ManualOverrideWorkHours(t *testing.T) {
 		t.Fatalf("expected IsManual == true")
 	}
 
-	// 3. 手动重置后，应当自动回退到工作时间的 0.10
 	d.RestoreManualScale()
 	infoAfterReset := d.getEffectiveScaleInfoLocked(now)
 	if infoAfterReset.ThrottleMode != "work_hours" || infoAfterReset.EffectiveScale != 0.10 {
@@ -282,7 +272,7 @@ func TestDispatcher_LeastLoadedSelection(t *testing.T) {
 		{Index: 0, Claude: "server-a", Concurrent: 1},
 		{Index: 1, Claude: "server-b", Concurrent: 1},
 	}
-	Dispatcher = d
+	GlobalDispatcher = d
 	defer func() {
 		close(d.stopHeartbeat)
 	}()
@@ -290,7 +280,6 @@ func TestDispatcher_LeastLoadedSelection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 两台服务器均空闲时优先第一台，第二台应落在另一台上（而非继续压在第一台）
 	res1, model1, err := d.Acquire(ctx, "claude")
 	if err != nil {
 		t.Fatalf("first Acquire failed: %v", err)
@@ -332,7 +321,6 @@ func TestDispatcher_NativeAutoRegistration(t *testing.T) {
 	origConfig := models.AppConfig
 	defer func() { models.AppConfig = origConfig }()
 
-	// 配置只包含 CLI 模型的 models 列表，但开启了 ai.native
 	models.AppConfig.AI.Models = []models.ModelConfig{
 		{Claude: "claude-3-5", Concurrent: 3},
 	}
@@ -342,15 +330,15 @@ func TestDispatcher_NativeAutoRegistration(t *testing.T) {
 	}
 
 	InitModelDispatcher()
-	if Dispatcher == nil || !Dispatcher.enabled {
-		t.Fatal("expected Dispatcher to be enabled")
+	if GlobalDispatcher == nil || !GlobalDispatcher.enabled {
+		t.Fatal("expected GlobalDispatcher to be enabled")
 	}
+	defer GlobalDispatcher.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 验证请求 native 不会直通告警，而是正常分配 native 槽位
-	res, model, err := Dispatcher.Acquire(ctx, "native")
+	res, model, err := GlobalDispatcher.Acquire(ctx, "native")
 	if err != nil {
 		t.Fatalf("Acquire failed for native: %v", err)
 	}
@@ -360,22 +348,21 @@ func TestDispatcher_NativeAutoRegistration(t *testing.T) {
 	if model != "glm-4-flash" {
 		t.Fatalf("expected model 'glm-4-flash', got '%s'", model)
 	}
-	Dispatcher.Release(res, "native")
+	GlobalDispatcher.Release(res, "native")
 }
 
 func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 	origConfig := models.AppConfig
 	defer func() { models.AppConfig = origConfig }()
 
-	// 1. 设置仅有 1 个并发槽位的调度器 (模拟 scale 缩容或单槽位极限情况)
 	d := setupTestDispatcher(1)
 	defer func() {
 		close(d.stopHeartbeat)
 	}()
 
 	mockBackend := "mock-tier-test"
-	mockInv := &MockInvoker{NameStr: mockBackend}
-	RegisterAIInvoker(mockBackend, mockInv)
+	mockInv := &mockInvoker{NameStr: mockBackend}
+	invoker.RegisterAIInvoker(mockBackend, mockInv)
 
 	models.AppConfig.AI.Tiers.Tier1Fast.Backend = mockBackend
 	models.AppConfig.AI.Tiers.Tier1Fast.Model = "custom-tier1-model"
@@ -385,7 +372,6 @@ func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 2. 模拟 runHunterStage: 先调 AcquireTier，再调 callAITier (GetAIInvoker -> DispatchingInvoker)
 	acq, err := tr.AcquireTier(ctx, "tier1_fast", "")
 	if err != nil {
 		t.Fatalf("AcquireTier failed: %v", err)
@@ -396,7 +382,12 @@ func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 		t.Fatalf("expected ModelName 'custom-tier1-model', got '%s'", acq.ModelName)
 	}
 
-	invoker := GetAIInvoker(acq.Backend)
+	rawInv, ok := invoker.GetRawInvoker(acq.Backend)
+	if !ok {
+		t.Fatalf("failed to get invoker for %s", acq.Backend)
+	}
+	wrappedInv := NewDispatchingInvoker(rawInv, d)
+
 	tmpFile, err := os.CreateTemp("", "tier-deadlock-test-*.json")
 	if err != nil {
 		t.Fatalf("CreateTemp failed: %v", err)
@@ -405,14 +396,13 @@ func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpPath)
 
-	req := AIRequest{
+	req := invoker.AIRequest{
 		ParentContext: ctx,
 		OutputPath:    tmpPath,
 		ModelName:     acq.ModelName,
 	}
 
-	// 3. 执行 Invoke，若存在双重加锁自锁，此处必然超时阻塞
-	if err := invoker.Invoke(req); err != nil {
+	if err := wrappedInv.Invoke(req); err != nil {
 		t.Fatalf("invoker.Invoke failed (possible deadlock): %v", err)
 	}
 
@@ -428,10 +418,10 @@ func TestDispatchingInvoker_PreserveExplicitModelName(t *testing.T) {
 	}()
 
 	mockBackend := "mock-preserve-model"
-	mockInv := &MockInvoker{NameStr: mockBackend}
-	RegisterAIInvoker(mockBackend, mockInv)
+	mockInv := &mockInvoker{NameStr: mockBackend}
+	invoker.RegisterAIInvoker(mockBackend, mockInv)
 
-	invoker := GetAIInvoker(mockBackend)
+	wrappedInv := NewDispatchingInvoker(mockInv, d)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -444,17 +434,16 @@ func TestDispatchingInvoker_PreserveExplicitModelName(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpPath)
 
-	req := AIRequest{
+	req := invoker.AIRequest{
 		ParentContext: ctx,
 		OutputPath:    tmpPath,
 		ModelName:     "explicit-model-name",
 	}
 
-	if err := invoker.Invoke(req); err != nil {
+	if err := wrappedInv.Invoke(req); err != nil {
 		t.Fatalf("invoker.Invoke failed: %v", err)
 	}
 
-	// 验证请求中显式设置的 ModelName 没有被冲掉
 	if req.ModelName != "explicit-model-name" {
 		t.Fatalf("expected ModelName to be preserved as 'explicit-model-name', got '%s'", req.ModelName)
 	}
@@ -473,7 +462,7 @@ func TestTierRouter_MultiResourcePooling(t *testing.T) {
 				Model:      "gemini-3.7-flash",
 				Agy:        "gemini-3.7-flash",
 				Concurrent: 5,
-				Active:     3, // 负载较高
+				Active:     3,
 			},
 			{
 				Index:      1,
@@ -482,25 +471,22 @@ func TestTierRouter_MultiResourcePooling(t *testing.T) {
 				Model:      "models/glm5.1",
 				OpenCode:   "models/glm5.1",
 				Concurrent: 5,
-				Active:     0, // 完全空闲
+				Active:     0,
 			},
 		},
 	}
 
-	// 1. 测试 PickBestCandidateResource: 应优先选出空闲的 opencode
 	backend, model := d.PickBestCandidateResource([]string{"agy", "opencode"})
 	if backend != "opencode" || model != "models/glm5.1" {
 		t.Fatalf("expected opencode to be picked, got backend=%s, model=%s", backend, model)
 	}
 
-	// 2. 当 opencode 打满 (Active=5)，应自动切换/故障转移至 agy
 	d.resources[1].Active = 5
 	backend2, model2 := d.PickBestCandidateResource([]string{"agy", "opencode"})
 	if backend2 != "agy" || model2 != "gemini-3.7-flash" {
 		t.Fatalf("expected agy to be picked when opencode is full, got backend=%s, model=%s", backend2, model2)
 	}
 
-	// 3. 测试通过 TierRouter 绑定多资源池调度
 	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{
 		Resources:      []string{"agy", "opencode"},
 		TimeoutSeconds: 1200,
@@ -533,7 +519,7 @@ func TestModelDispatcher_SlotLeaseLifecycle(t *testing.T) {
 		},
 	}
 
-	workCtx := &LLMWorkContext{
+	workCtx := &invoker.LLMWorkContext{
 		ReportID: 167,
 		RepoName: "fmt",
 		TaskType: "Coredump 风险分析",
@@ -541,7 +527,6 @@ func TestModelDispatcher_SlotLeaseLifecycle(t *testing.T) {
 		SubTask:  "分片 1/3 (src/fmt/print.go)",
 	}
 
-	// 1. 登记租约
 	leaseID := d.RegisterSlotLease(d.resources[0], "agy", "gemini-3.0-flash-high", workCtx)
 	if leaseID == "" {
 		t.Fatal("expected non-empty leaseID")
@@ -555,14 +540,12 @@ func TestModelDispatcher_SlotLeaseLifecycle(t *testing.T) {
 		t.Fatalf("unexpected lease data: %+v", leases[0])
 	}
 
-	// 2. 注销租约
 	d.UnregisterSlotLease(leaseID)
 	leasesAfter := d.GetActiveLeases()
 	if len(leasesAfter) != 0 {
 		t.Fatalf("expected 0 active leases after unregister, got %d", len(leasesAfter))
 	}
 
-	// 3. 测试 ResetActiveSlots 清除租约
 	d.RegisterSlotLease(d.resources[0], "agy", "gemini-3.0-flash-high", workCtx)
 	if len(d.GetActiveLeases()) != 1 {
 		t.Fatalf("expected 1 active lease before reset")
