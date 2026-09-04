@@ -19,6 +19,11 @@ import (
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
+	origDir := models.AppConfig.Server.DataDir
+	models.AppConfig.Server.DataDir = t.TempDir()
+	t.Cleanup(func() {
+		models.AppConfig.Server.DataDir = origDir
+	})
 	return testdb.SetupIsolatedDB(t, "shield_task_runner")
 }
 

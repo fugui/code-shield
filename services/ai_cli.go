@@ -2,6 +2,7 @@ package services
 
 import (
 	"code-shield/models"
+	"code-shield/services/invoker"
 	"context"
 	"fmt"
 	"log"
@@ -10,77 +11,58 @@ import (
 	"strings"
 )
 
-// LLMWorkContext 承载单次 LLM 调用的业务归属与当前微任务环节（用于算力看板透视）
-type LLMWorkContext struct {
-	ReportID uint   `json:"report_id"`
-	RepoName string `json:"repo_name"`
-	TaskType string `json:"task_type"`
-	Stage    string `json:"stage"`    // 执行环节/阶段，如 "Tier 1: 初筛猎手"、"Tier 2: 裁判终审"、"Tier 3: 全仓汇总"、"系统工具: JSON 语法修复"
-	SubTask  string `json:"sub_task"` // 当前微任务描述，如 "分片 2/5 (src/runtime/sys.go)"、"批次 1 (候选点 1~3 终审)"
-	Detail   string `json:"detail,omitempty"`
-}
+// 类型别名映射至底层 invoker 子包，保持根 services 包对外导出完全向后兼容
+type (
+	LLMWorkContext  = invoker.LLMWorkContext
+	AIRequest       = invoker.AIRequest
+	AIInvoker       = invoker.AIInvoker
+	ClaudeInvoker   = invoker.ClaudeInvoker
+	OpenCodeInvoker = invoker.OpenCodeInvoker
+	CodexInvoker    = invoker.CodexInvoker
+	AgyInvoker      = invoker.AgyInvoker
+	NativeInvoker   = invoker.NativeInvoker
+)
 
-type llmWorkContextKey struct{}
+const BaseScannerAgentName = invoker.BaseScannerAgentName
 
 // WithLLMWorkContext 将 LLMWorkContext 注入 context.Context 中
 func WithLLMWorkContext(ctx context.Context, work *LLMWorkContext) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, llmWorkContextKey{}, work)
+	return invoker.WithLLMWorkContext(ctx, work)
 }
 
 // LLMWorkContextFromContext 从 context.Context 中提取 LLMWorkContext
 func LLMWorkContextFromContext(ctx context.Context) *LLMWorkContext {
-	if ctx == nil {
-		return nil
-	}
-	if val, ok := ctx.Value(llmWorkContextKey{}).(*LLMWorkContext); ok {
-		return val
-	}
-	return nil
+	return invoker.LLMWorkContextFromContext(ctx)
 }
 
-// AIRequest 封装一次 AI CLI 调用所需的全部参数（与具体 CLI 无关）
-type AIRequest struct {
-	ParentContext  context.Context // 父 context，支持提前取消
-	WorkDir        string          // 执行目录（代码仓根目录）
-	PromptFile     string          // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
-	PromptMsg      string          // 用户提示消息
-	InputFiles     []string        // 需要分析的文件列表（相对路径），AI 自行读取
-	OutputPath     string          // AI 输出文档的目标路径
-	TimeoutMin     int             // 执行超时（分钟），0 表示默认 60 分钟
-	ModelName      string          // 新增：指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
-	Temperature    *float64        // 新增：可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
-	ResponseFormat string          // 请求期望输出格式："json"（强制 json_object 结构化模式）、"text"/"markdown"（普通文本排版模式）或 ""（默认文本）
-	Env            []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
-	WorkContext    *LLMWorkContext // 业务溯源与算力监控上下文 (用于系统诊断中心 LLM 算力池实时看板精准定位)
-}
-
-// AIInvoker 定义了 AI CLI 调用的统一接口。
-// 不同的 CLI 后端（claude、opencode）实现此接口。
-type AIInvoker interface {
-	// Invoke 执行 AI 任务，返回 nil 表示成功
-	Invoke(req AIRequest) error
-	// Name 返回此 CLI 后端的名称（用于日志）
-	Name() string
-}
-
-// invokerRegistry 存储已注册的 AI CLI 实现
-var invokerRegistry = map[string]AIInvoker{}
-
-// RegisterAIInvoker 注册一个 AI CLI 后端
-func RegisterAIInvoker(name string, invoker AIInvoker) {
-	invokerRegistry[name] = invoker
+// RegisterAIInvoker 注册一个 AI CLI/API 驱动后端
+func RegisterAIInvoker(name string, inv AIInvoker) {
+	invoker.RegisterAIInvoker(name, inv)
 }
 
 // IsValidAIBackend 检查 backend 名称是否合法（支持空值跟随全局，或已注册的 Invoker）
 func IsValidAIBackend(name string) bool {
-	if name == "" {
-		return true
-	}
-	_, ok := invokerRegistry[name]
-	return ok
+	return invoker.IsValidAIBackend(name)
+}
+
+// BuildPromptPayload 组装通用的 Prompt 规约、分片提示及输入文件清单
+func BuildPromptPayload(req AIRequest, includePromptFile bool) (string, error) {
+	return invoker.BuildPromptPayload(req, includePromptFile)
+}
+
+// RunCLIProcess 统一管理所有 AI CLI 的执行、超时、进程组治理与 Mock 降级
+func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary string) error {
+	return invoker.RunCLIProcess(cliName, args, req, mockSummary)
+}
+
+// EnsureBaseAgent 确保全局 OpenCode 基座 Agent 存在且最新
+func EnsureBaseAgent() error {
+	return invoker.EnsureBaseAgent()
+}
+
+// CleanupLegacyTaskAgents 清理旧版 OpenCode 遗留 Agent
+func CleanupLegacyTaskAgents() {
+	invoker.CleanupLegacyTaskAgents()
 }
 
 // DispatchingInvoker 是 AIInvoker 的代理，自动在调用前后向 ModelDispatcher 申请/释放并发槽位
@@ -129,11 +111,10 @@ func (w *DispatchingInvoker) Invoke(req AIRequest) error {
 // GetAIInvoker 根据名称返回对应的 AIInvoker，未找到则回退到 claude。
 // 当调度器启用时，自动返回 DispatchingInvoker 包装实例。
 func GetAIInvoker(name string) AIInvoker {
-	var inv AIInvoker
-	var ok bool
-	if inv, ok = invokerRegistry[name]; !ok {
+	inv, ok := invoker.GetRawInvoker(name)
+	if !ok || inv == nil {
 		log.Printf("[AI] WARNING: AI backend %q is not registered, falling back to claude\n", name)
-		inv = invokerRegistry["claude"]
+		inv, _ = invoker.GetRawInvoker("claude")
 	}
 
 	if Dispatcher != nil && Dispatcher.enabled {
@@ -162,8 +143,8 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		}
 	}
 
-	invoker := GetAIInvoker(backend)
-	log.Printf("[AI] Invoking %s to repair JSON: %s\n", invoker.Name(), jsonFilePath)
+	aiInv := GetAIInvoker(backend)
+	log.Printf("[AI] Invoking %s to repair JSON: %s\n", aiInv.Name(), jsonFilePath)
 
 	rawContent, err := os.ReadFile(jsonFilePath)
 	if err != nil {
@@ -188,7 +169,7 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		},
 	}
 
-	if err := invoker.Invoke(req); err != nil {
+	if err := aiInv.Invoke(req); err != nil {
 		return nil, fmt.Errorf("AI repair invocation failed: %w", err)
 	}
 	defer os.Remove(fixedPath)
@@ -198,5 +179,5 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read repaired JSON: %w", err)
 	}
 
-	return cleanJSONFromAI(fixed), nil
+	return fixed, nil
 }

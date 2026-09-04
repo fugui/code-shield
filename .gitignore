@@ -30,6 +30,7 @@ codes/
 review-reports/
 /reports/
 task-reports/
+/services/data/
 
 # Reconciliation intermediate artifacts
 recon-*.json

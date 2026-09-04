@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"bytes"
@@ -162,11 +162,11 @@ func (n *NativeInvoker) fallbackToCLI(req AIRequest) error {
 	}
 	log.Printf("[NativeInvoker] Falling back request to CLI backend %q\n", fallbackBackend)
 
-	invoker, ok := invokerRegistry[fallbackBackend]
-	if !ok || invoker == nil {
+	inv, ok := GetRawInvoker(fallbackBackend)
+	if !ok || inv == nil {
 		return fmt.Errorf("circuit breaker fallback failed: CLI backend %q not registered", fallbackBackend)
 	}
-	return invoker.Invoke(req)
+	return inv.Invoke(req)
 }
 
 func (n *NativeInvoker) Invoke(req AIRequest) error {
