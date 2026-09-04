@@ -615,4 +615,3 @@ func printSummary(stats PipelineStats, d time.Duration, flags ConfigFlags) {
 		fmt.Println("================================================================================")
 	}
 }
-

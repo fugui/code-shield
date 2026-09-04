@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"code-shield/models"
@@ -9,8 +9,8 @@ import (
 )
 
 func TestCodexInvoker_Name(t *testing.T) {
-	invoker := GetAIInvoker("codex")
-	if invoker == nil {
+	invoker, ok := GetRawInvoker("codex")
+	if !ok || invoker == nil {
 		t.Fatalf("expected codex invoker to be registered, got nil")
 	}
 	if invoker.Name() != "codex" {
@@ -66,29 +66,45 @@ func TestCodexInvoker_BuildArgs(t *testing.T) {
 	}
 }
 
-func TestCodexInvoker_MockFallback(t *testing.T) {
+func TestFinalizeCodexOutput(t *testing.T) {
 	tempDir := t.TempDir()
-	outputPath := filepath.Join(tempDir, "report.json")
 
-	// 验证通用 mock 机制（当调用不存在的 CLI 时能够正确降级）
-	req := AIRequest{
-		WorkDir:    tempDir,
-		PromptMsg:  "测试未安装情况下的 Mock 降级",
-		OutputPath: outputPath,
-		TimeoutMin: 1,
+	// 1. 模型已写盘 → 保留模型产物并清理捕获文件
+	modelWritten := filepath.Join(tempDir, "model-written.json")
+	if err := os.WriteFile(modelWritten, []byte(`{"source":"model"}`), 0644); err != nil {
+		t.Fatalf("failed to write fixture: %v", err)
+	}
+	if err := os.WriteFile(modelWritten+".lastmsg", []byte(`{"source":"lastmsg"}`), 0644); err != nil {
+		t.Fatalf("failed to write fixture: %v", err)
+	}
+	if err := finalizeCodexOutput(AIRequest{OutputPath: modelWritten}); err != nil {
+		t.Fatalf("finalize (model written) failed: %v", err)
+	}
+	content, _ := os.ReadFile(modelWritten)
+	if string(content) != `{"source":"model"}` {
+		t.Fatalf("model-written output should be preserved, got %s", string(content))
+	}
+	if _, statErr := os.Stat(modelWritten + ".lastmsg"); !os.IsNotExist(statErr) {
+		t.Fatalf("lastmsg should be cleaned up, stat err=%v", statErr)
 	}
 
-	err := RunCLIProcess("non-existent-ai-cli-xyz", []string{"run"}, req, "模拟报告：AI 引擎未安装")
-	if err != nil {
-		t.Fatalf("expected mock fallback without error, got %v", err)
+	// 2. 模型未写盘 → 回退使用 lastmsg
+	fallback := filepath.Join(tempDir, "fallback.json")
+	if err := os.WriteFile(fallback+".lastmsg", []byte(`{"source":"lastmsg"}`), 0644); err != nil {
+		t.Fatalf("failed to write fixture: %v", err)
+	}
+	if err := finalizeCodexOutput(AIRequest{OutputPath: fallback}); err != nil {
+		t.Fatalf("finalize (fallback) failed: %v", err)
+	}
+	content, _ = os.ReadFile(fallback)
+	if string(content) != `{"source":"lastmsg"}` {
+		t.Fatalf("expected lastmsg fallback content, got %s", string(content))
 	}
 
-	content, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatalf("failed to read mock output: %v", err)
-	}
-	if !strings.Contains(string(content), "findings") {
-		t.Fatalf("expected valid JSON report in mock output, got: %s", string(content))
+	// 3. 两者都不存在 → 返回错误
+	missing := filepath.Join(tempDir, "missing.json")
+	if err := finalizeCodexOutput(AIRequest{OutputPath: missing}); err == nil {
+		t.Fatalf("expected error when no output available")
 	}
 }
 
@@ -98,8 +114,6 @@ func TestCodexInvoker_InvokeCapturesLastMessage(t *testing.T) {
 	if err := os.MkdirAll(fakeBin, 0755); err != nil {
 		t.Fatalf("failed to create fake bin dir: %v", err)
 	}
-	// 假 codex：解析 --output-last-message <file> 并把模型最终消息写入该文件，
-	// 模拟真实 codex 在只读沙箱下由 CLI 落盘、模型无法写 OutputPath 的行为
 	fakeCodex := filepath.Join(fakeBin, "codex")
 	script := `#!/bin/bash
 out=""
@@ -138,7 +152,6 @@ echo "codex-run-ok"
 	if !strings.Contains(string(content), "fake") {
 		t.Fatalf("expected last-message content in output, got: %s", string(content))
 	}
-	// 捕获文件应被清理
 	if _, statErr := os.Stat(outputPath + ".lastmsg"); !os.IsNotExist(statErr) {
 		t.Fatalf("expected lastmsg capture file to be cleaned, stat err=%v", statErr)
 	}

@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"code-shield/models"
@@ -212,48 +212,6 @@ func TestRunCLIProcess_SuccessCleansStdoutMirror(t *testing.T) {
 	}
 	if _, statErr := os.Stat(outPath + ".output.txt"); !os.IsNotExist(statErr) {
 		t.Fatalf("stdout mirror should be removed after successful output, stat err=%v", statErr)
-	}
-}
-
-func TestFinalizeCodexOutput(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// 1. 模型已写盘 → 保留模型产物并清理捕获文件
-	modelWritten := filepath.Join(tempDir, "model-written.json")
-	if err := os.WriteFile(modelWritten, []byte(`{"source":"model"}`), 0644); err != nil {
-		t.Fatalf("failed to write fixture: %v", err)
-	}
-	if err := os.WriteFile(modelWritten+".lastmsg", []byte(`{"source":"lastmsg"}`), 0644); err != nil {
-		t.Fatalf("failed to write fixture: %v", err)
-	}
-	if err := finalizeCodexOutput(AIRequest{OutputPath: modelWritten}); err != nil {
-		t.Fatalf("finalize (model written) failed: %v", err)
-	}
-	content, _ := os.ReadFile(modelWritten)
-	if string(content) != `{"source":"model"}` {
-		t.Fatalf("model-written output should be preserved, got %s", string(content))
-	}
-	if _, statErr := os.Stat(modelWritten + ".lastmsg"); !os.IsNotExist(statErr) {
-		t.Fatalf("lastmsg should be cleaned up, stat err=%v", statErr)
-	}
-
-	// 2. 模型未写盘 → 回退使用 lastmsg
-	fallback := filepath.Join(tempDir, "fallback.json")
-	if err := os.WriteFile(fallback+".lastmsg", []byte(`{"source":"lastmsg"}`), 0644); err != nil {
-		t.Fatalf("failed to write fixture: %v", err)
-	}
-	if err := finalizeCodexOutput(AIRequest{OutputPath: fallback}); err != nil {
-		t.Fatalf("finalize (fallback) failed: %v", err)
-	}
-	content, _ = os.ReadFile(fallback)
-	if string(content) != `{"source":"lastmsg"}` {
-		t.Fatalf("expected lastmsg fallback content, got %s", string(content))
-	}
-
-	// 3. 两者都不存在 → 返回错误
-	missing := filepath.Join(tempDir, "missing.json")
-	if err := finalizeCodexOutput(AIRequest{OutputPath: missing}); err == nil {
-		t.Fatalf("expected error when no output available")
 	}
 }
 

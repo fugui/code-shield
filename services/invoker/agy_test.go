@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"code-shield/models"
@@ -9,8 +9,8 @@ import (
 )
 
 func TestAgyInvoker_Name(t *testing.T) {
-	invoker := GetAIInvoker("agy")
-	if invoker == nil {
+	invoker, ok := GetRawInvoker("agy")
+	if !ok || invoker == nil {
 		t.Fatalf("expected agy invoker to be registered, got nil")
 	}
 	if invoker.Name() != "agy" {

@@ -7,12 +7,7 @@ import (
 )
 
 func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
-	// 创建临时测试工作区
-	tmpDir, err := os.MkdirTemp("", "code-shield-chunker-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	// 构建目录结构:
 	// include/fmt/posix.h
@@ -69,11 +64,7 @@ func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
 }
 
 func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "code-shield-chunker-8-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	srcDir := filepath.Join(tmpDir, "src")
 	os.MkdirAll(srcDir, 0755)

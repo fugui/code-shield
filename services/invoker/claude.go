@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"code-shield/models"
@@ -47,8 +47,6 @@ func (c *ClaudeInvoker) buildArgs(req AIRequest) ([]string, error) {
 }
 
 // Invoke 调用 Claude CLI 执行 AI 任务。
-// 提示词通过 --append-system-prompt 注入为系统级指令，文件列表写在 -p 消息中由 Claude 自行读取。
-// 返回 nil 表示成功，AI 输出已写入 req.OutputPath。
 func (c *ClaudeInvoker) Invoke(req AIRequest) error {
 	// 校验 prompt 文件存在（PromptFile 为空时跳过，仅使用 PromptMsg）
 	if req.PromptFile != "" {

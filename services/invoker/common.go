@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"code-shield/models"
@@ -111,7 +111,6 @@ func summarizeCLIArgs(args []string) string {
 	parts := make([]string, 0, len(args))
 	for _, arg := range args {
 		trimmed := strings.TrimSpace(arg)
-		// 如果包含换行符或长度超过 60 字符，进行单行精简提炼
 		if strings.Contains(trimmed, "\n") || len([]rune(trimmed)) > 60 {
 			firstLine := trimmed
 			if idx := strings.Index(trimmed, "\n"); idx != -1 {
@@ -143,8 +142,6 @@ func formatByteSize(bytes int) string {
 }
 
 // RunCLIProcess 统一管理所有 AI CLI 的执行、超时、进程组治理与 Mock 降级。
-// 进程治理：Setpgid + Kill(-pgid) + Pdeathsig；stdin 固定为空 Reader（立即 EOF），
-// 避免 codex/opencode 在非 TTY stdin 上等待 EOF 造成挂起。
 func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary string) error {
 	timeout := time.Duration(req.TimeoutMin) * time.Minute
 	if timeout <= 0 {
@@ -225,7 +222,6 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 				log.Printf("[%s] Failed to kill process group: %v\n", cliName, killErr)
 			}
 		}
-		// 二次兜底：SIGKILL 后最多等待 killReapTimeout，避免不可中断进程永久占用 Worker
 		select {
 		case runErr = <-done:
 		case <-time.After(killReapTimeout):
@@ -275,13 +271,11 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 	if err := metaFile.Sync(); err != nil {
 		log.Printf("[%s] Failed to sync metaFile: %v\n", cliName, err)
 	}
-	// 成功且输出文件已由 CLI/模型写入时，清理 stdout 镜像
 	if stat, err := os.Stat(req.OutputPath); err == nil && stat.Size() > 0 {
 		if removeErr := os.Remove(cliOutputPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("[%s] Failed to remove stdout mirror %s: %v\n", cliName, cliOutputPath, removeErr)
 		}
 	}
-	// 调试日志启用时成功也保留，便于排查；未启用时清理可能存在的历史残留
 	if !models.AppConfig.AI.DebugLogs {
 		if removeErr := os.Remove(debugLogPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("[%s] Failed to remove stale debug log %s: %v\n", cliName, debugLogPath, removeErr)

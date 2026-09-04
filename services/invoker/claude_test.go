@@ -1,4 +1,4 @@
-package services
+package invoker
 
 import (
 	"code-shield/models"
@@ -58,8 +58,13 @@ func TestClaudeInvoker_BuildArgs(t *testing.T) {
 		}
 	}
 
-	// Claude 的 PromptFile 通过 --append-system-prompt 注入，不应内联进用户消息
-	if len(args) < 2 || strings.Contains(args[1], "# Claude System Prompt") {
-		t.Fatalf("prompt file content should not be inlined into user message, got %v", args)
+	// 验证未传递模型名时不注入 --model
+	req.ModelName = ""
+	argsNoModel, err := invoker.buildArgs(req)
+	if err != nil {
+		t.Fatalf("buildArgs failed: %v", err)
+	}
+	if strings.Contains(strings.Join(argsNoModel, " "), "--model") {
+		t.Fatalf("args should not contain --model when ModelName is empty, got %v", argsNoModel)
 	}
 }

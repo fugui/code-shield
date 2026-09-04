@@ -1,0 +1,117 @@
+package defects
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestCleanSourceToken(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{input: "  p->init(); // 初始化指针", expected: "p->init()"},
+		{input: "  p->init(); /* 多行注释 */", expected: "p->init()"},
+		{input: "pData = nullptr;", expected: "pdata=nullptr"},
+		{input: "printf(\"Hello World!\\n\");", expected: "printf(helloworld!\\n)"},
+		{input: "   ", expected: ""},
+		{input: "`cmd --flag`", expected: "cmd--flag"},
+	}
+
+	for _, c := range cases {
+		actual := CleanSourceToken(c.input)
+		if actual != c.expected {
+			t.Errorf("CleanSourceToken(%q) = %q, expected %q", c.input, actual, c.expected)
+		}
+	}
+}
+
+func TestNormalizeScopeSymbol(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{input: "APP_COMMON::SensorDevice::ReadData", expected: "SensorDevice::ReadData"},
+		{input: "LSTB_COMMON::SensorDevice::ReadData", expected: "SensorDevice::ReadData"},
+		{input: "PROJ_CORE::BufferPool::Allocate", expected: "BufferPool::Allocate"},
+		{input: "StandaloneFunction", expected: "StandaloneFunction"},
+		{input: "Namespace::Class::operator()(signal handler)", expected: "Class::<lambda>"},
+		{input: "Class::doWork::<lambda()>", expected: "doWork::<lambda>"},
+		{input: "GetTriggerDelay / GetTriggerFreq", expected: "GetTriggerDelay / GetTriggerFreq"},
+		{input: "GetTriggerFreq / GetTriggerDelay", expected: "GetTriggerDelay / GetTriggerFreq"},
+		{input: "MyClass<int, double>::process", expected: "MyClass::process"},
+	}
+
+	for _, c := range cases {
+		actual := NormalizeScopeSymbol(c.input)
+		if actual != c.expected {
+			t.Errorf("NormalizeScopeSymbol(%q) = %q, expected %q", c.input, actual, c.expected)
+		}
+	}
+}
+
+func TestParseLineNumberRange(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantStart int
+		wantEnd   int
+	}{
+		{"10-20", 10, 20},
+		{"15", 15, 15},
+		{"", 0, 0},
+		{"invalid", 0, 0},
+		{"20-10", 20, 20},
+	}
+
+	for _, tt := range tests {
+		s, e := ParseLineNumberRange(tt.input)
+		if s != tt.wantStart || e != tt.wantEnd {
+			t.Errorf("ParseLineNumberRange(%q) = (%d, %d), want (%d, %d)", tt.input, s, e, tt.wantStart, tt.wantEnd)
+		}
+	}
+}
+
+func TestCalculateTokenJaccard(t *testing.T) {
+	sim := CalculateTokenJaccard("int a = 1;", "int a = 1;")
+	if sim != 1.0 {
+		t.Errorf("Expected 1.0, got %f", sim)
+	}
+
+	diffSim := CalculateTokenJaccard("int a = 1;", "void foo();")
+	if diffSim >= 0.8 {
+		t.Errorf("Expected low similarity, got %f", diffSim)
+	}
+}
+
+func TestEnrichSourceAnchor(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "sample.cpp")
+	content := `// Sample file
+namespace Demo {
+    void Worker::ProcessData() {
+        int x = 42;
+        int* ptr = &x;
+        *ptr = 100; // trigger line here
+    }
+}
+`
+	if err := os.WriteFile(srcFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	anchor, err := EnrichSourceAnchor(tmpDir, "sample.cpp", "6", "*ptr = 100;")
+	if err != nil {
+		t.Fatalf("EnrichSourceAnchor failed: %v", err)
+	}
+
+	if anchor.NormalizedPath != "sample.cpp" {
+		t.Errorf("expected normalized path sample.cpp, got %s", anchor.NormalizedPath)
+	}
+	if anchor.PhysicalToken != "*ptr=100" {
+		t.Errorf("expected physical token *ptr=100, got %s", anchor.PhysicalToken)
+	}
+	if anchor.NormalizedScope != "Worker::ProcessData" {
+		t.Errorf("expected scope Worker::ProcessData, got %s", anchor.NormalizedScope)
+	}
+}

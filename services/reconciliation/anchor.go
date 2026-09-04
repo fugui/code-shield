@@ -2,6 +2,7 @@ package reconciliation
 
 import (
 	"code-shield/models"
+	"code-shield/services/defects"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -9,86 +10,25 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
-// SourceAnchor 物理源码锚点
-type SourceAnchor struct {
-	NormalizedPath  string
-	NormalizedScope string
-	PhysicalToken   string
-	StartLine       int
-	EndLine         int
-	ScopeBodyHash   string
-}
+// SourceAnchor 物理源码锚点（统一复用 defects.SourceAnchor SSOT）
+type SourceAnchor = defects.SourceAnchor
 
-// CleanSourceToken 对代码行进行 Token 级去噪清洗 (去除注释、空白符、引号、分号并转小写)
+// CleanSourceToken 对代码行进行 Token 级去噪清洗 (复用 defects.CleanSourceToken 单一真实源)
 func CleanSourceToken(line string) string {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return ""
-	}
-
-	// 1. 移除 C/C++/Go/Java/Python/Shell 单行与多行注释
-	reComments := regexp.MustCompile(`(//.*?$|/\*.*?\*/|#.*?$)`)
-	clean := reComments.ReplaceAllString(trimmed, "")
-
-	// 2. 移除所有空白符与换行符
-	reWhitespace := regexp.MustCompile(`\s+`)
-	clean = reWhitespace.ReplaceAllString(clean, "")
-
-	// 3. 移除单双引号与末尾分号
-	clean = strings.ReplaceAll(clean, "\"", "")
-	clean = strings.ReplaceAll(clean, "'", "")
-	clean = strings.ReplaceAll(clean, "`", "")
-	clean = strings.TrimSuffix(clean, ";")
-
-	return strings.ToLower(clean)
+	return defects.CleanSourceToken(line)
 }
 
-// NormalizeScopeSymbol 规范化作用域符号 (剥离外层顶级命名空间、规范化 Lambda 与泛型)
+// NormalizeScopeSymbol 规范化作用域符号 (复用 defects.NormalizeScopeSymbol 单一真实源)
 func NormalizeScopeSymbol(scope string) string {
-	s := strings.TrimSpace(scope)
-	if s == "" {
-		return ""
-	}
-
-	// 1. 移除 lambda 命名抖动 (如 ::lambda_123 或 [this](...) 替换为规范占位符)
-	reLambda := regexp.MustCompile(`::lambda_[0-9a-zA-Z_]+|\[.*?\]\(.*?\)`)
-	s = reLambda.ReplaceAllString(s, "::<lambda>")
-
-	// 2. 剥离外层项目命名空间 (如 PROJ_CORE_COMMON::OpcuaMonitor<T>::SubscribeNodes -> OpcuaMonitor<T>::SubscribeNodes)
-	parts := strings.Split(s, "::")
-	if len(parts) > 2 {
-		firstPart := parts[0]
-		if strings.HasSuffix(firstPart, "_COMMON") || strings.HasPrefix(firstPart, "PROJ_") || strings.HasPrefix(firstPart, "XY_") || strings.Contains(firstPart, "MODULE") {
-			s = strings.Join(parts[1:], "::")
-		}
-	}
-
-	return s
+	return defects.NormalizeScopeSymbol(scope)
 }
 
-// ParseLineNumberRange 解析 "120-135" 或 "120" 为 startLine 和 endLine
+// ParseLineNumberRange 解析行号范围 (复用 defects.ParseLineNumberRange 单一真实源)
 func ParseLineNumberRange(lineStr string) (int, int) {
-	lineStr = strings.TrimSpace(lineStr)
-	if lineStr == "" {
-		return 0, 0
-	}
-
-	if strings.Contains(lineStr, "-") {
-		parts := strings.Split(lineStr, "-")
-		s, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
-		e, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if e < s {
-			e = s
-		}
-		return s, e
-	}
-
-	n, _ := strconv.Atoi(lineStr)
-	return n, n
+	return defects.ParseLineNumberRange(lineStr)
 }
 
 // CalculateDefectFingerprint 计算 L1 物理强指纹
