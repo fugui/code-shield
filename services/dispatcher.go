@@ -11,15 +11,15 @@ import (
 
 // ModelResource 代表单台 LLM 服务器的模型资源以及并发追踪
 type ModelResource struct {
-	Index      int
-	ID         string
-	Driver     string
-	Model      string
-	OpenCode   string
-	Claude     string
-	Codex      string
-	Agy        string
-	Native     string
+	Index         int
+	ID            string
+	Driver        string
+	Model         string
+	OpenCode      string
+	Claude        string
+	Codex         string
+	Agy           string
+	Native        string
 	Concurrent    int
 	Active        int // 当前正在运行的并发数
 	CurrentWeight int // 运行时平滑加权轮询 (SWRR) 动态权重

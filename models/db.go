@@ -47,6 +47,8 @@ func InitDB() {
 		&DefectFingerprintRecord{},
 		&TaskDebateLog{},
 		&RepoFeedbackRule{},
+		&ScanReconciliation{},
+		&ReconciliationLink{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
