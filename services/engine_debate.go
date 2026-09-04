@@ -34,15 +34,15 @@ func (e *DebateEngine) Run(ctx *taskContext) error {
 	// 推进任务状态为静态分析中
 	updateTaskStatus(ctx.report.ID, models.StatusAnalyzing)
 
-	cfg := ChunkConfig{MaxFiles: 8, Depth: 1, Concurrency: 6}
+	cfg := ChunkConfig{MaxFiles: DefaultChunkMaxFiles, Depth: DefaultChunkDepth, Concurrency: DefaultChunkConcurrency}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 	if cfg.MaxFiles <= 0 {
-		cfg.MaxFiles = 8 // 调优收敛：单分片默认 8 个文件
+		cfg.MaxFiles = DefaultChunkMaxFiles
 	}
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 6
+		cfg.Concurrency = DefaultChunkConcurrency
 	}
 
 	targetScope := "all"

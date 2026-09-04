@@ -19,6 +19,14 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	// DefaultChunkMaxFiles 默认单分片文件数上限。
+	// 经架构调优收敛至 8 个文件（6~8 文件黄金区间），有效防止大模型上下文注意力衰减与长尾文件漏扫。
+	DefaultChunkMaxFiles    = 8
+	DefaultChunkDepth       = 1
+	DefaultChunkConcurrency = 6
+)
+
 // ChunkConfig 定义分片引擎的配置参数
 type ChunkConfig struct {
 	MaxFiles        int      `json:"max_files"`
@@ -36,15 +44,15 @@ type ChunkedEngine struct{}
 
 func (e *ChunkedEngine) Run(ctx *taskContext) error {
 	// ── 引擎前处理：解析配置并扫描分片 ──
-	cfg := ChunkConfig{MaxFiles: 8, Depth: 1, Concurrency: 6}
+	cfg := ChunkConfig{MaxFiles: DefaultChunkMaxFiles, Depth: DefaultChunkDepth, Concurrency: DefaultChunkConcurrency}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 	if cfg.MaxFiles <= 0 {
-		cfg.MaxFiles = 8 // 调优收敛：单分片默认 8 个文件
+		cfg.MaxFiles = DefaultChunkMaxFiles
 	}
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 6
+		cfg.Concurrency = DefaultChunkConcurrency
 	}
 
 	targetScope := "all"
@@ -578,15 +586,15 @@ func ResumeFailedChunks(reportID uint) error {
 	ctx.repo = report.Repo
 
 	// 2. 解析引擎配置
-	cfg := ChunkConfig{MaxFiles: 8, Depth: 1, Concurrency: 6}
+	cfg := ChunkConfig{MaxFiles: DefaultChunkMaxFiles, Depth: DefaultChunkDepth, Concurrency: DefaultChunkConcurrency}
 	if len(ctx.taskType.EngineConfig) > 0 {
 		json.Unmarshal(ctx.taskType.EngineConfig, &cfg)
 	}
 	if cfg.MaxFiles <= 0 {
-		cfg.MaxFiles = 8 // 调优收敛：单分片默认 8 个文件
+		cfg.MaxFiles = DefaultChunkMaxFiles
 	}
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 6
+		cfg.Concurrency = DefaultChunkConcurrency
 	}
 
 	// 3. 构造上下文并准备路径

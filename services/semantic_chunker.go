@@ -120,7 +120,7 @@ func projectAndGroupFiles(files []string, cfg ChunkConfig) []SemanticBundle {
 
 	maxFiles := cfg.MaxFiles
 	if maxFiles <= 0 {
-		maxFiles = 8 // 调优收敛：单分片默认 8 个文件，防止大模型上下文注意力衰减与长尾文件漏扫
+		maxFiles = DefaultChunkMaxFiles
 	}
 
 	for _, name := range keys {
