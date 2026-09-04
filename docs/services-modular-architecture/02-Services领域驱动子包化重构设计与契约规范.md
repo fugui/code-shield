@@ -124,9 +124,50 @@ graph TD
 
 ---
 
-## 4. 关键契约与核心接口设计规范
+## 4. 双层调度体系规范 (Two-Tier Scheduling Architecture)
 
-### 4.1 契约一：解耦 `taskContext`，定义干净的 `EngineContext`
+在 Code-Shield 的模块化体系中，必须严格区分**宏观业务调度**与**微观算力调度**两个不同层次的调度器职责，防止概念混淆导致的架构回潮：
+
+```mermaid
+graph TD
+    classDef macro fill:#eff6ff,stroke:#2563eb,stroke-width:2px;
+    classDef micro fill:#fefce8,stroke:#ca8a04,stroke-width:2px;
+    classDef engine fill:#f0fdf4,stroke:#16a34a,stroke-width:2px;
+
+    subgraph Tier1["第一层：宏观业务流程大调度器 (Macro-Scheduler / Pipeline Runner)"]
+        R1["1. 排队拉取 -> 2. Git环境互斥 -> 3. 变更门禁 -> 4. 驱动引擎 -> 5. 增量治理 -> 6. 归档交付"]:::macro
+    end
+
+    subgraph Tier2["第二层：微观物理算力池调度器 (Micro-Scheduler / ModelDispatcher)"]
+        D1["LLM 节点 SWRR 平滑加权轮询 | 并发槽位租约 (LLMSlotLease) | 探活熔断 | 实时看板"]:::micro
+    end
+
+    subgraph Exec["领域执行层 (Domain Workers)"]
+        E1["Scanning Engine (Single / Chunked / Debate)"]:::engine
+        E2["Feedback Memory Extractor"]:::engine
+    end
+
+    Tier1 -->|驱动扫描| E1
+    Tier1 -->|驱动规则提炼| E2
+    E1 -.->|调用 AI 时申请/释放槽位| Tier2
+    E2 -.->|调用 AI 时申请/释放槽位| Tier2
+```
+
+### 4.1 宏观业务流程大调度器（`services/runner`）
+*   **定位**：**业务全生命周期的大管家**。
+*   **职责**：负责按固定时序推进：任务状态机更新、本地 Git 仓库排队加锁与检出、Precondition 代码变更门禁判定、调用对应静态扫描引擎、比对历史指纹库、执行专项治理 Hook、触发沙箱 Python 后处理、导出报表及发送邮件通告。
+*   **特点**：感知业务数据库、感知任务 ReportID 与业务状态、把控端到端业务闭环。
+
+### 4.2 微观物理算力池调度器（`services/dispatcher`）
+*   **定位**：**硬件资源与并发配额的精细化管理者**。
+*   **职责**：负责管理配置的多台 LLM 服务器（如 DeepSeek-V3, Qwen-Flash, Claude 3.5, 本地 Ollama），运用平滑加权轮询（SWRR）算法平摊请求压力；追踪发放并发槽位租约（`LLMSlotLease`）；提供主动健康探活与故障节点熔断，并在系统诊断中心提供微任务算力透视。
+*   **特点**：**不感知业务**（不知道什么叫 Git 分支、不知道什么叫扫描报告），它只负责“分配算力槽位”与“回收算力槽位”。
+
+---
+
+## 5. 关键契约与核心接口设计规范
+
+### 5.1 契约一：解耦 `taskContext`，定义干净的 `EngineContext`
 将原有臃肿的包私有 `taskContext` 提炼为面向引擎的公开参数契约 `EngineContext`：
 
 ```go
