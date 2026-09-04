@@ -50,7 +50,7 @@ graph TD
 
 ### 领域 1：AI CLI 驱动与多模型适配层 (~2,600 行)
 *   **职责**：封装底层各种 AI CLI 工具（Claude CLI、OpenCode CLI、Codex CLI、Agy CLI）及 Native OpenAI HTTP 直连协议。
-*   **特性**：属于最底层的通用基础设施，与业务领域的代码静态扫描、缺陷治理毫无强耦合关系。
+*   **特性**：属于最底层的通用基础设施，与业务领域的代码静态扫描、缺陷治理毫无强耦合关系。**（注：当前代码中 `ai_cli.go` 内部混入了 `DispatchingInvoker`，反向调用全局 `Dispatcher` 申请租约，重构时必须将其剥离至 `dispatcher` 子包作为装饰器，杜绝跨子包循环依赖。）**
 *   **现有文件**：`ai_cli.go`, `cli_common.go`, `native_cli.go`, `opencode_cli.go`, `claude_cli.go`, `codex_cli.go`, `agy_cli.go`, `agent_sync.go` 以及对应的测试文件。
 
 ### 领域 2：LLM 算力池调度与负载均衡 (~2,215 行)

@@ -23,8 +23,8 @@
 
 ```
 code-shield/services/
-├── invoker/             # 【CLI 驱动层】统一 AI CLI 进程守护与多模型直连适配器
-│   ├── invoker.go       #   AIInvoker 统一接口、AIRequest、LLMWorkContext、注册表
+├── invoker/             # 【CLI 驱动层】统一 AI CLI 进程守护与多模型直连适配器（纯驱动，零业务与调度依赖）
+│   ├── invoker.go       #   AIInvoker 统一接口、AIRequest、LLMWorkContext、基础注册表
 │   ├── common.go        #   跨 CLI 进程运行、超时守护、工作区目录准备、环境变量
 │   ├── native.go        #   Direct OpenAI / Thin LLM HTTP 直连协议实现
 │   ├── opencode.go      #   OpenCode CLI 适配器
@@ -33,17 +33,19 @@ code-shield/services/
 │   ├── agy.go           #   Antigravity CLI (agy) 适配器
 │   └── agent_sync.go    #   OpenCode/Agy 基座 Agent 配置生成与磁盘同步
 │
-├── dispatcher/          # 【算力调度层】LLM 算力池负载均衡与动态并发管理
+├── dispatcher/          # 【算力调度层】LLM 算力池负载均衡与动态并发管理（依赖 invoker）
 │   ├── dispatcher.go    #   ModelDispatcher、平滑加权轮询 (SWRR) 动态权重调度
 │   ├── lease.go         #   LLMSlotLease 租约追踪与系统诊断算力看板透视
-│   └── health.go        #   多端点健康探活、动态熔断降级与配置热重载
+│   ├── health.go        #   多端点健康探活、动态熔断降级与配置热重载
+│   └── wrapper.go       #   DispatchingInvoker 装饰器（自动向 Dispatcher 申请/注销槽位，防循环依赖）
 │
 ├── engines/             # 【扫描引擎集群】标准静态分析引擎实现与语义分片
-│   ├── engine.go        #   TaskEngine 接口规范、全新解耦的 EngineContext 定义
+│   ├── engine.go        #   TaskEngine 接口规范、全新解耦的 EngineContext 与 EngineResult 定义
+│   ├── config.go        #   ChunkConfig 等引擎公共配置定义（消除 chunked 与 chunker 间的循环依赖）
 │   ├── single/          #   全量单仓扫描引擎实现
 │   ├── chunked/         #   分片并发扫描引擎实现（纯扫描逻辑，剔除续跑越权）
 │   ├── debate/          #   多智能体三权分立对抗辩论引擎 (Tier 1/2/3 架构)
-│   │   ├── engine.go    #     DebateEngine 主执行流
+│   │   ├── engine.go    #     DebateEngine 主执行流（产出 Findings 与 DebateLogs）
 │   │   └── types.go     #     Hunter, Advocate, Judge 阶段输入输出数据结构
 │   └── chunker/         #   语义感知分片器
 │       ├── chunker.go   #     SemanticBundle、过滤与分片编排
@@ -62,20 +64,21 @@ code-shield/services/
 │   ├── taxonomy.go      #   Category 白名单标准化收敛与 CWE 字典映射
 │   └── feedback.go      #   研发人员误报反馈提炼与负样本知识记忆沉淀
 │
-├── queue/               # 【任务排队与工作池】并发任务调度与流控
-│   ├── queue.go         #   TaskQueue、DB 乐观锁抢占出队、优雅排空 (Drain Mode)
-│   └── types.go         #   Task 任务定义与状态控制通道
-│
-├── reconciliation/      # 【已有子包】多模型交叉复核、仲裁与漏斗对账引擎
-├── reports/             # 【已有子包】多格式报告导出（Excel, Markdown, JSON, Archive）
-│
 ├── runner/              # 【核心流水线】标准化扫描任务生命周期 Pipeline
-│   ├── runner.go        #   RunTaskSync 主管线编排 (Git -> Engine -> PostProcess -> Notify)
+│   ├── runner.go        #   RunTaskSync 主管线编排 (Git -> Engine -> PostProcess -> Finalize -> Notify)
 │   ├── context.go       #   标准化 ExecutionContext 运行时数据载体
 │   ├── git_sync.go      #   代码仓拉取、分支对齐、Git 锁清理与进程级隔离
 │   ├── cleaner.go       #   AI 输出 JSON 防御性提取、语法容错与未闭合引号修复
 │   ├── notifier.go      #   扫描结果邮件通知与自动化 Webhook 推送
-│   └── resume.go        #   断点续跑 Pipeline (原分散在 engine_chunked 中的逻辑彻底归位!)
+│   ├── resume.go        #   断点续跑 Pipeline (原分散在 engine_chunked 中的逻辑彻底归位!)
+│   └── errors.go        #   流水线标准错误（如 ErrSkipped 等，供 Queue 与上层判定）
+│
+├── queue/               # 【任务排队与工作池】并发任务调度与流控（依赖 runner 执行具体任务）
+│   ├── queue.go         #   TaskQueue、DB 乐观锁抢占出队、优雅排空 (Drain Mode)、Worker 循环
+│   └── types.go         #   Task 任务定义与状态控制通道
+│
+├── reconciliation/      # 【已有子包】多模型交叉复核、仲裁与漏斗对账引擎
+├── reports/             # 【已有子包】多格式报告导出（Excel, Markdown, JSON, Archive）
 │
 └── services.go          # 【顶层门面 Facade】向后兼容保留原有全局函数，保障调用方零成本平滑过渡
 ```
@@ -84,13 +87,15 @@ code-shield/services/
 
 ## 3. 分层依赖关系拓扑 (单向无环 DAG)
 
-系统自底向上严格划分为四个清晰的依赖层级，单向依赖，从物理层面彻底杜绝 Go 语言循环引用（`import cycle not allowed`）：
+系统自底向上严格划分为清晰的单向依赖层级，严格遵循单向依赖，从物理层面彻底杜绝 Go 语言循环引用（`import cycle not allowed`）：
 
-1. **基础设施层 (Infrastructure)**：`services/invoker`（AI CLI / Native 驱动）、`services/dispatcher`（算力池动态加权与租约）；
-2. **核心领域层 (Domain Core)**：`services/defects`（物理源码锚点 SSOT 与指纹比对）、`services/governance`（规则树与治理归并）、`services/reconciliation`（多模型复核对账）；
-3. **扫描引擎层 (Analysis Engines)**：`services/engines`（单仓/分片/多智能体三权分立辩论引擎、语义感知分片器）；
-4. **任务管线与调度层 (Pipeline & Orchestration)**：`services/queue`（Worker队列）、`services/runner`（生命周期大调度管线）、`services/reports`（多格式导出）；
-5. **顶层门面 (Facade)**：`services/services.go`（保持向后兼容的无状态包装函数）。
+1. **基础驱动层 (Driver Infrastructure)**：`services/invoker`（纯 AI CLI / Native 驱动，零依赖上层）；
+2. **算力调度层 (Compute & Dispatching)**：`services/dispatcher`（依赖 `invoker`，提供 SWRR 加权与 `DispatchingInvoker` 装饰器）；
+3. **核心领域层 (Domain Core)**：`services/defects`（源码锚点 SSOT 与指纹比对）、`services/governance`（规则树与治理归并）、`services/reconciliation`（多模型复核对账）、`services/reports`（多格式导出）；
+4. **扫描引擎层 (Analysis Engines)**：`services/engines`（依赖 `invoker`、`defects`，纯内存计算）；
+5. **任务流水线层 (Execution Pipeline)**：`services/runner`（生命周期大调度管线，统领 `engines`、`governance`、`defects`、`dispatcher`、`reports`）；
+6. **异步队列层 (Queue & Worker Pool)**：`services/queue`（依赖 `runner`，Worker 线程循环出队并调用 `runner.RunTaskSync` / `runner.ResumeFailedChunks`）；
+7. **顶层门面 (Facade)**：`services/services.go`（向后兼容的无状态包装函数与类型映射）。
 
 ```mermaid
 graph TD
@@ -99,18 +104,18 @@ graph TD
     classDef pipeline fill:#fefce8,stroke:#ca8a04,stroke-width:2px;
     classDef facade fill:#fdf2f8,stroke:#db2777,stroke-width:2px;
 
-    Invoker["services/invoker<br/>(AI CLI 驱动/Native LLM)"]:::infra
-    Dispatcher["services/dispatcher<br/>(算力池/加权调度)"]:::infra
+    Invoker["services/invoker<br/>(纯底层 AI CLI 驱动/Native LLM)"]:::infra
+    Dispatcher["services/dispatcher<br/>(算力池/加权调度/装饰器)"]:::infra
     Defects["services/defects<br/>(源码锚点 SSOT/强指纹/Diff)"]:::domain
     Engines["services/engines<br/>(单仓/分片/辩论/语义分片)"]:::domain
     Governance["services/governance<br/>(Campaign归并/定级/反馈记忆)"]:::domain
     Reconciliation["services/reconciliation<br/>(复核/仲裁/漏斗)"]:::domain
     Reports["services/reports<br/>(报告导出)"]:::domain
-    Queue["services/queue<br/>(任务队列/Worker池)"]:::pipeline
     Runner["services/runner<br/>(生命周期Pipeline/Git/续跑)"]:::pipeline
+    Queue["services/queue<br/>(任务队列/Worker池，驱动Runner)"]:::pipeline
     Facade["services/services.go<br/>(顶层兼容门面)"]:::facade
 
-    %% 依赖关系线
+    %% 单向依赖关系线 (绝对无环)
     Dispatcher --> Invoker
     Engines --> Invoker
     Engines --> Defects
@@ -120,8 +125,8 @@ graph TD
     Runner --> Governance
     Runner --> Defects
     Runner --> Dispatcher
-    Runner --> Queue
     Runner --> Reports
+    Queue --> Runner
     Facade --> Runner
     Facade --> Dispatcher
     Facade --> Queue
@@ -173,8 +178,8 @@ graph TD
 
 ## 5. 关键契约与核心接口设计规范
 
-### 5.1 契约一：解耦 `taskContext`，定义纯净的 `EngineContext` 与 `TaskEngine`
-将原有臃肿的包私有 `taskContext` 提炼为面向引擎的纯数据参数契约 `EngineContext`，并遵循 Go 语言最佳实践将 `context.Context` 提升为函数的**第一参数**：
+### 5.1 契约一：解耦 `taskContext`，定义纯净的 `EngineContext`、`EngineResult` 与 `TaskEngine`
+将原有臃肿的包私有 `taskContext` 提炼为面向引擎的纯数据参数契约 `EngineContext` 与产物容器 `EngineResult`，并遵循 Go 语言最佳实践将 `context.Context` 提升为函数的**第一参数**：
 
 ```go
 package engines
@@ -200,22 +205,31 @@ type EngineContext struct {
     RunParams       models.RunParams // 运行时合并参数
     EngineConfig    json.RawMessage  // 引擎私有扩展配置 JSON
     Invoker         invoker.AIInvoker// 底层 AI 调用器实例
+    NegativeRules   []string         // 仓库与任务类型历史负样本例外规则（由 Runner Stage 3 预加载注入，杜绝引擎触碰 DB）
     OnProgress      ProgressCallback // 进度汇报回调函数
+}
+
+// EngineResult 承载静态分析引擎纯计算产出的全部业务产物集合（以纯内存对象交还外层流水线）
+type EngineResult struct {
+    Findings    []models.AnalysisFinding `json:"findings"`    // 标准化缺陷列表
+    DebateLogs  []models.TaskDebateLog  `json:"debate_logs"`  // 多智能体博弈与辩论轨迹（供前端辩论看板呈现与审计）
+    TokenUsage  models.TokenUsageStats  `json:"token_usage"`  // 阶段大模型 Token 消耗统计（HunterTokens, Tier2Tokens等）
 }
 
 // TaskEngine 定义所有静态扫描引擎的统一纯粹接口
 type TaskEngine interface {
     // Mode 返回该引擎对应的执行模式名称（如 "debate_full", "chunked", "single"）
     Mode() string
-    // Run 执行扫描分析，产出标准化 findings 列表并以纯内存形式交还流水线
-    Run(ctx context.Context, engineCtx *EngineContext) ([]models.AnalysisFinding, error)
+    // Run 执行扫描分析，产出包含 Findings、DebateLogs 与 Token 消耗的完整业务产物，并以纯内存形式交还流水线
+    Run(ctx context.Context, engineCtx *EngineContext) (*EngineResult, error)
 }
 ```
 
 *   **架构收益与持久化分工**：
     1.  **首参规范**：遵循 Go 标准库规范，超时控制与外部取消信号统一通过 `ctx context.Context` 传递，避免将 `Context` 塞进结构体字段；
-    2.  **持久化职责明确**：`TaskEngine` 只返回纯内存结果 `[]models.AnalysisFinding`。最终报告（`report.json`、`report.md`）的组装、序列化与落盘统一由外层管线（Runner）集中收口；`IntermediateDir` 仅供引擎在分片超大时做局部 Checkpoint 容灾使用；
-    3.  **单元测试脱敏**：引擎不再接触 DB 连接与事物提交，使用构造的 `EngineContext` 即可实现毫秒级的内存单元测试。
+    2.  **业务产物完整性保障**：通过 `EngineResult` 统一承载 `Findings`、`DebateLogs`（辩论轨迹表）和阶段 `TokenUsage`。彻底解决“扫描引擎禁止操作 `models.DB` 后，辩论轨迹数据无法落地”的矛盾，由外层管线（Runner）在 Stage 6（最终化与提交阶段）集中开启单个 GORM 事务原子持久化；
+    3.  **规则预加载注入机制**：历史负样本规则 `NegativeRules` 提升为 `EngineContext` 显式入参，Runner 统一在 Stage 3 查库注入，引擎彻底与 DB 脱敏；
+    4.  **单元测试脱敏**：引擎不再接触 DB 连接与事务提交，使用构造的 `EngineContext` 即可实现毫秒级的内存单元测试。
 
 ### 5.2 契约二：物理源码锚点统一真实源 (SSOT)
 在 `services/defects/anchor.go` 中统一定义物理源码锚点数据模型与清洗函数，废弃所有雷同拷贝：
@@ -258,8 +272,8 @@ func NormalizeScopeSymbol(rawScope string) string {
 *   **架构收益**：
     `services/reconciliation` 直接通过 `import "code-shield/services/defects"` 复用此定义，彻底消除近百行重复代码，并确保整个系统使用完全一致的代码清洗行为。
 
-### 5.3 契约三：微观算力调度器契约 (`services/dispatcher`)
-为了保证双层调度体系契约闭环，算力池对外暴露最小化的租约申请与状态透视接口：
+### 5.3 契约三：微观算力调度器契约与调用器装饰器 (`services/dispatcher`)
+为了保证双层调度体系契约闭环，并彻底消除底层驱动 `invoker` 与算力调度 `dispatcher` 之间的循环依赖，算力池对外暴露最小化的租约申请、状态透视以及**无侵入的驱动装饰器方法**：
 
 ```go
 package dispatcher
@@ -267,6 +281,7 @@ package dispatcher
 import (
     "code-shield/services/invoker"
     "context"
+    "fmt"
 )
 
 // SlotLease 代表获取到的单次算力执行槽位租约
@@ -287,6 +302,50 @@ type LLMDispatcher interface {
     Snapshot() []LLMSlotLease
     // ReloadConfig 动态热加载服务器配置，实现零停机运维
     ReloadConfig() error
+    // WrapInvoker 使用算力池并发租约对底层纯 AIInvoker 驱动进行动态装饰 (Decorator Pattern)
+    WrapInvoker(delegate invoker.AIInvoker) invoker.AIInvoker
+}
+
+// DispatchingInvoker 是 AIInvoker 的代理，自动在调用前后向 ModelDispatcher 申请/释放并发槽位
+// [防循环依赖关键设计]：本结构体收拢在 services/dispatcher 子包中，invoker 驱动层对 dispatcher 零感知！
+type DispatchingInvoker struct {
+    dispatcher *ModelDispatcher
+    delegate   invoker.AIInvoker
+}
+
+func (w *DispatchingInvoker) Name() string {
+    return w.delegate.Name()
+}
+
+func (w *DispatchingInvoker) Invoke(req invoker.AIRequest) error {
+    backend := w.delegate.Name()
+    ctx := req.ParentContext
+    if ctx == nil {
+        ctx = context.Background()
+    }
+    workCtx := req.WorkContext
+    if workCtx == nil {
+        workCtx = invoker.LLMWorkContextFromContext(ctx)
+    }
+
+    // 1. 向调度器加权申请槽位
+    res, modelName, err := w.dispatcher.AcquireWithPreference(ctx, backend, req.ModelName)
+    if err != nil {
+        return fmt.Errorf("failed to acquire LLM server slot: %w", err)
+    }
+    if res != nil {
+        defer w.dispatcher.Release(res, backend)
+        if req.ModelName == "" && modelName != "" {
+            req.ModelName = modelName
+        }
+        leaseID := w.dispatcher.RegisterSlotLease(res, backend, modelName, workCtx)
+        if leaseID != "" {
+            defer w.dispatcher.UnregisterSlotLease(leaseID)
+        }
+    }
+
+    // 2. 交付底层纯驱动执行
+    return w.delegate.Invoke(req)
 }
 ```
 
@@ -397,7 +456,11 @@ func NotifyWorker() {
 }
 
 func GetAIInvoker(name string) AIInvoker {
-    return invoker.GetAIInvoker(name)
+    raw := invoker.GetAIInvoker(name)
+    if disp := dispatcher.GetGlobal(); disp != nil && disp.IsEnabled() {
+        return disp.WrapInvoker(raw)
+    }
+    return raw
 }
 
 func IsValidAIBackend(name string) bool {

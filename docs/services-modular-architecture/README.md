@@ -49,7 +49,7 @@ services-modular-architecture/
 重构后的服务层将完全遵循**高内聚、低耦合、领域自治**的原则，形成如下 **9 个领域子包（7 个新建领域子包 + 2 个既有成熟子包）** 与 1 个顶层门面：
 
 *   **双层调度体系**：将职责正交区分为**第一层宏观业务大调度器（`runner`）**（管代码检出、门禁、引擎分发、增量指纹比对、交付）与**第二层微观物理算力池调度器（`dispatcher`）**（管 SWRR 加权、槽位租约、健康熔断）；
-*   **契约解耦与纯计算引擎**：用只读、字段最小化的纯数据对象 `EngineContext` 彻底终结包私有上帝对象 `taskContext`，并将 `context.Context` 提升为 `TaskEngine.Run` 的首参，引擎严禁直接访问 DB，实现毫秒级纯内存单元测试与零成本插拔扩展。
+*   **契约解耦与纯计算引擎**：用只读、字段最小化的纯数据对象 `EngineContext`（注入负样本规则）与业务产物容器 `EngineResult`（完整承载 Findings、DebateLogs 与 Token 消耗）彻底终结包私有上帝对象 `taskContext`，并将 `context.Context` 提升为 `TaskEngine.Run` 的首参，引擎严禁直接访问 DB，由流水线统筹事务持久化，实现毫秒级纯内存单元测试与零成本插拔扩展。
 
 ```
 code-shield/services/
