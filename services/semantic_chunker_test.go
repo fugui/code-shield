@@ -64,6 +64,50 @@ func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
 		}
 	}
 	if !foundSrcChunk {
-		t.Errorf("Expected 'src' bundle to be created")
+		t.Errorf("Expected src chunk with projected header, but not found")
+	}
+}
+
+func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "code-shield-chunker-8-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	srcDir := filepath.Join(tmpDir, "src")
+	os.MkdirAll(srcDir, 0755)
+
+	// 创建 18 个源文件，断言默认按 8 个文件拆分后生成 3 个分片 (8 + 8 + 2)
+	for i := 1; i <= 18; i++ {
+		filePath := filepath.Join(srcDir, filepath.FromSlash(filepath.Clean(filepath.Join(".", "file_"+string(rune('a'+i-1))+".cpp"))))
+		_ = os.WriteFile(filePath, []byte("int test() { return 0; }"), 0644)
+	}
+
+	// 传入 MaxFiles: 0，测试自动生效默认值 8
+	cfg := ChunkConfig{
+		MaxFiles:    0,
+		Depth:       1,
+		Concurrency: 2,
+	}
+
+	bundles, err := BuildSemanticBundles(tmpDir, cfg, "all", nil)
+	if err != nil {
+		t.Fatalf("BuildSemanticBundles failed: %v", err)
+	}
+
+	if len(bundles) != 3 {
+		t.Fatalf("Expected 3 bundles for 18 files with default MaxFiles=8, got %d", len(bundles))
+	}
+
+	// 验证前两个分片大小为 8，第三个分片大小为 2
+	if len(bundles[0].AllFiles) != 8 {
+		t.Errorf("Expected bundle 0 to have 8 files, got %d", len(bundles[0].AllFiles))
+	}
+	if len(bundles[1].AllFiles) != 8 {
+		t.Errorf("Expected bundle 1 to have 8 files, got %d", len(bundles[1].AllFiles))
+	}
+	if len(bundles[2].AllFiles) != 2 {
+		t.Errorf("Expected bundle 2 to have 2 files, got %d", len(bundles[2].AllFiles))
 	}
 }
