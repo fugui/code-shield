@@ -176,14 +176,14 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 	defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
 
 	ctx := &taskContext{
-		ctx:        context.Background(),
-		report:     report,
-		taskType:   taskType,
-		repo:       repo,
-		codesPath:  tempDir,
-		reportPath: reportPath,
-		jsonPath:   filepath.Join(tempDir, "report.json"),
-		runParams:  models.RunParams{},
+		Ctx:        context.Background(),
+		Report:     report,
+		TaskType:   taskType,
+		Repo:       repo,
+		CodesPath:  tempDir,
+		ReportPath: reportPath,
+		JsonPath:   filepath.Join(tempDir, "report.json"),
+		RunParams:  models.RunParams{},
 	}
 
 	// 6. Run chunked engine
@@ -216,11 +216,11 @@ func TestChunkedEngineErrorAggregation(t *testing.T) {
 	}
 
 	// 8. Verify report.json (ChunkExecutionReport) is created and contains correct failure metrics
-	if _, err := os.Stat(ctx.jsonPath); os.IsNotExist(err) {
+	if _, err := os.Stat(ctx.JsonPath); os.IsNotExist(err) {
 		t.Fatal("expected report.json to be created, but it does not exist")
 	}
 
-	reportBytes, err := os.ReadFile(ctx.jsonPath)
+	reportBytes, err := os.ReadFile(ctx.JsonPath)
 	if err != nil {
 		t.Fatalf("failed to read report.json: %v", err)
 	}
@@ -368,17 +368,17 @@ func TestPrepareOutputPaths(t *testing.T) {
 			CreatedAt:  createdAt,
 		}
 		ctx := &taskContext{
-			report:   report,
-			taskType: taskType,
-			repo:     repo,
+			Report:   report,
+			TaskType: taskType,
+			Repo:     repo,
 		}
-		ctx.prepareOutputPaths()
+		ctx.PrepareOutputPaths()
 		expectedJSON := "/tmp/code-shield-test/reports/test_task/2026-05-20/report-42-summary-foo-bar.json"
-		if ctx.reportPath != report.ReportPath {
-			t.Errorf("expected reportPath %q, got %q", report.ReportPath, ctx.reportPath)
+		if ctx.ReportPath != report.ReportPath {
+			t.Errorf("expected reportPath %q, got %q", report.ReportPath, ctx.ReportPath)
 		}
-		if ctx.jsonPath != expectedJSON {
-			t.Errorf("expected jsonPath %q, got %q", expectedJSON, ctx.jsonPath)
+		if ctx.JsonPath != expectedJSON {
+			t.Errorf("expected jsonPath %q, got %q", expectedJSON, ctx.JsonPath)
 		}
 	})
 
@@ -389,18 +389,18 @@ func TestPrepareOutputPaths(t *testing.T) {
 			CreatedAt: createdAt,
 		}
 		ctx := &taskContext{
-			report:   report,
-			taskType: taskType,
-			repo:     repo,
+			Report:   report,
+			TaskType: taskType,
+			Repo:     repo,
 		}
-		ctx.prepareOutputPaths()
+		ctx.PrepareOutputPaths()
 		expectedReport := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-report-foo-bar.md"
 		expectedJSON := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-summary-foo-bar.json"
-		if ctx.reportPath != expectedReport {
-			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.reportPath)
+		if ctx.ReportPath != expectedReport {
+			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.ReportPath)
 		}
-		if ctx.jsonPath != expectedJSON {
-			t.Errorf("expected jsonPath %q, got %q", expectedJSON, ctx.jsonPath)
+		if ctx.JsonPath != expectedJSON {
+			t.Errorf("expected jsonPath %q, got %q", expectedJSON, ctx.JsonPath)
 		}
 	})
 
@@ -409,15 +409,15 @@ func TestPrepareOutputPaths(t *testing.T) {
 			ID: 44,
 		}
 		ctx := &taskContext{
-			report:   report,
-			taskType: taskType,
-			repo:     repo,
+			Report:   report,
+			TaskType: taskType,
+			Repo:     repo,
 		}
-		ctx.prepareOutputPaths()
+		ctx.PrepareOutputPaths()
 		today := time.Now().Format("2006-01-02")
 		expectedReport := filepath.Join(models.AppConfig.Storage.Root, "reports", taskType.Name, today, "report-44-report-foo-bar.md")
-		if ctx.reportPath != expectedReport {
-			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.reportPath)
+		if ctx.ReportPath != expectedReport {
+			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.ReportPath)
 		}
 	})
 }
@@ -1157,9 +1157,9 @@ func TestCampaignHooks(t *testing.T) {
 	models.DB.Create(&report1)
 
 	ctx1 := &taskContext{
-		repo:     repo,
-		report:   report1,
-		taskType: taskType,
+		Repo:     repo,
+		Report:   report1,
+		TaskType: taskType,
 	}
 
 	// 3. 第一次扫描：发现 2 个缺陷
@@ -1208,9 +1208,9 @@ func TestCampaignHooks(t *testing.T) {
 	report2 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
 	models.DB.Create(&report2)
 	ctx2 := &taskContext{
-		repo:     repo,
-		report:   report2,
-		taskType: taskType,
+		Repo:     repo,
+		Report:   report2,
+		TaskType: taskType,
 	}
 
 	finding1Updated := models.AnalysisFinding{
@@ -1303,9 +1303,9 @@ func TestCampaignHooks(t *testing.T) {
 	report3 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
 	models.DB.Create(&report3)
 	ctx3 := &taskContext{
-		repo:     repo,
-		report:   report3,
-		taskType: taskType,
+		Repo:     repo,
+		Report:   report3,
+		TaskType: taskType,
 	}
 
 	err = handleGenericCampaignHook(ctx3, []models.AnalysisFinding{finding3})
@@ -1410,33 +1410,33 @@ func TestPrepareAndSync_BranchSwitching(t *testing.T) {
 	defer testDB.Delete(&models.TaskReport{}, report.ID)
 
 	taskCtx := &taskContext{
-		ctx:      context.Background(),
-		repo:     repo,
-		report:   report,
-		taskType: taskType,
+		Ctx:      context.Background(),
+		Repo:     repo,
+		Report:   report,
+		TaskType: taskType,
 	}
 
 	// 3. 首次同步：应当直接克隆并切换到 feature-branch
-	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+	if err := taskCtx.PrepareAndSync(repo.URL); err != nil {
 		t.Fatalf("prepareAndSync failed on feature-branch: %v", err)
 	}
 
 	// 验证 feature.txt 存在
-	if _, err := os.Stat(filepath.Join(taskCtx.codesPath, "feature.txt")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(taskCtx.CodesPath, "feature.txt")); os.IsNotExist(err) {
 		t.Errorf("expected feature.txt to exist in checked out feature-branch")
 	}
 
 	// 4. 第二次同步：仓库切换回 master 分支并拉取
-	taskCtx.repo.Branch = "master"
-	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+	taskCtx.Repo.Branch = "master"
+	if err := taskCtx.PrepareAndSync(repo.URL); err != nil {
 		t.Fatalf("prepareAndSync failed on switching to master: %v", err)
 	}
 
 	// 验证 master 分支状态：master.txt 存在，而 feature.txt 不应存在于 master
-	if _, err := os.Stat(filepath.Join(taskCtx.codesPath, "master.txt")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(taskCtx.CodesPath, "master.txt")); os.IsNotExist(err) {
 		t.Errorf("expected master.txt to exist in checked out master branch")
 	}
-	if _, err := os.Stat(filepath.Join(taskCtx.codesPath, "feature.txt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(taskCtx.CodesPath, "feature.txt")); !os.IsNotExist(err) {
 		t.Errorf("expected feature.txt NOT to exist in checked out master branch")
 	}
 
@@ -1499,25 +1499,25 @@ func TestPrepareAndSync_StaleLockAutoHealing(t *testing.T) {
 	testDB.Create(&report)
 
 	taskCtx := &taskContext{
-		ctx:      context.Background(),
-		repo:     repo,
-		report:   report,
-		taskType: taskType,
+		Ctx:      context.Background(),
+		Repo:     repo,
+		Report:   report,
+		TaskType: taskType,
 	}
 
 	// 1. 首次同步
-	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+	if err := taskCtx.PrepareAndSync(repo.URL); err != nil {
 		t.Fatalf("first prepareAndSync failed: %v", err)
 	}
 
 	// 2. 人为制造异常中断残留的 .git/index.lock
-	lockPath := filepath.Join(taskCtx.codesPath, ".git", "index.lock")
+	lockPath := filepath.Join(taskCtx.CodesPath, ".git", "index.lock")
 	if err := os.WriteFile(lockPath, []byte("stale-lock-pid-99999"), 0644); err != nil {
 		t.Fatalf("failed to create fake stale index.lock: %v", err)
 	}
 
 	// 3. 再次触发同步：应当自动自愈清理 index.lock，且不发生错误
-	if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+	if err := taskCtx.PrepareAndSync(repo.URL); err != nil {
 		t.Fatalf("prepareAndSync failed to auto-heal stale git lock: %v", err)
 	}
 
@@ -1587,13 +1587,13 @@ func TestPrepareAndSync_ConcurrentSafe(t *testing.T) {
 			testDB.Create(&report)
 
 			taskCtx := &taskContext{
-				ctx:      context.Background(),
-				repo:     repo,
-				report:   report,
-				taskType: taskType,
+				Ctx:      context.Background(),
+				Repo:     repo,
+				Report:   report,
+				TaskType: taskType,
 			}
 
-			if err := taskCtx.prepareAndSync(repo.URL); err != nil {
+			if err := taskCtx.PrepareAndSync(repo.URL); err != nil {
 				errCh <- fmt.Errorf("worker %d failed: %w", idx, err)
 			}
 		}(i)
@@ -1777,9 +1777,9 @@ func TestHandleGenericCampaignHook_LongTitle(t *testing.T) {
 	models.DB.Create(&report)
 
 	ctx := &taskContext{
-		repo:     repo,
-		report:   report,
-		taskType: taskType,
+		Repo:     repo,
+		Report:   report,
+		TaskType: taskType,
 	}
 
 	// 构造一个超过 500 字符的超长标题（模拟真实大模型输出的段落级分析内容）
@@ -1871,9 +1871,9 @@ func TestHandleGenericCampaignHook_PartialFailureTolerance(t *testing.T) {
 	models.DB.Create(&report)
 
 	ctx := &taskContext{
-		repo:     repo,
-		report:   report,
-		taskType: taskType,
+		Repo:     repo,
+		Report:   report,
+		TaskType: taskType,
 	}
 
 	findings := []models.AnalysisFinding{

@@ -1,15 +1,11 @@
 package services
 
 import (
-	"code-shield/models"
 	"code-shield/services/dispatcher"
 	"code-shield/services/invoker"
+	"code-shield/services/runner"
 	"context"
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // 类型别名映射至底层 invoker 子包，保持根 services 包对外导出完全向后兼容
@@ -81,61 +77,7 @@ func GetAIInvoker(name string) AIInvoker {
 	return dispatcher.WrapInvoker(inv)
 }
 
-// RepairJSON calls AI to fix syntax errors in a JSON file.
-// workDir is the working directory for the AI invocation.
-// jsonFilePath is the absolute path to the malformed JSON file.
-// Returns the cleaned, repaired JSON bytes ready for json.Unmarshal.
+// RepairJSON calls AI to fix syntax errors in a JSON file, delegated to runner.RepairJSON.
 func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
-	ext := filepath.Ext(jsonFilePath)
-	fixedPath := strings.TrimSuffix(jsonFilePath, ext) + ".fixed" + ext
-
-	// 1. 确定后端：优先使用 ToolBackends 配置，若无效则回退至参数或全局配置
-	backend := models.AppConfig.AI.ToolBackends.RepairJSON
-	if backend == "" {
-		backend = "native"
-	}
-	if !IsValidAIBackend(backend) {
-		backend = aiBackend
-		if backend == "" {
-			backend = models.AppConfig.AI.Backend
-		}
-	}
-
-	aiInv := GetAIInvoker(backend)
-	log.Printf("[AI] Invoking %s to repair JSON: %s\n", aiInv.Name(), jsonFilePath)
-
-	rawContent, err := os.ReadFile(jsonFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read malformed JSON: %w", err)
-	}
-
-	repairMsg := "你是一个 JSON 语法修复工具。请修复以下内容中的语法错误（未转义引号、多余逗号、括号缺失等）。" +
-		"只输出纯 JSON，不要 Markdown 代码块标记，不要任何解释文字，保持原始数据结构不变。"
-
-	zeroTemp := 0.0
-	req := AIRequest{
-		WorkDir:        workDir,
-		PromptMsg:      repairMsg + "\n\n" + string(rawContent),
-		InputFiles:     []string{jsonFilePath},
-		OutputPath:     fixedPath,
-		TimeoutMin:     2,
-		Temperature:    &zeroTemp,
-		ResponseFormat: "json",
-		WorkContext: &LLMWorkContext{
-			Stage:   "系统工具: JSON 语法修复",
-			SubTask: fmt.Sprintf("修复输出文件 (%s)", filepath.Base(jsonFilePath)),
-		},
-	}
-
-	if err := aiInv.Invoke(req); err != nil {
-		return nil, fmt.Errorf("AI repair invocation failed: %w", err)
-	}
-	defer os.Remove(fixedPath)
-
-	fixed, err := os.ReadFile(fixedPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read repaired JSON: %w", err)
-	}
-
-	return fixed, nil
+	return runner.RepairJSON(workDir, jsonFilePath, aiBackend)
 }

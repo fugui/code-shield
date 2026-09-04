@@ -12,6 +12,7 @@ import (
 	"code-shield/services/engines/chunker"
 	"code-shield/services/engines/debate"
 	_ "code-shield/services/engines/single"
+	"code-shield/services/runner"
 
 	"gorm.io/gorm"
 )
@@ -90,21 +91,21 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 	overallStartTime := time.Now()
 
 	engCtx := &engines.EngineContext{
-		Ctx:           ctx.ctx,
-		ReportID:      ctx.report.ID,
-		RepoID:        ctx.repo.ID,
-		RepoName:      ctx.repo.Name,
-		TaskTypeID:    ctx.taskType.ID,
-		TaskTypeName:  ctx.taskType.DisplayName,
-		CodesPath:     ctx.codesPath,
-		ReportPath:    ctx.reportPath,
-		JSONPath:      ctx.jsonPath,
-		EngineConfig:  json.RawMessage(ctx.taskType.EngineConfig),
-		RunParams:     ctx.runParams,
-		NegativeRules: GetNegativeRulesForScan(ctx.repo.ID, ctx.taskType.ID),
+		Ctx:           ctx.Ctx,
+		ReportID:      ctx.Report.ID,
+		RepoID:        ctx.Repo.ID,
+		RepoName:      ctx.Repo.Name,
+		TaskTypeID:    ctx.TaskType.ID,
+		TaskTypeName:  ctx.TaskType.DisplayName,
+		CodesPath:     ctx.CodesPath,
+		ReportPath:    ctx.ReportPath,
+		JSONPath:      ctx.JsonPath,
+		EngineConfig:  json.RawMessage(ctx.TaskType.EngineConfig),
+		RunParams:     ctx.RunParams,
+		NegativeRules: GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
 		ProgressReport: func(total, processed, success int) {
 			if models.DB != nil {
-				models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(map[string]interface{}{
+				models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(map[string]interface{}{
 					"total_chunks":     total,
 					"processed_chunks": processed,
 					"success_chunks":   success,
@@ -112,14 +113,13 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 			}
 		},
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
-			return ctx.executeAnalysis(fileList)
+			return runner.ExecuteAnalysis(ctx, fileList)
 		},
 		SynthesisExecutor: func(findings []models.AnalysisFinding) error {
-			// 严重级别校准与跨扫描增量比对
 			findings = CalibrateFindings(findings)
-			findings, _ = DiffAndEnrichFindings(ctx.repo.ID, ctx.report.ID, ctx.taskType.ID, nil, findings, ctx.codesPath)
-			ctx.findings = findings
-			return ctx.executeSynthesis(findings)
+			findings, _ = DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, nil, findings, ctx.CodesPath)
+			ctx.Findings = findings
+			return runner.ExecuteSynthesis(ctx, findings)
 		},
 	}
 
@@ -128,8 +128,8 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 	overallEndTime := time.Now()
 
 	if result != nil {
-		ctx.hasFailedChunks = result.HasFailedChunks
-		ctx.findings = result.Findings
+		ctx.HasFailedChunks = result.HasFailedChunks
+		ctx.Findings = result.Findings
 
 		successfulChunks := 0
 		failedChunks := 0
@@ -170,12 +170,12 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 			ctx.Summary.Analysis.Status = "success"
 		}
 
-		ctx.writeSummaryReport()
+		runner.WriteSummaryReport(ctx)
 
 		// 持久化辩论日志
 		if len(result.DebateLogs) > 0 && models.DB != nil {
 			for _, dl := range result.DebateLogs {
-				dl.TaskReportID = ctx.report.ID
+				dl.TaskReportID = ctx.Report.ID
 				if dbErr := models.DB.Create(&dl).Error; dbErr != nil {
 					log.Printf("[EngineAdapter] Warning: failed to persist DebateLog for %s: %v", dl.CandidateID, dbErr)
 				}
@@ -191,7 +191,7 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 			if result.Tier2Tokens > 0 {
 				updates["tier2_tokens"] = gorm.Expr("tier2_tokens + ?", result.Tier2Tokens)
 			}
-			models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.report.ID).Updates(updates)
+			models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(updates)
 		}
 	}
 

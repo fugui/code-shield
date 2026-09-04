@@ -2,6 +2,7 @@ package services
 
 import (
 	"code-shield/models"
+	"code-shield/services/runner"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +18,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrSkipped is returned when a task is skipped due to precondition (e.g., no recent commits).
-var ErrSkipped = errors.New("task skipped by precondition")
+// ErrSkipped 在前置条件未满足时返回，映射自 runner 子包
+var ErrSkipped = runner.ErrSkipped
 
 type Task struct {
 	RepoID     uint

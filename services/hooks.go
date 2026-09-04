@@ -24,27 +24,27 @@ func RegisterTaskHook(taskTypeName string, hook TaskHook) {
 }
 
 // executeHooks runs all hooks registered for the current task type
-func (ctx *taskContext) executeHooks(findings []models.AnalysisFinding) {
+func executeHooks(ctx *taskContext, findings []models.AnalysisFinding) {
 	// 1. 如果任务类型启用了专项分析 (IsCampaign)，自动触发通用归并引擎
-	if ctx.taskType.IsCampaign {
+	if ctx.TaskType.IsCampaign {
 		log.Printf("[TaskHooks] Running generic campaign hook for %q (GovernanceMode: %s, Report ID: %d)",
-			ctx.taskType.Name, ctx.taskType.GovernanceMode, ctx.report.ID)
+			ctx.TaskType.Name, ctx.TaskType.GovernanceMode, ctx.Report.ID)
 		if err := handleGenericCampaignHook(ctx, findings); err != nil {
-			log.Printf("[TaskHooks] Generic campaign hook for %q failed: %v", ctx.taskType.Name, err)
+			log.Printf("[TaskHooks] Generic campaign hook for %q failed: %v", ctx.TaskType.Name, err)
 		}
 	}
 
 	// 2. 执行已注册的自定义 Hooks
 	taskHooksMu.RLock()
-	hooks, ok := taskHooks[ctx.taskType.Name]
+	hooks, ok := taskHooks[ctx.TaskType.Name]
 	taskHooksMu.RUnlock()
 	if !ok {
 		return
 	}
-	log.Printf("[TaskHooks] Running %d custom hooks for task type %q (Report ID: %d)", len(hooks), ctx.taskType.Name, ctx.report.ID)
+	log.Printf("[TaskHooks] Running %d custom hooks for task type %q (Report ID: %d)", len(hooks), ctx.TaskType.Name, ctx.Report.ID)
 	for i, hook := range hooks {
 		if err := hook(ctx, findings); err != nil {
-			log.Printf("[TaskHooks] Hook %d for %q failed: %v", i, ctx.taskType.Name, err)
+			log.Printf("[TaskHooks] Hook %d for %q failed: %v", i, ctx.TaskType.Name, err)
 		}
 	}
 }
@@ -65,12 +65,12 @@ func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFindi
 	inv := GetAIInvoker(backend)
 
 	campCtx := &governance.CampaignContext{
-		Ctx:             ctx.ctx,
-		TaskType:        ctx.taskType,
-		Repo:            ctx.repo,
-		Report:          ctx.report,
-		CodesPath:       ctx.codesPath,
-		HasFailedChunks: ctx.hasFailedChunks,
+		Ctx:             ctx.Ctx,
+		TaskType:        ctx.TaskType,
+		Repo:            ctx.Repo,
+		Report:          ctx.Report,
+		CodesPath:       ctx.CodesPath,
+		HasFailedChunks: ctx.HasFailedChunks,
 		Invoker:         inv,
 	}
 
