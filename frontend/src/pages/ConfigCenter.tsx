@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { Drawer } from '@code/common';
+import { appNavigatePath } from '../config';
 import {
   LLMConfig,
   ScannerConfig,
@@ -13,10 +15,40 @@ import {
 import './ConfigCenter.css';
 
 type ConfigCategory = 'llm' | 'scanner' | 'governance' | 'notification';
+const VALID_TABS: ConfigCategory[] = ['llm', 'scanner', 'governance', 'notification'];
 
 export default function ConfigCenter() {
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<ConfigCategory>('llm');
+  const { tab } = useParams<{ tab: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const resolveTab = useCallback((rawTab?: string): ConfigCategory => {
+    if (rawTab && VALID_TABS.includes(rawTab as ConfigCategory)) {
+      return rawTab as ConfigCategory;
+    }
+    const queryTab = searchParams.get('tab');
+    if (queryTab && VALID_TABS.includes(queryTab as ConfigCategory)) {
+      return queryTab as ConfigCategory;
+    }
+    return 'llm';
+  }, [searchParams]);
+
+  const [activeTab, setActiveTab] = useState<ConfigCategory>(() => resolveTab(tab));
+
+  useEffect(() => {
+    const currentResolved = resolveTab(tab);
+    if (currentResolved !== activeTab) {
+      setActiveTab(currentResolved);
+    }
+  }, [tab, resolveTab, activeTab]);
+
+  const handleTabChange = (newTab: ConfigCategory) => {
+    if (newTab === activeTab) return;
+    setActiveTab(newTab);
+    navigate(appNavigatePath(`/admin/config/${newTab}`));
+  };
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -560,25 +592,25 @@ export default function ConfigCenter() {
       <div className="code-config-tabs">
         <button
           className={`code-config-tab-btn ${activeTab === 'llm' ? 'active' : ''}`}
-          onClick={() => setActiveTab('llm')}
+          onClick={() => handleTabChange('llm')}
         >
           🤖 大模型与算力池
         </button>
         <button
           className={`code-config-tab-btn ${activeTab === 'scanner' ? 'active' : ''}`}
-          onClick={() => setActiveTab('scanner')}
+          onClick={() => handleTabChange('scanner')}
         >
           ⚙️ 扫描引擎与流水线
         </button>
         <button
           className={`code-config-tab-btn ${activeTab === 'governance' ? 'active' : ''}`}
-          onClick={() => setActiveTab('governance')}
+          onClick={() => handleTabChange('governance')}
         >
           🛡️ 质量治理与门禁
         </button>
         <button
           className={`code-config-tab-btn ${activeTab === 'notification' ? 'active' : ''}`}
-          onClick={() => setActiveTab('notification')}
+          onClick={() => handleTabChange('notification')}
         >
           🔔 通知服务
         </button>

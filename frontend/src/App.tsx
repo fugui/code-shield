@@ -190,6 +190,7 @@ function MainLayout({ children, taskTypes }: { children: React.ReactNode; taskTy
                 if (relativePath.startsWith('/admin/teams') || relativePath.startsWith('/teams')) return '团队与代码仓管理';
                 if (relativePath.startsWith('/admin/users')) return '用户管理';
                 if (relativePath.startsWith('/admin/activity')) return '执行日志';
+                if (relativePath.startsWith('/admin/config')) return '系统动态配置中心';
                 if (relativePath.startsWith('/admin')) return '管理中心';
                 return '报告概览';
               })()}
@@ -283,6 +284,7 @@ function AppContent() {
             <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
             <Route path="/admin/config" element={<SuperAdminRoute><ConfigCenter /></SuperAdminRoute>} />
+            <Route path="/admin/config/:tab" element={<SuperAdminRoute><ConfigCenter /></SuperAdminRoute>} />
             <Route path="/admin/debug" element={<PrivateRoute><SystemDebug /></PrivateRoute>} />
             <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
