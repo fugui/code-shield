@@ -215,9 +215,22 @@ func main() {
 					admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
 					admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
 					admin.PATCH("/config", handlers.UpdateConfig)
+					// 系统性能与堆栈诊断 (Admin Debug & PProf)
+					debugGroup := admin.Group("/admin/debug")
+					{
+						debugGroup.GET("/overview", handlers.GetDebugOverview)
+						debugGroup.POST("/gc", handlers.TriggerGC)
+						debugGroup.POST("/reset-slots", handlers.ResetActiveSlots)
+						handlers.RegisterPProfRoutes(debugGroup)
+					}
+				}
 
+				// Super Admin only routes (包含明文密码、API Key 等敏感凭据的系统配置中心，严格仅限 super_admin 查看与修改)
+				superAdmin := api.Group("/")
+				superAdmin.Use(commonAuth.RequireAdmin(commonAuth.RoleSuperAdmin))
+				{
 					// 动态配置中心 API (Dynamic Config Center)
-					adminConfig := admin.Group("/admin/config")
+					adminConfig := superAdmin.Group("/admin/config")
 					{
 						adminConfig.GET("/full", handlers.GetFullConfig)
 						adminConfig.PUT("/full", handlers.UpdateFullConfig)
@@ -227,21 +240,12 @@ func main() {
 						adminConfig.POST("/reset-to-seed", handlers.ResetCategoryConfig)
 					}
 					// 兼容直接使用 /api/config/* 别名访问
-					admin.GET("/config/full", handlers.GetFullConfig)
-					admin.PUT("/config/full", handlers.UpdateFullConfig)
-					admin.GET("/config/category/:category", handlers.GetCategoryConfig)
-					admin.PUT("/config/category/:category", handlers.UpdateCategoryConfig)
-					admin.POST("/config/ping-endpoint", handlers.PingEndpoint)
-					admin.POST("/config/reset-to-seed", handlers.ResetCategoryConfig)
-
-					// 系统性能与堆栈诊断 (Admin Debug & PProf)
-					debugGroup := admin.Group("/admin/debug")
-					{
-						debugGroup.GET("/overview", handlers.GetDebugOverview)
-						debugGroup.POST("/gc", handlers.TriggerGC)
-						debugGroup.POST("/reset-slots", handlers.ResetActiveSlots)
-						handlers.RegisterPProfRoutes(debugGroup)
-					}
+					superAdmin.GET("/config/full", handlers.GetFullConfig)
+					superAdmin.PUT("/config/full", handlers.UpdateFullConfig)
+					superAdmin.GET("/config/category/:category", handlers.GetCategoryConfig)
+					superAdmin.PUT("/config/category/:category", handlers.UpdateCategoryConfig)
+					superAdmin.POST("/config/ping-endpoint", handlers.PingEndpoint)
+					superAdmin.POST("/config/reset-to-seed", handlers.ResetCategoryConfig)
 				}
 			}
 		},
