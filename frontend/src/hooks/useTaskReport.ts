@@ -5,6 +5,7 @@ import {
   FindingsPageResponse,
   TaskDiagnostics,
   TaskDebateLog,
+  ScanReconciliationInfo,
 } from '../types/report';
 
 export interface UseTaskReportReturn {
@@ -28,6 +29,11 @@ export interface UseTaskReportReturn {
   debateLogsError: string | null;
   loadDebateLogs: (taskId: number) => Promise<void>;
 
+  reconciliation: ScanReconciliationInfo | null;
+  loadingReconciliation: boolean;
+  reconciliationError: string | null;
+  loadReconciliation: (taskId: number) => Promise<void>;
+
   resetState: () => void;
 }
 
@@ -48,6 +54,10 @@ export function useTaskReport(): UseTaskReportReturn {
   const [loadingDebateLogs, setLoadingDebateLogs] = useState(false);
   const [debateLogsError, setDebateLogsError] = useState<string | null>(null);
 
+  const [reconciliation, setReconciliation] = useState<ScanReconciliationInfo | null>(null);
+  const [loadingReconciliation, setLoadingReconciliation] = useState(false);
+  const [reconciliationError, setReconciliationError] = useState<string | null>(null);
+
   const currentTaskIdRef = useRef<number | null>(null);
 
   const resetState = useCallback(() => {
@@ -59,6 +69,8 @@ export function useTaskReport(): UseTaskReportReturn {
     setDiagnosticsError(null);
     setDebateLogs(null);
     setDebateLogsError(null);
+    setReconciliation(null);
+    setReconciliationError(null);
     currentTaskIdRef.current = null;
   }, []);
 
@@ -184,6 +196,33 @@ export function useTaskReport(): UseTaskReportReturn {
     }
   }, []);
 
+  // 5. 跨轮对账数据加载 (带竞态保护)
+  const loadReconciliation = useCallback(async (taskId: number) => {
+    if (!taskId) return;
+    currentTaskIdRef.current = taskId;
+    setLoadingReconciliation(true);
+    setReconciliationError(null);
+    try {
+      const res = await fetch(apiUrl(`/api/tasks/${taskId}/report/reconciliation`));
+      if (currentTaskIdRef.current !== taskId) return;
+
+      if (!res.ok) {
+        throw new Error('未检索到对账明细记录');
+      }
+      const data = await res.json();
+      if (currentTaskIdRef.current !== taskId) return;
+      setReconciliation(data);
+    } catch (err: any) {
+      if (currentTaskIdRef.current === taskId) {
+        setReconciliationError(err.message || '加载对账记录失败');
+      }
+    } finally {
+      if (currentTaskIdRef.current === taskId) {
+        setLoadingReconciliation(false);
+      }
+    }
+  }, []);
+
   return {
     summary,
     loadingSummary,
@@ -204,6 +243,11 @@ export function useTaskReport(): UseTaskReportReturn {
     loadingDebateLogs,
     debateLogsError,
     loadDebateLogs,
+
+    reconciliation,
+    loadingReconciliation,
+    reconciliationError,
+    loadReconciliation,
 
     resetState,
   };

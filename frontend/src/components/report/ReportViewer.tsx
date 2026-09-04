@@ -9,6 +9,7 @@ import ReportSummaryTab from './ReportSummaryTab';
 import ReportFindingsTab from './ReportFindingsTab';
 import ReportDiagnosticsTab from './ReportDiagnosticsTab';
 import ReportDebateTab from './ReportDebateTab';
+import ReportReconciliationTab from './ReportReconciliationTab';
 import './report.css';
 
 export interface ReportViewerProps {
@@ -20,6 +21,8 @@ export interface ReportViewerProps {
   onResume?: (taskId: number) => void;
 }
 
+export type ReportTab = 'summary' | 'findings' | 'diagnostics' | 'debate' | 'reconciliation';
+
 export default function ReportViewer({
   taskId,
   open = true,
@@ -30,11 +33,11 @@ export default function ReportViewer({
 }: ReportViewerProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab');
-  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate')
-    ? (rawTab as 'summary' | 'findings' | 'diagnostics' | 'debate')
+  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate' || rawTab === 'reconciliation')
+    ? (rawTab as ReportTab)
     : undefined;
 
-  const [activeTab, setActiveTab] = useState<'summary' | 'findings' | 'diagnostics' | 'debate'>(urlTab || 'summary');
+  const [activeTab, setActiveTab] = useState<ReportTab>(urlTab || 'summary');
   const [isFullscreen, setIsFullscreen] = useState(mode === 'fullpage');
 
   const {
@@ -50,6 +53,9 @@ export default function ReportViewer({
     debateLogs,
     loadingDebateLogs,
     loadDebateLogs,
+    reconciliation,
+    loadingReconciliation,
+    loadReconciliation,
     resetState,
   } = useTaskReport();
 
@@ -68,9 +74,11 @@ export default function ReportViewer({
         loadDiagnostics(taskId);
       } else if (currentTab === 'debate') {
         loadDebateLogs(taskId);
+      } else if (currentTab === 'reconciliation') {
+        loadReconciliation(taskId);
       }
     }
-  }, [taskId, open, resetState, loadSummary, loadFindings, loadDiagnostics, loadDebateLogs, urlTab]);
+  }, [taskId, open, resetState, loadSummary, loadFindings, loadDiagnostics, loadDebateLogs, loadReconciliation, urlTab]);
 
   // 当 summary 加载完成后，如果是辩论引擎且未加载辩论日志，预先检测/加载辩论日志数量
   const isDebateEngine = summary?.meta?.engine_mode === 'debate_full' || summary?.meta?.engine_mode === 'debate_selective';
@@ -89,7 +97,7 @@ export default function ReportViewer({
   }, [summary?.meta?.status, taskId, loadDiagnostics, urlTab]);
 
   // Tab 切换时按需加载并同步 URL 参数
-  const handleTabClick = (tab: 'summary' | 'findings' | 'diagnostics' | 'debate') => {
+  const handleTabClick = (tab: ReportTab) => {
     setActiveTab(tab);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
@@ -109,6 +117,8 @@ export default function ReportViewer({
       loadDiagnostics(taskId);
     } else if (tab === 'debate' && !debateLogs) {
       loadDebateLogs(taskId);
+    } else if (tab === 'reconciliation' && !reconciliation) {
+      loadReconciliation(taskId);
     }
   };
 
@@ -133,6 +143,10 @@ export default function ReportViewer({
   const meta = summary?.meta;
   const totalFindingsCount = summary?.metrics?.total_findings ?? findingsPage?.total ?? 0;
   const showDebateTab = isDebateEngine || (debateLogs && debateLogs.length > 0);
+  const showReconTab = Boolean(
+    reconciliation ||
+    (meta && (meta.new_defects_count !== undefined || meta.existed_defects_count !== undefined || meta.baseline_report_id || meta.governance_mode === 'full_ledger' || meta.governance_mode === 'change_focus'))
+  );
 
   const content = (
     <div className="report-viewer-container">
@@ -169,6 +183,21 @@ export default function ReportViewer({
             </span>
           )}
         </div>
+
+        {/* 跨轮对账与增量治理 TAB */}
+        {showReconTab && (
+          <div
+            className={`report-tab-item cs-report-tab-item ${activeTab === 'reconciliation' ? 'active' : ''}`}
+            onClick={() => handleTabClick('reconciliation')}
+          >
+            <span>🔄 跨轮对账与治理</span>
+            {reconciliation?.matched_count ? (
+              <span className="tab-badge cs-tab-badge">
+                {reconciliation.matched_count}
+              </span>
+            ) : null}
+          </div>
+        )}
 
         <div
           className={`report-tab-item cs-report-tab-item ${activeTab === 'diagnostics' ? 'active' : ''}`}
@@ -210,6 +239,13 @@ export default function ReportViewer({
               findingsPage={findingsPage}
               loading={loadingFindings}
               onFilterChange={handleFindingsFilter}
+            />
+          )}
+          {activeTab === 'reconciliation' && (
+            <ReportReconciliationTab
+              meta={meta}
+              reconciliation={reconciliation}
+              loading={loadingReconciliation}
             />
           )}
           {activeTab === 'diagnostics' && (

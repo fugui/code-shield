@@ -115,6 +115,63 @@ export default function ReportSummaryTab({ summary, loading }: ReportSummaryTabP
         )}
       </div>
 
+      {/* 跨轮对账与增量治理动态概览条 (当存在增量统计时展示) */}
+      {(meta.new_defects_count !== undefined || meta.existed_defects_count !== undefined || meta.gap_filled_count || meta.archived_count) && (
+        <div
+          style={{
+            background: 'var(--color-bg-surface, #ffffff)',
+            border: '1px solid var(--color-border-primary, #e2e8f0)',
+            borderRadius: '8px',
+            padding: '0.85rem 1.25rem',
+            marginBottom: '1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            fontSize: '0.85rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontWeight: 700, color: 'var(--color-text-primary, #0f172a)' }}>
+              🔄 跨轮对账动态:
+            </span>
+            {meta.baseline_report_id ? (
+              <span style={{ color: 'var(--color-text-muted, #64748b)' }}>
+                (基线 #{meta.baseline_report_id})
+              </span>
+            ) : null}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            {meta.new_defects_count !== undefined && (
+              <span style={{ color: 'var(--color-danger, #ef4444)', fontWeight: 600 }}>
+                本次新增: <strong>{meta.new_defects_count}</strong>
+              </span>
+            )}
+            {meta.existed_defects_count !== undefined && (
+              <span style={{ color: 'var(--color-text-secondary, #475569)', fontWeight: 500 }}>
+                历史存量: <strong>{meta.existed_defects_count}</strong>
+              </span>
+            )}
+            {meta.resolved_defects_count !== undefined && meta.resolved_defects_count > 0 ? (
+              <span style={{ color: 'var(--color-success, #10b981)', fontWeight: 600 }}>
+                修复核销: <strong>{meta.resolved_defects_count}</strong>
+              </span>
+            ) : null}
+            {meta.gap_filled_count !== undefined && meta.gap_filled_count > 0 ? (
+              <span style={{ color: '#0891b2', fontWeight: 600 }}>
+                漏扫回补: <strong>{meta.gap_filled_count}</strong>
+              </span>
+            ) : null}
+            {meta.archived_count !== undefined && meta.archived_count > 0 ? (
+              <span style={{ color: 'var(--color-text-muted, #64748b)', fontWeight: 500 }}>
+                冷寂归档: <strong>{meta.archived_count}</strong>
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       {/* Markdown 正文卡片容器 */}
       <div className="report-summary-markdown-card markdown-body">
         <ReactMarkdown
