@@ -97,32 +97,65 @@ export default function FindingCard({
 
   // 渲染增量状态徽标
   const renderDiffStatusBadge = () => {
-    if (!finding.diff_status) return null;
-    let bg = '#f1f5f9';
-    let color = '#475569';
+    const status = finding.diff_status || finding.lifecycle_status;
+    if (!status) return null;
+    let bg = 'var(--color-bg-muted, #f1f5f9)';
+    let color = 'var(--color-text-secondary, #475569)';
     let text = '存量';
 
-    switch (finding.diff_status) {
+    switch (status) {
       case 'NEW':
         bg = 'rgba(239, 68, 68, 0.12)';
-        color = '#dc2626';
+        color = 'var(--color-danger, #dc2626)';
         text = '本次新增 (NEW)';
         break;
       case 'EXISTED':
         bg = 'rgba(100, 116, 139, 0.12)';
-        color = '#475569';
+        color = 'var(--color-text-secondary, #475569)';
         text = '历史存量 (EXISTED)';
         break;
       case 'RESOLVED':
         bg = 'rgba(34, 197, 94, 0.12)';
-        color = '#16a34a';
+        color = 'var(--color-success, #16a34a)';
         text = '已修复 (RESOLVED)';
         break;
       case 'REOPENED':
         bg = 'rgba(217, 119, 6, 0.12)';
-        color = '#d97706';
+        color = 'var(--color-warning, #d97706)';
         text = '复发激活 (REOPENED)';
         break;
+      case 'GAP_FILLED':
+        bg = 'rgba(6, 182, 212, 0.12)';
+        color = '#0891b2';
+        text = '漏扫回补 (GAP_FILLED)';
+        break;
+      case 'REGRESSED':
+        bg = 'rgba(234, 88, 12, 0.12)';
+        color = '#ea580c';
+        text = '冷池复发 (REGRESSED)';
+        break;
+      case 'ARCHIVED':
+        bg = 'rgba(148, 163, 184, 0.15)';
+        color = 'var(--color-text-muted, #64748b)';
+        text = '冷寂归档 (ARCHIVED)';
+        break;
+      case 'NEW_IN_DIFF':
+        bg = 'rgba(220, 38, 38, 0.15)';
+        color = 'var(--color-danger, #dc2626)';
+        text = '变更引入 (NEW_IN_DIFF)';
+        break;
+      case 'RESOLVED_BY_CHANGE':
+        bg = 'rgba(16, 185, 129, 0.15)';
+        color = 'var(--color-success, #059669)';
+        text = '变更顺带修复 (RESOLVED_BY_CHANGE)';
+        break;
+      case 'HISTORICAL_BASELINE':
+        bg = 'rgba(148, 163, 184, 0.1)';
+        color = 'var(--color-text-muted, #64748b)';
+        text = '存量基线 (BASELINE)';
+        break;
+      default:
+        text = status;
     }
 
     return (
@@ -136,7 +169,7 @@ export default function FindingCard({
           fontWeight: 600,
           border: `1px solid ${color}40`,
         }}
-        title={`缺陷生命周期状态: ${finding.diff_status}`}
+        title={`缺陷生命周期状态: ${status}`}
       >
         {text}
       </span>
@@ -147,7 +180,7 @@ export default function FindingCard({
 
   return (
     <div className="finding-card" id={`finding-${finding.id}`}>
-      {/* 头部信息 (严重度徽章 + 增量状态 + 标题 + 分类) */}
+      {/* 头部信息 (严重度徽章 + 增量状态 + 标题 + 分类 + R2R元数据) */}
       <div className="finding-card-header">
         <div className="finding-title-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <span
@@ -168,6 +201,73 @@ export default function FindingCard({
           </span>
 
           {renderDiffStatusBadge()}
+
+          {finding.item_uid && (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '0.15rem 0.4rem',
+                borderRadius: '4px',
+                background: 'var(--color-bg-muted, #f1f5f9)',
+                color: 'var(--color-text-muted, #64748b)',
+                border: '1px solid var(--color-border-primary, #e2e8f0)',
+                fontFamily: 'monospace',
+              }}
+              title={`对账条目唯一标识: ${finding.item_uid}`}
+            >
+              {finding.item_uid}
+            </span>
+          )}
+
+          {finding.family_id && (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '0.15rem 0.45rem',
+                borderRadius: '4px',
+                background: 'rgba(99, 102, 241, 0.1)',
+                color: '#6366f1',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                fontWeight: 600,
+              }}
+              title={`模板缺陷族标识: ${finding.family_id}`}
+            >
+              族: {finding.family_id.length > 18 ? `${finding.family_id.slice(0, 18)}...` : finding.family_id}
+            </span>
+          )}
+
+          {finding.multi_view_count && finding.multi_view_count > 1 ? (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '0.15rem 0.4rem',
+                borderRadius: '4px',
+                background: 'rgba(168, 85, 247, 0.1)',
+                color: '#a855f7',
+                border: '1px solid rgba(168, 85, 247, 0.25)',
+                fontWeight: 600,
+              }}
+              title={`同位置多视角重叠合并，共聚合 ${finding.multi_view_count} 处切片检出`}
+            >
+              多视角 ×{finding.multi_view_count}
+            </span>
+          ) : null}
+
+          {finding.rounds_seen && finding.rounds_seen > 1 ? (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '0.15rem 0.4rem',
+                borderRadius: '4px',
+                background: 'var(--color-bg-muted, #f1f5f9)',
+                color: 'var(--color-text-secondary, #475569)',
+                border: '1px solid var(--color-border-primary, #e2e8f0)',
+              }}
+              title={`该缺陷在历史扫描中已累计检出 ${finding.rounds_seen} 轮`}
+            >
+              已见 {finding.rounds_seen} 轮
+            </span>
+          ) : null}
 
           <span style={{ fontWeight: 700, fontSize: '1.02rem', color: 'var(--color-text-primary, #0f172a)', lineHeight: 1.45 }}>
             {finding.title}

@@ -1,11 +1,21 @@
 // 规范化严重级别定义 (Canonical Severity)
 export type CanonicalSeverity = 'fatal' | 'critical' | 'major' | 'minor' | 'suggestion' | 'pass';
 
-// 增量生命周期状态 (DiffStatus)
-export type DiffStatus = 'NEW' | 'EXISTED' | 'RESOLVED' | 'REOPENED';
+// 增量生命周期状态 (DiffStatus / LifecycleStatus)
+export type DiffStatus =
+  | 'NEW'
+  | 'EXISTED'
+  | 'RESOLVED'
+  | 'REOPENED'
+  | 'GAP_FILLED'
+  | 'REGRESSED'
+  | 'ARCHIVED'
+  | 'NEW_IN_DIFF'
+  | 'RESOLVED_BY_CHANGE'
+  | 'HISTORICAL_BASELINE';
 
 // 治理模式
-export type GovernanceMode = 'defect_tracking' | 'entity_assessment';
+export type GovernanceMode = 'defect_tracking' | 'entity_assessment' | 'full_ledger' | 'change_focus';
 
 // 严重级别元数据
 export interface SeverityMeta {
@@ -42,6 +52,9 @@ export interface TaskReportMeta {
   new_defects_count?: number;
   existed_defects_count?: number;
   resolved_defects_count?: number;
+  gap_filled_count?: number;
+  archived_count?: number;
+  baseline_report_id?: number;
   tier1_tokens?: number;
   tier2_tokens?: number;
 
@@ -91,15 +104,55 @@ export interface TaskFindingItem {
   assignee_name?: string;
   latest_comment?: string;
 
-  // ── 阶段二/三: 缺陷指纹与智能体辩论链 ──
+  // ── 阶段二/三/R2R: 缺陷指纹、生命周期与对账 ──
   fingerprint?: string;
   diff_status?: DiffStatus;
+  lifecycle_status?: string;
+  item_uid?: string;
+  family_id?: string;
+  multi_view_count?: number;
+  rounds_seen?: number;
   trigger_line?: string;
   scope_symbol?: string;
   hunter_claim?: string;
   challenger_arg?: string;
   judge_verdict?: string;
 
+  created_at?: string;
+}
+
+// R2R 对账认领链接项
+export interface ReconciliationLinkItem {
+  id: number;
+  base_record_id: string;
+  curr_finding_id: string;
+  match_rule: string;
+  relation: string;
+  severity_range?: string;
+  confidence: number;
+  rationale?: string;
+  confirmed: boolean;
+}
+
+// R2R 对账汇总详情
+export interface ScanReconciliationInfo {
+  id: number;
+  repo_id: number;
+  task_report_id: number;
+  baseline_report_id: number;
+  governance_mode: string;
+  total_current: number;
+  total_baseline: number;
+  matched_count: number;
+  new_count: number;
+  existed_count: number;
+  resolved_count: number;
+  gap_filled_count: number;
+  archived_count: number;
+  multi_view_count: number;
+  family_count: number;
+  funnel_stats?: Record<string, number>;
+  reconciliation_links?: ReconciliationLinkItem[];
   created_at?: string;
 }
 

@@ -27,11 +27,13 @@ const PrivateRoute = ({ children }: { children: JSX.Element }) => {
 
 const SuperAdminRoute = ({ children }: { children: JSX.Element }) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
-  if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
-
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean | null>(null);
 
   useEffect(() => {
+    if (!token) {
+      setIsSuperAdmin(false);
+      return;
+    }
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
@@ -42,7 +44,9 @@ const SuperAdminRoute = ({ children }: { children: JSX.Element }) => {
         }
       })
       .catch(() => setIsSuperAdmin(false));
-  }, []);
+  }, [token]);
+
+  if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
 
   if (isSuperAdmin === null) {
     return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-color-secondary, #64748b)' }}>正在鉴权超级管理员权限...</div>;
