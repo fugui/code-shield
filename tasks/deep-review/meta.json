@@ -15,7 +15,7 @@
   "timeout": 60,
   "is_campaign": true,
   "campaign_path": "deep-review",
-  "governance_mode": "defect_tracking",
+  "governance_mode": "full_ledger",
   "categories": [
     "逻辑与正确性-并发安全",
     "逻辑与正确性-边界处理",

@@ -247,14 +247,40 @@ function TaskTypeManagement() {
                     {tt.is_campaign && (
                       <span style={{
                         fontSize: '0.7rem',
-                        background: tt.governance_mode === 'entity_assessment' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(99, 102, 241, 0.1)',
-                        color: tt.governance_mode === 'entity_assessment' ? '#059669' : '#4f46e5',
-                        border: `1px solid ${tt.governance_mode === 'entity_assessment' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                        background: tt.governance_mode === 'change_focus'
+                          ? 'rgba(16, 185, 129, 0.1)'
+                          : tt.governance_mode === 'entity_assessment'
+                          ? 'rgba(13, 148, 136, 0.1)'
+                          : tt.governance_mode === 'full_ledger'
+                          ? 'rgba(59, 130, 246, 0.1)'
+                          : 'rgba(99, 102, 241, 0.1)',
+                        color: tt.governance_mode === 'change_focus'
+                          ? '#059669'
+                          : tt.governance_mode === 'entity_assessment'
+                          ? '#0d9488'
+                          : tt.governance_mode === 'full_ledger'
+                          ? '#2563eb'
+                          : '#4f46e5',
+                        border: `1px solid ${
+                          tt.governance_mode === 'change_focus'
+                            ? 'rgba(16, 185, 129, 0.3)'
+                            : tt.governance_mode === 'entity_assessment'
+                            ? 'rgba(13, 148, 136, 0.3)'
+                            : tt.governance_mode === 'full_ledger'
+                            ? 'rgba(59, 130, 246, 0.3)'
+                            : 'rgba(99, 102, 241, 0.3)'
+                        }`,
                         padding: '0.1rem 0.4rem',
                         borderRadius: '4px',
                         fontWeight: 600
                       }}>
-                        {tt.governance_mode === 'entity_assessment' ? '专项 · 实体评估' : '专项 · 缺陷攻关'}
+                        {tt.governance_mode === 'change_focus'
+                          ? '专项 · 变更焦点'
+                          : tt.governance_mode === 'entity_assessment'
+                          ? '专项 · 实体评估'
+                          : tt.governance_mode === 'full_ledger'
+                          ? '专项 · 全量台账'
+                          : '专项 · 缺陷攻关'}
                       </span>
                     )}
                   </div>
@@ -353,33 +379,66 @@ function TaskTypeManagement() {
                   <label style={labelStyle}>专项治理模式</label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <div
-                      onClick={() => setForm({ ...form, governance_mode: 'defect_tracking' })}
+                      onClick={() => setForm({ ...form, governance_mode: 'full_ledger' })}
                       style={{
                         padding: '0.75rem', borderRadius: '6px', cursor: 'pointer',
-                        border: `1.5px solid ${form.governance_mode === 'defect_tracking' ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                        background: form.governance_mode === 'defect_tracking' ? 'rgba(37,99,235,0.05)' : 'var(--card-bg)'
+                        border: `1.5px solid ${form.governance_mode === 'full_ledger' ? 'var(--color-primary, #2563eb)' : 'var(--color-border-primary, #e2e8f0)'}`,
+                        background: form.governance_mode === 'full_ledger' ? 'rgba(37,99,235,0.06)' : 'var(--color-bg-surface, #ffffff)'
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'defect_tracking' ? 'var(--primary-color)' : 'var(--text-color)' }}>
-                        缺陷攻关模式 (defect_tracking)
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'full_ledger' ? 'var(--color-primary, #2563eb)' : 'var(--color-text-primary, #0f172a)' }}>
+                        全量台账模式 (full_ledger)
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.2rem' }}>
-                        度量缺陷总数/待处理/修复率，适合浮点数、内存泄露、代码检视等缺陷发现
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #64748b)', marginTop: '0.2rem' }}>
+                        沉淀跨轮 SSOT 台账，六级几何漏斗对账与退火休眠，适合架构/全量检视 (推荐)
                       </div>
                     </div>
+
+                    <div
+                      onClick={() => setForm({ ...form, governance_mode: 'change_focus' })}
+                      style={{
+                        padding: '0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        border: `1.5px solid ${form.governance_mode === 'change_focus' ? 'var(--color-success, #10b981)' : 'var(--color-border-primary, #e2e8f0)'}`,
+                        background: form.governance_mode === 'change_focus' ? 'rgba(16,185,129,0.06)' : 'var(--color-bg-surface, #ffffff)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'change_focus' ? '#059669' : 'var(--color-text-primary, #0f172a)' }}>
+                        变更增量焦点模式 (change_focus)
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #64748b)', marginTop: '0.2rem' }}>
+                        未变动文件物理旁路隔离，专注 MR/PR 增量缺陷拦截与顺带修复核销 Proof of Fix
+                      </div>
+                    </div>
+
                     <div
                       onClick={() => setForm({ ...form, governance_mode: 'entity_assessment' })}
                       style={{
                         padding: '0.75rem', borderRadius: '6px', cursor: 'pointer',
-                        border: `1.5px solid ${form.governance_mode === 'entity_assessment' ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                        background: form.governance_mode === 'entity_assessment' ? 'rgba(16,185,129,0.05)' : 'var(--card-bg)'
+                        border: `1.5px solid ${form.governance_mode === 'entity_assessment' ? 'var(--color-primary, #2563eb)' : 'var(--color-border-primary, #e2e8f0)'}`,
+                        background: form.governance_mode === 'entity_assessment' ? 'rgba(13,148,136,0.06)' : 'var(--color-bg-surface, #ffffff)'
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'entity_assessment' ? '#059669' : 'var(--text-color)' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'entity_assessment' ? '#0d9488' : 'var(--color-text-primary, #0f172a)' }}>
                         全量实体评估模式 (entity_assessment)
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.2rem' }}>
-                        度量实体总数/合格数/合格率，适合单元测试用例有效性等全量评级
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #64748b)', marginTop: '0.2rem' }}>
+                        度量实体总数/合格数/合格率，适合单元测试用例有效性等全量评级场景
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setForm({ ...form, governance_mode: 'defect_tracking' })}
+                      style={{
+                        padding: '0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        border: `1.5px solid ${form.governance_mode === 'defect_tracking' ? 'var(--color-primary, #2563eb)' : 'var(--color-border-primary, #e2e8f0)'}`,
+                        background: form.governance_mode === 'defect_tracking' ? 'rgba(99,102,241,0.06)' : 'var(--color-bg-surface, #ffffff)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'defect_tracking' ? '#4f46e5' : 'var(--color-text-primary, #0f172a)' }}>
+                        缺陷攻关兼容模式 (defect_tracking)
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #64748b)', marginTop: '0.2rem' }}>
+                        传统平铺缺陷攻关模式（向后兼容，引擎内部将自动按 full_ledger 自愈对账）
                       </div>
                     </div>
                   </div>
