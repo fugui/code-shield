@@ -154,16 +154,17 @@ func fetchAndGroupReports(flags ConfigFlags) (map[GroupKey][]models.TaskReport, 
 }
 
 type PipelineStats struct {
-	TotalReportsScanned   int
-	ArtifactsAlreadySSOT  int
-	ArtifactsUpgraded     int
-	ArtifactsFailed       int
-	FingerprintsSeededNew int
-	FingerprintsRefreshed int
-	ReconPairsProcessed   int
-	ReconPairsSkipped     int
-	ReconLinksCreated     int
-	Errors                []string
+	TotalReportsScanned    int
+	ArtifactsAlreadySSOT   int
+	ArtifactsUpgraded      int
+	ArtifactsSkippedNoFile int
+	ArtifactsFailed        int
+	FingerprintsSeededNew  int
+	FingerprintsRefreshed  int
+	ReconPairsProcessed    int
+	ReconPairsSkipped      int
+	ReconLinksCreated      int
+	Errors                 []string
 }
 
 func executePipeline(groups map[GroupKey][]models.TaskReport, flags ConfigFlags) PipelineStats {
@@ -187,11 +188,14 @@ func executePipeline(groups map[GroupKey][]models.TaskReport, flags ConfigFlags)
 			stats.TotalReportsScanned++
 
 			if flags.UpgradeArtifacts {
-				upgraded, isAlreadySSOT, err := upgradeSynthesisArtifact(r, flags)
+				upgraded, isAlreadySSOT, skippedNoFile, err := upgradeSynthesisArtifact(r, flags)
 				if err != nil {
 					stats.ArtifactsFailed++
 					stats.Errors = append(stats.Errors, fmt.Sprintf("Report #%d 工件升级失败: %v", r.ID, err))
 					log.Printf("  ❌ Report #%d 工件升级失败: %v\n", r.ID, err)
+				} else if skippedNoFile {
+					stats.ArtifactsSkippedNoFile++
+					log.Printf("  ⏩ Report #%d 跳过: 磁盘未找到对应 synthesis 工件\n", r.ID)
 				} else if isAlreadySSOT {
 					stats.ArtifactsAlreadySSOT++
 				} else if upgraded {
@@ -203,15 +207,27 @@ func executePipeline(groups map[GroupKey][]models.TaskReport, flags ConfigFlags)
 
 		// ── 阶段二: 中央指纹库预热播种 (DefectFingerprintRecord) ──
 		if flags.SeedDB && len(reportList) > 0 {
-			latestReport := reportList[len(reportList)-1]
-			newCount, refreshedCount, err := seedFingerprintRecords(&latestReport, flags)
-			if err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("Group [%s/%s] 播种指纹失败: %v", repoName, taskTypeName, err))
-				log.Printf("  ❌ 播种基线指纹失败: %v\n", err)
+			// 从最新报告往前寻找一份拥有物理工件的报告作为基线播种源
+			var baselineReport *models.TaskReport
+			for i := len(reportList) - 1; i >= 0; i-- {
+				if resolveSynthesisPath(&reportList[i]) != "" {
+					baselineReport = &reportList[i]
+					break
+				}
+			}
+
+			if baselineReport != nil {
+				newCount, refreshedCount, err := seedFingerprintRecords(baselineReport, flags)
+				if err != nil {
+					stats.Errors = append(stats.Errors, fmt.Sprintf("Group [%s/%s] 播种指纹失败: %v", repoName, taskTypeName, err))
+					log.Printf("  ❌ 播种基线指纹失败: %v\n", err)
+				} else {
+					stats.FingerprintsSeededNew += newCount
+					stats.FingerprintsRefreshed += refreshedCount
+					log.Printf("  🌱 基线指纹播种: 新增 %d 条，刷新 %d 条 (基线 Report #%d)\n", newCount, refreshedCount, baselineReport.ID)
+				}
 			} else {
-				stats.FingerprintsSeededNew += newCount
-				stats.FingerprintsRefreshed += refreshedCount
-				log.Printf("  🌱 基线指纹播种: 新增 %d 条，刷新 %d 条 (基线 Report #%d)\n", newCount, refreshedCount, latestReport.ID)
+				log.Printf("  ⏩ Group [%s/%s] 跳过指纹播种: 组内无有效 synthesis 工件\n", repoName, taskTypeName)
 			}
 		}
 
@@ -239,34 +255,54 @@ func executePipeline(groups map[GroupKey][]models.TaskReport, flags ConfigFlags)
 	return stats
 }
 
-// upgradeSynthesisArtifact 将旧平铺 synthesis.json 升级为 SynthesisLedger
-func upgradeSynthesisArtifact(r *models.TaskReport, flags ConfigFlags) (bool, bool, error) {
+// resolveSynthesisPath 健壮地定位 TaskReport 对应的 synthesis 工件绝对路径
+func resolveSynthesisPath(r *models.TaskReport) string {
 	absReport := r.GetAbsReportPath()
 	if absReport == "" {
-		return false, false, fmt.Errorf("报告绝对路径为空")
+		return ""
 	}
-	reportDir := filepath.Dir(absReport)
-	synthesisPath := filepath.Join(reportDir, "synthesis.json")
+	dir := filepath.Dir(absReport)
 
-	rawBytes, err := os.ReadFile(synthesisPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, false, nil
+	// 1. 优先尝试模型自带规范路径
+	if p := r.GetSynthesisJSONPath(); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
 		}
-		return false, false, err
 	}
 
-	// 尝试解析检测是否已经是新版台账
+	// 2. 匹配标准 report-{id}-synthesis-*.json（支持任意 safeRepoName 后缀）
+	pattern := filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-*.json", r.ID))
+	if matches, err := filepath.Glob(pattern); err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+
+	// 3. 候选回退链
+	candidates := []string{
+		filepath.Join(dir, fmt.Sprintf("report-%d-synthesis.json", r.ID)),
+		filepath.Join(dir, "findings.json"),
+		filepath.Join(dir, "synthesis.json"),
+		filepath.Join(dir, fmt.Sprintf("report-%d-raw-findings.json", r.ID)),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+
+	return ""
+}
+
+// parseLedgerFromRawBytes 统一解析任意旧版或新版 synthesis JSON 为标准 SynthesisLedger
+func parseLedgerFromRawBytes(rawBytes []byte, r *models.TaskReport) (*reconciliation.SynthesisLedger, error) {
+	// 1. 尝试直接作为新版 SynthesisLedger 解析
 	var existingLedger reconciliation.SynthesisLedger
-	if errUnmarshal := json.Unmarshal(rawBytes, &existingLedger); errUnmarshal == nil {
+	if err := json.Unmarshal(rawBytes, &existingLedger); err == nil {
 		if existingLedger.Meta.ReportID > 0 && len(existingLedger.Items) > 0 && existingLedger.Items[0].Fingerprint != "" {
-			if !flags.Force {
-				return false, true, nil
-			}
+			return &existingLedger, nil
 		}
 	}
 
-	// 解构旧条目（平铺数组或旧对象）
+	// 2. 解析旧版平铺数组或通用字典包装
 	var rawItems []map[string]interface{}
 	if errArray := json.Unmarshal(rawBytes, &rawItems); errArray != nil || len(rawItems) == 0 {
 		var genericMap map[string]interface{}
@@ -281,11 +317,7 @@ func upgradeSynthesisArtifact(r *models.TaskReport, flags ConfigFlags) (bool, bo
 		}
 	}
 
-	if len(rawItems) == 0 {
-		return false, false, nil
-	}
-
-	// 转换为新版 SynthesisItem 集合
+	// 3. 构造标准的 SynthesisItem 列表并重新计算确定性指纹
 	var items []reconciliation.SynthesisItem
 	for i, itemMap := range rawItems {
 		filePath, _ := itemMap["file_path"].(string)
@@ -349,36 +381,78 @@ func upgradeSynthesisArtifact(r *models.TaskReport, flags ConfigFlags) (bool, bo
 		ArchivedItems: []reconciliation.ArchivedItem{},
 	}
 
+	return &ledger, nil
+}
+
+// upgradeSynthesisArtifact 将旧平铺 synthesis.json 升级为 SynthesisLedger
+func upgradeSynthesisArtifact(r *models.TaskReport, flags ConfigFlags) (bool, bool, bool, error) {
+	synthesisPath := resolveSynthesisPath(r)
+	if synthesisPath == "" {
+		return false, false, true, nil
+	}
+
+	rawBytes, err := os.ReadFile(synthesisPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, false, true, nil
+		}
+		return false, false, false, err
+	}
+
+	// 尝试检测是否已经是新版台账
+	var existingLedger reconciliation.SynthesisLedger
+	if errUnmarshal := json.Unmarshal(rawBytes, &existingLedger); errUnmarshal == nil {
+		if existingLedger.Meta.ReportID > 0 && len(existingLedger.Items) > 0 && existingLedger.Items[0].Fingerprint != "" {
+			if !flags.Force {
+				return false, true, false, nil
+			}
+		}
+	}
+
+	ledger, errParse := parseLedgerFromRawBytes(rawBytes, r)
+	if errParse != nil {
+		return false, false, false, errParse
+	}
+
+	if len(ledger.Items) == 0 && len(ledger.ArchivedItems) == 0 {
+		if existingLedger.Meta.ReportID > 0 {
+			return false, true, false, nil
+		}
+	}
+
 	if !flags.DryRun {
 		_ = os.WriteFile(synthesisPath+".bak", rawBytes, 0644)
 
 		newBytes, errMarshal := json.MarshalIndent(ledger, "", "  ")
 		if errMarshal != nil {
-			return false, false, errMarshal
+			return false, false, false, errMarshal
 		}
 		if errWrite := os.WriteFile(synthesisPath, newBytes, 0644); errWrite != nil {
-			return false, false, errWrite
+			return false, false, false, errWrite
 		}
 	}
 
-	return true, false, nil
+	return true, false, false, nil
 }
 
 // seedFingerprintRecords 向 DefectFingerprintRecord 播种指纹基线
 func seedFingerprintRecords(r *models.TaskReport, flags ConfigFlags) (int, int, error) {
-	absReport := r.GetAbsReportPath()
-	if absReport == "" {
+	synthesisPath := resolveSynthesisPath(r)
+	if synthesisPath == "" {
 		return 0, 0, nil
 	}
-	synthesisPath := filepath.Join(filepath.Dir(absReport), "synthesis.json")
+
 	rawBytes, err := os.ReadFile(synthesisPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, 0, nil
+		}
 		return 0, 0, err
 	}
 
-	var ledger reconciliation.SynthesisLedger
-	if err := json.Unmarshal(rawBytes, &ledger); err != nil {
-		return 0, 0, err
+	ledger, errParse := parseLedgerFromRawBytes(rawBytes, r)
+	if errParse != nil {
+		return 0, 0, errParse
 	}
 
 	newCount := 0
@@ -433,31 +507,44 @@ func seedFingerprintRecords(r *models.TaskReport, flags ConfigFlags) (int, int, 
 // backfillReconciliationPair 对相邻两份报告进行纯函数对账并落盘
 func backfillReconciliationPair(baseReport, currReport *models.TaskReport, flags ConfigFlags) (bool, int, bool, error) {
 	var existing models.ScanReconciliation
-	errFind := models.DB.Where("task_report_id = ? AND baseline_report_id = ?",
+	errFind := models.DB.Where("current_report_id = ? AND base_report_id = ?",
 		currReport.ID, baseReport.ID).First(&existing).Error
 
 	if errFind == nil && !flags.Force {
 		return false, 0, true, nil
 	}
 
-	baseSynthPath := filepath.Join(filepath.Dir(baseReport.GetAbsReportPath()), "synthesis.json")
-	currSynthPath := filepath.Join(filepath.Dir(currReport.GetAbsReportPath()), "synthesis.json")
+	baseSynthPath := resolveSynthesisPath(baseReport)
+	currSynthPath := resolveSynthesisPath(currReport)
+
+	if baseSynthPath == "" || currSynthPath == "" {
+		return false, 0, true, nil
+	}
 
 	baseBytes, errBase := os.ReadFile(baseSynthPath)
 	if errBase != nil {
-		return false, 0, false, fmt.Errorf("读取基线 synthesis 失败: %w", errBase)
+		return false, 0, false, fmt.Errorf("读取基线 synthesis 失败 (%s): %w", baseSynthPath, errBase)
 	}
 	currBytes, errCurr := os.ReadFile(currSynthPath)
 	if errCurr != nil {
-		return false, 0, false, fmt.Errorf("读取当前 synthesis 失败: %w", errCurr)
+		return false, 0, false, fmt.Errorf("读取当前 synthesis 失败 (%s): %w", currSynthPath, errCurr)
 	}
 
-	var currLedger reconciliation.SynthesisLedger
-	_ = json.Unmarshal(currBytes, &currLedger)
+	currLedger, errCurrParse := parseLedgerFromRawBytes(currBytes, currReport)
+	if errCurrParse != nil {
+		return false, 0, false, fmt.Errorf("解析当前 synthesis 失败: %w", errCurrParse)
+	}
+
 	var currFindings []models.AnalysisFinding
 	for _, it := range currLedger.Items {
 		currFindings = append(currFindings, it.Payload)
 	}
+
+	baseLedger, errBaseParse := parseLedgerFromRawBytes(baseBytes, baseReport)
+	if errBaseParse != nil {
+		return false, 0, false, fmt.Errorf("解析基线 synthesis 失败: %w", errBaseParse)
+	}
+	baseJSONBytes, _ := json.Marshal(baseLedger)
 
 	govMode := models.ResolveGovernanceMode(currReport.TaskType.GovernanceMode)
 
@@ -468,7 +555,7 @@ func backfillReconciliationPair(baseReport, currReport *models.TaskReport, flags
 		CurrentReportID:   currReport.ID,
 		BaseReportID:      baseReport.ID,
 		CurrentFindings:   currFindings,
-		BaseSynthesisJSON: baseBytes,
+		BaseSynthesisJSON: baseJSONBytes,
 		GovernanceMode:    govMode,
 		RepoUnchanged:     false,
 	}
@@ -479,8 +566,8 @@ func backfillReconciliationPair(baseReport, currReport *models.TaskReport, flags
 	}
 
 	if !flags.DryRun {
-		reconPath := filepath.Join(filepath.Dir(currReport.GetAbsReportPath()),
-			fmt.Sprintf("recon-%d-vs-%d.json", currReport.ID, baseReport.ID))
+		reportDir := currReport.GetReportDir()
+		reconPath := filepath.Join(reportDir, fmt.Sprintf("recon-%d-vs-%d.json", currReport.ID, baseReport.ID))
 		diffBytes, errDiff := json.MarshalIndent(res.DiffPayload, "", "  ")
 		if errDiff == nil {
 			_ = os.WriteFile(reconPath, diffBytes, 0644)
@@ -508,6 +595,7 @@ func printSummary(stats PipelineStats, d time.Duration, flags ConfigFlags) {
 	fmt.Printf("扫描历史报告总数:     %d 个\n", stats.TotalReportsScanned)
 	fmt.Printf("已是新版 SSOT 工件:   %d 个\n", stats.ArtifactsAlreadySSOT)
 	fmt.Printf("就地升级工件数量:     %d 个\n", stats.ArtifactsUpgraded)
+	fmt.Printf("因无物理工件跳过:     %d 个 (如占位测试报告)\n", stats.ArtifactsSkippedNoFile)
 	fmt.Printf("播种新增基线指纹数:   %d 条\n", stats.FingerprintsSeededNew)
 	fmt.Printf("刷新存量指纹记录数:   %d 条\n", stats.FingerprintsRefreshed)
 	fmt.Printf("成功补全历史对账对:   %d 对 (生成 %d 条认领关系)\n", stats.ReconPairsProcessed, stats.ReconLinksCreated)
@@ -527,3 +615,4 @@ func printSummary(stats PipelineStats, d time.Duration, flags ConfigFlags) {
 		fmt.Println("================================================================================")
 	}
 }
+
