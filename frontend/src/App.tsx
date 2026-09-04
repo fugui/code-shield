@@ -25,17 +25,61 @@ const PrivateRoute = ({ children }: { children: JSX.Element }) => {
   return children;
 };
 
+const SuperAdminRoute = ({ children }: { children: JSX.Element }) => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
+
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch('/api/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.roles) && data.roles.includes('super_admin')) {
+          setIsSuperAdmin(true);
+        } else {
+          setIsSuperAdmin(false);
+        }
+      })
+      .catch(() => setIsSuperAdmin(false));
+  }, []);
+
+  if (isSuperAdmin === null) {
+    return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-color-secondary, #64748b)' }}>正在鉴权超级管理员权限...</div>;
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div style={{ padding: '4rem 2rem', textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-color, #1e293b)', marginBottom: '0.75rem' }}>无权访问系统配置</h2>
+        <p style={{ color: 'var(--text-color-secondary, #64748b)', lineHeight: 1.6, marginBottom: '2rem' }}>
+          系统配置中包含大模型 API 密钥、算力端点凭据等敏感信息，仅限系统超级管理员（<strong>super_admin</strong>）查看与修改。
+        </p>
+        <Link to={appNavigatePath('/reports')} className="btn btn-primary" style={{ padding: '0.6rem 1.5rem', textDecoration: 'none', borderRadius: '6px', background: 'var(--primary-color, #2563eb)', color: '#fff' }}>
+          返回报告中心
+        </Link>
+      </div>
+    );
+  }
+
+  return children;
+};
+
 function Sidebar({ taskTypes }: { taskTypes: TaskTypeMenuMeta[] }) {
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data) {
-          const isShieldAdmin = Array.isArray(data.roles) && (data.roles.includes('super_admin') || data.roles.includes('shield_admin'));
+          const hasSuper = Array.isArray(data.roles) && data.roles.includes('super_admin');
+          const isShieldAdmin = hasSuper || (Array.isArray(data.roles) && data.roles.includes('shield_admin'));
           setIsAdmin(isShieldAdmin);
+          setIsSuperAdmin(hasSuper);
         }
       })
       .catch(() => {});
@@ -65,6 +109,7 @@ function Sidebar({ taskTypes }: { taskTypes: TaskTypeMenuMeta[] }) {
                 {group.title}
               </div>
               {group.items.map(item => {
+                if ((item as any).superAdminOnly && !isSuperAdmin) return null;
                 const itemPath = appNavigatePath(item.path);
                 const isActive = location.pathname === itemPath || location.pathname.startsWith(itemPath + '/');
                 return (
@@ -233,7 +278,7 @@ function AppContent() {
             <Route path="/admin/scan" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/scan/:tab" element={<PrivateRoute><ScanManagement /></PrivateRoute>} />
             <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
-            <Route path="/admin/config" element={<PrivateRoute><ConfigCenter /></PrivateRoute>} />
+            <Route path="/admin/config" element={<SuperAdminRoute><ConfigCenter /></SuperAdminRoute>} />
             <Route path="/admin/debug" element={<PrivateRoute><SystemDebug /></PrivateRoute>} />
             <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
