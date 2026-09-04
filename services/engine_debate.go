@@ -499,7 +499,14 @@ func (e *DebateEngine) runHunterStage(ctx *taskContext, bundle SemanticBundle, o
 
 	prompt := buildHunterPrompt(ctx, bundle)
 	tierCfg := models.AppConfig.GetTierConfig("tier1_fast")
-	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds)
+	workCtx := &LLMWorkContext{
+		ReportID: ctx.report.ID,
+		RepoName: ctx.repo.Name,
+		TaskType: ctx.taskType.DisplayName,
+		Stage:    "Tier 1: 猎手初筛",
+		SubTask:  fmt.Sprintf("分片束 %s (%d 个候选文件)", bundle.Name, len(bundle.AllFiles)),
+	}
+	rawOutput, tokens, err := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, outPath, tierCfg.TimeoutSeconds, workCtx)
 	if err != nil {
 		return nil, tokens, err
 	}
@@ -564,7 +571,14 @@ func (e *DebateEngine) runChallengerStage(ctx *taskContext, bundle SemanticBundl
 				bundle.Name, bIdx+1, len(batches), len(batch))
 		}
 
-		rawOutput, tokens, callErr := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, subOutPath, tierCfg.TimeoutSeconds)
+		workCtx := &LLMWorkContext{
+			ReportID: ctx.report.ID,
+			RepoName: ctx.repo.Name,
+			TaskType: ctx.taskType.DisplayName,
+			Stage:    "Tier 2: 辩护对抗 (Challenger)",
+			SubTask:  fmt.Sprintf("批次 %d/%d (候选点 %d 个)", bIdx+1, len(batches), len(batch)),
+		}
+		rawOutput, tokens, callErr := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, subOutPath, tierCfg.TimeoutSeconds, workCtx)
 		if len(batches) > 1 && subOutPath != "" && subOutPath != outPath {
 			_ = os.Remove(subOutPath)
 		}
@@ -682,7 +696,14 @@ func (e *DebateEngine) runJudgeStage(ctx *taskContext, bundle SemanticBundle, hu
 				bundle.Name, bIdx+1, len(batches), len(batch))
 		}
 
-		rawOutput, tokens, callErr := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, subOutPath, tierCfg.TimeoutSeconds)
+		workCtx := &LLMWorkContext{
+			ReportID: ctx.report.ID,
+			RepoName: ctx.repo.Name,
+			TaskType: ctx.taskType.DisplayName,
+			Stage:    "Tier 2: 裁判终审 (Judge)",
+			SubTask:  fmt.Sprintf("批次 %d/%d (候选点 %d 个交叉仲裁)", bIdx+1, len(batches), len(batch)),
+		}
+		rawOutput, tokens, callErr := callAITier(ctx.ctx, acq.Backend, acq.ModelName, prompt, ctx.codesPath, subOutPath, tierCfg.TimeoutSeconds, workCtx)
 		if len(batches) > 1 && subOutPath != "" && subOutPath != outPath {
 			_ = os.Remove(subOutPath)
 		}
@@ -1162,7 +1183,7 @@ func isHex4(runes []rune) bool {
 }
 
 // callAITier 底层调用指定后端和模型的 AI Invoker 工具
-func callAITier(ctx context.Context, backend string, modelName string, prompt string, workDir string, outPath string, timeoutSeconds int) (string, int64, error) {
+func callAITier(ctx context.Context, backend string, modelName string, prompt string, workDir string, outPath string, timeoutSeconds int, workCtx ...*LLMWorkContext) (string, int64, error) {
 	if backend == "" {
 		backend = models.AppConfig.AI.Backend
 	}
@@ -1195,6 +1216,11 @@ func callAITier(ctx context.Context, backend string, modelName string, prompt st
 		timeoutMin = (models.AppConfig.AI.Debate.StageTimeoutSeconds + 59) / 60
 	}
 
+	var selectedWorkCtx *LLMWorkContext
+	if len(workCtx) > 0 && workCtx[0] != nil {
+		selectedWorkCtx = workCtx[0]
+	}
+
 	req := AIRequest{
 		ParentContext:  ctx,
 		WorkDir:        workDir,
@@ -1203,6 +1229,7 @@ func callAITier(ctx context.Context, backend string, modelName string, prompt st
 		TimeoutMin:     timeoutMin,
 		ModelName:      modelName,
 		ResponseFormat: "json",
+		WorkContext:    selectedWorkCtx,
 	}
 
 	if err := invoker.Invoke(req); err != nil {

@@ -514,3 +514,61 @@ func TestTierRouter_MultiResourcePooling(t *testing.T) {
 		t.Fatalf("expected TierRouter to select agy, got %s", acq.Backend)
 	}
 }
+
+func TestModelDispatcher_SlotLeaseLifecycle(t *testing.T) {
+	d := &ModelDispatcher{
+		cond:         sync.NewCond(&sync.Mutex{}),
+		enabled:      true,
+		activeLeases: make(map[string]*LLMSlotLease),
+		resources: []*ModelResource{
+			{
+				Index:      0,
+				ID:         "agy",
+				Driver:     "agy",
+				Model:      "gemini-3.0-flash-high",
+				Agy:        "gemini-3.0-flash-high",
+				Concurrent: 5,
+				Active:     2,
+			},
+		},
+	}
+
+	workCtx := &LLMWorkContext{
+		ReportID: 167,
+		RepoName: "fmt",
+		TaskType: "Coredump 风险分析",
+		Stage:    "Tier 1: 初筛猎手",
+		SubTask:  "分片 1/3 (src/fmt/print.go)",
+	}
+
+	// 1. 登记租约
+	leaseID := d.RegisterSlotLease(d.resources[0], "agy", "gemini-3.0-flash-high", workCtx)
+	if leaseID == "" {
+		t.Fatal("expected non-empty leaseID")
+	}
+
+	leases := d.GetActiveLeases()
+	if len(leases) != 1 {
+		t.Fatalf("expected 1 active lease, got %d", len(leases))
+	}
+	if leases[0].ReportID != 167 || leases[0].RepoName != "fmt" || leases[0].Stage != "Tier 1: 初筛猎手" {
+		t.Fatalf("unexpected lease data: %+v", leases[0])
+	}
+
+	// 2. 注销租约
+	d.UnregisterSlotLease(leaseID)
+	leasesAfter := d.GetActiveLeases()
+	if len(leasesAfter) != 0 {
+		t.Fatalf("expected 0 active leases after unregister, got %d", len(leasesAfter))
+	}
+
+	// 3. 测试 ResetActiveSlots 清除租约
+	d.RegisterSlotLease(d.resources[0], "agy", "gemini-3.0-flash-high", workCtx)
+	if len(d.GetActiveLeases()) != 1 {
+		t.Fatalf("expected 1 active lease before reset")
+	}
+	d.ResetActiveSlots()
+	if len(d.GetActiveLeases()) != 0 {
+		t.Fatalf("expected 0 active leases after ResetActiveSlots")
+	}
+}
