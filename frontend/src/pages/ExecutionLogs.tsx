@@ -281,15 +281,26 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     fetchConfig();
   }, [fetchConfig]);
 
+  // 自适应轮询：检测到存在活跃任务时 4 秒快速感应，全部完成时回退至 15 秒心跳
+  const hasActiveTasks = logs.some(l =>
+    ['running', 'cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(l.status) ||
+    (l.task_report && ['cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(l.task_report.status))
+  );
+
   useEffect(() => {
     fetchLogs();
-    const interval = setInterval(fetchLogs, 15000);
+  }, [fetchLogs]);
+
+  useEffect(() => {
+    const delay = hasActiveTasks ? 4000 : 15000;
+    const interval = setInterval(fetchLogs, delay);
+    return () => clearInterval(interval);
+  }, [fetchLogs, hasActiveTasks]);
+
+  useEffect(() => {
     const configInterval = setInterval(fetchConfig, 15000);
-    return () => {
-      clearInterval(interval);
-      clearInterval(configInterval);
-    };
-  }, [fetchLogs, fetchConfig]);
+    return () => clearInterval(configInterval);
+  }, [fetchConfig]);
 
   return (
     <div>

@@ -145,6 +145,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	ctx.CodesPath = codesPath
 
 	// Stage 2: 准入门禁判定
+	UpdateTaskStatus(ctx.Report.ID, models.StatusPreProcessing)
 	skipped, err := CheckPrecondition(ctx.Ctx, ctx.Report.ID, ctx.TaskType, ctx.CodesPath)
 	if err != nil {
 		MarkFailed(ctx, err.Error())
@@ -154,6 +155,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	}
 
 	// Stage 3 & 4: 装配只读 EngineContext 并驱动静态分析引擎
+	UpdateTaskStatus(ctx.Report.ID, models.StatusAnalyzing)
 	overallStartTime := time.Now()
 	engine := engines.GetEngine(ctx.TaskType.EngineMode)
 	engCtx := &engines.EngineContext{
@@ -170,13 +172,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		RunParams:     ctx.RunParams,
 		NegativeRules: governance.GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
 		ProgressReport: func(total, processed, success int) {
-			if models.DB != nil {
-				models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(map[string]interface{}{
-					"total_chunks":     total,
-					"processed_chunks": processed,
-					"success_chunks":   success,
-				})
-			}
+			UpdateTaskProgress(ctx.Report.ID, total, processed, success, "")
 		},
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return ExecuteAnalysis(ctx, fileList)

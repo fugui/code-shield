@@ -228,13 +228,7 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 		RunParams:     ctx.RunParams,
 		NegativeRules: GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
 		ProgressReport: func(total, processed, success int) {
-			if models.DB != nil {
-				models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(map[string]interface{}{
-					"total_chunks":     total,
-					"processed_chunks": processed,
-					"success_chunks":   success,
-				})
-			}
+			runner.UpdateTaskProgress(ctx.Report.ID, total, processed, success, "")
 		},
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return runner.ExecuteAnalysis(ctx, fileList)
@@ -250,6 +244,8 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 			return runner.ExecuteSynthesis(ctx, findings)
 		},
 	}
+
+	runner.UpdateTaskStatus(ctx.Report.ID, models.StatusAnalyzing)
 
 	actualEngine := a.inner
 	if actualEngine == nil {
