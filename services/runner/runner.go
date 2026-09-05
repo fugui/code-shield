@@ -181,11 +181,15 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return ExecuteAnalysis(ctx, fileList)
 		},
-		SynthesisExecutor: func(findings []models.AnalysisFinding) error {
+		SynthesisExecutor: func(findings []models.AnalysisFinding, scannedFilesOpt ...[]string) error {
 			// 严重级别确定性校准
 			findings = governance.CalibrateFindings(findings)
-			// 增量指纹比对与跨任务状态机打标
-			findings, _ = defects.DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, nil, findings, ctx.CodesPath)
+			// 增量指纹比对与跨任务状态机打标（注入实际扫描文件集，激活双层物理守卫与平滑观察期）
+			var scannedFiles []string
+			if len(scannedFilesOpt) > 0 {
+				scannedFiles = scannedFilesOpt[0]
+			}
+			findings, _ = defects.DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, scannedFiles, findings, ctx.CodesPath)
 			ctx.Findings = findings
 			return ExecuteSynthesis(ctx, findings)
 		},

@@ -59,7 +59,7 @@ func (e *SingleEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 				ctx.ProgressReport(1, 1, 1)
 			}
 			if ctx.SynthesisExecutor != nil {
-				_ = ctx.SynthesisExecutor(result.Findings)
+				_ = ctx.SynthesisExecutor(result.Findings, fileList)
 			}
 			return result, nil
 		}
@@ -116,7 +116,7 @@ func (e *SingleEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 	}
 
 	if ctx.SynthesisExecutor != nil {
-		if synthErr := ctx.SynthesisExecutor(findings); synthErr != nil {
+		if synthErr := ctx.SynthesisExecutor(findings, fileList); synthErr != nil {
 			log.Printf("[SingleEngine] Error: SynthesisExecutor failed: %v", synthErr)
 			return result, synthErr
 		}

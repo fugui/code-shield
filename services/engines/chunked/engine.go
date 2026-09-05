@@ -161,7 +161,18 @@ loop:
 	}
 
 	if ctx.SynthesisExecutor != nil {
-		if synthErr := ctx.SynthesisExecutor(allFindings); synthErr != nil {
+		scannedFileMap := make(map[string]bool)
+		for _, files := range chunks {
+			for _, f := range files {
+				scannedFileMap[f] = true
+			}
+		}
+		allScannedFiles := make([]string, 0, len(scannedFileMap))
+		for f := range scannedFileMap {
+			allScannedFiles = append(allScannedFiles, f)
+		}
+
+		if synthErr := ctx.SynthesisExecutor(allFindings, allScannedFiles); synthErr != nil {
 			log.Printf("[ChunkedEngine] Warning: SynthesisExecutor failed: %v", synthErr)
 		}
 	}

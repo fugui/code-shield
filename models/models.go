@@ -235,7 +235,7 @@ func (r *TaskReport) GetReportDir() string {
 	return filepath.Join(AppConfig.GetDataDir(), "reports")
 }
 
-// GetSynthesisJSONPath 返回 Synthesis Findings JSON 文件路径（内建历史命名兼容）
+// GetSynthesisJSONPath 返回 Synthesis Findings JSON 文件路径（内建历史命名兼容与全路径通配回退）
 func (r *TaskReport) GetSynthesisJSONPath() string {
 	dir := r.GetReportDir()
 	// 1. 标准命名
@@ -243,12 +243,37 @@ func (r *TaskReport) GetSynthesisJSONPath() string {
 	if _, err := os.Stat(p1); err == nil {
 		return p1
 	}
-	// 2. 规范命名 report-{id}-synthesis-{safeRepo}.json
+	// 2. 规范命名 report-{id}-synthesis-{safeRepo}.json (带物理存在性检查)
 	safeRepo := strings.ReplaceAll(r.Repo.Name, "/", "-")
-	return filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepo))
+	if safeRepo != "" {
+		p2 := filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepo))
+		if _, err := os.Stat(p2); err == nil {
+			return p2
+		}
+	}
+	// 3. 通配容错 report-{id}-synthesis-*.json (杜绝因 Repo.Name 未预加载导致的文件丢失)
+	pattern := filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-*.json", r.ID))
+	if matches, err := filepath.Glob(pattern); err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+	// 4. 历史候选路径回退
+	candidates := []string{
+		filepath.Join(dir, fmt.Sprintf("report-%d-synthesis.json", r.ID)),
+		filepath.Join(dir, "synthesis.json"),
+		filepath.Join(dir, fmt.Sprintf("report-%d-raw-findings.json", r.ID)),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	if safeRepo != "" {
+		return filepath.Join(dir, fmt.Sprintf("report-%d-synthesis-%s.json", r.ID, safeRepo))
+	}
+	return filepath.Join(dir, fmt.Sprintf("report-%d-synthesis.json", r.ID))
 }
 
-// GetSummaryJSONPath 返回 Summary Diagnostics JSON 文件路径（100% 确定性寻址，彻底消除 Glob）
+// GetSummaryJSONPath 返回 Summary Diagnostics JSON 文件路径（带规范化通配与候选回退）
 func (r *TaskReport) GetSummaryJSONPath() string {
 	dir := r.GetReportDir()
 	// 1. 标准命名
@@ -256,9 +281,33 @@ func (r *TaskReport) GetSummaryJSONPath() string {
 	if _, err := os.Stat(p1); err == nil {
 		return p1
 	}
-	// 2. 规范命名 report-{id}-summary-{safeRepo}.json
+	// 2. 规范命名 report-{id}-summary-{safeRepo}.json (带物理存在性检查)
 	safeRepo := strings.ReplaceAll(r.Repo.Name, "/", "-")
-	return filepath.Join(dir, fmt.Sprintf("report-%d-summary-%s.json", r.ID, safeRepo))
+	if safeRepo != "" {
+		p2 := filepath.Join(dir, fmt.Sprintf("report-%d-summary-%s.json", r.ID, safeRepo))
+		if _, err := os.Stat(p2); err == nil {
+			return p2
+		}
+	}
+	// 3. 通配容错 report-{id}-summary-*.json
+	pattern := filepath.Join(dir, fmt.Sprintf("report-%d-summary-*.json", r.ID))
+	if matches, err := filepath.Glob(pattern); err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+	// 4. 历史候选路径回退
+	candidates := []string{
+		filepath.Join(dir, fmt.Sprintf("report-%d-summary.json", r.ID)),
+		filepath.Join(dir, "summary.json"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	if safeRepo != "" {
+		return filepath.Join(dir, fmt.Sprintf("report-%d-summary-%s.json", r.ID, safeRepo))
+	}
+	return filepath.Join(dir, fmt.Sprintf("report-%d-summary.json", r.ID))
 }
 
 // GetExecutionLogPath 返回任务 AI 执行输出日志路径

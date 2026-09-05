@@ -36,14 +36,20 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 	var baseSynthesisBytes []byte
 	var hasBaseReport bool
 	if models.DB != nil {
-		err := models.DB.Where("repo_id = ? AND task_type_id = ? AND id < ? AND status = ?",
+		err := models.DB.Preload("Repo").Where("repo_id = ? AND task_type_id = ? AND id < ? AND status = ?",
 			ctx.Repo.ID, ctx.TaskType.ID, ctx.Report.ID, models.StatusSuccess).
 			Order("id desc").First(&baseReport).Error
 		if err == nil && baseReport.ID > 0 {
 			hasBaseReport = true
+			if baseReport.Repo.ID == 0 && ctx.Repo.ID > 0 {
+				baseReport.Repo = ctx.Repo
+			}
 			basePath := baseReport.GetSynthesisJSONPath()
 			if bBytes, bErr := os.ReadFile(basePath); bErr == nil {
 				baseSynthesisBytes = bBytes
+				log.Printf("[Synthesis] Found baseline report #%d at %s (size: %d bytes)\n", baseReport.ID, basePath, len(bBytes))
+			} else {
+				log.Printf("[Synthesis] Warning: Failed to read baseline synthesis file for report #%d at %s: %v\n", baseReport.ID, basePath, bErr)
 			}
 		}
 	}

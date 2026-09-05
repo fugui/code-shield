@@ -194,7 +194,18 @@ bundleLoop:
 	}
 
 	if ctx.SynthesisExecutor != nil {
-		if synthErr := ctx.SynthesisExecutor(allFindings); synthErr != nil {
+		scannedFileMap := make(map[string]bool)
+		for _, bnd := range bundles {
+			for _, f := range bnd.AllFiles {
+				scannedFileMap[f] = true
+			}
+		}
+		allScannedFiles := make([]string, 0, len(scannedFileMap))
+		for f := range scannedFileMap {
+			allScannedFiles = append(allScannedFiles, f)
+		}
+
+		if synthErr := ctx.SynthesisExecutor(allFindings, allScannedFiles); synthErr != nil {
 			log.Printf("[DebateEngine] Warning: SynthesisExecutor failed: %v", synthErr)
 		}
 	}

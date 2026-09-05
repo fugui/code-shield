@@ -209,9 +209,46 @@ export function useTaskReport(): UseTaskReportReturn {
       if (!res.ok) {
         throw new Error('未检索到对账明细记录');
       }
-      const data = await res.json();
+      const raw = await res.json();
       if (currentTaskIdRef.current !== taskId) return;
-      setReconciliation(data);
+
+      // 规范化与解包 DTO，兼容顶层扁平结构与嵌套 session/links 结构
+      const sess = raw.session || raw;
+      const rawLinks = raw.reconciliation_links || raw.links || [];
+      const links = rawLinks.map((l: any) => ({
+        id: l.id,
+        base_record_id: l.base_record_id || l.base_item_uid,
+        curr_finding_id: l.curr_finding_id || l.current_item_uid,
+        match_rule: l.match_rule || (l.matched_tier ? `R${l.matched_tier}` : '规则匹配'),
+        relation: l.relation,
+        severity_range: l.severity_range,
+        confidence: l.confidence,
+        rationale: l.rationale || l.reason,
+        confirmed: l.confirmed,
+      }));
+
+      const normalized: ScanReconciliationInfo = {
+        id: raw.id || sess.id,
+        repo_id: raw.repo_id || sess.repo_id,
+        task_report_id: raw.task_report_id || sess.current_report_id,
+        baseline_report_id: raw.baseline_report_id !== undefined ? raw.baseline_report_id : (sess.base_report_id || 0),
+        governance_mode: raw.governance_mode || sess.governance_mode || 'full_ledger',
+        total_current: raw.total_current !== undefined ? raw.total_current : (sess.active_working_count || ((sess.new_count || 0) + (sess.existed_count || 0))),
+        total_baseline: raw.total_baseline !== undefined ? raw.total_baseline : ((sess.existed_count || 0) + (sess.vanished_coverage_gap || 0) + (sess.vanished_fix_candidate || 0)),
+        matched_count: raw.matched_count !== undefined ? raw.matched_count : ((sess.existed_count || 0) + (sess.multi_view_merged || 0)),
+        new_count: raw.new_count !== undefined ? raw.new_count : (sess.new_count || 0),
+        existed_count: raw.existed_count !== undefined ? raw.existed_count : (sess.existed_count || 0),
+        resolved_count: raw.resolved_count !== undefined ? raw.resolved_count : ((sess.vanished_fix_candidate || 0) + (sess.resolved_by_change_count || 0)),
+        gap_filled_count: raw.gap_filled_count !== undefined ? raw.gap_filled_count : (sess.vanished_coverage_gap || 0),
+        archived_count: raw.archived_count !== undefined ? raw.archived_count : (sess.dormant_archived_count || 0),
+        multi_view_count: raw.multi_view_count !== undefined ? raw.multi_view_count : (sess.multi_view_merged || 0),
+        family_count: raw.family_count !== undefined ? raw.family_count : (sess.template_family_count || 0),
+        funnel_stats: raw.funnel_stats || {},
+        reconciliation_links: links,
+        created_at: raw.created_at || sess.created_at,
+      };
+
+      setReconciliation(normalized);
     } catch (err: any) {
       if (currentTaskIdRef.current === taskId) {
         setReconciliationError(err.message || '加载对账记录失败');

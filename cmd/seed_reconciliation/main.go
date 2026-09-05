@@ -574,7 +574,10 @@ func backfillReconciliationPair(baseReport, currReport *models.TaskReport, flags
 		}
 
 		_ = models.DB.Create(&res.Reconciliation).Error
-		if len(res.Links) > 0 {
+		if res.Reconciliation.ID > 0 && len(res.Links) > 0 {
+			for i := range res.Links {
+				res.Links[i].ReconID = res.Reconciliation.ID
+			}
 			_ = models.DB.CreateInBatches(res.Links, 100).Error
 		}
 	}
