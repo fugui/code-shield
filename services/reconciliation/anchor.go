@@ -3,11 +3,6 @@ package reconciliation
 import (
 	"code-shield/models"
 	"code-shield/services/defects"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -31,229 +26,36 @@ func ParseLineNumberRange(lineStr string) (int, int) {
 	return defects.ParseLineNumberRange(lineStr)
 }
 
-// CalculateDefectFingerprint 计算 L1 物理强指纹
-// SHA256("repo:%d|task:%d|path:%s|scope:%s|token:%s")
+// CalculateDefectFingerprint 计算 L1 物理强指纹 (复用 defects.CalculateDefectFingerprint 单一真实源)
 func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scopeSymbol string) string {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	normScope := NormalizeScopeSymbol(scopeSymbol)
-	if normScope == "" {
-		normScope = filepath.Base(normPath)
-	}
-	normTrigger := CleanSourceToken(triggerLine)
-
-	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s|token:%s",
-		repoID, taskTypeID, normPath, normScope, normTrigger)
-
-	hash := sha256.Sum256([]byte(rawKey))
-	return hex.EncodeToString(hash[:])
+	return defects.CalculateDefectFingerprint(repoID, taskTypeID, filePath, triggerLine, scopeSymbol)
 }
 
-// CalculateWeakScopeFingerprint 计算 L2 弱作用域指纹
+// CalculateWeakScopeFingerprint 计算 L2 弱作用域指纹 (复用 defects.CalculateWeakScopeFingerprint 单一真实源)
 func CalculateWeakScopeFingerprint(repoID uint, taskTypeID uint, filePath string, scopeSymbol string) string {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	normScope := NormalizeScopeSymbol(scopeSymbol)
-	if normScope == "" {
-		normScope = filepath.Base(normPath)
-	}
-
-	rawKey := fmt.Sprintf("repo:%d|task:%d|path:%s|scope:%s",
-		repoID, taskTypeID, normPath, normScope)
-
-	hash := sha256.Sum256([]byte(rawKey))
-	return hex.EncodeToString(hash[:])
+	return defects.CalculateWeakScopeFingerprint(repoID, taskTypeID, filePath, scopeSymbol)
 }
 
-// CalculateTokenJaccard 计算 2-gram Jaccard 相似度 [0.0, 1.0]
+// CalculateTokenJaccard 计算 2-gram Jaccard 相似度 [0.0, 1.0] (复用 defects.CalculateTokenJaccard 单一真实源)
 func CalculateTokenJaccard(s1, s2 string) float64 {
-	t1 := CleanSourceToken(s1)
-	t2 := CleanSourceToken(s2)
-	if t1 == t2 {
-		return 1.0
-	}
-	if len(t1) == 0 || len(t2) == 0 {
-		return 0.0
-	}
-
-	grams1 := make(map[string]bool)
-	grams2 := make(map[string]bool)
-
-	if len(t1) < 2 {
-		grams1[t1] = true
-	} else {
-		for i := 0; i < len(t1)-1; i++ {
-			grams1[t1[i:i+2]] = true
-		}
-	}
-
-	if len(t2) < 2 {
-		grams2[t2] = true
-	} else {
-		for i := 0; i < len(t2)-1; i++ {
-			grams2[t2[i:i+2]] = true
-		}
-	}
-
-	intersection := 0
-	for g := range grams1 {
-		if grams2[g] {
-			intersection++
-		}
-	}
-
-	union := len(grams1) + len(grams2) - intersection
-	if union <= 0 {
-		return 0.0
-	}
-	return float64(intersection) / float64(union)
+	return defects.CalculateTokenJaccard(s1, s2)
 }
 
-// ComputeFileSHA256 计算物理文件哈希
+// ComputeFileSHA256 计算物理文件哈希 (复用 defects.ComputeFileSHA256 单一真实源)
 func ComputeFileSHA256(filePath string) (string, error) {
-	bytes, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-	h := sha256.Sum256(bytes)
-	return hex.EncodeToString(h[:]), nil
+	return defects.ComputeFileSHA256(filePath)
 }
 
-// ComputeCleanTokenHash 计算代码块 Token 哈希
+// ComputeCleanTokenHash 计算代码块 Token 哈希 (复用 defects.ComputeCleanTokenHash 单一真实源)
 func ComputeCleanTokenHash(content string) string {
-	clean := CleanSourceToken(content)
-	if clean == "" {
-		return ""
-	}
-	h := sha256.Sum256([]byte(clean))
-	return hex.EncodeToString(h[:])
+	return defects.ComputeCleanTokenHash(content)
 }
 
-// EnrichSourceAnchor 校准物理行并提取物理锚点
+// EnrichSourceAnchor 校准物理行并提取物理锚点 (复用 defects.EnrichSourceAnchor 单一真实源)
 func EnrichSourceAnchor(repoRoot, filePath, lineNumber, triggerLine string) (*SourceAnchor, error) {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	cleanTrigger := CleanSourceToken(triggerLine)
-	startLine, endLine := ParseLineNumberRange(lineNumber)
-
-	anchor := &SourceAnchor{
-		NormalizedPath: normPath,
-		PhysicalToken:  cleanTrigger,
-		StartLine:      startLine,
-		EndLine:        endLine,
-	}
-
-	if repoRoot == "" {
-		return anchor, nil
-	}
-
-	fullPath := filepath.Join(repoRoot, normPath)
-	contentBytes, err := os.ReadFile(fullPath)
-	if err != nil {
-		return anchor, err
-	}
-
-	lines := strings.Split(string(contentBytes), "\n")
-	totalLines := len(lines)
-	if totalLines == 0 {
-		return anchor, nil
-	}
-
-	// 1. 若给定了大致行号且存在 cleanTrigger，使用局部滑动窗口 ±15 行精确定位
-	bestLine := startLine
-	if cleanTrigger != "" && startLine > 0 && startLine <= totalLines {
-		windowStart := startLine - 15
-		if windowStart < 1 {
-			windowStart = 1
-		}
-		windowEnd := startLine + 15
-		if windowEnd > totalLines {
-			windowEnd = totalLines
-		}
-
-		maxSim := 0.0
-		for i := windowStart; i <= windowEnd; i++ {
-			lineClean := CleanSourceToken(lines[i-1])
-			sim := CalculateTokenJaccard(cleanTrigger, lineClean)
-			if sim > maxSim {
-				maxSim = sim
-				bestLine = i
-			}
-		}
-
-		if maxSim >= 0.75 {
-			anchor.StartLine = bestLine
-			if anchor.EndLine < anchor.StartLine {
-				anchor.EndLine = anchor.StartLine
-			}
-			anchor.PhysicalToken = CleanSourceToken(lines[bestLine-1])
-		}
-	} else if cleanTrigger != "" && (startLine <= 0 || startLine > totalLines) {
-		// 全文扫描定位最相似行
-		maxSim := 0.0
-		bestIdx := 0
-		for i, l := range lines {
-			lineClean := CleanSourceToken(l)
-			sim := CalculateTokenJaccard(cleanTrigger, lineClean)
-			if sim > maxSim {
-				maxSim = sim
-				bestIdx = i + 1
-			}
-		}
-		if maxSim >= 0.85 {
-			anchor.StartLine = bestIdx
-			anchor.EndLine = bestIdx
-			anchor.PhysicalToken = CleanSourceToken(lines[bestIdx-1])
-		}
-	}
-
-	// 2. 向上扫描推断最近的作用域符号与代码块
-	scope, scopeBody := extractScopeAndBody(normPath, lines, anchor.StartLine)
-	anchor.NormalizedScope = NormalizeScopeSymbol(scope)
-	if scopeBody != "" {
-		anchor.ScopeBodyHash = ComputeCleanTokenHash(scopeBody)
-	}
-
-	return anchor, nil
+	return defects.EnrichSourceAnchor(repoRoot, filePath, lineNumber, triggerLine)
 }
 
-// extractScopeAndBody 向上扫描查找所属函数签名与主体
-func extractScopeAndBody(normPath string, lines []string, targetLine int) (string, string) {
-	if targetLine <= 0 || targetLine > len(lines) {
-		return filepath.Base(normPath), ""
-	}
-
-	// 向上回溯至多 150 行寻找函数声明
-	scanStart := targetLine - 1
-	limit := scanStart - 150
-	if limit < 0 {
-		limit = 0
-	}
-
-	reFunc := regexp.MustCompile(`^\s*(?:[\w:*&<>]+\s+)+([A-Za-z0-9_~]+(?:::[A-Za-z0-9_~]+)*)\s*\([^;]*$`)
-	reGo := regexp.MustCompile(`^\s*func\s+(?:\([^)]+\)\s+)?([A-Za-z0-9_]+)\s*\(`)
-	rePy := regexp.MustCompile(`^\s*def\s+([A-Za-z0-9_]+)\s*\(`)
-
-	for i := scanStart; i >= limit; i-- {
-		l := lines[i]
-		if m := reGo.FindStringSubmatch(l); len(m) >= 2 {
-			return m[1], collectBody(lines, i)
-		}
-		if m := rePy.FindStringSubmatch(l); len(m) >= 2 {
-			return m[1], collectBody(lines, i)
-		}
-		if m := reFunc.FindStringSubmatch(l); len(m) >= 2 {
-			return m[1], collectBody(lines, i)
-		}
-	}
-
-	return filepath.Base(normPath), ""
-}
-
-func collectBody(lines []string, startIdx int) string {
-	endIdx := startIdx + 80
-	if endIdx > len(lines) {
-		endIdx = len(lines)
-	}
-	return strings.Join(lines[startIdx:endIdx], "\n")
-}
 
 // SanitizeCategory 白名单分类吸附
 func SanitizeCategory(rawCat string) string {
