@@ -26,7 +26,8 @@ code-shield/docs/
 │   │   ├── README.md                                     # 引擎集群总览与选型决策
 │   │   ├── 01-下一代AI扫描引擎与多Agent对抗辩论设计.md     # 猎手/辩护人/仲裁官三权分立与定级校准
 │   │   ├── 02-原生LLM轻量执行引擎与动静分离混合调用设计.md  # 原生 HTTP REST API 引擎与单轮混合调用
-│   │   └── 03-智能体协作与异构调度深度设计.md              # 猎手/辩护/法官三方交互协议、Prompt与Go实现
+│   │   ├── 03-智能体协作与异构调度深度设计.md              # 猎手/辩护/法官三方交互协议、Prompt与Go实现
+│   │   └── 04-多任务自适应提示词体系与对抗辩论通用演进架构设计.md # 动态装配Prompt、五大领域族群抗辩维度与SSOT分类收敛
 │   │
 │   ├── 03-dispatcher/                                    # ⚡【物理算力池与任务调度】
 │   │   ├── README.md                                     # 调度器与算力拓扑总览
@@ -92,7 +93,7 @@ code-shield/docs/
 ### 2. 💻 核心业务与引擎开发者 (Core Engineers)
 *   **服务层子包划分与调用门面**：👉 [01-Services领域驱动子包化重构设计与契约规范](02-architecture/01-core-pipeline/01-Services领域驱动子包化重构设计与契约规范.md)。
 *   **引擎契约与生命周期协同**：👉 [02-扫描引擎与执行流水线职责边界与协同模型深度设计](02-architecture/01-core-pipeline/02-扫描引擎与执行流水线职责边界与协同模型深度设计.md)。
-*   **多 Agent 辩论引擎与 Prompt**：👉 [01-下一代AI扫描引擎与多Agent对抗辩论设计](02-architecture/02-scanner-engines/01-下一代AI扫描引擎与多Agent对抗辩论设计.md) 及 [03-智能体协作与异构调度深度设计](02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md)。
+*   **多 Agent 辩论引擎与 Prompt 体系**：👉 [01-下一代AI扫描引擎与多Agent对抗辩论设计](02-architecture/02-scanner-engines/01-下一代AI扫描引擎与多Agent对抗辩论设计.md)、[03-智能体协作与异构调度深度设计](02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md) 及 [04-多任务自适应提示词体系与对抗辩论通用演进架构设计](02-architecture/02-scanner-engines/04-多任务自适应提示词体系与对抗辩论通用演进架构设计.md)。
 *   **确定性物理指纹提取**：👉 [01-确定性源码指纹与抗抖动增量生命周期架构设计](02-architecture/04-fingerprint-governance/01-确定性源码指纹与抗抖动增量生命周期架构设计.md)。
 
 ### 3. 🏛️ 系统架构师与技术委员会 (Architects & Tech Committee)
