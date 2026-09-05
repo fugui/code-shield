@@ -101,8 +101,3 @@ code-shield/docs/
 *   **经典架构选型决策 (ADR)**：👉 [RFC-001-多租户隔离方案评估与分库架构选型](03-rfcs/RFC-001-多租户隔离方案评估与分库架构选型.md)。
 *   **服务层重构复盘与质量指标**：👉 [01-服务层模块化架构重构全景实施总结与复盘检视报告](04-reports/03-milestones/01-服务层模块化架构重构全景实施总结与复盘检视报告.md)。
 
----
-
-## 📌 历史专题目录过渡说明
-
-> ⚠️ **温馨提示**：为兼容外部书签与历史代码注释引用，原平铺专题目录（`agentic-scanner-architecture/`、`deterministic-fingerprint-architecture/`、`multi-tenancy-architecture/`、`native-llm-architecture/`、`services-modular-architecture/`）已保留过渡导航说明，具体文档均已平滑升级迁移至上述各标准领域目录下。
