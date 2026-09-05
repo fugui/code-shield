@@ -41,7 +41,7 @@ type EngineContext struct {
 	Invoker           invoker.AIInvoker                                                                    // 算力分配后的调用驱动
 	AIExecutor        func(fileList []string, customPromptSuffix, promptFilePath, outputPath string) error // 底层通用 AI 执行器
 	AnalysisExecutor  func(fileList []string) ([]models.AnalysisFinding, error)                            // 单片/单仓分析执行器
-	SynthesisExecutor func(findings []models.AnalysisFinding) error                                        // 报告综合生成执行器
+	SynthesisExecutor func(findings []models.AnalysisFinding, scannedFilesOpt ...[]string) error // 报告综合生成执行器
 }
 
 // EngineResult 引擎纯内存计算与扫描输出结果

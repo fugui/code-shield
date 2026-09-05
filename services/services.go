@@ -239,9 +239,13 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return runner.ExecuteAnalysis(ctx, fileList)
 		},
-		SynthesisExecutor: func(findings []models.AnalysisFinding) error {
+		SynthesisExecutor: func(findings []models.AnalysisFinding, scannedFilesOpt ...[]string) error {
 			findings = CalibrateFindings(findings)
-			findings, _ = DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, nil, findings, ctx.CodesPath)
+			var scannedFiles []string
+			if len(scannedFilesOpt) > 0 {
+				scannedFiles = scannedFilesOpt[0]
+			}
+			findings, _ = DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, scannedFiles, findings, ctx.CodesPath)
 			ctx.Findings = findings
 			return runner.ExecuteSynthesis(ctx, findings)
 		},

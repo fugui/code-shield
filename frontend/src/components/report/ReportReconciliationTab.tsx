@@ -116,10 +116,27 @@ export default function ReportReconciliationTab({
           </span>
           <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary, #64748b)' }}>
             当前任务: <strong>#{reconciliation.task_report_id}</strong>
-            {reconciliation.baseline_report_id > 0 && (
+            {meta?.task_type_display && ` (${meta.task_type_display})`}
+            {reconciliation.baseline_report_id > 0 ? (
               <>
-                {' '}↔ 对比基线报告: <strong>#{reconciliation.baseline_report_id}</strong>
+                {' '}↔ 对比基线报告:{' '}
+                <a
+                  href={`/shield/reports?taskId=${reconciliation.baseline_report_id}&tab=reconciliation`}
+                  style={{
+                    color: 'var(--color-primary, #2563eb)',
+                    fontWeight: 700,
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                  }}
+                  title="点击切换查看基线报告的对账视角"
+                >
+                  #{reconciliation.baseline_report_id}
+                </a>
               </>
+            ) : (
+              <span style={{ color: 'var(--color-text-muted, #94a3b8)', marginLeft: '0.5rem' }}>
+                (首轮基线建立，尚无历史前序报告)
+              </span>
             )}
           </span>
         </div>
