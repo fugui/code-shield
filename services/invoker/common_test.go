@@ -3,6 +3,7 @@ package invoker
 import (
 	"code-shield/models"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -320,3 +321,53 @@ func TestFormatByteSize(t *testing.T) {
 		}
 	}
 }
+
+func TestRunCLIProcess_SafetyFilterBlockedDetection(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "filter_test.json")
+
+	// 模拟 CLI 退出码为 0，但输出中包含 Gemini 内容安全过滤拦截特征
+	filterMsg := "This request was blocked by Gemini's filters. Please try rephrasing your prompt. You can send feedback or read more about our policies here."
+	script := fmt.Sprintf("echo %q; exit 0", filterMsg)
+
+	err := RunCLIProcess("sh", []string{"-c", script}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test filter",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "模拟报告")
+
+	if err == nil {
+		t.Fatalf("expected error due to content safety filter, but got nil")
+	}
+	if !strings.Contains(err.Error(), "AI model content filter triggered") {
+		t.Errorf("expected filter triggered error message, got: %v", err)
+	}
+}
+
+func TestRunCLIProcess_AIEngineMissingOutputBlocked(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "missing_out.json")
+
+	// 创建一个伪装为 agy 的可执行脚本，退出码为 0 但不产生目标 output 文件
+	fakeAgy := filepath.Join(tempDir, "agy")
+	scriptContent := "#!/bin/sh\necho 'fake agy stdout finished without generating json'\nexit 0\n"
+	if err := os.WriteFile(fakeAgy, []byte(scriptContent), 0755); err != nil {
+		t.Fatalf("failed to create fake agy: %v", err)
+	}
+
+	err := RunCLIProcess(fakeAgy, []string{"-p", "test"}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test missing output",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "模拟报告")
+
+	if err == nil {
+		t.Fatalf("expected error when AI engine exits 0 but output file is missing")
+	}
+	if !strings.Contains(err.Error(), "was not generated or empty") {
+		t.Errorf("expected missing output error, got: %v", err)
+	}
+}
+

@@ -17,6 +17,8 @@ interface HunterCandidateData {
   scope_symbol?: string;
   code_snippet?: string;
   cwe_category?: string;
+  category?: string;
+  trigger_condition?: string;
   attack_hypothesis?: string;
   suspected_trigger?: string;
 }
@@ -150,7 +152,7 @@ export default function ReportDebateTab({
         const matchChunk = (log.chunk_name || '').toLowerCase().includes(kw);
         const matchFile = (hunter.file_path || judge.file_path || '').toLowerCase().includes(kw);
         const matchSymbol = (hunter.scope_symbol || judge.scope_symbol || '').toLowerCase().includes(kw);
-        const matchHypothesis = (hunter.attack_hypothesis || '').toLowerCase().includes(kw);
+        const matchHypothesis = (hunter.trigger_condition || hunter.attack_hypothesis || '').toLowerCase().includes(kw);
         const matchRationale = (judge.judgement_rationale || '').toLowerCase().includes(kw);
         const matchTitle = (judge.title || '').toLowerCase().includes(kw);
 
@@ -176,9 +178,9 @@ export default function ReportDebateTab({
       `- **作用域符号**: \`${hunter.scope_symbol || judge.scope_symbol || '-'}\``,
       `- **触发语句**: \`${log.trigger_line || hunter.trigger_line || '-'}\``,
       '',
-      `#### 🔴 Hunter (攻方·初筛假设)`,
-      `- **缺陷类型**: ${hunter.cwe_category || '未知'}`,
-      `- **攻击路径假设**: ${hunter.attack_hypothesis || '无'}`,
+      `#### 🔴 Hunter (初筛诱因假设)`,
+      `- **缺陷类型**: ${hunter.category || hunter.cwe_category || '未知'}`,
+      `- **触发机理与缺陷成因**: ${hunter.trigger_condition || hunter.attack_hypothesis || '无'}`,
       `- **疑似触发诱因**: ${hunter.suspected_trigger || '无'}`,
       '',
       `#### 🔵 Challenger (守方·代码抗辩)`,
@@ -452,16 +454,16 @@ export default function ReportDebateTab({
                   <div className="report-debate-stage-col stage-hunter">
                     <div className="report-debate-stage-badge">
                       <span className="stage-icon">🔴</span>
-                      <span className="stage-role">Hunter 猎手 (攻方·初筛)</span>
-                      {hunter.cwe_category && (
-                        <span className="cwe-pill">{hunter.cwe_category}</span>
+                      <span className="stage-role">Hunter 猎手 (初筛审计)</span>
+                      {(hunter.category || hunter.cwe_category) && (
+                        <span className="cwe-pill">{hunter.category || hunter.cwe_category}</span>
                       )}
                     </div>
                     <div className="report-debate-stage-content">
                       <div className="stage-section">
-                        <div className="stage-section-label">🎯 攻击路径假设与缺陷成因:</div>
+                        <div className="stage-section-label">🎯 触发机理与缺陷成因:</div>
                         <div className="stage-section-text">
-                          {hunter.attack_hypothesis || '（未提供攻击路径假设）'}
+                          {hunter.trigger_condition || hunter.attack_hypothesis || '（未提供触发机理分析）'}
                         </div>
                       </div>
                       {hunter.suspected_trigger && (

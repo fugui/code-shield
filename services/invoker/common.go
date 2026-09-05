@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -271,6 +272,53 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 	if err := metaFile.Sync(); err != nil {
 		log.Printf("[%s] Failed to sync metaFile: %v\n", cliName, err)
 	}
+
+	// 1. 检查 CLI 标准输出中是否包含模型内容安全过滤器拦截
+	if content, readErr := os.ReadFile(cliOutputPath); readErr == nil {
+		trimmed := strings.TrimSpace(string(content))
+		if blocked, reason := isSafetyFilterBlocked(trimmed); blocked {
+			appendMetaError(cliName, metaFile, fmt.Sprintf("AI content safety filter triggered: %s", reason))
+			return fmt.Errorf("AI model content filter triggered (%s): %s", cliName, truncateString(reason, 500))
+		}
+	}
+
+	// 2. 对于 AI 引擎，若指定了 OutputPath 但退出码为 0 时输出文件未生成或为空，杜绝假成功
+	if isAIEngine(cliName) && req.OutputPath != "" {
+		hasOutput := false
+		if stat, err := os.Stat(req.OutputPath); err == nil && stat.Size() > 0 {
+			hasOutput = true
+		} else if filepath.Base(cliName) == "codex" {
+			if statMsg, errMsg := os.Stat(req.OutputPath + ".lastmsg"); errMsg == nil && statMsg.Size() > 0 {
+				hasOutput = true
+			}
+		}
+
+		if !hasOutput {
+			var sample string
+			if content, readErr := os.ReadFile(cliOutputPath); readErr == nil {
+				sample = strings.TrimSpace(string(content))
+			}
+			if sample == "" {
+				sample = strings.TrimSpace(stderrBuf.String())
+			}
+			if sample != "" {
+				sample = truncateString(sample, 500)
+			} else {
+				sample = "(no output produced)"
+			}
+
+			if blocked, reason := isSafetyFilterBlocked(sample); blocked {
+				appendMetaError(cliName, metaFile, fmt.Sprintf("AI content safety filter triggered: %s", reason))
+				return fmt.Errorf("AI model content filter triggered (%s): %s", cliName, truncateString(reason, 500))
+			}
+
+			errDetail := fmt.Sprintf("%s completed with exit code 0 but target output %s was not generated or empty. Output: %s",
+				cliName, req.OutputPath, sample)
+			appendMetaError(cliName, metaFile, errDetail)
+			return errors.New(errDetail)
+		}
+	}
+
 	if stat, err := os.Stat(req.OutputPath); err == nil && stat.Size() > 0 {
 		if removeErr := os.Remove(cliOutputPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("[%s] Failed to remove stdout mirror %s: %v\n", cliName, cliOutputPath, removeErr)
@@ -284,3 +332,38 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 
 	return nil
 }
+
+// isAIEngine 判定 CLI 名称或路径是否属于受管理的 AI 交互工具
+func isAIEngine(cliName string) bool {
+	base := filepath.Base(cliName)
+	switch base {
+	case "agy", "opencode", "codex", "claude":
+		return true
+	default:
+		return false
+	}
+}
+
+// isSafetyFilterBlocked 探测大模型输出或日志中是否命中内容安全审查拦截
+func isSafetyFilterBlocked(text string) (bool, string) {
+	if text == "" {
+		return false, ""
+	}
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "blocked by gemini's filters") ||
+		strings.Contains(lower, "safety filter triggered") ||
+		(strings.Contains(lower, "try rephrasing your prompt") && strings.Contains(lower, "policies")) ||
+		strings.Contains(lower, "content policy violation") ||
+		strings.Contains(lower, "violation of safety policy") {
+		lines := strings.Split(text, "\n")
+		for _, l := range lines {
+			tl := strings.TrimSpace(l)
+			if tl != "" {
+				return true, tl
+			}
+		}
+		return true, text
+	}
+	return false, ""
+}
+
