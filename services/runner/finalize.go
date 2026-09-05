@@ -16,7 +16,7 @@ import (
 
 // UpdateTaskStatus 原子同步更新 TaskReport 和关联 TaskExecutionLog 的运行状态
 func UpdateTaskStatus(reportID uint, status string) {
-	if models.DB == nil {
+	if models.DB == nil || reportID == 0 {
 		return
 	}
 	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(map[string]interface{}{
@@ -26,6 +26,35 @@ func UpdateTaskStatus(reportID uint, status string) {
 		"status":          status,
 		"status_priority": models.GetStatusPriority(status),
 	})
+}
+
+// UpdateTaskProgress 原子同步更新任务分片处理微进度与运行状态，内建克隆/前检滞后自愈逻辑
+func UpdateTaskProgress(reportID uint, total, processed, success int, currentChunk string) {
+	if models.DB == nil || reportID == 0 {
+		return
+	}
+
+	reportUpdates := map[string]interface{}{
+		"total_chunks":     total,
+		"processed_chunks": processed,
+		"success_chunks":   success,
+	}
+
+	// 状态自愈：若当前状态仍停留在克隆、门禁前检或排队，收到分析微进度时自动跃迁为 analyzing
+	var curr models.TaskReport
+	if err := models.DB.Select("status").First(&curr, reportID).Error; err == nil {
+		if curr.Status == models.StatusCloning || curr.Status == models.StatusPreProcessing || curr.Status == models.StatusPending || curr.Status == models.StatusQueued || curr.Status == "" {
+			reportUpdates["status"] = models.StatusAnalyzing
+		}
+	}
+
+	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(reportUpdates)
+
+	logUpdates := map[string]interface{}{
+		"status":          models.StatusAnalyzing,
+		"status_priority": models.GetStatusPriority(models.StatusAnalyzing),
+	}
+	models.DB.Model(&models.TaskExecutionLog{}).Where("task_report_id = ?", reportID).Updates(logUpdates)
 }
 
 // WriteSummaryReport 将当前任务汇总度量指标写入统一的 summary JSON 文件

@@ -93,6 +93,9 @@ func ResumeFailedChunks(reportID uint) error {
 	}
 	ctx.CodesPath = codesPath
 
+	// 代码同步完成后立即恢复为 analyzing 状态
+	UpdateTaskStatus(reportID, models.StatusAnalyzing)
+
 	// 6. 读取 summary JSON
 	summaryData, err := os.ReadFile(ctx.JsonPath)
 	if err != nil {
@@ -137,6 +140,11 @@ func ResumeFailedChunks(reportID uint) error {
 	var chunkErrors []string
 	var errMu sync.Mutex
 	semaphore := make(chan struct{}, cfg.Concurrency)
+
+	initialSuccess := int(report.SuccessChunks)
+	initialProcessed := int(report.SuccessChunks)
+	totalChunks := int(report.TotalChunks)
+	var processedResumed, successResumed int
 
 	chunkStatusMap := make(map[string]*ChunkDetails)
 	for i := range ctx.Summary.Analysis.Chunks {
@@ -219,12 +227,22 @@ loop:
 				errMu.Lock()
 				chunkErrors = append(chunkErrors, fmt.Sprintf("Chunk [%s] failed: %v", chunk.ChunkName, err))
 				errMu.Unlock()
-				return
+			} else {
+				mu.Lock()
+				newFindings = append(newFindings, findings...)
+				mu.Unlock()
 			}
 
 			mu.Lock()
-			newFindings = append(newFindings, findings...)
+			processedResumed++
+			if err == nil {
+				successResumed++
+			}
+			currProcessed := initialProcessed + processedResumed
+			currSuccess := initialSuccess + successResumed
 			mu.Unlock()
+
+			UpdateTaskProgress(reportID, totalChunks, currProcessed, currSuccess, chunk.ChunkName)
 		}(failedChunk, idx)
 	}
 
