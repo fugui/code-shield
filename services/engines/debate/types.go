@@ -14,10 +14,24 @@ type HunterCandidate struct {
 	ScopeSymbol      string `json:"scope_symbol"`           // AST 作用域符号（函数名/类名签名）
 	CodeSnippet      string `json:"code_snippet"`           // 原始代码片段
 	CWECategory      string `json:"cwe_category,omitempty"` // 兼容历史 CWE 字段
-	Category         string `json:"category,omitempty"`     // 标准受控分类字段
-	Title            string `json:"title,omitempty"`        // 简明缺陷标题
-	AttackHypothesis string `json:"attack_hypothesis"`      // 攻击路径假设与漏洞成因
-	SuspectedTrigger string `json:"suspected_trigger"`      // 疑似触发条件
+	Category         string `json:"category,omitempty"`          // 标准受控分类字段
+	Title            string `json:"title,omitempty"`             // 简明缺陷标题
+	TriggerCondition string `json:"trigger_condition,omitempty"` // 触发诱因与成因（中性健壮性术语）
+	AttackHypothesis string `json:"attack_hypothesis,omitempty"` // 兼容历史字段：攻击路径假设与漏洞成因
+	SuspectedTrigger string `json:"suspected_trigger,omitempty"` // 疑似触发条件
+}
+
+// NormalizeAlignFields 双向对齐触发机理与攻击假设字段，确保新老版本平滑兼容
+func (h *HunterCandidate) NormalizeAlignFields() {
+	if h.TriggerCondition == "" && h.AttackHypothesis != "" {
+		h.TriggerCondition = h.AttackHypothesis
+	}
+	if h.AttackHypothesis == "" && h.TriggerCondition != "" {
+		h.AttackHypothesis = h.TriggerCondition
+	}
+	if h.SuspectedTrigger == "" && h.TriggerCondition != "" {
+		h.SuspectedTrigger = h.TriggerCondition
+	}
 }
 
 // GetCategory 返回候选缺陷的有效分类
