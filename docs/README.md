@@ -1,62 +1,108 @@
 # Code-Shield 项目文档中心 (Documentation Center)
 
-本目录为 Code-Shield 系统的官方技术文档库，收录系统架构演进设计、模块专项规范与运维指南。
+本目录为 Code-Shield 系统的官方技术文档库与知识中枢。基于**面向未来的全数字序列化架构（01~05 顶级领域 + 01~06 业务子域 + 01~0N 深度文档）**组织，实现“活文档规范（Living Specs）”与“历史演进归档（Archive）”的分层解耦。
 
 ---
 
-## 📚 目录结构与专题导读
+## 🗺️ 全局文档知识拓扑地图 (Overview Matrix)
 
-```
-docs/
-├── README.md                                          # 本文档：文档中心首页索引
-├── CodeShield-智能扫描引擎与任务配置使用手册.md         # 📖【用户操作指南】5大执行模式选型、JSON配置模版与FAQ
-├── agentic-scanner-architecture/                      # 🛡️【专题一】基于多 Agent 协同与异构调度的下一代扫描架构
-│   ├── README.md                                      # 架构方案总览与导航
-│   ├── 与AI结对架构设计实战指南-CodeShield案例复盘.md    # 🌟【培训复盘】如何与 AI 深度结对完成系统级架构设计的实战方法论
-│   ├── 01-fmt扫描实证比对与缺陷复盘报告.md              # 真实扫描比对、8大缺陷源码核实与 ASan 实测
-│   ├── 02-CodeShield-下一代AI引擎架构设计.md           # 语义分片、任务自适应路由、三方辩论与定级校准
-│   ├── 03-CodeShield-异构模型流水线与DAG调度器设计.md   # 异构模型阶梯调度、动态 DAG 任务拓扑与 SSOT 指纹记忆
-│   ├── 04-CodeShield-架构演进与落地实施路线图.md        # 三阶段落地规划、实施甘特图与基准测试 KPI 体系
-│   ├── 05-CodeShield-智能体协作与异构调度深度设计.md    # [阶段二专项] 猎手/辩护/法官三方协议、完整Prompt与Go实现
-│   ├── 06-CodeShield-多任务企业治理与历史记忆闭环深度设计.md # [阶段三专项] 全任务指纹算法、增量Diff状态机与10大规则库
-│   └── 07-CodeShield-数据模型与系统配置变更设计.md      # [工程配套专项] 数据库 DDL、GORM 模型扩展与 config.yaml 规范
-├── multi-tenancy-architecture/                        # 🏢【专题二】多租户系统架构与资源动态调度设计
-│   ├── README.md                                      # 多租户方案总览与设计导航
-│   ├── 01-多租户隔离方案评估与分库架构选型.md
-│   ├── 02-GORM动态分库路由与连接池管理深度设计.md
-│   ├── 03-租户模型服务资源隔离与动态调度设计.md
-│   ├── 04-代码仓凭据保险库与工作区安全沙箱.md
-│   ├── 05-租户自定义任务类型与动态规则扩展设计.md
-│   ├── 06-多租户系统迁移运维与实施路线图.md
-│   └── 07-租户分层配置与动态热加载深度设计.md
-├── native-llm-architecture/                           # ⚡【专题三】原生 LLM 轻量执行引擎与混合调用架构设计
-│   ├── README.md                                      # 原生 LLM 引擎方案总览与导航
-│   └── 01-CodeShield-原生LLM轻量执行引擎与混合调用架构设计.md # 🌟【核心设计】原生轻量 LLM 引擎、6大单轮场景与动静分离混合调用
-├── deterministic-fingerprint-architecture/            # 🧬【专题四】确定性源码指纹与抗抖动增量生命周期架构设计
-│   ├── README.md                                      # 确定性指纹架构方案总览与导航
-│   └── 01-确定性源码指纹与抗抖动增量生命周期架构设计.md # 🌟【核心设计】物理源码感知器、三级指纹分层、受控Taxonomy归一化与防假修复状态机
-└── services-modular-architecture/                     # 🏗️【专题五】Services 核心服务层领域模块化与解耦重构设计
-    ├── README.md                                      # 重构方案总览、量化目标与导航
-    ├── 01-Services核心服务层代码现状全景与技术债务诊断报告.md # 46个平铺文件现状、1.6万行代码分布与6大技术债务深度剖析
-    ├── 02-Services领域驱动子包化重构设计与契约规范.md  # 7大自治领域子包划分、EngineContext解耦契约与Facade门面设计
-    ├── 03-分阶段平滑演进路线图与安全落地实施方案.md    # 4阶段渐进演进计划、甘特图、零破坏验证指令与回滚防线
-    └── 04-扫描引擎与执行流水线职责边界与协同模型深度设计.md # 引擎与流水线正交解耦、6大执行阶段、断点续跑归位与协同协议
+```text
+code-shield/docs/
+├── README.md                                             # 📖 全局文档中心索引与各模块直达地图 (本文档)
+│
+├── 01-guides/                                            # 🛠️【使用与运维指南】(面向使用者与运维)
+│   ├── README.md                                         # 指南导航与快速配置通道
+│   └── 01-智能扫描引擎与任务配置使用手册.md                 # 5大执行模式选型、JSON配置模版与FAQ
+│
+├── 02-architecture/                                      # 🏛️【现行核心系统架构与领域设计 (SSOT)】
+│   ├── README.md                                         # 现行物理拓扑、双层调度主轴与领域模型总览
+│   │
+│   ├── 01-core-pipeline/                                 # 🔄【核心流水线与服务层】
+│   │   ├── README.md                                     # 服务层拓扑与生命周期契约导航
+│   │   ├── 01-Services领域驱动子包化重构设计与契约规范.md   # 7大自治领域子包、EngineContext与Facade门面
+│   │   └── 02-扫描引擎与执行流水线职责边界与协同模型深度设计.md # 算法专家 vs 流程管家、6阶段流转与协同协议
+│   │
+│   ├── 02-scanner-engines/                               # 🤖【智能扫描引擎集群】
+│   │   ├── README.md                                     # 引擎集群总览与选型决策
+│   │   ├── 01-下一代AI扫描引擎与多Agent对抗辩论设计.md     # 猎手/辩护人/仲裁官三权分立与定级校准
+│   │   ├── 02-原生LLM轻量执行引擎与动静分离混合调用设计.md  # 原生 HTTP REST API 引擎与单轮混合调用
+│   │   └── 03-智能体协作与异构调度深度设计.md              # 猎手/辩护/法官三方交互协议、Prompt与Go实现
+│   │
+│   ├── 03-dispatcher/                                    # ⚡【物理算力池与任务调度】
+│   │   ├── README.md                                     # 调度器与算力拓扑总览
+│   │   └── 01-异构模型流水线与DAG调度器设计.md             # Tier 1/2/3 异构阶梯调度与 DAG 执行拓扑
+│   │
+│   ├── 04-fingerprint-governance/                        # 🧬【确定性指纹与缺陷治理闭环】
+│   │   ├── README.md                                     # 指纹与治理子系统总览
+│   │   ├── 01-确定性源码指纹与抗抖动增量生命周期架构设计.md # SourceAnchor 真实源提取、三级指纹分层体系
+│   │   ├── 02-下一代确定性缺陷生命周期与空间几何对齐架构设计.md # 行号漂移抵御、几何窗口对齐与防假修复状态机
+│   │   ├── 03-基于现网实测的确定性指纹演进与多任务通用分类收敛设计.md # 10大任务白名单与跨引擎分类收敛
+│   │   ├── 04-多任务企业治理与历史记忆闭环深度设计.md       # 增量 Diff 状态机、误报记忆与人机反馈沉淀
+│   │   └── 05-同一代码仓多次扫描问题清单的系统化对账与增量治理架构设计.md # 对账引擎、仲裁逻辑与多快照一致性核验
+│   │
+│   ├── 05-multi-tenancy/                                 # 🏢【多租户与隔离治理体系】
+│   │   ├── README.md                                     # 多租户架构总览
+│   │   ├── 01-GORM动态分库路由与连接池管理深度设计.md       # 多租户分库隔离、动态路由与连接池生命周期
+│   │   ├── 02-租户模型服务资源隔离与动态调度设计.md         # 租户配额、优先级与多租户并发流控
+│   │   ├── 03-代码仓凭据保险库与工作区安全沙箱.md           # Vault 凭据隔离与 Git 临时工作区沙箱安全
+│   │   └── 04-租户分层配置与动态热加载深度设计.md           # 系统/租户/项目三级配置覆盖与热加载机制
+│   │
+│   └── 06-data-models/                                   # 🗄️【数据资产与配置契约】
+│       ├── README.md                                     # 数据字典与配置规范总览
+│       └── 01-CodeShield-数据模型与系统配置变更设计.md      # 核心表 DDL 变更、GORM 映射与 config.yaml 规范
+│
+├── 03-rfcs/                                              # 📜【架构决策记录与演进提案】(ADRs / RFCs)
+│   ├── README.md                                         # RFC 机制规程、生命周期状态说明与模版
+│   ├── RFC-001-多租户隔离方案评估与分库架构选型.md         # 经典 ADR：物理分库 vs 字段隔离的权衡与选型
+│   ├── RFC-002-AI执行引擎与企业治理配置架构优化设计.md     # 原生直连替代重型框架的决策推演
+│   └── RFC-003-租户自定义任务类型与动态规则扩展设计.md     # 插件化规则与扩展性演进提案
+│
+├── 04-reports/                                           # 📊【实证基准、复盘检视与交付里程碑】(不可变归档)
+│   ├── README.md                                         # 报告归档总览
+│   │
+│   ├── 01-benchmarks/                                    # 📈 实证比对与基准测试 (Benchmarks)
+│   │   ├── README.md                                     # 样本基准导航
+│   │   └── 01-fmt扫描实证比对与缺陷复盘报告.md             # 真实扫描比对、8大缺陷核实与 ASan 实测
+│   │
+│   ├── 02-post-mortems/                                  # 🔍 线上问题与技术债务复盘 (Post-mortems)
+│   │   ├── README.md                                     # 根因复盘导航
+│   │   ├── 01-实测复盘-现网连续扫描重复缺陷无法识别归因分析报告.md # 缺陷归因排查、真实用例复现与修复推导
+│   │   └── 02-Services核心服务层代码现状全景与技术债务诊断报告.md # 46个平铺文件现状画像与6大技术债务深度剖析
+│   │
+│   └── 03-milestones/                                    # 🏁 重大攻坚全景复盘与演进路线图 (Milestones)
+│       ├── README.md                                     # 历史攻坚里程碑导航
+│       ├── 01-服务层模块化架构重构全景实施总结与复盘检视报告.md # 🏆 7大提交里程碑、六大维度深度代码检视与最终质量大盘
+│       ├── 02-CodeShield-架构演进与落地实施路线图.md       # AI 扫描引擎三阶段落地路线图
+│       ├── 03-多租户系统迁移运维与实施路线图.md            # 多租户系统迁移运维与实施路线图
+│       └── 04-服务层分阶段平滑演进路线图与安全落地实施方案.md     # Services 重构分阶段平滑演进路线图
+│
+└── 05-methodology/                                       # 💡【工程方法论与研发效能实践】
+    ├── README.md                                         # 方法论导航
+    └── 01-与AI结对架构设计实战指南-CodeShield案例复盘.md   # 🌟 如何与 AI 深度结对完成系统级架构设计的实战方法论
 ```
 
 ---
 
-## 🚀 核心文档直达
+## 🎯 按读者角色直达导航 (Role-Based Reading Paths)
 
-1. 📖 **[Code-Shield 智能扫描引擎与任务配置使用手册](CodeShield-智能扫描引擎与任务配置使用手册.md)**
-   涵盖 5 大执行模式（`debate_full`、`debate_selective`、`chunked_fast`、`chunked`、`single`）选型决策、`engine_config` 增量配置模版库、Tier 模型分层调度与研发反馈沉淀指南。
-2. 🛡️ **[下一代 Agent 扫描架构设计总览 (agentic-scanner-architecture/README.md)](agentic-scanner-architecture/README.md)**
-   收录完整的系统架构方案演进、学术级设计规范（01~07）与 AI 结对工程复盘。
-3. 🏢 **[多租户系统架构设计方案总览 (multi-tenancy-architecture/README.md)](multi-tenancy-architecture/README.md)**
-   收录分库多租户物理隔离、连接池动态路由、数据凭据沙箱与实施路线图（01~07）。
-4. ⚡ **[原生 LLM 轻量执行引擎与混合调用架构 (native-llm-architecture/README.md)](native-llm-architecture/README.md)**
-   收录原生 HTTP REST API 轻量引擎设计、5 大单轮任务场景分析与“探索型 Agent + 原生 LLM”动静分离混合调用体系。
-5. 🧬 **[确定性源码指纹与抗抖动增量生命周期架构 (deterministic-fingerprint-architecture/README.md)](deterministic-fingerprint-architecture/README.md)**
-   收录物理源码真实源提取（`SourceEnricher`）、三级指纹分层体系、受控 Taxonomy 归一化与代码变更守卫防假修复状态机。
-6. 🏗️ **[Services 核心服务层领域模块化与解耦重构设计 (services-modular-architecture/README.md)](services-modular-architecture/README.md)**
-   收录 Services 核心服务层 46 个平铺文件量化体检画像、6 大核心技术债务诊断、7 大领域子包规范、EngineContext 解耦契约、扫描引擎与执行流水线职责边界与协同模型（01~04）。
+### 1. 🛠️ 平台使用者与运维工程师 (Users & Operators)
+*   **快速上手与执行模式选型**：👉 [01-智能扫描引擎与任务配置使用手册](01-guides/01-智能扫描引擎与任务配置使用手册.md)（掌握 5 大模式、参数配置与常见排障）。
+*   **多租户与数据凭据安全**：👉 [03-代码仓凭据保险库与工作区安全沙箱](02-architecture/05-multi-tenancy/03-代码仓凭据保险库与工作区安全沙箱.md)。
 
+### 2. 💻 核心业务与引擎开发者 (Core Engineers)
+*   **服务层子包划分与调用门面**：👉 [01-Services领域驱动子包化重构设计与契约规范](02-architecture/01-core-pipeline/01-Services领域驱动子包化重构设计与契约规范.md)。
+*   **引擎契约与生命周期协同**：👉 [02-扫描引擎与执行流水线职责边界与协同模型深度设计](02-architecture/01-core-pipeline/02-扫描引擎与执行流水线职责边界与协同模型深度设计.md)。
+*   **多 Agent 辩论引擎与 Prompt**：👉 [01-下一代AI扫描引擎与多Agent对抗辩论设计](02-architecture/02-scanner-engines/01-下一代AI扫描引擎与多Agent对抗辩论设计.md) 及 [03-智能体协作与异构调度深度设计](02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md)。
+*   **确定性物理指纹提取**：👉 [01-确定性源码指纹与抗抖动增量生命周期架构设计](02-architecture/04-fingerprint-governance/01-确定性源码指纹与抗抖动增量生命周期架构设计.md)。
+
+### 3. 🏛️ 系统架构师与技术委员会 (Architects & Tech Committee)
+*   **异构算力调度与 DAG 拓扑**：👉 [01-异构模型流水线与DAG调度器设计](02-architecture/03-dispatcher/01-异构模型流水线与DAG调度器设计.md)。
+*   **动态分库路由与连接池**：👉 [01-GORM动态分库路由与连接池管理深度设计](02-architecture/05-multi-tenancy/01-GORM动态分库路由与连接池管理深度设计.md)。
+*   **经典架构选型决策 (ADR)**：👉 [RFC-001-多租户隔离方案评估与分库架构选型](03-rfcs/RFC-001-多租户隔离方案评估与分库架构选型.md)。
+*   **服务层重构复盘与质量指标**：👉 [01-服务层模块化架构重构全景实施总结与复盘检视报告](04-reports/03-milestones/01-服务层模块化架构重构全景实施总结与复盘检视报告.md)。
+
+---
+
+## 📌 历史专题目录过渡说明
+
+> ⚠️ **温馨提示**：为兼容外部书签与历史代码注释引用，原平铺专题目录（`agentic-scanner-architecture/`、`deterministic-fingerprint-architecture/`、`multi-tenancy-architecture/`、`native-llm-architecture/`、`services-modular-architecture/`）已保留过渡导航说明，具体文档均已平滑升级迁移至上述各标准领域目录下。

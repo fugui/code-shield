@@ -43,7 +43,7 @@ gantt
 
 ### 阶段二：智能体协作与异构调度 (Phase 2: Multi-Agent & Heterogeneous Dispatching)
 
-> 💡 **专项深入设计**：关于智能体交互协议、对抗提示词工程（Prompt Engineering）全集及 Go 代码级实现，请参阅 [05-CodeShield-智能体协作与异构调度深度设计.md](05-CodeShield-智能体协作与异构调度深度设计.md)。
+> 💡 **专项深入设计**：关于智能体交互协议、对抗提示词工程（Prompt Engineering）全集及 Go 代码级实现，请参阅 [../../02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md](../../02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md)。
 
 *   **核心目标**：解决单模型视野局限与漏报问题，通过快慢模型阶梯调度大幅降低运行成本并提升检出深度。
 *   **具体实施项**：
@@ -74,7 +74,7 @@ gantt
 
 ### 阶段三：多任务企业级治理与历史记忆闭环 (Phase 3: Multi-Task Governance & Continuous Memory)
 
-> 💡 **专项深入设计**：关于通用缺陷指纹算法、增量 Diff 状态机、人机反馈记忆闭环及 10 类任务领域规则矩阵，请参阅 [06-CodeShield-多任务企业治理与历史记忆闭环深度设计.md](06-CodeShield-多任务企业治理与历史记忆闭环深度设计.md)。
+> 💡 **专项深入设计**：关于通用缺陷指纹算法、增量 Diff 状态机、人机反馈记忆闭环及 10 类任务领域规则矩阵，请参阅 [../../02-architecture/04-fingerprint-governance/04-多任务企业治理与历史记忆闭环深度设计.md](../../02-architecture/04-fingerprint-governance/04-多任务企业治理与历史记忆闭环深度设计.md)。
 
 *   **核心目标**：覆盖全量 10 类任务类型（架构治理、单测质量、逻辑隐患、内存安全等），构建跨任务的增量追踪、存量治理与人机反馈知识沉淀闭环。
 *   **具体实施项**：
