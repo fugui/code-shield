@@ -114,6 +114,7 @@ loop:
 
 			if chunkErr != nil {
 				detail.Status = "failed"
+				detail.Attempts = 4 // 1 initial + 3 retries
 				detail.ErrorMessage = chunkErr.Error()
 				errMu.Lock()
 				chunkErrors = append(chunkErrors, fmt.Sprintf("chunk %q: %v", chunkName, chunkErr))

@@ -1,9 +1,7 @@
-package services
+package defects
 
 import (
 	"code-shield/models"
-	"crypto/sha256"
-	"encoding/hex"
 	"log"
 	"os"
 	"path/filepath"
@@ -116,7 +114,7 @@ func DiffAndEnrichFindings(repoID uint, taskReportID uint, taskTypeID uint, scan
 		seenInThisScan[fp] = true
 
 		// ── Tier 1: 物理强指纹纳秒级精准 Hash 匹配 ──
-		if record, exists := recordMap[fp]; exists && !claimedRecordIDs[record.ID] {
+		if record, exists := recordMap[fp]; exists {
 			claimedRecordIDs[record.ID] = true
 			if record.Status == models.DiffStatusResolved || record.Status == models.DiffStatusVerifiedPending {
 				f.DiffStatus = models.DiffStatusReopened // 复发
@@ -367,14 +365,4 @@ func DiffAndEnrichFindings(repoID uint, taskReportID uint, taskTypeID uint, scan
 	})
 
 	return enrichedList, nil
-}
-
-// ComputeCleanTokenHash 辅助计算代码段清洗后的哈希
-func ComputeCleanTokenHash(body string) string {
-	clean := CleanSourceToken(body)
-	if clean == "" {
-		return ""
-	}
-	hash := sha256.Sum256([]byte(clean))
-	return hex.EncodeToString(hash[:])
 }
