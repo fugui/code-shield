@@ -1,4 +1,4 @@
-package services
+package queue
 
 import (
 	"code-shield/models"
@@ -20,17 +20,6 @@ import (
 
 // ErrSkipped 在前置条件未满足时返回，映射自 runner 子包
 var ErrSkipped = runner.ErrSkipped
-
-type Task struct {
-	RepoID     uint
-	ReportID   uint
-	RepoURL    string
-	TaskTypeID uint
-	AutoNotify bool
-	LogID      uint             // ID of TaskExecutionLog
-	RunParams  models.RunParams // 运行时参数（从 ScheduleConfig 传入）
-	IsResume   bool             // true 时 worker 调用 ResumeFailedChunks 而非 RunTaskSync
-}
 
 // workerNotifyChan 用于在新任务入队时即时唤醒空闲 Worker
 var workerNotifyChan = make(chan struct{}, 1)
@@ -330,9 +319,9 @@ func worker(id int) {
 
 		var err error
 		if task.IsResume {
-			err = ResumeFailedChunks(task.ReportID)
+			err = runner.ResumeFailedChunks(task.ReportID)
 		} else {
-			err = RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
+			err = runner.RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
 		}
 
 		now := time.Now()
@@ -370,6 +359,7 @@ func worker(id int) {
 	}
 }
 
+// UpdateTaskExecutionLog 更新执行日志状态
 func UpdateTaskExecutionLog(logID uint, status string, errMsg string) {
 	now := time.Now()
 	updates := map[string]interface{}{

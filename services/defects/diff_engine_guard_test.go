@@ -1,4 +1,4 @@
-package services
+package defects
 
 import (
 	"code-shield/models"

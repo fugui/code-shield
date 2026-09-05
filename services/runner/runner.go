@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"code-shield/models"
+	"code-shield/services/defects"
 	"code-shield/services/engines"
 	"code-shield/services/governance"
 
@@ -19,9 +20,6 @@ import (
 var (
 	activeTasksMu sync.Mutex
 	activeTasks   = make(map[uint]*TaskContext) // reportID -> TaskContext
-
-	// FindingEnricher 可选的增量缺陷比对注入器，由上层服务包装配，避免 runner 逆向依赖根包
-	FindingEnricher func(repoID, reportID, taskTypeID uint, findings []models.AnalysisFinding, codesPath string) ([]models.AnalysisFinding, error)
 )
 
 // CancelRunningTask 取消正在执行的任务
@@ -186,10 +184,8 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		SynthesisExecutor: func(findings []models.AnalysisFinding) error {
 			// 严重级别确定性校准
 			findings = governance.CalibrateFindings(findings)
-			// 增量指纹比对（若已装配）
-			if FindingEnricher != nil {
-				findings, _ = FindingEnricher(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, findings, ctx.CodesPath)
-			}
+			// 增量指纹比对与跨任务状态机打标
+			findings, _ = defects.DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, nil, findings, ctx.CodesPath)
 			ctx.Findings = findings
 			return ExecuteSynthesis(ctx, findings)
 		},

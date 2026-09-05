@@ -706,6 +706,10 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 2}
 		RegisterAIInvoker(mockBackend, invoker)
 
+		oldTier1 := models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter
+		models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
+
 		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
 		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
 		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
@@ -758,6 +762,10 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		mockBackend := "mock_synthesis_always_fail_backend"
 		invoker := &MockSynthesisAIInvoker{FailSynthesisN: 5}
 		RegisterAIInvoker(mockBackend, invoker)
+
+		oldTier1 := models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter
+		models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
 
 		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
 		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
@@ -813,6 +821,10 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		mockBackend := "mock_synthesis_empty_file_backend"
 		invoker := &MockSynthesisAIInvoker{WriteEmpty: true}
 		RegisterAIInvoker(mockBackend, invoker)
+
+		oldTier1 := models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter
+		models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
 
 		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
 		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}

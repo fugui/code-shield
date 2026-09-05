@@ -117,7 +117,8 @@ func (e *SingleEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 
 	if ctx.SynthesisExecutor != nil {
 		if synthErr := ctx.SynthesisExecutor(findings); synthErr != nil {
-			log.Printf("[SingleEngine] Warning: SynthesisExecutor failed: %v", synthErr)
+			log.Printf("[SingleEngine] Error: SynthesisExecutor failed: %v", synthErr)
+			return result, synthErr
 		}
 	}
 
