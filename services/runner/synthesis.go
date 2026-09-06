@@ -298,9 +298,9 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 // ExecuteSynthesisOnce 单次执行报告合成大模型调用
 func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPrompt string) error {
 	router := dispatcher.GetTierRouter()
-	acq, err := router.AcquireTier(ctx.Ctx, "tier3_synthesis", "")
+	acq, err := router.AcquireTier(ctx.Ctx, "tier4_synthesis", "")
 	if err != nil {
-		return fmt.Errorf("failed to acquire tier3_synthesis compute resource: %w", err)
+		return fmt.Errorf("failed to acquire tier4_synthesis compute resource: %w", err)
 	}
 	defer acq.Release()
 
@@ -310,7 +310,7 @@ func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPro
 		backend = models.AppConfig.AI.Backend
 	}
 
-	tierCfg := models.AppConfig.GetTierConfig("tier3_synthesis")
+	tierCfg := models.AppConfig.GetTierConfig("tier4_synthesis")
 	if modelName == "" {
 		modelName = tierCfg.Model
 	}
@@ -344,7 +344,7 @@ func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPro
 			ReportID: ctx.Report.ID,
 			RepoName: ctx.Repo.Name,
 			TaskType: ctx.TaskType.DisplayName,
-			Stage:    "Tier 3: 全仓态势汇总",
+			Stage:    "Tier 4: 全仓态势汇总",
 			SubTask:  "聚合分片发现并生成 Markdown 诊断报告",
 		},
 	}

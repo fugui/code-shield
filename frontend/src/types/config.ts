@@ -43,8 +43,11 @@ export interface TierBinding {
 
 export interface DebateTiers {
   tier1_hunter: TierBinding;
-  tier2_reasoning: TierBinding;
-  tier3_synthesis: TierBinding;
+  tier2_challenger?: TierBinding;
+  tier3_judge?: TierBinding;
+  tier4_synthesis?: TierBinding;
+  tier2_reasoning?: TierBinding;
+  tier3_synthesis?: TierBinding;
 }
 
 export interface DebateConfig {

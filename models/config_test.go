@@ -147,11 +147,21 @@ func TestLoadConfigNewFormat(t *testing.T) {
 	if AppConfig.Scanner.Debate.Tiers.Tier1Hunter.Resource != "agy" {
 		t.Errorf("expected Tier1Hunter resource 'agy', got %q", AppConfig.Scanner.Debate.Tiers.Tier1Hunter.Resource)
 	}
-	if AppConfig.Scanner.Debate.Tiers.Tier2Reasoning.Resource != "agy" {
-		t.Errorf("expected Tier2Reasoning resource 'agy', got %q", AppConfig.Scanner.Debate.Tiers.Tier2Reasoning.Resource)
+	if AppConfig.Scanner.Debate.Tiers.Tier2Challenger.Resource != "native" {
+		t.Errorf("expected Tier2Challenger resource 'native', got %q", AppConfig.Scanner.Debate.Tiers.Tier2Challenger.Resource)
+	}
+	if AppConfig.Scanner.Debate.Tiers.Tier3Judge.Resource != "agy" {
+		t.Errorf("expected Tier3Judge resource 'agy', got %q", AppConfig.Scanner.Debate.Tiers.Tier3Judge.Resource)
+	}
+	if AppConfig.Scanner.Debate.Tiers.Tier4Synthesis.Resource != "native" {
+		t.Errorf("expected Tier4Synthesis resource 'native', got %q", AppConfig.Scanner.Debate.Tiers.Tier4Synthesis.Resource)
+	}
+	// 验证旧别名已自动双向补齐
+	if AppConfig.Scanner.Debate.Tiers.Tier2Reasoning.Resource == "" {
+		t.Errorf("expected Tier2Reasoning to be automatically backfilled")
 	}
 	if AppConfig.Scanner.Debate.Tiers.Tier3Synthesis.Resource != "native" {
-		t.Errorf("expected Tier3Synthesis resource 'native', got %q", AppConfig.Scanner.Debate.Tiers.Tier3Synthesis.Resource)
+		t.Errorf("expected Tier3Synthesis to be automatically backfilled")
 	}
 
 	// 3. 验证 Governance
@@ -167,19 +177,44 @@ func TestLoadConfigNewFormat(t *testing.T) {
 		t.Errorf("expected non-empty Notification.Webhook")
 	}
 
-	// 5. 验证 GetTierConfig 与 GetTierResources 正常从新格式解析
+	// 5. 验证 4 阶梯与旧版别名的 GetTierConfig 与 GetTierResources 正常解析
 	tier1 := AppConfig.GetTierConfig("tier1_fast")
 	if tier1.Backend != "agy" || tier1.TimeoutSeconds != 1200 {
 		t.Errorf("unexpected tier1 config: %+v", tier1)
 	}
-	tier3 := AppConfig.GetTierConfig("tier3_synthesis")
-	if tier3.Backend != "native" || tier3.TimeoutSeconds != 300 {
-		t.Errorf("unexpected tier3 config: %+v", tier3)
+	tier2Challenger := AppConfig.GetTierConfig("tier2_challenger")
+	if tier2Challenger.Backend != "native" || tier2Challenger.TimeoutSeconds != 1200 {
+		t.Errorf("unexpected tier2_challenger config: %+v", tier2Challenger)
+	}
+	tier3Judge := AppConfig.GetTierConfig("tier3_judge")
+	if tier3Judge.Backend != "agy" || tier3Judge.TimeoutSeconds != 1800 {
+		t.Errorf("unexpected tier3_judge config: %+v", tier3Judge)
+	}
+	tier4 := AppConfig.GetTierConfig("tier4_synthesis")
+	if tier4.Backend != "native" || tier4.TimeoutSeconds != 300 {
+		t.Errorf("unexpected tier4 config: %+v", tier4)
+	}
+	// 验证旧别名调用正常解析
+	tier3Legacy := AppConfig.GetTierConfig("tier3_synthesis")
+	if tier3Legacy.Backend != "native" || tier3Legacy.TimeoutSeconds != 300 {
+		t.Errorf("unexpected legacy tier3 config: %+v", tier3Legacy)
 	}
 
 	// 6. 验证 Tier 1 多资源池切片
 	tier1Res := AppConfig.GetTierResources("tier1_hunter")
 	if len(tier1Res) != 2 || tier1Res[0] != "agy" || tier1Res[1] != "opencode" {
 		t.Errorf("expected tier1 resources ['agy', 'opencode'], got %+v", tier1Res)
+	}
+
+	// 7. 验证独立配置向下兼容（如果只有旧版 tier2_reasoning，tier2_challenger 与 tier3_judge 均自动回退）
+	legacyCfg := Config{}
+	legacyCfg.Scanner.Debate.Tiers.Tier2Reasoning = TierBindingConfig{Resource: "test-legacy", TimeoutSeconds: 999}
+	legacyChall := legacyCfg.GetTierConfig("tier2_challenger")
+	if legacyChall.Backend != "test-legacy" || legacyChall.TimeoutSeconds != 999 {
+		t.Errorf("expected fallback to tier2_reasoning, got %+v", legacyChall)
+	}
+	legacyJudge := legacyCfg.GetTierConfig("tier3_judge")
+	if legacyJudge.Backend != "test-legacy" || legacyJudge.TimeoutSeconds != 999 {
+		t.Errorf("expected fallback to tier2_reasoning, got %+v", legacyJudge)
 	}
 }

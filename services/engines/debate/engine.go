@@ -481,13 +481,13 @@ func (e *DebateEngine) runChallengerStage(ctx *engines.EngineContext, bundle chu
 	}
 
 	router := dispatcher.GetTierRouter()
-	acq, err := router.AcquireTier(ctx.Ctx, "tier2_reasoning", "")
+	acq, err := router.AcquireTier(ctx.Ctx, "tier2_challenger", "")
 	if err != nil {
 		return nil, 0, err
 	}
 	defer acq.Release()
 
-	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
+	tierCfg := models.AppConfig.GetTierConfig("tier2_challenger")
 
 	var batches [][]HunterCandidate
 	for i := 0; i < len(hunterOut.Candidates); i += defaultMaxCandidatesPerBatch {
@@ -581,13 +581,13 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 	}
 
 	router := dispatcher.GetTierRouter()
-	acq, err := router.AcquireTier(ctx.Ctx, "tier2_reasoning", "")
+	acq, err := router.AcquireTier(ctx.Ctx, "tier3_judge", "")
 	if err != nil {
 		return nil, 0, err
 	}
 	defer acq.Release()
 
-	tierCfg := models.AppConfig.GetTierConfig("tier2_reasoning")
+	tierCfg := models.AppConfig.GetTierConfig("tier3_judge")
 
 	caseMap := make(map[string]ChallengerDefenseCase)
 	for _, dc := range challOut.DefenseCases {
@@ -642,7 +642,7 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 			ReportID: ctx.ReportID,
 			RepoName: ctx.RepoName,
 			TaskType: ctx.TaskTypeName,
-			Stage:    "Tier 2: 终审法官 (Judge)",
+			Stage:    "Tier 3: 终审法官 (Judge)",
 			SubTask:  fmt.Sprintf("批次 %d/%d (裁决点 %d 个)", bIdx+1, len(batches), len(batch)),
 		}
 		rawOutput, tokens, callErr := callAITier(ctx.Ctx, acq.Backend, acq.ModelName, prompt, ctx.CodesPath, subOutPath, tierCfg.TimeoutSeconds, workCtx)
