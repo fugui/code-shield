@@ -9,7 +9,13 @@ interface DebateVerdictViewProps {
   className?: string;
 }
 
-interface ParsedDebateSection {
+export interface ParsedNumberedItem {
+  index: number;
+  title?: string;
+  content: string;
+}
+
+export interface ParsedDebateSection {
   type: 'facts' | 'verification' | 'evidence' | 'reference' | 'defense' | 'mitigations' | 'verdict' | 'other';
   title: string;
   icon: string;
@@ -17,9 +23,10 @@ interface ParsedDebateSection {
   borderColor: string;
   bgColor: string;
   content: string;
+  items?: ParsedNumberedItem[];
 }
 
-interface ParsedDebateResult {
+export interface ParsedDebateResult {
   isDebate: boolean;
   intro: string;
   verdictBadge?: {
@@ -50,12 +57,12 @@ function renderInlineFormattedText(text: string): React.ReactNode {
         <code
           key={index}
           style={{
-            background: 'var(--color-bg-muted, rgba(15, 23, 42, 0.06))',
-            color: 'var(--color-primary, #2563eb)',
-            padding: '0.12rem 0.35rem',
-            borderRadius: '4px',
+            background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.05))',
+            color: 'var(--color-primary, #3b82f6)',
+            padding: '0.12rem 0.38rem',
+            borderRadius: 'var(--radius-xs, 4px)',
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-            fontSize: '0.85em',
+            fontSize: '0.86em',
             border: '1px solid var(--color-border-primary, rgba(148, 163, 184, 0.2))',
             wordBreak: 'break-all',
           }}
@@ -65,26 +72,29 @@ function renderInlineFormattedText(text: string): React.ReactNode {
       );
     }
 
-    // 2. 对非反引号部分，智能识别 文件名:行号、std::、nullptr 等常见标识
-    const subParts = part.split(/(\b[\w./\\-]+\.[a-zA-Z0-9]+:\d+(?:-\d+)?\b|\b(?:nullptr|NULL|SIGSEGV|ASan|exit \d+|std::\w+|fmt::\w+|cstring_type)\b)/g);
+    // 2. 对非反引号部分，智能识别常见代码符号与标识
+    const subParts = part.split(
+      /(\b[\w./\\-]+\.[a-zA-Z0-9]+:\d+(?:-\d+)?\b|\b(?:nullptr|NULL|SIGSEGV|ASan|AddressSanitizer|DEADLYSIGNAL|SEGV|EOF|putc_unlocked|_IO_write_ptr|_IO_buf_base|ferror|exit \d+|std::\w+|fmt::\w+|cstring_type)\b|0x[0-9a-fA-F]+)/g
+    );
 
     return (
       <React.Fragment key={index}>
         {subParts.map((sub, sIdx) => {
           if (
             /^\b[\w./\\-]+\.[a-zA-Z0-9]+:\d+(?:-\d+)?\b$/.test(sub) ||
-            /^\b(?:nullptr|NULL|SIGSEGV|ASan|exit \d+|std::\w+|fmt::\w+|cstring_type)\b$/.test(sub)
+            /^\b(?:nullptr|NULL|SIGSEGV|ASan|AddressSanitizer|DEADLYSIGNAL|SEGV|EOF|putc_unlocked|_IO_write_ptr|_IO_buf_base|ferror|exit \d+|std::\w+|fmt::\w+|cstring_type)\b$/.test(sub) ||
+            /^0x[0-9a-fA-F]+$/.test(sub)
           ) {
             return (
               <code
                 key={sIdx}
                 style={{
-                  background: 'var(--color-bg-muted, rgba(15, 23, 42, 0.06))',
-                  color: 'var(--color-primary, #2563eb)',
-                  padding: '0.1rem 0.3rem',
-                  borderRadius: '3px',
+                  background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.05))',
+                  color: 'var(--color-primary, #3b82f6)',
+                  padding: '0.1rem 0.35rem',
+                  borderRadius: 'var(--radius-xs, 4px)',
                   fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                  fontSize: '0.85em',
+                  fontSize: '0.86em',
                   fontWeight: 500,
                   border: '1px solid var(--color-border-primary, rgba(148, 163, 184, 0.15))',
                 }}
@@ -101,7 +111,143 @@ function renderInlineFormattedText(text: string): React.ReactNode {
 }
 
 /**
- * 智能解析法官裁决与辩论长文本
+ * 将长文本中形如 "1. ... \n2. ... " 或 "1、... \n2、..." 的有序列表解析为结构化条目
+ */
+function parseNumberedItems(text: string): ParsedNumberedItem[] | null {
+  if (!text || !text.trim()) return null;
+
+  // 正则匹配每条编号项
+  const itemRegex = /(?:^|\n)\s*(\d+)[\.、\)]\s*([^\n]+(?:\n(?!\s*\d+[\.、\)]).*)*)/g;
+  const matches: { num: number; raw: string }[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = itemRegex.exec(text)) !== null) {
+    matches.push({
+      num: parseInt(m[1], 10),
+      raw: m[2].trim(),
+    });
+  }
+
+  // 至少包含 2 项才视为结构化编号列表
+  if (matches.length < 2) {
+    return null;
+  }
+
+  return matches.map((it) => {
+    // 检查是否有小标题，例如 "语法与语义核实：控方指控准确..."
+    const titleMatch = it.raw.match(/^([^：:\n]{2,25})[：:]([\s\S]*)$/);
+    if (titleMatch) {
+      return {
+        index: it.num,
+        title: titleMatch[1].trim(),
+        content: titleMatch[2].trim(),
+      };
+    }
+    return {
+      index: it.num,
+      content: it.raw,
+    };
+  });
+}
+
+/**
+ * 根据标签标题智能推断类型、图标、颜色与左边框高亮
+ */
+function classifySectionTag(rawTitle: string): {
+  type: ParsedDebateSection['type'];
+  title: string;
+  icon: string;
+  color: string;
+  borderColor: string;
+  bgColor: string;
+} {
+  const norm = rawTitle.trim();
+
+  // 1. 验证、实测、复现、崩溃、实证、危害
+  if (/实测|验证|复现|实证|poc|崩溃|危害|破坏|异常|违例|越界|下溢|溢出|segv|asan/i.test(norm)) {
+    return {
+      type: 'verification',
+      title: norm,
+      icon: '🧪',
+      color: 'var(--color-danger, #ef4444)',
+      borderColor: 'var(--color-danger, #ef4444)',
+      bgColor: 'var(--color-danger-subtle, rgba(239, 68, 68, 0.05))',
+    };
+  }
+
+  // 2. 证据、决定性、证据链、标准、ISO、判例
+  if (/证据|决定性|核心|链条|标准|iso|判例|一致性/i.test(norm)) {
+    return {
+      type: 'evidence',
+      title: norm,
+      icon: '🎯',
+      color: 'var(--color-purple, #a855f7)',
+      borderColor: 'var(--color-purple, #a855f7)',
+      bgColor: 'var(--color-purple-subtle, rgba(168, 85, 247, 0.05))',
+    };
+  }
+
+  // 3. 参考、对照、对比、替代
+  if (/参考|对照|对比|替代|实现/i.test(norm)) {
+    return {
+      type: 'reference',
+      title: norm,
+      icon: '⚖️',
+      color: 'var(--color-info, #0ea5e9)',
+      borderColor: 'var(--color-info, #0ea5e9)',
+      bgColor: 'var(--color-info-subtle, rgba(14, 165, 233, 0.05))',
+    };
+  }
+
+  // 4. 抗辩、辩护、响应、审理、争鸣
+  if (/抗辩|辩护|响应|审理|争鸣|反驳/i.test(norm)) {
+    return {
+      type: 'defense',
+      title: norm,
+      icon: '🛡️',
+      color: 'var(--color-warning, #f59e0b)',
+      borderColor: 'var(--color-warning, #f59e0b)',
+      bgColor: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.05))',
+    };
+  }
+
+  // 5. 缓和、缓解、约束、触发前提、前置条件
+  if (/缓和|缓解|约束|触发前提|前提|前置/i.test(norm)) {
+    return {
+      type: 'mitigations',
+      title: norm,
+      icon: '🌿',
+      color: 'var(--color-success, #10b981)',
+      borderColor: 'var(--color-success, #10b981)',
+      bgColor: 'var(--color-success-subtle, rgba(16, 185, 129, 0.05))',
+    };
+  }
+
+  // 6. 事实、源码、代码、成因、分析、认定、调查、假设、架构、定位、规范
+  if (/事实|源码|代码|成因|认定|分析|调查|假设|架构|定位|生命周期|状态|机制|契约|规范/i.test(norm)) {
+    return {
+      type: 'facts',
+      title: norm,
+      icon: '📌',
+      color: 'var(--color-primary, #3b82f6)',
+      borderColor: 'var(--color-primary, #3b82f6)',
+      bgColor: 'var(--color-primary-subtle, rgba(59, 130, 246, 0.05))',
+    };
+  }
+
+  // 7. 通用降级
+  return {
+    type: 'other',
+    title: norm,
+    icon: '📋',
+    color: 'var(--color-text-secondary, #94a3b8)',
+    borderColor: 'var(--color-border-primary, #334155)',
+    bgColor: 'var(--color-bg-muted, rgba(255, 255, 255, 0.03))',
+  };
+}
+
+/**
+ * 智能通配解析法官裁决与辩论长文本
  */
 function parseDebateContent(rawText: string): ParsedDebateResult {
   if (!rawText || !rawText.trim()) {
@@ -110,16 +256,19 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
 
   const text = rawText.trim();
 
-  // 判断是否具备法官裁决或结构化语义标记
+  // 判断是否属于结构化法官裁决或辩论流
   const hasJudgeKeywords =
     text.includes('【仲裁法官裁决词】') ||
     text.includes('仲裁法官裁决') ||
+    text.includes('【综合裁决】') ||
     text.includes('综合裁决') ||
-    text.includes('源码事实') ||
-    text.includes('实测验证') ||
-    text.includes('决定性证据') ||
-    text.includes('对照参考实现') ||
-    text.includes('缓和因素');
+    text.includes('【事实认定') ||
+    text.includes('【源码事实】') ||
+    text.includes('【成因与') ||
+    text.includes('【实测验证】') ||
+    text.includes('【决定性证据】') ||
+    text.includes('【抗辩响应】') ||
+    /CONFIRMED|CONDITIONAL|CHALLENGE_FAILED|DEFENSE_SUCCESSFUL/i.test(text);
 
   if (!hasJudgeKeywords) {
     return {
@@ -130,7 +279,7 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
     };
   }
 
-  // 1. 拆分前导概述与裁决正文
+  // 1. 拆分前导概述与主体内容
   let intro = '';
   let judgeBody = text;
 
@@ -146,195 +295,168 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
     }
   }
 
-  // 2. 定义识别锚点
-  const anchors: {
-    type: ParsedDebateSection['type'];
-    title: string;
-    icon: string;
-    color: string;
-    borderColor: string;
-    bgColor: string;
-    pattern: RegExp;
-  }[] = [
-    {
-      type: 'facts',
-      title: '源码事实',
-      icon: '📌',
-      color: '#2563eb',
-      borderColor: '#3b82f6',
-      bgColor: 'rgba(59, 130, 246, 0.04)',
-      pattern: /(?:【?(?:源码事实|代码事实|事实依据|事实调查)】?[：:]|源码事实[：:])/g,
-    },
-    {
-      type: 'verification',
-      title: '实测验证',
-      icon: '🧪',
-      color: '#dc2626',
-      borderColor: '#ef4444',
-      bgColor: 'rgba(239, 68, 68, 0.04)',
-      pattern: /(?:【?(?:实测验证|复现验证|实测分析|PoC验证)】?[：:]|实测验证[：:])/g,
-    },
-    {
-      type: 'evidence',
-      title: '决定性证据',
-      icon: '🎯',
-      color: '#7c3aed',
-      borderColor: '#8b5cf6',
-      bgColor: 'rgba(139, 92, 246, 0.04)',
-      pattern: /(?:【?(?:决定性证据|关键证据|核心证据|证据链条?)】?[：:]|决定性证据[：:])/g,
-    },
-    {
-      type: 'reference',
-      title: '对照参考实现',
-      icon: '⚖️',
-      color: '#0284c7',
-      borderColor: '#0ea5e9',
-      bgColor: 'rgba(14, 165, 233, 0.04)',
-      pattern: /(?:【?(?:对照参考实现|对照参考|参考实现|对照实现)】?[：:]|对照参考实现[：:])/g,
-    },
-    {
-      type: 'defense',
-      title: '抗辩审理',
-      icon: '🛡️',
-      color: '#d97706',
-      borderColor: '#f59e0b',
-      bgColor: 'rgba(245, 158, 11, 0.04)',
-      pattern: /(?:【?(?:抗辩分析|抗辩响应|辩护抗辩|抗辩判定)】?[：:]|抗辩分析[：:]|抗辩响应[：:]|抗辩中)/g,
-    },
-    {
-      type: 'mitigations',
-      title: '缓和与触发约束',
-      icon: '🌿',
-      color: '#059669',
-      borderColor: '#10b981',
-      bgColor: 'rgba(16, 185, 129, 0.04)',
-      pattern: /(?:【?(?:缓和因素|缓和因素成立|缓解因素|触发前提|约束条件)】?[：:]|缓和因素[：:]|缓和因素成立[：:])/g,
-    },
-    {
-      type: 'verdict',
-      title: '综合裁决',
-      icon: '🏛️',
-      color: '#0f766e',
-      borderColor: '#14b8a6',
-      bgColor: 'rgba(20, 184, 166, 0.04)',
-      pattern: /(?:【?(?:综合裁决|终审裁决|裁决结论|法官裁决|裁决结果)】?[：:]|综合裁决[：:])/g,
-    },
-  ];
-
-  // 3. 收集所有匹配标记点的位置
-  interface MatchItem {
-    index: number;
-    length: number;
-    anchor: (typeof anchors)[0];
+  // 2. 通用正则匹配所有形如 【XXX】 的小标题标记
+  const tagRegex = /【([^】]+)】[：:]?/g;
+  interface TagMatch {
+    rawTag: string;
+    tagName: string;
+    startIndex: number;
+    endIndex: number;
   }
 
-  const matches: MatchItem[] = [];
+  const tagMatches: TagMatch[] = [];
+  let m: RegExpExecArray | null;
 
-  for (const anchor of anchors) {
-    anchor.pattern.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = anchor.pattern.exec(judgeBody)) !== null) {
-      matches.push({
-        index: m.index,
-        length: m[0].length,
-        anchor,
-      });
-    }
+  while ((m = tagRegex.exec(judgeBody)) !== null) {
+    tagMatches.push({
+      rawTag: m[0],
+      tagName: m[1].trim(),
+      startIndex: m.index,
+      endIndex: m.index + m[0].length,
+    });
   }
 
-  // 按出现顺序升序排序
-  matches.sort((a, b) => a.index - b.index);
-
-  if (matches.length === 0) {
-    return {
-      isDebate: true,
-      intro,
-      verdictSummary: judgeBody,
-      sections: [],
-      rawText: text,
-    };
-  }
-
-  const sections: ParsedDebateSection[] = [];
-  let verdictSummary = '';
   let verdictBadge: ParsedDebateResult['verdictBadge'] = undefined;
   let severityLevel: string | undefined = undefined;
+  let verdictSummary = '';
+  const sections: ParsedDebateSection[] = [];
 
-  // 如果在第一个匹配项前还有前置内容且 intro 为空，归入 intro
-  if (matches[0].index > 0 && !intro) {
-    intro = judgeBody.substring(0, matches[0].index).trim();
-  }
+  // 单字严重度标签白名单（如 【致命】、【严重】、【高危】、【轻微】、【建议】），这些不作为卡片标题，而是定级
+  const severityTags = new Set(['致命', '严重', '高危', '中等', '中危', '低危', '低', '轻微', '建议', '提示']);
 
-  for (let i = 0; i < matches.length; i++) {
-    const cur = matches[i];
-    const nextIndex = i + 1 < matches.length ? matches[i + 1].index : judgeBody.length;
-    const content = judgeBody.substring(cur.index + cur.length, nextIndex).trim();
-
-    if (cur.anchor.type === 'verdict') {
-      verdictSummary = content;
-
-      // 提取 verdict 状态
-      if (/CONFIRMED|缺陷事实成立|成立/i.test(content)) {
-        verdictBadge = {
-          status: 'CONFIRMED',
-          label: '缺陷事实成立 (CONFIRMED)',
-          color: '#059669',
-          bg: 'rgba(16, 185, 129, 0.1)',
-          border: 'rgba(16, 185, 129, 0.3)',
-        };
-      } else if (/CONDITIONAL|条件触发/i.test(content)) {
-        verdictBadge = {
-          status: 'CONDITIONAL',
-          label: '条件触发 (CONDITIONAL)',
-          color: '#d97706',
-          bg: 'rgba(245, 158, 11, 0.1)',
-          border: 'rgba(245, 158, 11, 0.3)',
-        };
-      } else if (/REJECTED|驳回|误报/i.test(content)) {
-        verdictBadge = {
-          status: 'REJECTED',
-          label: '误报驳回 (REJECTED)',
-          color: '#dc2626',
-          bg: 'rgba(239, 68, 68, 0.1)',
-          border: 'rgba(239, 68, 68, 0.3)',
-        };
-      }
-
-      // 提取定级
-      const sevMatch = content.match(/(?:严重度定级为|初步严重度定级为|严重程度[：:]|定级[：:])([高危中低提示]+)/);
-      if (sevMatch) {
-        severityLevel = sevMatch[1];
+  if (tagMatches.length === 0) {
+    // 没有标签，检查是否可直接从首句或编号列表切分
+    const numbered = parseNumberedItems(judgeBody);
+    if (numbered) {
+      for (const item of numbered) {
+        sections.push({
+          type: 'facts',
+          title: item.title || `分析要点 ${item.index}`,
+          icon: '📌',
+          color: 'var(--color-primary, #3b82f6)',
+          borderColor: 'var(--color-primary, #3b82f6)',
+          bgColor: 'var(--color-primary-subtle, rgba(59, 130, 246, 0.05))',
+          content: item.content,
+        });
       }
     } else {
-      sections.push({
-        type: cur.anchor.type,
-        title: cur.anchor.title,
-        icon: cur.anchor.icon,
-        color: cur.anchor.color,
-        borderColor: cur.anchor.borderColor,
-        bgColor: cur.anchor.bgColor,
-        content,
-      });
+      verdictSummary = judgeBody;
+    }
+  } else {
+    // 如果首个标签前有文本且无 intro，归入 intro
+    if (tagMatches[0].startIndex > 0 && !intro) {
+      intro = judgeBody.substring(0, tagMatches[0].startIndex).trim();
+    }
+
+    for (let i = 0; i < tagMatches.length; i++) {
+      const cur = tagMatches[i];
+      const nextStart = i + 1 < tagMatches.length ? tagMatches[i + 1].startIndex : judgeBody.length;
+      const content = judgeBody.substring(cur.endIndex, nextStart).trim();
+
+      // 1. 如果是单独出现的严重度标签（如【严重】、【致命】），记录定级
+      if (severityTags.has(cur.tagName)) {
+        severityLevel = cur.tagName;
+        continue;
+      }
+
+      // 2. 如果是综合裁决/法官裁决
+      if (/综合裁决|终审裁决|裁决结论|法官裁决|裁决结果/i.test(cur.tagName)) {
+        // 提取定级
+        const sevMatch = content.match(/(?:严重度定级为|初步严重度定级为|初步定级为|严重程度[：:]|定级[：:])([高危中低提示建议轻微严重致命]+)/);
+        if (sevMatch) {
+          severityLevel = sevMatch[1];
+        }
+
+        // 提取裁决徽章状态
+        if (/CONFIRMED|缺陷事实成立|成立/i.test(content)) {
+          verdictBadge = {
+            status: 'CONFIRMED',
+            label: '缺陷事实成立 (CONFIRMED)',
+            color: 'var(--color-success, #10b981)',
+            bg: 'var(--color-success-subtle, rgba(16, 185, 129, 0.1))',
+            border: 'var(--color-success-border, rgba(16, 185, 129, 0.3))',
+          };
+        } else if (/CONDITIONAL|条件触发|条件成立/i.test(content)) {
+          verdictBadge = {
+            status: 'CONDITIONAL',
+            label: '条件触发 (CONDITIONAL)',
+            color: 'var(--color-warning, #f59e0b)',
+            bg: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.1))',
+            border: 'var(--color-warning-border, rgba(245, 158, 11, 0.3))',
+          };
+        } else if (/REJECTED|误报|驳回|CHALLENGE_FAILED/i.test(content)) {
+          verdictBadge = {
+            status: 'REJECTED',
+            label: '误报驳回 (REJECTED)',
+            color: 'var(--color-danger, #ef4444)',
+            bg: 'var(--color-danger-subtle, rgba(239, 68, 68, 0.1))',
+            border: 'var(--color-danger-border, rgba(239, 68, 68, 0.3))',
+          };
+        }
+
+        // 检查裁决内容后是否直接紧跟编号列表（如 Item 0: 没有二级标签，全写在综合裁决里）
+        const numbered = parseNumberedItems(content);
+        if (numbered) {
+          // 将编号列表前的一句话作为裁决 summary
+          const firstNumIndex = content.search(/(?:^|\n)\s*1[\.、\)]/);
+          if (firstNumIndex > 0) {
+            verdictSummary = content.substring(0, firstNumIndex).trim();
+          } else {
+            verdictSummary = content.split('\n')[0].trim();
+          }
+
+          // 将编号列表提取为独立的分析卡片
+          for (const item of numbered) {
+            const classInfo = classifySectionTag(item.title || `分析要点 ${item.index}`);
+            sections.push({
+              type: classInfo.type,
+              title: item.title ? `${item.index}. ${item.title}` : `要点 ${item.index}`,
+              icon: classInfo.icon,
+              color: classInfo.color,
+              borderColor: classInfo.borderColor,
+              bgColor: classInfo.bgColor,
+              content: item.content,
+            });
+          }
+        } else {
+          verdictSummary = content;
+        }
+      } else {
+        // 3. 其他所有业务标签（【事实认定与分析】、【源码事实】、【实测验证】等），全量解析为独立卡片
+        const classInfo = classifySectionTag(cur.tagName);
+        const numbered = parseNumberedItems(content);
+
+        sections.push({
+          type: classInfo.type,
+          title: classInfo.title,
+          icon: classInfo.icon,
+          color: classInfo.color,
+          borderColor: classInfo.borderColor,
+          bgColor: classInfo.bgColor,
+          content,
+          items: numbered || undefined,
+        });
+      }
     }
   }
 
-  // 默认 verdict badge 兜底检测
+  // 默认 verdict badge 兜底
   if (!verdictBadge) {
     if (/CONFIRMED/i.test(judgeBody)) {
       verdictBadge = {
         status: 'CONFIRMED',
-        label: '裁决成立 (CONFIRMED)',
-        color: '#059669',
-        bg: 'rgba(16, 185, 129, 0.1)',
-        border: 'rgba(16, 185, 129, 0.3)',
+        label: '缺陷事实成立 (CONFIRMED)',
+        color: 'var(--color-success, #10b981)',
+        bg: 'var(--color-success-subtle, rgba(16, 185, 129, 0.1))',
+        border: 'var(--color-success-border, rgba(16, 185, 129, 0.3))',
       };
     } else if (/CONDITIONAL/i.test(judgeBody)) {
       verdictBadge = {
         status: 'CONDITIONAL',
         label: '条件触发 (CONDITIONAL)',
-        color: '#d97706',
-        bg: 'rgba(245, 158, 11, 0.1)',
-        border: 'rgba(245, 158, 11, 0.3)',
+        color: 'var(--color-warning, #f59e0b)',
+        bg: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.1))',
+        border: 'var(--color-warning-border, rgba(245, 158, 11, 0.3))',
       };
     }
   }
@@ -373,17 +495,17 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
           style={{
             margin: 0,
             fontSize: '0.85rem',
-            color: 'var(--color-text-primary, var(--text-color, #1e293b))',
+            color: 'var(--color-text-primary, #f8fafc)',
             textAlign: 'left',
             lineHeight: 1.6,
-            background: 'var(--color-bg-surface, var(--card-bg, #ffffff))',
-            border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
+            background: 'var(--color-bg-surface, #1e293b)',
+            border: '1px solid var(--color-border-primary, #334155)',
             padding: '1rem',
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-md, 8px)',
             whiteSpace: 'pre-wrap',
           }}
         >
-          {renderInlineFormattedText(detail)}
+          {renderInlineFormattedText(detail || judgeVerdict || '')}
         </div>
         {parsed.isDebate && (
           <button
@@ -419,20 +541,20 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
         textAlign: 'left',
       }}
     >
-      {/* 1. 顶部初筛概述 (若存在且与裁决不同) */}
+      {/* 1. 顶部初筛概述 (若存在且与标题不同) */}
       {parsed.intro && parsed.intro !== title && (
         <div
           style={{
             fontSize: '0.85rem',
-            color: 'var(--color-text-secondary, #475569)',
-            lineHeight: 1.5,
-            padding: '0.6rem 0.85rem',
-            background: 'var(--color-bg-muted, rgba(241, 245, 249, 0.6))',
-            borderRadius: '6px',
-            border: '1px solid var(--color-border-primary, rgba(226, 232, 240, 0.8))',
+            color: 'var(--color-text-secondary, #94a3b8)',
+            lineHeight: 1.55,
+            padding: '0.65rem 0.9rem',
+            background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.03))',
+            borderRadius: 'var(--radius-sm, 6px)',
+            border: '1px solid var(--color-border-primary, #334155)',
           }}
         >
-          <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #0f172a)', marginRight: '0.4rem' }}>
+          <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #f8fafc)', marginRight: '0.4rem' }}>
             📋 问题概述:
           </span>
           {renderInlineFormattedText(parsed.intro)}
@@ -442,29 +564,30 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
       {/* 2. 仲裁法官终审裁决 Banner */}
       <div
         style={{
-          background: parsed.verdictBadge?.bg || 'rgba(16, 185, 129, 0.06)',
-          border: `1.5px solid ${parsed.verdictBadge?.border || 'rgba(16, 185, 129, 0.25)'}`,
-          borderRadius: '8px',
-          padding: '0.75rem 1rem',
+          background: parsed.verdictBadge?.bg || 'var(--color-success-subtle, rgba(16, 185, 129, 0.06))',
+          border: `1.5px solid ${parsed.verdictBadge?.border || 'var(--color-success-border, rgba(16, 185, 129, 0.3))'}`,
+          borderRadius: 'var(--radius-md, 8px)',
+          padding: '0.85rem 1rem',
           display: 'flex',
           flexDirection: 'column',
           gap: '0.45rem',
+          boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1))',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span
               style={{
-                fontSize: '0.78rem',
+                fontSize: '0.8rem',
                 fontWeight: 700,
-                color: parsed.verdictBadge?.color || '#059669',
-                background: 'var(--color-bg-surface, #ffffff)',
-                border: `1px solid ${parsed.verdictBadge?.border || '#10b981'}`,
-                padding: '0.2rem 0.6rem',
-                borderRadius: '4px',
+                color: parsed.verdictBadge?.color || 'var(--color-success, #10b981)',
+                background: 'var(--color-bg-surface, #1e293b)',
+                border: `1px solid ${parsed.verdictBadge?.border || 'var(--color-success, #10b981)'}`,
+                padding: '0.2rem 0.65rem',
+                borderRadius: 'var(--radius-xs, 4px)',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.25rem',
+                gap: '0.3rem',
               }}
             >
               ⚖️ {parsed.verdictBadge?.label || '法官终审裁决'}
@@ -474,11 +597,11 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
                 style={{
                   fontSize: '0.75rem',
                   fontWeight: 600,
-                  color: '#d97706',
-                  background: 'rgba(245, 158, 11, 0.12)',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  color: 'var(--color-warning, #f59e0b)',
+                  background: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.12))',
+                  border: '1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3))',
                   padding: '0.15rem 0.5rem',
-                  borderRadius: '4px',
+                  borderRadius: 'var(--radius-xs, 4px)',
                 }}
               >
                 定级：{parsed.severityLevel}
@@ -491,12 +614,14 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
             onClick={() => setShowRaw(true)}
             title="查看纯文本格式"
             style={{
-              fontSize: '0.72rem',
-              color: 'var(--color-text-muted, #94a3b8)',
+              fontSize: '0.75rem',
+              color: 'var(--color-text-muted, #64748b)',
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              padding: '2px 4px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              transition: 'all 0.2s',
             }}
           >
             📄 查看纯文本
@@ -506,10 +631,11 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
         {parsed.verdictSummary && (
           <div
             style={{
-              fontSize: '0.86rem',
+              fontSize: '0.88rem',
               fontWeight: 500,
-              color: 'var(--color-text-primary, #1e293b)',
-              lineHeight: 1.55,
+              color: 'var(--color-text-primary, #f8fafc)',
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
             }}
           >
             {renderInlineFormattedText(parsed.verdictSummary)}
@@ -517,40 +643,104 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
         )}
       </div>
 
-      {/* 3. 事实与证据链条 (Facts & Evidences Stream) */}
+      {/* 3. 结构化事实与证据链条卡片流 (Sections Stream) */}
       {parsed.sections.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           {parsed.sections.map((section, idx) => {
-            const isMitigation = section.type === 'mitigations' || section.type === 'defense';
             return (
               <div
                 key={idx}
                 style={{
-                  padding: '0.65rem 0.9rem',
-                  background: isMitigation ? 'var(--color-bg-muted, rgba(248, 250, 252, 0.8))' : 'var(--color-bg-surface, #ffffff)',
-                  border: `1px solid var(--color-border-primary, rgba(226, 232, 240, 0.8))`,
+                  padding: '0.75rem 1rem',
+                  background: 'var(--color-bg-surface, #1e293b)',
+                  border: '1px solid var(--color-border-primary, #334155)',
                   borderLeft: `4px solid ${section.borderColor}`,
-                  borderRadius: '6px',
-                  fontSize: '0.84rem',
-                  lineHeight: 1.55,
-                  color: 'var(--color-text-primary, #334155)',
+                  borderRadius: 'var(--radius-md, 8px)',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.6,
+                  color: 'var(--color-text-primary, #f8fafc)',
+                  boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1))',
                 }}
               >
+                {/* 卡片头部标题 */}
                 <div
                   style={{
                     fontWeight: 700,
                     color: section.color,
-                    marginBottom: '0.25rem',
+                    marginBottom: '0.45rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.82rem',
+                    gap: '0.4rem',
+                    fontSize: '0.84rem',
                   }}
                 >
-                  <span>{section.icon}</span>
+                  <span style={{ fontSize: '0.95rem' }}>{section.icon}</span>
                   <span>{section.title}</span>
                 </div>
-                <div>{renderInlineFormattedText(section.content)}</div>
+
+                {/* 卡片正文：若含有编号条目，以结构化列表呈现 */}
+                {section.items && section.items.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.35rem' }}>
+                    {section.items.map((item, iIdx) => (
+                      <div
+                        key={iIdx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '0.55rem',
+                          background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.02))',
+                          padding: '0.45rem 0.65rem',
+                          borderRadius: 'var(--radius-sm, 6px)',
+                          border: '1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.04))',
+                        }}
+                      >
+                        {/* 序号徽章 */}
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            minWidth: '20px',
+                            height: '20px',
+                            borderRadius: '4px',
+                            background: section.bgColor,
+                            color: section.color,
+                            border: `1px solid ${section.borderColor}`,
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginTop: '0.15rem',
+                          }}
+                        >
+                          {item.index}
+                        </span>
+
+                        {/* 条目正文 */}
+                        <div style={{ flex: 1, fontSize: '0.84rem', lineHeight: 1.55 }}>
+                          {item.title && (
+                            <strong style={{ color: section.color, marginRight: '0.4rem' }}>
+                              {item.title}：
+                            </strong>
+                          )}
+                          <span style={{ color: 'var(--color-text-primary, #f8fafc)', whiteSpace: 'pre-wrap' }}>
+                            {renderInlineFormattedText(item.content)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      whiteSpace: 'pre-wrap',
+                      color: 'var(--color-text-primary, #f8fafc)',
+                      fontSize: '0.84rem',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {renderInlineFormattedText(section.content)}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -561,25 +751,35 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
       {(hunterClaim || challengerArg) && (
         <div
           style={{
-            marginTop: '0.2rem',
-            padding: '0.6rem 0.85rem',
-            background: 'var(--color-bg-muted, #f8fafc)',
-            border: '1px dashed var(--color-border-primary, #cbd5e1)',
-            borderRadius: '6px',
-            fontSize: '0.8rem',
+            marginTop: '0.25rem',
+            padding: '0.65rem 0.9rem',
+            background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.02))',
+            border: '1px dashed var(--color-border-primary, #334155)',
+            borderRadius: 'var(--radius-md, 8px)',
+            fontSize: '0.82rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '0.4rem',
+            gap: '0.45rem',
           }}
         >
           {hunterClaim && (
             <div>
-              <strong style={{ color: '#dc2626' }}>🎯 初筛猎手主张:</strong> {renderInlineFormattedText(hunterClaim)}
+              <strong style={{ color: 'var(--color-danger, #ef4444)', marginRight: '0.35rem' }}>
+                🎯 初筛猎手主张:
+              </strong>
+              <span style={{ color: 'var(--color-text-secondary, #94a3b8)', whiteSpace: 'pre-wrap' }}>
+                {renderInlineFormattedText(hunterClaim)}
+              </span>
             </div>
           )}
           {challengerArg && (
             <div>
-              <strong style={{ color: '#2563eb' }}>⚖️ 辩护对抗证据:</strong> {renderInlineFormattedText(challengerArg)}
+              <strong style={{ color: 'var(--color-primary, #3b82f6)', marginRight: '0.35rem' }}>
+                ⚖️ 辩护对抗证据:
+              </strong>
+              <span style={{ color: 'var(--color-text-secondary, #94a3b8)', whiteSpace: 'pre-wrap' }}>
+                {renderInlineFormattedText(challengerArg)}
+              </span>
             </div>
           )}
         </div>
