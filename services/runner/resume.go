@@ -310,6 +310,8 @@ loop:
 		return err
 	}
 
-	result := RunPostProcess(ctx.Findings, ctx.TaskType)
+	effectiveFindings := GetEffectiveFindings(ctx)
+	ctx.Findings = effectiveFindings
+	result := RunPostProcess(effectiveFindings, ctx.TaskType)
 	return Finalize(ctx, result)
 }

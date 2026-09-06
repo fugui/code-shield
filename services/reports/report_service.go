@@ -335,6 +335,24 @@ func computeKPIMetrics(items []FindingItemDTO, isEntityMode bool) KPIMetrics {
 	return metrics
 }
 
+// CalculateRiskScoreFromFindings 根据归并后的 Findings 列表统一计算综合风险分估值
+func CalculateRiskScoreFromFindings(items []FindingItemDTO) int {
+	score := 0
+	for _, it := range items {
+		switch it.Severity {
+		case SeverityFatal:
+			score += 5
+		case SeverityCritical:
+			score += 4
+		case SeverityMajor:
+			score += 2
+		case SeverityMinor:
+			score += 1
+		}
+	}
+	return score
+}
+
 // GetReportSummary 获取轻量级总结概览
 func GetReportSummary(taskID uint) (*ReportSummaryDTO, error) {
 	report, err := GetTaskReportEntity(taskID)
@@ -359,6 +377,18 @@ func GetReportSummary(taskID uint) (*ReportSummaryDTO, error) {
 	isEntityMode := report.TaskType.GovernanceMode == models.GovernanceModeEntityAssessment
 	findings, _ := loadAllFindingsRaw(report)
 	metrics := computeKPIMetrics(findings, isEntityMode)
+
+	// 综合风险分必须基于归并后的全量条目总数动态校验并自愈数据库
+	if len(findings) > 0 && !isEntityMode {
+		calculatedScore := CalculateRiskScoreFromFindings(findings)
+		if calculatedScore != meta.Score {
+			meta.Score = calculatedScore
+			meta.Rating = CalculateRating(calculatedScore)
+			if models.DB != nil && report.ID > 0 {
+				_ = models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("score", calculatedScore).Error
+			}
+		}
+	}
 
 	return &ReportSummaryDTO{
 		Meta:            meta,

@@ -1,8 +1,10 @@
 package runner
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"code-shield/models"
@@ -136,4 +138,62 @@ func RunPostProcess(findings []models.AnalysisFinding, taskType models.TaskType)
 
 	log.Printf("[PostProcess] Score: %d, Summary len: %d, Metrics: %v\n", score, len(result.Summary), metrics)
 	return result
+}
+
+// LoadActiveFindingsFromSynthesis 从 synthesis 台账或平铺 JSON 文件中解析归并后的全量有效 findings
+func LoadActiveFindingsFromSynthesis(synthesisPath string) ([]models.AnalysisFinding, error) {
+	if synthesisPath == "" {
+		return nil, fmt.Errorf("empty synthesis path")
+	}
+	data, err := os.ReadFile(synthesisPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 1. 尝试以台账格式解析 (SynthesisLedger schema)
+	var ledger struct {
+		Items []struct {
+			Payload     models.AnalysisFinding `json:"payload"`
+			DiffStatus  string                 `json:"diff_status"`
+			CoverageGap bool                   `json:"coverage_gap"`
+		} `json:"items"`
+	}
+	if errUnmarshal := json.Unmarshal(data, &ledger); errUnmarshal == nil && len(ledger.Items) > 0 {
+		var list []models.AnalysisFinding
+		for _, it := range ledger.Items {
+			f := it.Payload
+			if it.DiffStatus != "" {
+				f.DiffStatus = it.DiffStatus
+			}
+			if it.CoverageGap {
+				f.DiffStatus = "COVERAGE_GAP"
+			}
+			list = append(list, f)
+		}
+		return list, nil
+	}
+
+	// 2. 尝试旧版平铺数组解析
+	var findings []models.AnalysisFinding
+	if errUnmarshal2 := json.Unmarshal(data, &findings); errUnmarshal2 == nil && len(findings) > 0 {
+		return findings, nil
+	}
+
+	return nil, fmt.Errorf("failed to parse active findings from synthesis file: %s", synthesisPath)
+}
+
+// GetEffectiveFindings 获取任务上下文归并后的全量有效 findings，确保评分基于归并后的总集计算
+func GetEffectiveFindings(ctx *TaskContext) []models.AnalysisFinding {
+	if ctx == nil {
+		return nil
+	}
+	if ctx.Report.ID > 0 {
+		synthesisPath := ctx.Report.GetSynthesisJSONPath()
+		if synthesisPath != "" {
+			if items, err := LoadActiveFindingsFromSynthesis(synthesisPath); err == nil && len(items) > 0 {
+				return items
+			}
+		}
+	}
+	return ctx.Findings
 }

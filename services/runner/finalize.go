@@ -130,6 +130,11 @@ func Finalize(ctx *TaskContext, result TaskResult) error {
 
 		if err := governance.HandleGenericCampaign(campCtx, ctx.Findings); err != nil {
 			log.Printf("[Finalize] Generic campaign hook failed: %v", err)
+		} else {
+			// 若专项攻关治理归并成功，以归并后的最新全量 Findings 重算综合指标与评分
+			effectiveFindings := GetEffectiveFindings(ctx)
+			result = RunPostProcess(effectiveFindings, ctx.TaskType)
+			metricsJSON, _ = json.Marshal(result.Metrics)
 		}
 	}
 
