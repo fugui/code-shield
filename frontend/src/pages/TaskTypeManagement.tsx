@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Drawer, EmptyState } from '@code/common';
+import { Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
-import { Code2, Settings, Trash2, Plus, RefreshCw, X, Shield, Layers } from 'lucide-react';
+import { Code2, Settings, Trash2, Plus, RefreshCw, X, Shield, Layers, CheckCircle2 } from 'lucide-react';
 
 type FileTab = 'analysis_prompt' | 'synthesis_prompt' | 'precondition';
 
@@ -44,6 +44,56 @@ export interface TaskTypeItem {
   categories?: string[] | string | null;
 }
 
+export interface StandardDimensionDef {
+  key: string;
+  name: string;
+  family: string;
+  family_name: string;
+  description: string;
+}
+
+// 系统认证的标准抗辩事实维度库 (SSOT)
+export const STANDARD_DEFENSE_CATALOG: StandardDimensionDef[] = [
+  // 1. 内存与底层崩溃
+  { key: 'Guards', name: '前置防御事实', family: 'memory_crash', family_name: '内存底层崩溃', description: '代码路径已存在前置判空、非零校验、下标上界断言或参数前置防御等确定性事实' },
+  { key: 'MacroIsolation', name: '宏条件编译隔离', family: 'memory_crash', family_name: '内存底层崩溃', description: '可疑代码受非默认编译宏开关隔离，默认生产构建镜像中物理不可达' },
+  { key: 'AsyncSafe', name: '异步与RAII回收', family: 'memory_crash', family_name: '内存底层崩溃', description: '符合异步信号安全、异常捕获与 RAII 作用域生命周期自动回收机制保障' },
+  { key: 'OwnershipTransfer', name: '所有权转移托管', family: 'memory_crash', family_name: '内存底层崩溃', description: '裸指针/资源所有权已转移至外部智能指针、容器或上游调用方托管，无泄漏' },
+  { key: 'ManualHook', name: '统一分配器挂钩', family: 'memory_crash', family_name: '内存底层崩溃', description: '项目接入统一内存分配器与析构 Hook 机制，在进程全局集中释放，非单点漏洞' },
+  { key: 'NullGuarded', name: '阻断返回保护', family: 'memory_crash', family_name: '内存底层崩溃', description: '指针为空或解析失败时已做安全阻断提前 return，不触发物理崩溃' },
+
+  // 2. 架构与设计规范治理
+  { key: 'ScopeExemption', name: '非生产作用域豁免', family: 'architecture_governance', family_name: '架构规范治理', description: '属于单测桩代码、本地离线排障脚本或内部辅助工具，无生产线上风险暴露' },
+  { key: 'PoolManaged', name: '统一池化生命周期', family: 'architecture_governance', family_name: '架构规范治理', description: '已接入系统级统一线程池或协程池生命周期托管，受全局并发配额管控' },
+  { key: 'ConfigControlled', name: '动态配置开关管控', family: 'architecture_governance', family_name: '架构规范治理', description: '具备动态配置中心开关管控与熔断降级机制，非硬编码无节制并发创建' },
+  { key: 'ThirdPartyLib', name: '第三方库底层封装', family: 'architecture_governance', family_name: '架构规范治理', description: '属于第三方开源组件或外部系统驱动底层封装，内部行为无法侵入改动' },
+  { key: 'RAIILifetime', name: 'RAII 资源自动释放', family: 'architecture_governance', family_name: '架构规范治理', description: '已封装自研统一 RAII 资源管理类自动执行释放，无生命周期泄漏' },
+
+  // 3. 数值计算与确定性
+  { key: 'DiscreteInteger', name: '离散整型状态比较', family: 'numerical_determinism', family_name: '数值计算确定性', description: '参与比较的浮点变量取值仅为离散整型字面量重置校验（如 0.0 与 1.0），无舍入误差' },
+  { key: 'EpsilonTolerance', name: '显式近似容差保护', family: 'numerical_determinism', family_name: '数值计算确定性', description: '业务逻辑依赖特定 Epsilon 容差或已在外层封装近似比较（std::fabs 或 math.isclose）' },
+  { key: 'NonDeterministicTolerant', name: '遍历无序不敏感', family: 'numerical_determinism', family_name: '数值计算确定性', description: '算法业务上对遍历顺序不敏感，集合元素具有可交换性（如纯统计求和、计数查找）' },
+  { key: 'SortedUpstream', name: '上游显式强制排序', family: 'numerical_determinism', family_name: '数值计算确定性', description: '从无序集合导出为列表后，后续逻辑在使用前已显式调用确定性排序算法' },
+  { key: 'HardwareBound', name: '特定平台加速契约', family: 'numerical_determinism', family_name: '数值计算确定性', description: '针对特定编译器或硬件体系结构的特定加速契约，由硬件规范保障' },
+
+  // 4. 测试工程与质量
+  { key: 'HelperAssertion', name: '辅助校验函数封装', family: 'test_engineering', family_name: '测试工程质量', description: '断言逻辑封装在公共基类、测试辅助函数或自定义 Matcher 中，并非空测试' },
+  { key: 'ExpectedNoThrow', name: '无异常即成功契约', family: 'test_engineering', family_name: '测试工程质量', description: '测试用例旨在验证操作不抛出异常或安全兜底，无需显式 ASSERT 断言' },
+  { key: 'StubContract', name: '存根调用契约覆盖', family: 'test_engineering', family_name: '测试工程质量', description: 'Mock 或 Stub 的调用期望与交互次数本身构成隐式逻辑检验' },
+  { key: 'ParametrizedTest', name: '参数化测试矩阵', family: 'test_engineering', family_name: '测试工程质量', description: '重复结构系参数化展开或覆盖不同边界场景矩阵，具备设计合理性' },
+
+  // 5. 应用安全与注入防御
+  { key: 'ParametrizedQuery', name: '原生预编译参数化', family: 'security_injection', family_name: '应用安全注入', description: 'ORM 或底层数据库驱动自动执行预编译参数绑定，非纯文本 SQL/命令拼接' },
+  { key: 'WAFSanitized', name: '前置网关校验过滤', family: 'security_injection', family_name: '应用安全注入', description: '外部请求已通过统一 WAF 网关或前置框架参数类型安全绑定与白名单校验' },
+  { key: 'ConstantTrusted', name: '内部可信常量源', family: 'security_injection', family_name: '应用安全注入', description: '拼接变量来源于系统内部枚举常量或只读配置文件，外部用户完全不可控' },
+
+  // 6. 综合演进与深度检视
+  { key: 'RegressionGuarded', name: '回归防护充分', family: 'comprehensive_evolution', family_name: '综合演进深度', description: '变更已有充分的伴随单测或上下游契约防护，不构成实际生产回归隐患' },
+  { key: 'IntentionalContractChange', name: '有意接口契约演进', family: 'comprehensive_evolution', family_name: '综合演进深度', description: '变更属于版本演进契约变更，调用方已同步适配，非兼容性破坏' },
+  { key: 'ContextDefense', name: '全局架构上下文防御', family: 'comprehensive_evolution', family_name: '综合演进深度', description: '全局架构拦截器或外层已具备拦截校验机制，单点内部无需重复过度防御' },
+  { key: 'HistoricalLegacy', name: '历史兼容协议约束', family: 'comprehensive_evolution', family_name: '综合演进深度', description: '代码遵循特定历史硬件通信或网络协议契约约束，非架构缺陷' }
+];
+
 const DOMAIN_FAMILY_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   memory_crash: { label: '内存底层崩溃', color: 'var(--color-danger, #ef4444)', bg: 'rgba(239, 68, 68, 0.1)' },
   architecture_governance: { label: '架构规范治理', color: 'var(--color-warning, #f59e0b)', bg: 'rgba(245, 158, 11, 0.1)' },
@@ -83,10 +133,7 @@ function TaskTypeManagement() {
 
   const [ccInput, setCcInput] = useState('');
   const [newCatInput, setNewCatInput] = useState('');
-  const [newDimKey, setNewDimKey] = useState('');
-  const [newDimName, setNewDimName] = useState('');
-  const [newDimDesc, setNewDimDesc] = useState('');
-
+  const [selectedCatalogKey, setSelectedCatalogKey] = useState('');
   const [showForm, setShowForm] = useState(false);
 
   // File editor state
@@ -152,9 +199,7 @@ function TaskTypeManagement() {
     setEditingId(null);
     setCcInput('');
     setNewCatInput('');
-    setNewDimKey('');
-    setNewDimName('');
-    setNewDimDesc('');
+    setSelectedCatalogKey('');
   };
 
   const handleEdit = (tt: TaskTypeItem) => {
@@ -219,9 +264,7 @@ function TaskTypeManagement() {
     setEditingId(tt.id);
     setCcInput('');
     setNewCatInput('');
-    setNewDimKey('');
-    setNewDimName('');
-    setNewDimDesc('');
+    setSelectedCatalogKey('');
     setShowForm(true);
   };
 
@@ -259,36 +302,28 @@ function TaskTypeManagement() {
     setForm({ ...form, categories: form.categories.filter(c => c !== cat) });
   };
 
-  const handleAddDefenseDimension = () => {
-    const key = newDimKey.trim();
-    const desc = newDimDesc.trim();
-    const name = newDimName.trim();
-    if (!key && !name) {
-      showToast('请填写维度英文标识或中文名称', 'error');
-      return;
-    }
-    if (!desc) {
-      showToast('请填写维度描述说明', 'error');
-      return;
-    }
-    const exists = form.defense_dimensions.some(d => (d.key && d.key === key) || (d.name && d.name === name));
+  // 快捷从标准库引入维度
+  const handleAddFromCatalog = () => {
+    if (!selectedCatalogKey) return;
+    const standard = STANDARD_DEFENSE_CATALOG.find(d => d.key === selectedCatalogKey);
+    if (!standard) return;
+    const exists = form.defense_dimensions.some(d => (d.key && d.key === standard.key) || d.dimension === standard.key);
     if (exists) {
-      showToast('该维度已存在', 'error');
+      showToast('该标准维度已在当前任务中启用', 'info');
       return;
     }
-
-    setForm({
-      ...form,
+    setForm(prev => ({
+      ...prev,
       defense_dimensions: [
-        ...form.defense_dimensions,
-        { key: key || name, name: name || key, description: desc }
+        ...prev.defense_dimensions,
+        { key: standard.key, name: standard.name, description: standard.description }
       ]
-    });
-    setNewDimKey('');
-    setNewDimName('');
-    setNewDimDesc('');
+    }));
+    setSelectedCatalogKey('');
+    showToast(`已成功引入标准维度: ${standard.name}`, 'success');
   };
 
+  // 移除某个已启用的维度
   const handleRemoveDefenseDimension = (index: number) => {
     setForm({
       ...form,
@@ -296,17 +331,26 @@ function TaskTypeManagement() {
     });
   };
 
+  // 一键载入所属族群的推荐标准维度
   const handleLoadFamilyDefaults = () => {
-    const currentFamily = domainFamilies.find(f => f.key === form.domain_family);
-    if (!currentFamily || !currentFamily.default_dimensions) {
-      showToast('当前所选族群暂无默认模板', 'info');
+    const familyStandards = STANDARD_DEFENSE_CATALOG.filter(d => d.family === form.domain_family);
+    if (familyStandards.length > 0) {
+      setForm(prev => ({
+        ...prev,
+        defense_dimensions: familyStandards.map(d => ({ key: d.key, name: d.name, description: d.description }))
+      }));
+      showToast('已重置并载入所属族群的标准抗辩维度', 'success');
       return;
     }
-    setForm(prev => ({
-      ...prev,
-      defense_dimensions: currentFamily.default_dimensions.map(d => ({ ...d }))
-    }));
-    showToast(`已载入【${currentFamily.name}】的默认抗辩维度`, 'success');
+
+    const currentFamily = domainFamilies.find(f => f.key === form.domain_family);
+    if (currentFamily && currentFamily.default_dimensions) {
+      setForm(prev => ({
+        ...prev,
+        defense_dimensions: currentFamily.default_dimensions.map(d => ({ ...d }))
+      }));
+      showToast(`已载入【${currentFamily.name}】的默认抗辩维度`, 'success');
+    }
   };
 
   const handleApplyFamilyRecommendedMode = () => {
@@ -472,13 +516,18 @@ function TaskTypeManagement() {
 
   const activeFamilyInfo = domainFamilies.find(f => f.key === form.domain_family);
 
+  // 尚未被当前任务启用的标准维度列表（可供选择引入）
+  const availableCatalogItems = STANDARD_DEFENSE_CATALOG.filter(item => {
+    return !form.defense_dimensions.some(d => (d.key && d.key === item.key) || d.dimension === item.key);
+  });
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h2 style={{ margin: '0 0 0.3rem 0', fontSize: '1.25rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>任务类型管理</h2>
           <p style={{ color: 'var(--color-text-muted)', margin: 0, fontSize: '0.875rem' }}>
-            管理多任务自适应提示词体系、抗辩证据维度模型与闭环执行引擎
+            管理多任务自适应提示词体系、标准抗辩事实维度模型与闭环执行引擎
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
@@ -493,7 +542,7 @@ function TaskTypeManagement() {
               <th style={{ padding: '0.85rem 1rem' }}>任务名称 / 领域族群</th>
               <th style={{ padding: '0.85rem 1rem' }}>标识 (Key)</th>
               <th style={{ padding: '0.85rem 1rem' }}>执行引擎</th>
-              <th style={{ padding: '0.85rem 1rem' }}>抗辩维度</th>
+              <th style={{ padding: '0.85rem 1rem' }}>标准抗辩维度</th>
               <th style={{ padding: '0.85rem 1rem' }}>超时(分)</th>
               <th style={{ padding: '0.85rem 1rem' }}>状态</th>
               <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>操作</th>
@@ -583,8 +632,9 @@ function TaskTypeManagement() {
                   </td>
                   <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem' }}>
                     {dimsCount > 0 ? (
-                      <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>
-                        {dimsCount} 维专有
+                      <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <CheckCircle2 size={14} color="var(--color-success)" />
+                        {dimsCount} 维启用
                       </span>
                     ) : (
                       <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
@@ -626,7 +676,7 @@ function TaskTypeManagement() {
                       <span title="编辑 Prompt 与前置脚本" onClick={() => openFileEditor(tt)} style={{ cursor: 'pointer', display: 'flex', color: 'var(--color-success)' }}>
                         <Code2 size={18} />
                       </span>
-                      <span title="配置属性与抗辩模型" onClick={() => handleEdit(tt)} style={{ cursor: 'pointer', display: 'flex', color: 'var(--color-text-secondary)' }}>
+                      <span title="打开侧边栏配置任务" onClick={() => handleEdit(tt)} style={{ cursor: 'pointer', display: 'flex', color: 'var(--color-text-secondary)' }}>
                         <Settings size={18} />
                       </span>
                       {!tt.is_builtin && (
@@ -643,37 +693,37 @@ function TaskTypeManagement() {
         </table>
       </div>
 
-      {/* Config Modal */}
-      <Modal
+      {/* 任务类型配置侧边抽屉 (Drawer) */}
+      <Drawer
         open={showForm}
         onClose={() => { setShowForm(false); resetForm(); }}
         title={editingId ? `编辑任务类型: ${form.display_name || form.name}` : '新建任务类型'}
-        width="lg"
+        subtitle="配置所属领域族群、执行引擎、标准抗辩事实维度与闭环治理模式"
+        width="min(760px, 92vw)"
+        bodyStyle={{ padding: '1.25rem 1.5rem', overflowY: 'auto' }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
             <button
               type="button"
               onClick={() => { setShowForm(false); resetForm(); }}
-              style={{
-                padding: '0.5rem 1.25rem',
-                border: '1px solid var(--color-border-primary)',
-                background: 'var(--color-bg-surface)',
-                color: 'var(--color-text-primary)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.875rem'
-              }}
+              className="btn btn-secondary"
+              style={{ padding: '0.5rem 1.25rem' }}
             >
               取消
             </button>
-            <button type="button" onClick={handleSubmit} className="btn btn-primary" style={{ padding: '0.5rem 1.5rem' }}>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="btn btn-primary"
+              style={{ padding: '0.5rem 1.5rem' }}
+            >
               {editingId ? '保存配置' : '立即创建'}
             </button>
           </div>
         }
       >
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxHeight: '72vh', overflowY: 'auto', paddingRight: '0.25rem' }}>
-          {/* 1. 基础标识与族群 */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* 1. 基础标识与中文名 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={labelStyle}>任务英文标识 (Key)</label>
@@ -764,7 +814,7 @@ function TaskTypeManagement() {
             />
           </div>
 
-          {/* 2. 辩护对抗维度配置 (Challenger Defense Dimensions) */}
+          {/* 2. 辩护对抗维度配置 (Defense Dimensions) - 标准事实维度库管理 */}
           <div style={{
             background: 'var(--color-bg-surface)',
             border: '1px solid var(--color-border-primary)',
@@ -772,22 +822,27 @@ function TaskTypeManagement() {
             padding: '1rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '0.75rem'
+            gap: '0.85rem'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
               <div>
-                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)' }}>
-                  辩护对抗维度 (Defense Dimensions)
-                </span>
-                <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                  指导辩护人（Challenger）从哪些角度举证反驳。任务专属自定义 &gt; 族群默认模板。
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)' }}>
+                    辩护对抗维度 (Defense Dimensions)
+                  </span>
+                  <span style={{ fontSize: '0.72rem', background: 'rgba(59,130,246,0.1)', color: 'var(--color-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
+                    标准事实库
+                  </span>
+                </div>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                  规范辩护人（Challenger）举证反驳的客观代码防御事实。维度均源自系统认证标准法理库，杜绝随意填报与主观狡辩。
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleLoadFamilyDefaults}
                 style={{
-                  padding: '0.3rem 0.75rem',
+                  padding: '0.35rem 0.75rem',
                   fontSize: '0.78rem',
                   color: 'var(--color-primary)',
                   background: 'rgba(59,130,246,0.08)',
@@ -796,108 +851,123 @@ function TaskTypeManagement() {
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.3rem'
+                  gap: '0.3rem',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
                 }}
               >
                 <Layers size={13} />
-                从所属族群载入默认模板
+                载入所属族群推荐维度
               </button>
             </div>
 
-            {/* 维度卡片列表 */}
+            {/* 当前已启用的维度列表 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {form.defense_dimensions.length === 0 ? (
                 <div style={{
-                  padding: '0.75rem',
+                  padding: '1rem',
                   background: 'var(--color-bg-muted)',
                   borderRadius: '6px',
                   fontSize: '0.8rem',
                   color: 'var(--color-text-muted)',
                   textAlign: 'center'
                 }}>
-                  当前未配置专属抗辩维度，辩论引擎运行时将自动继承【{activeFamilyInfo?.name || form.domain_family}】的默认维度。
+                  当前未显式配置抗辩维度，运行时将自动继承【{activeFamilyInfo?.name || form.domain_family}】的推荐标准维度。
                 </div>
               ) : (
-                form.defense_dimensions.map((dim, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      background: 'var(--color-bg-muted)',
-                      border: '1px solid var(--color-border-primary)',
-                      borderRadius: '6px',
-                      padding: '0.5rem 0.75rem'
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0, paddingRight: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--color-text-primary)' }}>
-                          {dim.name || dim.key || dim.dimension}
-                        </span>
-                        {dim.key && dim.name && dim.key !== dim.name && (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
-                            [{dim.key}]
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
-                        {dim.description}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDefenseDimension(idx)}
+                form.defense_dimensions.map((dim, idx) => {
+                  const keyName = dim.key || dim.dimension || dim.name || '';
+                  const standardDef = STANDARD_DEFENSE_CATALOG.find(d => d.key === keyName);
+                  const famBadge = standardDef ? DOMAIN_FAMILY_LABELS[standardDef.family] : null;
+
+                  return (
+                    <div
+                      key={idx}
                       style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-danger)',
-                        padding: '0.2rem'
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: 'var(--color-bg-muted)',
+                        border: '1px solid var(--color-border-primary)',
+                        borderRadius: '6px',
+                        padding: '0.65rem 0.85rem'
                       }}
-                      title="删除此维度"
                     >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                ))
+                      <div style={{ flex: 1, minWidth: 0, paddingRight: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-primary)' }}>
+                            {dim.name || keyName}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontFamily: 'monospace', background: 'var(--color-bg-surface)', padding: '0.1rem 0.35rem', borderRadius: '3px', border: '1px solid var(--color-border-primary)' }}>
+                            {keyName}
+                          </span>
+                          {famBadge && (
+                            <span style={{ fontSize: '0.68rem', color: famBadge.color, background: famBadge.bg, padding: '0.1rem 0.35rem', borderRadius: '3px', fontWeight: 500 }}>
+                              {famBadge.label}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                          {dim.description}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDefenseDimension(idx)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--color-danger)',
+                          padding: '0.3rem',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        title="停用此标准维度"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
 
-            {/* 添加新维度行 */}
+            {/* 从标准维度库选择引入（受控标准下拉框，杜绝随意填报） */}
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1.2fr 1.5fr 2.5fr auto',
-              gap: '0.5rem',
+              display: 'flex',
               alignItems: 'center',
-              marginTop: '0.25rem'
+              gap: '0.5rem',
+              background: 'var(--color-bg-muted)',
+              border: '1px dashed var(--color-border-primary)',
+              borderRadius: '6px',
+              padding: '0.6rem 0.75rem'
             }}>
-              <input
-                style={fieldStyle}
-                value={newDimKey}
-                onChange={e => setNewDimKey(e.target.value)}
-                placeholder="标识 (如 Guards)"
-              />
-              <input
-                style={fieldStyle}
-                value={newDimName}
-                onChange={e => setNewDimName(e.target.value)}
-                placeholder="名称 (如 前置防御事实)"
-              />
-              <input
-                style={fieldStyle}
-                value={newDimDesc}
-                onChange={e => setNewDimDesc(e.target.value)}
-                placeholder="抗辩举证说明事实..."
-              />
+              <select
+                style={{ ...fieldStyle, flex: 1 }}
+                value={selectedCatalogKey}
+                onChange={e => setSelectedCatalogKey(e.target.value)}
+              >
+                <option value="">-- 从系统标准法理库中引入维度 (未启用项) --</option>
+                {availableCatalogItems.map(item => (
+                  <option key={item.key} value={item.key}>
+                    [{item.family_name}] {item.name} ({item.key}) — {item.description.slice(0, 30)}...
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
-                onClick={handleAddDefenseDimension}
+                onClick={handleAddFromCatalog}
+                disabled={!selectedCatalogKey}
                 className="btn btn-secondary"
-                style={{ padding: '0.55rem 0.85rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                style={{
+                  padding: '0.55rem 1rem',
+                  fontSize: '0.8rem',
+                  whiteSpace: 'nowrap',
+                  opacity: selectedCatalogKey ? 1 : 0.5
+                }}
               >
-                <Plus size={14} style={{ marginRight: '0.2rem' }} /> 添加
+                <Plus size={14} style={{ marginRight: '0.25rem' }} /> 引入标准维度
               </button>
             </div>
           </div>
@@ -967,7 +1037,7 @@ function TaskTypeManagement() {
                     handleAddCategory();
                   }
                 }}
-                placeholder={form.categories.length === 0 ? '输入分类后按回车添加 (如: 空指针风险-判空遗漏)' : '继续添加分类...'}
+                placeholder={form.categories.length === 0 ? '输入分类后按回车添加 (如: 内存安全-空指针)' : '继续添加受控分类...'}
                 style={{
                   border: 'none',
                   outline: 'none',
@@ -1268,7 +1338,7 @@ function TaskTypeManagement() {
             </div>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* File Editor Drawer */}
       <Drawer
