@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast';
 import MemberSearchSelect from '../components/MemberSearchSelect';
 import ReportViewer from '../components/report/ReportViewer';
 import DebateVerdictView from '../components/report/DebateVerdictView';
+import SuggestionMarkdown from '../components/report/SuggestionMarkdown';
 import { sshToHttps } from '../utils/urlUtils';
 import { extractFirstLineNumber } from '../utils/reportUtils';
 import { useNavigate } from 'react-router-dom';
@@ -681,8 +682,8 @@ export default function Workbench() {
 						{selectedFinding.suggestion && (
 							<div>
 								<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: '#10b981', textAlign: 'left' }}>💡 修复建议</h4>
-								<div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, textAlign: 'left', whiteSpace: 'pre-wrap' }}>
-									{selectedFinding.suggestion}
+								<div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, textAlign: 'left' }}>
+									<SuggestionMarkdown content={selectedFinding.suggestion} />
 								</div>
 							</div>
 						)}

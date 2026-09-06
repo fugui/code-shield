@@ -250,8 +250,30 @@ export function printReportContainer(containerElement?: HTMLElement | null): voi
         page-break-inside: avoid !important;
         break-inside: avoid !important;
       }
-      .suggestion-box * {
+      .suggestion-box p,
+      .suggestion-box span,
+      .suggestion-box li {
         color: #15803d !important;
+      }
+      .suggestion-box .code-block-container {
+        background: #0f172a !important;
+        border: 1px solid #334155 !important;
+        margin: 6px 0 !important;
+      }
+      .suggestion-box .code-block-header {
+        background: #1e293b !important;
+        padding: 3px 8px !important;
+      }
+      .suggestion-box .code-block-lang-badge {
+        color: #94a3b8 !important;
+      }
+      .suggestion-box .code-block-copy-btn {
+        display: none !important;
+      }
+      .suggestion-box .code-block-body * {
+        color: inherit !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
     </style>
   `;

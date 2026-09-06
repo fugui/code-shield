@@ -3,6 +3,7 @@ import { TaskFindingItem, GovernanceMode } from '../../types/report';
 import { getSeverityMeta, getRepoSourceUrl, copyToClipboardWithFallback, extractFirstLineNumber } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
 import DebateVerdictView from './DebateVerdictView';
+import SuggestionMarkdown from './SuggestionMarkdown';
 
 interface FindingCardProps {
   finding: TaskFindingItem;
@@ -422,7 +423,7 @@ export default function FindingCard({
           <div style={{ fontWeight: 700, marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem' }}>
             💡 修复建议:
           </div>
-          <div>{finding.suggestion}</div>
+          <SuggestionMarkdown content={finding.suggestion} />
         </div>
       )}
 
