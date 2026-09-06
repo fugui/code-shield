@@ -82,9 +82,10 @@ export default function ConfigCenter() {
       backpressure_threshold: 10,
       backpressure_timeout_seconds: 300,
       tiers: {
-        tier1_hunter: { resource: 'native', timeout_seconds: 600 },
-        tier2_reasoning: { resource: 'native', timeout_seconds: 900 },
-        tier3_synthesis: { resource: 'native', timeout_seconds: 600 }
+        tier1_hunter: { resource: 'native', timeout_seconds: 1200 },
+        tier2_challenger: { resource: 'native', timeout_seconds: 1200 },
+        tier3_judge: { resource: 'native', timeout_seconds: 1800 },
+        tier4_synthesis: { resource: 'native', timeout_seconds: 300 }
       }
     },
     tools: {
@@ -333,8 +334,10 @@ export default function ConfigCenter() {
     }
   };
 
+  type TierKeyType = 'tier1_hunter' | 'tier2_challenger' | 'tier3_judge' | 'tier4_synthesis';
+
   // 智能体辩论各阶梯元数据与选型建议规范
-  const TIER_METAS: Record<'tier1_hunter' | 'tier2_reasoning' | 'tier3_synthesis', {
+  const TIER_METAS: Record<TierKeyType, {
     tierNumber: string;
     roleTitle: string;
     badgeModifier: string;
@@ -354,34 +357,54 @@ export default function ConfigCenter() {
       recSnippet: '必须 Thick (如 agy / opencode)，纯 Thin 节点无法读取磁盘文件。',
       defaultSeconds: 1200,
     },
-    tier2_reasoning: {
+    tier2_challenger: {
       tierNumber: 'Tier 2',
-      roleTitle: 'Challenger & Judge 深度推理',
-      badgeModifier: 'code-config-tier-card__badge--tier2_reasoning',
-      engineBadgeText: '强烈推荐 Thin LLM',
+      roleTitle: 'Challenger 辩护对抗',
+      badgeModifier: 'code-config-tier-card__badge--tier2_challenger',
+      engineBadgeText: '推荐 Thin LLM',
       engineReqType: 'thin-recommended',
-      desc: '案卷代码已全量内联，负责反向质询辩护与终审事实仲裁，纯逻辑推演。',
-      recSnippet: '强烈推荐 native (Thin)，案卷代码已内联；推荐配 agy (Thick) 容灾备选。',
+      desc: '案卷代码切片已全量内联，检索标准事实库并开展反向抗辩质询。',
+      recSnippet: '推荐 native (Thin)，案卷代码已内联；推荐配 agy (Thick) 容灾备选。',
+      defaultSeconds: 1200,
+    },
+    tier3_judge: {
+      tierNumber: 'Tier 3',
+      roleTitle: 'Judge 终审裁决',
+      badgeModifier: 'code-config-tier-card__badge--tier3_judge',
+      engineBadgeText: '强烈推荐 旗舰推理',
+      engineReqType: 'thin-recommended',
+      desc: '兼听 Hunter 控告与 Challenger 抗辩，基于源码物理事实客观仲裁定性。',
+      recSnippet: '强烈推荐深度推理能力最强的主力模型（如 native 旗舰模型或高阶 agy）。',
       defaultSeconds: 1800,
     },
-    tier3_synthesis: {
-      tierNumber: 'Tier 3',
-      roleTitle: 'Synthesis 终审汇总',
-      badgeModifier: 'code-config-tier-card__badge--tier3_synthesis',
+    tier4_synthesis: {
+      tierNumber: 'Tier 4',
+      roleTitle: 'Synthesis 全仓汇总',
+      badgeModifier: 'code-config-tier-card__badge--tier4_synthesis',
       engineBadgeText: '推荐 Thin LLM',
       engineReqType: 'thin-suggested',
-      desc: '全仓确诊缺陷聚合、态势评分与 Markdown / JSON 排版直传直出。',
+      desc: '全仓确诊缺陷聚合、态势评分归因与 Markdown / JSON 排版直传直出。',
       recSnippet: '推荐 native (Thin)，内存数据直传直出，消除 CLI 进程冷启动开销。',
       defaultSeconds: 300,
     },
   };
 
   // 辅助渲染各阶段算力资源池多选选择器
-  const renderTierResourcePoolSelector = (
-    tierKey: 'tier1_hunter' | 'tier2_reasoning' | 'tier3_synthesis'
-  ) => {
+  const renderTierResourcePoolSelector = (tierKey: TierKeyType) => {
     const meta = TIER_METAS[tierKey];
-    const tierItem = scannerConfig.debate.tiers?.[tierKey] || { resource: 'native', timeout_seconds: meta.defaultSeconds };
+    // 兼容取值：如果是 tier2_challenger/tier3_judge 且未设置，回退尝试 tier2_reasoning
+    let tierItem = scannerConfig.debate.tiers?.[tierKey];
+    if (!tierItem) {
+      if (tierKey === 'tier2_challenger' || tierKey === 'tier3_judge') {
+        tierItem = scannerConfig.debate.tiers?.tier2_reasoning;
+      } else if (tierKey === 'tier4_synthesis') {
+        tierItem = scannerConfig.debate.tiers?.tier3_synthesis;
+      }
+    }
+    if (!tierItem) {
+      tierItem = { resource: 'native', timeout_seconds: meta.defaultSeconds };
+    }
+
     const selected = (tierItem.resources && tierItem.resources.length > 0)
       ? tierItem.resources
       : (tierItem.resource ? [tierItem.resource] : []);
@@ -413,18 +436,27 @@ export default function ConfigCenter() {
       } else {
         next = [...selected, resId];
       }
+      const updatedTiers = {
+        ...scannerConfig.debate.tiers,
+        [tierKey]: {
+          ...tierItem,
+          resource: next[0] || '',
+          resources: next,
+        }
+      };
+      // 向下兼容同步填充旧版字段
+      if (tierKey === 'tier2_challenger' || tierKey === 'tier3_judge') {
+        updatedTiers.tier2_reasoning = updatedTiers.tier2_challenger || updatedTiers.tier3_judge;
+      }
+      if (tierKey === 'tier4_synthesis') {
+        updatedTiers.tier3_synthesis = updatedTiers.tier4_synthesis;
+      }
+
       setScannerConfig({
         ...scannerConfig,
         debate: {
           ...scannerConfig.debate,
-          tiers: {
-            ...scannerConfig.debate.tiers,
-            [tierKey]: {
-              ...tierItem,
-              resource: next[0] || '',
-              resources: next,
-            }
-          }
+          tiers: updatedTiers
         }
       });
     };
@@ -437,19 +469,31 @@ export default function ConfigCenter() {
           message: '⚠️ 选型告警：当前未绑定任何 Thick Agent（如 agy / opencode）。Hunter 初筛需自主遍历工作区读取磁盘源码，纯 Thin 模式将导致扫描无法读取文件，请务必勾选 Thick 节点！'
         };
       }
-    } else if (tierKey === 'tier2_reasoning') {
+    } else if (tierKey === 'tier2_challenger') {
       if (!hasThin) {
         diagnosticNotice = {
           type: 'info',
-          message: '💡 架构建议：案卷代码已全量内联，建议勾选 native (Thin LLM) 获得 10x 吞吐与毫秒级延迟；可保留 agy 等作为削峰容灾备选池。'
+          message: '💡 架构建议：案卷代码已全量内联，建议勾选 native (Thin LLM) 获得高吞吐与毫秒级辩护延迟；可保留 agy 等作为备选池。'
         };
       } else if (hasThick) {
         diagnosticNotice = {
           type: 'success',
-          message: '✅ 最佳实践组合：已同时绑定 Thin 纯推理 (native) 与 Thick Agent (agy)，兼具高吞吐纯推理与弹性容灾保障。'
+          message: '✅ 最佳实践组合：已同时绑定 Thin 纯推理 (native) 与 Thick Agent (agy)，兼具高吞吐辩护与弹性容灾保障。'
         };
       }
-    } else if (tierKey === 'tier3_synthesis') {
+    } else if (tierKey === 'tier3_judge') {
+      if (!hasThin && !hasThick) {
+        diagnosticNotice = {
+          type: 'warning',
+          message: '⚠️ 选型告警：终审法官需独立严谨定性，请绑定深度推理能力最强的高阶模型节点。'
+        };
+      } else {
+        diagnosticNotice = {
+          type: 'info',
+          message: '⚖️ 仲裁原则：终审法官独立于辩护对抗，负责兼听双方事实并做出不可逆裁决。建议优先配置最强推理旗舰模型。'
+        };
+      }
+    } else if (tierKey === 'tier4_synthesis') {
       if (!hasThin) {
         diagnosticNotice = {
           type: 'info',
@@ -488,9 +532,10 @@ export default function ConfigCenter() {
             {llmConfig.resources.map(r => {
               const isChecked = selected.includes(r.id);
               const isThin = r.driver === 'native';
-              const isRecommended = (tierKey === 'tier2_reasoning' && isThin) ||
-                                    (tierKey === 'tier1_hunter' && !isThin) ||
-                                    (tierKey === 'tier3_synthesis' && isThin);
+              const isRecommended = (tierKey === 'tier1_hunter' && !isThin) ||
+                                    (tierKey === 'tier2_challenger' && isThin) ||
+                                    (tierKey === 'tier3_judge' && (r.id === 'native' || r.id === 'agy')) ||
+                                    (tierKey === 'tier4_synthesis' && isThin);
               return (
                 <button
                   type="button"
@@ -526,16 +571,26 @@ export default function ConfigCenter() {
             type="number"
             className="code-config-input"
             value={tierItem.timeout_seconds}
-            onChange={e => setScannerConfig({
-              ...scannerConfig,
-              debate: {
-                ...scannerConfig.debate,
-                tiers: {
-                  ...scannerConfig.debate.tiers,
-                  [tierKey]: { ...tierItem, timeout_seconds: parseInt(e.target.value) || meta.defaultSeconds }
-                }
+            onChange={e => {
+              const val = parseInt(e.target.value) || meta.defaultSeconds;
+              const updatedTiers = {
+                ...scannerConfig.debate.tiers,
+                [tierKey]: { ...tierItem, timeout_seconds: val }
+              };
+              if (tierKey === 'tier2_challenger' || tierKey === 'tier3_judge') {
+                updatedTiers.tier2_reasoning = updatedTiers.tier2_challenger || updatedTiers.tier3_judge;
               }
-            })}
+              if (tierKey === 'tier4_synthesis') {
+                updatedTiers.tier3_synthesis = updatedTiers.tier4_synthesis;
+              }
+              setScannerConfig({
+                ...scannerConfig,
+                debate: {
+                  ...scannerConfig.debate,
+                  tiers: updatedTiers
+                }
+              });
+            }}
           />
         </div>
       </div>
@@ -1148,8 +1203,8 @@ export default function ConfigCenter() {
 
                   <div className="code-config-guide-item code-config-guide-item--thin">
                     <div className="code-config-guide-item__head">
-                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thin">Tier 2 · 强烈推荐 Thin</span>
-                      <strong className="code-config-guide-item__title">Challenger & Judge</strong>
+                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thin">Tier 2 · 推荐 Thin</span>
+                      <strong className="code-config-guide-item__title">Challenger 辩护对抗</strong>
                     </div>
                     <p className="code-config-guide-item__desc">
                       <strong>任务特征：</strong>案卷代码切片与上下文<strong>已在 Prompt 中全量内联</strong>，无需磁盘 I/O。纯静态推理，需高吞吐与严格 JSON 格式。
@@ -1159,10 +1214,23 @@ export default function ConfigCenter() {
                     </div>
                   </div>
 
+                  <div className="code-config-guide-item code-config-guide-item--thin">
+                    <div className="code-config-guide-item__head">
+                      <span className="code-config-guide-item__badge code-config-guide-item__badge--judge">Tier 3 · 强烈推荐 旗舰推理</span>
+                      <strong className="code-config-guide-item__title">Judge 终审裁决</strong>
+                    </div>
+                    <p className="code-config-guide-item__desc">
+                      <strong>任务特征：</strong>兼听 Hunter 控告案卷与 Challenger 辩护事实，基于源码做终审定性。需具备最严谨的深度推理与逻辑裁决能力。
+                    </p>
+                    <div className="code-config-guide-item__rec">
+                      <span>推荐驱动：</span>优先深度推理最强的旗舰模型 (如 <code>native</code> 旗舰或高阶 <code>agy</code>)
+                    </div>
+                  </div>
+
                   <div className="code-config-guide-item code-config-guide-item--thin-alt">
                     <div className="code-config-guide-item__head">
-                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thin-alt">Tier 3 · 推荐 Thin</span>
-                      <strong className="code-config-guide-item__title">Synthesis 终审汇总</strong>
+                      <span className="code-config-guide-item__badge code-config-guide-item__badge--thin-alt">Tier 4 · 推荐 Thin</span>
+                      <strong className="code-config-guide-item__title">Synthesis 全仓汇总</strong>
                     </div>
                     <p className="code-config-guide-item__desc">
                       <strong>任务特征：</strong>全仓确诊缺陷聚合、态势评分归因与 Markdown/JSON 排版。内存纯文本直传直出，零 CLI 进程开销。
@@ -1175,13 +1243,14 @@ export default function ConfigCenter() {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
-                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>各阶段算力阶梯绑定 (Tiers Binding)</h4>
+                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>各阶段算力阶梯绑定 (4 阶梯架构)</h4>
                 <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>点击节点可多选形成混合资源池，由 ModelDispatcher 动态负载打散与故障转移</span>
               </div>
-              <div className="code-config-grid-3">
+              <div className="code-config-grid-4">
                 {renderTierResourcePoolSelector('tier1_hunter')}
-                {renderTierResourcePoolSelector('tier2_reasoning')}
-                {renderTierResourcePoolSelector('tier3_synthesis')}
+                {renderTierResourcePoolSelector('tier2_challenger')}
+                {renderTierResourcePoolSelector('tier3_judge')}
+                {renderTierResourcePoolSelector('tier4_synthesis')}
               </div>
             </div>
           </div>

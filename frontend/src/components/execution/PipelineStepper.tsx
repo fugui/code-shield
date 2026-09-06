@@ -87,7 +87,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
     },
     {
       title: 'AI 全仓报告综合',
-      desc: 'Tier 3 报告排版生成',
+      desc: isDebate ? 'Tier 4 报告排版生成' : '全仓报告排版生成',
       status: step4,
     },
     {

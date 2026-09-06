@@ -132,17 +132,22 @@ scanner:
 
     # 各阶段阶梯显式绑定 llm.resources 节点 (支持单一 resource 或 resources 候选资源池多选)
     tiers:
-      tier1_hunter:                    # Tier 1 初筛 (Hunter 角色，Thick Agent 探索遍历源码)
-        resource: "agy"                # 兼容旧版字段
+      tier1_hunter:                    # Tier 1 源码初筛 (Hunter 角色，Thick Agent 探索遍历源码)
+        resource: "agy"                # 兼容首选字段
         resources: ["agy", "opencode"] # 多 Thick Agent 资源池化负载打散 (10 并发初筛)
         timeout_seconds: 1200          # 初筛单片超时 (秒)
 
-      tier2_reasoning:                 # Tier 2 推理与仲裁 (统一承载 Challenger 与 Judge 深度推理)
-        resource: "agy"                # 兼容旧版字段
-        resources: ["agy", "native"]   # 深度推理候选算力池
-        timeout_seconds: 1800          # 辩论仲裁单片超时 (秒)
+      tier2_challenger:                # Tier 2 辩护对抗 (Challenger 角色，快速多维度寻找防御依据)
+        resource: "native"             # 推荐 Thin LLM 低延迟高吞吐
+        resources: ["native", "agy"]   # 辩护对抗候选算力池
+        timeout_seconds: 1200          # 辩护对抗单片超时 (秒)
 
-      tier3_synthesis:                 # Tier 3 全仓态势汇总 (Synthesis 角色，报告聚合)
+      tier3_judge:                     # Tier 3 终审法官 (Judge 角色，旗舰模型独立权威仲裁)
+        resource: "agy"                # 推荐旗舰推理模型或旗舰 Thick Agent
+        resources: ["agy", "native"]   # 终审法官候选算力池
+        timeout_seconds: 1800          # 终审裁决单片超时 (秒)
+
+      tier4_synthesis:                 # Tier 4 全仓态势汇总 (Synthesis 角色，报告聚合)
         resource: "native"             # 显式精确绑定 native 算力集群
         resources: ["native"]
         timeout_seconds: 300           # 报告汇总超时 (秒)

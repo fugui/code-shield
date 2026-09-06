@@ -142,6 +142,12 @@
   gap: 1rem;
 }
 
+.code-config-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
 .code-config-field {
   display: flex;
   flex-direction: column;
@@ -501,6 +507,11 @@
   color: var(--color-warning);
 }
 
+.code-config-guide-item__badge--judge {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
 .code-config-guide-item__badge--thin-alt {
   background: var(--color-purple-subtle);
   color: var(--color-purple);
@@ -578,11 +589,18 @@
   color: var(--color-primary);
 }
 
+.code-config-tier-card__badge--tier2_challenger,
 .code-config-tier-card__badge--tier2_reasoning {
   background: var(--color-warning-subtle);
   color: var(--color-warning);
 }
 
+.code-config-tier-card__badge--tier3_judge {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+.code-config-tier-card__badge--tier4_synthesis,
 .code-config-tier-card__badge--tier3_synthesis {
   background: var(--color-purple-subtle);
   color: var(--color-purple);

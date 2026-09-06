@@ -88,11 +88,20 @@ func (tb *TierBindingConfig) GetResources() []string {
 	return nil
 }
 
-// DebateTiersConfig 辩论阶梯流水线配置 (3 层组织映射 4 大角色)
+func (tb *TierBindingConfig) HasConfig() bool {
+	return tb.Resource != "" || len(tb.Resources) > 0
+}
+
+// DebateTiersConfig 辩论阶梯流水线配置 (4 层组织映射 4 大角色，向前/后平滑兼容)
 type DebateTiersConfig struct {
-	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`       // Hunter 初筛角色
-	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"` // Challenger & Judge 角色
-	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"` // Synthesis 汇总角色
+	Tier1Hunter     TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`                           // Hunter 初筛角色
+	Tier2Challenger TierBindingConfig `yaml:"tier2_challenger,omitempty" json:"tier2_challenger,omitempty"` // Challenger 辩护对抗角色
+	Tier3Judge      TierBindingConfig `yaml:"tier3_judge,omitempty" json:"tier3_judge,omitempty"`           // Judge 终审法官角色
+	Tier4Synthesis  TierBindingConfig `yaml:"tier4_synthesis,omitempty" json:"tier4_synthesis,omitempty"`   // Synthesis 全仓汇总角色
+
+	// 向下兼容旧版 3 阶梯配置
+	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning,omitempty" json:"tier2_reasoning,omitempty"` // 旧版 Challenger & Judge 共享阶梯
+	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis,omitempty" json:"tier3_synthesis,omitempty"` // 旧版 Synthesis 汇总阶梯
 }
 
 // DebateConfig 辩论流水线流控与阶梯配置
@@ -342,13 +351,42 @@ func (c *Config) SyncLegacy() {
 			Resource:       c.AI.Tiers.Tier1Fast.Backend,
 			TimeoutSeconds: c.AI.Tiers.Tier1Fast.TimeoutSeconds,
 		}
-		c.Scanner.Debate.Tiers.Tier2Reasoning = TierBindingConfig{
+		c.Scanner.Debate.Tiers.Tier2Challenger = TierBindingConfig{
 			Resource:       c.AI.Tiers.Tier2Reasoning.Backend,
 			TimeoutSeconds: c.AI.Tiers.Tier2Reasoning.TimeoutSeconds,
 		}
-		c.Scanner.Debate.Tiers.Tier3Synthesis = TierBindingConfig{
+		c.Scanner.Debate.Tiers.Tier3Judge = TierBindingConfig{
+			Resource:       c.AI.Tiers.Tier2Reasoning.Backend,
+			TimeoutSeconds: c.AI.Tiers.Tier2Reasoning.TimeoutSeconds,
+		}
+		c.Scanner.Debate.Tiers.Tier4Synthesis = TierBindingConfig{
 			Resource:       c.AI.Tiers.Tier3Synthesis.Backend,
 			TimeoutSeconds: c.AI.Tiers.Tier3Synthesis.TimeoutSeconds,
+		}
+		c.Scanner.Debate.Tiers.Tier2Reasoning = c.Scanner.Debate.Tiers.Tier2Challenger
+		c.Scanner.Debate.Tiers.Tier3Synthesis = c.Scanner.Debate.Tiers.Tier4Synthesis
+	} else {
+		// 双向补齐 Debate.Tiers 的 4 阶梯与旧版 3 阶梯字段
+		// 1. 若配置了旧版 3 阶梯，自动填充新版 4 阶梯未配置项
+		if !c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() && c.Scanner.Debate.Tiers.Tier2Reasoning.HasConfig() {
+			c.Scanner.Debate.Tiers.Tier2Challenger = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+		if !c.Scanner.Debate.Tiers.Tier3Judge.HasConfig() && c.Scanner.Debate.Tiers.Tier2Reasoning.HasConfig() {
+			c.Scanner.Debate.Tiers.Tier3Judge = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+		if !c.Scanner.Debate.Tiers.Tier4Synthesis.HasConfig() && c.Scanner.Debate.Tiers.Tier3Synthesis.HasConfig() {
+			c.Scanner.Debate.Tiers.Tier4Synthesis = c.Scanner.Debate.Tiers.Tier3Synthesis
+		}
+		// 2. 反向：若配置了新版 4 阶梯但未配置旧版字段，向后补齐旧版字段
+		if !c.Scanner.Debate.Tiers.Tier2Reasoning.HasConfig() {
+			if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+				c.Scanner.Debate.Tiers.Tier2Reasoning = c.Scanner.Debate.Tiers.Tier2Challenger
+			} else if c.Scanner.Debate.Tiers.Tier3Judge.HasConfig() {
+				c.Scanner.Debate.Tiers.Tier2Reasoning = c.Scanner.Debate.Tiers.Tier3Judge
+			}
+		}
+		if !c.Scanner.Debate.Tiers.Tier3Synthesis.HasConfig() && c.Scanner.Debate.Tiers.Tier4Synthesis.HasConfig() {
+			c.Scanner.Debate.Tiers.Tier3Synthesis = c.Scanner.Debate.Tiers.Tier4Synthesis
 		}
 	}
 	if c.Scanner.Tools.DefaultResource == "" {
@@ -413,10 +451,38 @@ func (c *Config) GetTierResources(tier string) []string {
 	switch tier {
 	case "tier1_fast", "tier1_hunter":
 		binding = c.Scanner.Debate.Tiers.Tier1Hunter
+	case "tier2_challenger":
+		if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+	case "tier3_judge":
+		if c.Scanner.Debate.Tiers.Tier3Judge.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+	case "tier4_synthesis":
+		if c.Scanner.Debate.Tiers.Tier4Synthesis.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		}
 	case "tier2_reasoning":
-		binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		if c.Scanner.Debate.Tiers.Tier2Reasoning.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		} else if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		}
 	case "tier3_synthesis":
-		binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		if c.Scanner.Debate.Tiers.Tier3Synthesis.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		}
 	}
 	return binding.GetResources()
 }
@@ -428,10 +494,38 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 	switch tier {
 	case "tier1_fast", "tier1_hunter":
 		binding = c.Scanner.Debate.Tiers.Tier1Hunter
+	case "tier2_challenger":
+		if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+	case "tier3_judge":
+		if c.Scanner.Debate.Tiers.Tier3Judge.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+	case "tier4_synthesis":
+		if c.Scanner.Debate.Tiers.Tier4Synthesis.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		}
 	case "tier2_reasoning":
-		binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		if c.Scanner.Debate.Tiers.Tier2Reasoning.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		} else if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		}
 	case "tier3_synthesis":
-		binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		if c.Scanner.Debate.Tiers.Tier3Synthesis.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		}
 	}
 
 	resources := binding.GetResources()
@@ -464,11 +558,11 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 		if c.AI.Tiers.Tier1Fast.Backend != "" {
 			return c.AI.Tiers.Tier1Fast
 		}
-	case "tier2_reasoning":
+	case "tier2_challenger", "tier3_judge", "tier2_reasoning":
 		if c.AI.Tiers.Tier2Reasoning.Backend != "" {
 			return c.AI.Tiers.Tier2Reasoning
 		}
-	case "tier3_synthesis":
+	case "tier4_synthesis", "tier3_synthesis":
 		if c.AI.Tiers.Tier3Synthesis.Backend != "" {
 			return c.AI.Tiers.Tier3Synthesis
 		}
