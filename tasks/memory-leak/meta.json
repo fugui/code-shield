@@ -22,6 +22,22 @@
   "notify_threshold": 10,
   "notify_cc": [],
   "timeout": 60,
+  "domain_family": "memory_crash",
+  "defense_dimensions": [
+    {
+      "dimension": "OwnershipTransfer",
+      "description": "所有权已转移至外部容器、智能指针或上游调用方托管"
+    },
+    {
+      "dimension": "RAIICleanup",
+      "description": "依赖类析构函数或作用域守卫执行物理资源释放，无实质泄漏"
+    },
+    {
+      "dimension": "ProcessLifecycle",
+      "description": "属于进程生命周期短程工具或静态全局单例，进程退出自动由 OS 清理"
+    }
+  ],
+
   "categories": [
     "基础内存泄漏",
     "资源泄漏",

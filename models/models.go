@@ -67,6 +67,127 @@ type Repository struct {
 
 // RunParams 定义任务执行时的运行时动态过滤参数。
 // ScheduleConfig 或 API 触发时可设置此结构覆盖默认扫描范围，nil 字段表示不覆盖。
+// ── 任务领域族群 (DomainFamily) 枚举常量 ──
+const (
+	DomainFamilyMemoryCrash          = "memory_crash"
+	DomainFamilyArchitectureGov      = "architecture_governance"
+	DomainFamilyNumericalDeterminism = "numerical_determinism"
+	DomainFamilyTestEngineering      = "test_engineering"
+	DomainFamilySecurityInjection    = "security_injection"
+	DomainFamilyComprehensive        = "comprehensive_evolution"
+)
+
+// DefenseDimension 描述任务特化或领域通用的抗辩证据维度
+type DefenseDimension struct {
+	Key         string `json:"key,omitempty"`       // 维度英文唯一标识，如 "Guards"
+	Name        string `json:"name,omitempty"`      // 维度中文名称，如 "前置防御事实"
+	Dimension   string `json:"dimension,omitempty"` // 兼容历史字段别名
+	Description string `json:"description"`         // 详细阐述
+}
+
+// GetKey 返回有效维度英文标识
+func (d *DefenseDimension) GetKey() string {
+	if d.Key != "" {
+		return d.Key
+	}
+	if d.Dimension != "" {
+		return d.Dimension
+	}
+	return d.Name
+}
+
+// GetDisplayName 返回用于呈现的友好名称
+func (d *DefenseDimension) GetDisplayName() string {
+	if d.Name != "" {
+		return d.Name
+	}
+	if d.Dimension != "" {
+		return d.Dimension
+	}
+	return d.Key
+}
+
+// DomainFamilyInfo 描述领域族群的元信息与推荐模式
+type DomainFamilyInfo struct {
+	Key               string             `json:"key"`
+	Name              string             `json:"name"`
+	Description       string             `json:"description"`
+	RecommendedMode   string             `json:"recommended_mode"`
+	DefaultDimensions []DefenseDimension `json:"default_dimensions"`
+}
+
+// GetAllDomainFamilies 获取系统支持的所有领域族群元信息字典 (SSOT)
+func GetAllDomainFamilies() []DomainFamilyInfo {
+	return []DomainFamilyInfo{
+		{
+			Key:             DomainFamilyMemoryCrash,
+			Name:            "内存与底层崩溃防御",
+			Description:     "C/C++ 底层内存安全、空指针、野指针、资源释放生命周期等高危缺陷",
+			RecommendedMode: "debate_full",
+			DefaultDimensions: []DefenseDimension{
+				{Key: "Guards", Name: "前置防御事实", Description: "前置判空、非零校验、下标上界断言或参数前置防御等事实"},
+				{Key: "MacroIsolation", Name: "宏条件编译隔离", Description: "代码受非默认宏开关隔离，默认生产构建下不可达"},
+				{Key: "AsyncSafe", Name: "异步与RAII回收", Description: "符合异步信号安全、异常捕获与 RAII 生命周期自动回收保障"},
+			},
+		},
+		{
+			Key:             DomainFamilyArchitectureGov,
+			Name:            "架构与设计规范治理",
+			Description:     "全局架构设计约束、并发模型、线程管控、组件依赖规范治理",
+			RecommendedMode: "chunked_fast",
+			DefaultDimensions: []DefenseDimension{
+				{Key: "ScopeExemption", Name: "非生产作用域豁免", Description: "属于单测桩代码、本地离线排障脚本或辅助工具，无生产暴露"},
+				{Key: "PoolManaged", Name: "底层池化托管", Description: "已接入系统级统一线程池或协程池生命周期托管"},
+				{Key: "ConfigControlled", Name: "动态配置开关", Description: "具备动态配置开关管控，非硬编码无节制创建"},
+			},
+		},
+		{
+			Key:             DomainFamilyNumericalDeterminism,
+			Name:            "数值计算与确定性",
+			Description:     "浮点数精度比较、容器迭代遍历顺序确定性、跨平台一致性",
+			RecommendedMode: "chunked_fast",
+			DefaultDimensions: []DefenseDimension{
+				{Key: "EpsilonTolerance", Name: "显式容差设计", Description: "业务逻辑本就依赖特定 Epsilon 容差或已在外层保证数值边界"},
+				{Key: "NonDeterministicTolerant", Name: "无序不敏感", Description: "算法业务上对遍历顺序不敏感，集合元素具有可交换性"},
+				{Key: "HardwareBound", Name: "特定平台加速契约", Description: "针对特定编译器或硬件体系结构的特定加速契约"},
+			},
+		},
+		{
+			Key:             DomainFamilyTestEngineering,
+			Name:            "测试工程与有效性",
+			Description:     "测试用例断言有效性、空测试、Mock 规范、脆弱测试质量审计",
+			RecommendedMode: "chunked_fast",
+			DefaultDimensions: []DefenseDimension{
+				{Key: "HelperAssertion", Name: "辅助校验函数封装", Description: "断言逻辑封装在专用辅助/校验函数中，并非空断言或无断言"},
+				{Key: "ExpectedNoThrow", Name: "无异常即成功契约", Description: "用例旨在验证操作不抛出异常或安全兜底，无需显式 ASSERT"},
+				{Key: "StubContract", Name: "存根调用契约覆盖", Description: "Mock 或 Stub 的调用期望本身构成隐式逻辑检验"},
+			},
+		},
+		{
+			Key:             DomainFamilySecurityInjection,
+			Name:            "应用安全与注入防御",
+			Description:     "Web/API 安全、SQL/命令注入、XSS、敏感凭据泄漏与越权访问",
+			RecommendedMode: "debate_full",
+			DefaultDimensions: []DefenseDimension{
+				{Key: "WAFSanitized", Name: "前置网关过滤", Description: "流量已通过统一 WAF 网关或前置框架参数类型安全绑定与白名单校验"},
+				{Key: "ParametrizedQuery", Name: "原生预编译绑定", Description: "ORM 或底层驱动自动执行预编译参数绑定，非纯文本拼接"},
+				{Key: "ConstantTrusted", Name: "内部可信常量源", Description: "输入源为内部枚举常量或配置文件，非不受信外部用户输入"},
+			},
+		},
+		{
+			Key:             DomainFamilyComprehensive,
+			Name:            "综合演进与深度检视",
+			Description:     "多维度综合深度架构审查、存量与增量代码变更演化安全防护",
+			RecommendedMode: "debate_full",
+			DefaultDimensions: []DefenseDimension{
+				{Key: "RegressionGuarded", Name: "回归防护充分", Description: "变更已有充分的伴随测试或上下游防护，不构成实际回归隐患"},
+				{Key: "ContextDefense", Name: "全局上下文防御", Description: "全局架构或外层已具备拦截校验机制，单点无需过度防御"},
+				{Key: "HistoricalLegacy", Name: "历史兼容与协议约束", Description: "代码遵循特定历史硬件/网络协议契约约束，非架构缺陷"},
+			},
+		},
+	}
+}
+
 type RunParams struct {
 	TargetScope *string `json:"target_scope,omitempty"` // nil = 不覆盖，使用 TaskType 默认 ("all", "business", "test")
 }
@@ -86,7 +207,9 @@ type TaskType struct {
 	Timeout         int            `gorm:"default:30" json:"timeout"`              // AI 执行超时（分钟）
 
 	// ── 智能体协同与异构调度扩展 (阶段二) ──
-	DebateEnabled bool `gorm:"default:true" json:"debate_enabled"` // 是否启用三方对抗辩论流
+	DebateEnabled     bool           `gorm:"default:true" json:"debate_enabled"`                             // 是否启用三方对抗辩论流
+	DomainFamily      string         `gorm:"size:50;default:'comprehensive_evolution'" json:"domain_family"` // 所属领域族群
+	DefenseDimensions datatypes.JSON `gorm:"type:jsonb" json:"defense_dimensions"`                           // 专属自定义抗辩维度列表
 
 	// ── 专项分析元数据扩展 ──
 	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`                   // 是否启用为专项分析
@@ -99,6 +222,26 @@ type TaskType struct {
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// GetDomainFamily 获取有效的领域族群，缺省安全回退
+func (t *TaskType) GetDomainFamily() string {
+	if t.DomainFamily != "" {
+		return t.DomainFamily
+	}
+	return DomainFamilyComprehensive
+}
+
+// GetDefenseDimensions 解析任务专有抗辩维度列表
+func (t *TaskType) GetDefenseDimensions() []DefenseDimension {
+	if len(t.DefenseDimensions) == 0 {
+		return nil
+	}
+	var dims []DefenseDimension
+	if err := json.Unmarshal(t.DefenseDimensions, &dims); err == nil {
+		return dims
+	}
+	return nil
 }
 
 // GetAllowedCategories 返回该任务类型配置的标准受控分类白名单

@@ -29,6 +29,18 @@
   "is_campaign": true,
   "campaign_path": "cjson",
   "governance_mode": "defect_tracking",
+  "domain_family": "memory_crash",
+  "defense_dimensions": [
+    {
+      "dimension": "AdoptedByItem",
+      "description": "子节点已被 cJSON_AddItemToObject/Array 挂载，所有权已转移至根节点无需重复释放"
+    },
+    {
+      "dimension": "NullGuarded",
+      "description": "cJSON 指针为 NULL 或 Parse 返回失败时已做安全阻断，不触发物理泄露"
+    }
+  ],
+
   "categories": [
     "cJSON_Parse 内存泄漏",
     "cJSON_Create 内存泄漏",

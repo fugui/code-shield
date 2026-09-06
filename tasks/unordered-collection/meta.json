@@ -53,6 +53,22 @@
   "is_campaign": true,
   "campaign_path": "unordered-collection",
   "governance_mode": "defect_tracking",
+  "domain_family": "numerical_determinism",
+  "defense_dimensions": [
+    {
+      "dimension": "OrderIndependent",
+      "description": "下游消费逻辑为纯无序统计（如总数求和、计数查找），对集合元素遍历顺序完全不敏感"
+    },
+    {
+      "dimension": "SortedUpstream",
+      "description": "从 Map/Set 导出为列表后，后续逻辑在使用前已显式调用强制排序（如 sort.Slice、Collections.sort）"
+    },
+    {
+      "dimension": "DeterministicKey",
+      "description": "使用的 Map Key 天然单调自增或容器类型为保序实现（如 LinkedHashMap、有序索引表）"
+    }
+  ],
+
   "categories": [
     "无序集合-哈希签名顺序依赖",
     "无序集合-序列化比较缺陷",

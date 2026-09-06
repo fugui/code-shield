@@ -25,6 +25,22 @@
   "is_campaign": true,
   "campaign_path": "coredump",
   "governance_mode": "defect_tracking",
+  "domain_family": "memory_crash",
+  "defense_dimensions": [
+    {
+      "dimension": "Guards",
+      "description": "前置判空、非零校验、下标上界断言或参数前置防御等事实"
+    },
+    {
+      "dimension": "MacroIsolation",
+      "description": "该代码受非默认宏开关隔离，默认生产构建下不可达"
+    },
+    {
+      "dimension": "AsyncSafe",
+      "description": "符合异步信号安全、异常捕获与 RAII 生命周期回收保障"
+    }
+  ],
+
   "categories": [
     "多线程并发问题-数据竞争",
     "多线程并发问题-锁同步不当",

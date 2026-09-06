@@ -23,6 +23,11 @@ func logTaskTypeFileErr(action, path string, err error) {
 	}
 }
 
+// GetDomainFamilies returns all supported domain families and their default defense dimensions
+func GetDomainFamilies(c *gin.Context) {
+	c.JSON(http.StatusOK, models.GetAllDomainFamilies())
+}
+
 // GetTaskTypes returns all task types
 func GetTaskTypes(c *gin.Context) {
 	var taskTypes []models.TaskType
@@ -58,6 +63,9 @@ func CreateTaskType(c *gin.Context) {
 
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
+	}
+	if req.DomainFamily == "" {
+		req.DomainFamily = models.DomainFamilyComprehensive
 	}
 
 	if req.IsCampaign {
@@ -184,21 +192,24 @@ func UpdateTaskType(c *gin.Context) {
 	oldTaskType := taskType
 
 	var req struct {
-		DisplayName     *string          `json:"display_name"`
-		Description     *string          `json:"description"`
-		EngineMode      *string          `json:"engine_mode"`
-		EngineConfig    *json.RawMessage `json:"engine_config"`
-		TargetScope     *string          `json:"target_scope"`
-		NotifyTemplate  *string          `json:"notify_template"`
-		NotifyThreshold *int             `json:"notify_threshold"`
-		NotifyCc        *json.RawMessage `json:"notify_cc"`
-		Timeout         *int             `json:"timeout"`
-		IsActive        *bool            `json:"is_active"`
-		IsCampaign      *bool            `json:"is_campaign"`
-		CampaignPath    *string          `json:"campaign_path"`
-		GovernanceMode  *string          `json:"governance_mode"`
-		CampaignIcon    *string          `json:"campaign_icon"`
-		CampaignConfig  *json.RawMessage `json:"campaign_config"`
+		DisplayName       *string          `json:"display_name"`
+		Description       *string          `json:"description"`
+		EngineMode        *string          `json:"engine_mode"`
+		EngineConfig      *json.RawMessage `json:"engine_config"`
+		TargetScope       *string          `json:"target_scope"`
+		NotifyTemplate    *string          `json:"notify_template"`
+		NotifyThreshold   *int             `json:"notify_threshold"`
+		NotifyCc          *json.RawMessage `json:"notify_cc"`
+		Timeout           *int             `json:"timeout"`
+		IsActive          *bool            `json:"is_active"`
+		IsCampaign        *bool            `json:"is_campaign"`
+		CampaignPath      *string          `json:"campaign_path"`
+		GovernanceMode    *string          `json:"governance_mode"`
+		CampaignIcon      *string          `json:"campaign_icon"`
+		CampaignConfig    *json.RawMessage `json:"campaign_config"`
+		DomainFamily      *string          `json:"domain_family"`
+		DefenseDimensions *json.RawMessage `json:"defense_dimensions"`
+		Categories        *json.RawMessage `json:"categories"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -250,6 +261,15 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.CampaignConfig != nil {
 		updates["campaign_config"] = string(*req.CampaignConfig)
+	}
+	if req.DomainFamily != nil {
+		updates["domain_family"] = *req.DomainFamily
+	}
+	if req.DefenseDimensions != nil {
+		updates["defense_dimensions"] = string(*req.DefenseDimensions)
+	}
+	if req.Categories != nil {
+		updates["categories"] = string(*req.Categories)
 	}
 
 	targetIsCampaign := taskType.IsCampaign

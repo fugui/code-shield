@@ -218,4 +218,3 @@ void Worker::ProcessData() {
 		t.Errorf("expected empty line to be found at 8, got %d", anchorEmpty.StartLine)
 	}
 }
-

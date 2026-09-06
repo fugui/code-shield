@@ -7,13 +7,13 @@ import (
 
 // HunterCandidate 猎手初筛出的候选缺陷
 type HunterCandidate struct {
-	CandidateID      string `json:"candidate_id"`           // 候选编号如 H-001
-	FilePath         string `json:"file_path"`              // 问题文件相对路径
-	LineRange        string `json:"line_range"`             // 行号范围如 "1915-1919"
-	TriggerLine      string `json:"trigger_line"`           // 核心引发风险的关键单一语句 (用于抗漂移强指纹计算)
-	ScopeSymbol      string `json:"scope_symbol"`           // AST 作用域符号（函数名/类名签名）
-	CodeSnippet      string `json:"code_snippet"`           // 原始代码片段
-	CWECategory      string `json:"cwe_category,omitempty"` // 兼容历史 CWE 字段
+	CandidateID      string `json:"candidate_id"`                // 候选编号如 H-001
+	FilePath         string `json:"file_path"`                   // 问题文件相对路径
+	LineRange        string `json:"line_range"`                  // 行号范围如 "1915-1919"
+	TriggerLine      string `json:"trigger_line"`                // 核心引发风险的关键单一语句 (用于抗漂移强指纹计算)
+	ScopeSymbol      string `json:"scope_symbol"`                // AST 作用域符号（函数名/类名签名）
+	CodeSnippet      string `json:"code_snippet"`                // 原始代码片段
+	CWECategory      string `json:"cwe_category,omitempty"`      // 兼容历史 CWE 字段
 	Category         string `json:"category,omitempty"`          // 标准受控分类字段
 	Title            string `json:"title,omitempty"`             // 简明缺陷标题
 	TriggerCondition string `json:"trigger_condition,omitempty"` // 触发诱因与成因（中性健壮性术语）

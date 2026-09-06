@@ -35,6 +35,22 @@
   "is_campaign": true,
   "campaign_path": "thread",
   "governance_mode": "defect_tracking",
+  "domain_family": "architecture_governance",
+  "defense_dimensions": [
+    {
+      "dimension": "ScopeExemption",
+      "description": "属于单测桩代码、本地离线排障脚本或内部辅助工具，无生产环境线上影响"
+    },
+    {
+      "dimension": "ThirdPartyLib",
+      "description": "属于第三方开源组件或外部库底层封装，内部线程创建行为无法侵入改动"
+    },
+    {
+      "dimension": "RAIILifetime",
+      "description": "已封装自研统一 RAII 资源管理类自动执行 join/detach，无崩溃泄露风险"
+    }
+  ],
+
   "categories": [
     "无问题",
     "必要性-频繁创建",

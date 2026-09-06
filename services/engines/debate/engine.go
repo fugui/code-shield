@@ -507,7 +507,10 @@ func (e *DebateEngine) runChallengerStage(ctx *engines.EngineContext, bundle chu
 			Candidates: sanitizeCandidatesForPrompt(batch),
 			Summary:    hunterOut.Summary,
 		}
-		prompt := buildChallengerPrompt(ctx, bundle, subHunterOut)
+		prompt, promptErr := buildChallengerPrompt(ctx, bundle, subHunterOut)
+		if promptErr != nil {
+			return nil, totalTokens, fmt.Errorf("failed to build challenger prompt: %w", promptErr)
+		}
 
 		subOutPath := outPath
 		if len(batches) > 1 && outPath != "" {
@@ -625,7 +628,10 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 			Summary:      challOut.Summary,
 		}
 
-		prompt := buildJudgePrompt(ctx, bundle, subHunterOut, subChallOut)
+		prompt, promptErr := buildJudgePrompt(ctx, bundle, subHunterOut, subChallOut)
+		if promptErr != nil {
+			return nil, totalTokens, fmt.Errorf("failed to build judge prompt: %w", promptErr)
+		}
 
 		subOutPath := outPath
 		if len(batches) > 1 && outPath != "" {
@@ -755,128 +761,22 @@ func sanitizeCandidatesForPrompt(candidates []HunterCandidate) []HunterCandidate
 	return sanitized
 }
 
-// buildHunterPrompt 组装猎手 Prompt (采用中性代码健壮性审计术语，降低模型内容审查风控误拦截)
+// buildHunterPrompt 委托 PromptAssembler 动态装配猎手 Prompt
 func buildHunterPrompt(ctx *engines.EngineContext, bundle chunker.SemanticBundle) string {
-	var sb strings.Builder
-	sb.WriteString("# Role\n你是一个资深静态代码健壮性与安全审计员 (Code Robustness & Quality Auditor)。你的目标是审查当前代码分片中潜在的运行期异常、崩溃风险及严重质量缺陷（如空指针解引用、缓冲区越界、资源泄漏、未初始化使用等）。\n\n")
-
-	if len(bundle.MacroContext) > 0 {
-		sb.WriteString("## 构建宏环境定义 (Build Macros Context)\n")
-		for k, v := range bundle.MacroContext {
-			sb.WriteString(fmt.Sprintf("- `%s = %s`\n", k, v))
-		}
-		sb.WriteString("\n")
-	}
-
-	if bundle.HeaderOutline != "" {
-		sb.WriteString("## 核心头文件大纲声明 (Header Outline)\n```cpp\n")
-		sb.WriteString(bundle.HeaderOutline)
-		sb.WriteString("\n```\n\n")
-	}
-
-	if len(bundle.NegativeRules) > 0 {
-		sb.WriteString("## 历史负样本与例外规则 (False Positive / Negative Rules)\n")
-		sb.WriteString("以下模式已在历史审计中确认安全或被研发标记为免扫，切勿针对它们误报：\n")
-		for _, r := range bundle.NegativeRules {
-			sb.WriteString(fmt.Sprintf("- %s\n", r))
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString("## 待检视文件列表\n")
-	for _, f := range bundle.AllFiles {
-		sb.WriteString(fmt.Sprintf("- `%s`\n", f))
-	}
-	sb.WriteString("\n## 任务输出格式规范\n必须以合法纯 JSON 格式输出，不得包裹 Markdown 标记代码块。\n字段 trigger_condition 描述缺陷触发的前置诱因与机理：\n")
-	sb.WriteString(`{
-  "candidates": [
-    {
-      "candidate_id": "H-001",
-      "file_path": "src/example.cc",
-      "line_range": "42-50",
-      "trigger_line": "*ptr = 100;",
-      "scope_symbol": "ExampleClass::doSomething",
-      "category": "内存管理问题-空指针解引用",
-      "title": "ptr 指针解引用前未判空导致 coredump",
-      "code_snippet": "...",
-      "trigger_condition": "当输入参数为空指针时直接解引用发生崩溃",
-      "suspected_trigger": "传入未经验证的指针参数"
-    }
-  ],
-  "summary": "初筛发现 1 个候选漏洞"
-}`)
-
-	return sb.String()
+	assembler := &PromptAssembler{}
+	return assembler.BuildHunterPrompt(ctx, bundle)
 }
 
-// buildChallengerPrompt 组装辩护人 Prompt
-func buildChallengerPrompt(ctx *engines.EngineContext, bundle chunker.SemanticBundle, hunterOut *HunterOutput) string {
-	var sb strings.Builder
-	sb.WriteString("# Role\n你是一个严谨的代码审查辩护专家 (Code Review Challenger)。你的职责是基于源码上下文、编译宏、前置断言守卫等事实，客观求证初筛缺陷是否存在误报或已被妥善防御。\n\n")
-
-	sb.WriteString("## 猎手提出的候选缺陷清单\n```json\n")
-	candBytes, _ := json.MarshalIndent(hunterOut.Candidates, "", "  ")
-	sb.Write(candBytes)
-	sb.WriteString("\n```\n\n")
-
-	sb.WriteString("## 辩护维度\n请从以下角度进行辩护（若确实有漏洞则如实报告 CHALLENGE_FAILED）：\n")
-	sb.WriteString("1. Guards（前置判空守卫或断言保证安全）\n2. MacroIsolation（受非默认宏隔离保护）\n3. Architecture（业务上下文或生命周期保证绝不可能触发）\n\n")
-
-	sb.WriteString("## 输出格式规范\n必须以合法纯 JSON 格式输出：\n")
-	sb.WriteString(`{
-  "defense_cases": [
-    {
-      "candidate_id": "H-001",
-      "defense_verdict": "DEFENSE_SUCCESSFUL",
-      "defense_arguments": [
-        {"dimension": "Guards", "finding": "第 38 行已做 ASSERT 判空，不可达"}
-      ],
-      "mitigating_factors": "前置断言保护",
-      "counter_evidence_snippet": "assert(ptr != nullptr);"
-    }
-  ],
-  "summary": "成功辩护 1 处误报"
-}`)
-
-	return sb.String()
+// buildChallengerPrompt 委托 PromptAssembler 动态装配辩护人 Prompt
+func buildChallengerPrompt(ctx *engines.EngineContext, bundle chunker.SemanticBundle, hunterOut *HunterOutput) (string, error) {
+	assembler := &PromptAssembler{}
+	return assembler.BuildChallengerPrompt(ctx, bundle, hunterOut)
 }
 
-// buildJudgePrompt 组装法官 Prompt
-func buildJudgePrompt(ctx *engines.EngineContext, bundle chunker.SemanticBundle, hunterOut *HunterOutput, challOut *ChallengerOutput) string {
-	var sb strings.Builder
-	sb.WriteString("# Role\n你是一个资深代码缺陷终审仲裁专家 (Code Audit Arbitrator)。你需要综合初筛发现与辩护抗辩事实，依据源码真实上下文独立研判，做出终审裁决。\n\n")
-
-	sb.WriteString("## 控辩双方材料\n### 猎手初筛清单:\n```json\n")
-	hBytes, _ := json.MarshalIndent(hunterOut.Candidates, "", "  ")
-	sb.Write(hBytes)
-	sb.WriteString("\n```\n\n### 辩护人对抗意见:\n```json\n")
-	cBytes, _ := json.MarshalIndent(challOut.DefenseCases, "", "  ")
-	sb.Write(cBytes)
-	sb.WriteString("\n```\n\n")
-
-	sb.WriteString("## 终审裁决规范 (Verdict Options)\n- CONFIRMED: 漏洞确凿无误\n- REJECTED: 确系误报，予以驳回\n- CONDITIONAL: 条件性触发（如依赖特殊宏开启或极端配置）\n\n")
-
-	sb.WriteString("## 输出格式规范\n必须以合法纯 JSON 格式输出：\n")
-	sb.WriteString(`{
-  "final_verdicts": [
-    {
-      "candidate_id": "H-001",
-      "verdict": "CONFIRMED",
-      "severity_preliminary": "严重",
-      "category": "内存管理问题-空指针解引用",
-      "file_path": "src/example.cc",
-      "line_number": "42-50",
-      "trigger_line": "*ptr = 100;",
-      "scope_symbol": "ExampleClass::doSomething",
-      "title": "ptr 指针解引用前未判空导致 coredump",
-      "judgement_rationale": "【综合裁决】: 确认存在空指针解引用风险。辩护人提出的 assert 在 Release 编译下失效，且上游缺乏显式空指针校验。",
-      "code_snippet": "...",
-      "suggestion": "在解引用前添加 if (ptr == nullptr) return -1; 严格判空守卫"
-    }
-  ]
-}`)
-
-	return sb.String()
+// buildJudgePrompt 委托 PromptAssembler 动态装配法官 Prompt
+func buildJudgePrompt(ctx *engines.EngineContext, bundle chunker.SemanticBundle, hunterOut *HunterOutput, challOut *ChallengerOutput) (string, error) {
+	assembler := &PromptAssembler{}
+	return assembler.BuildJudgePrompt(ctx, bundle, hunterOut, challOut)
 }
 
 // callAITier 底层调用大模型驱动
