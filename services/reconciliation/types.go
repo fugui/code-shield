@@ -2,6 +2,7 @@ package reconciliation
 
 import (
 	"code-shield/models"
+	"code-shield/services/invoker"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 // 对账关系常量 (Relation)
 const (
 	RelationSame          = "SAME"               // 相同缺陷 (高置信)
+	RelationSameSemantic  = "SAME_SEMANTIC"      // AI 语义仲裁确认的相同缺陷 (Tier 5)
 	RelationSameMultiView = "SAME_MULTI_VIEW"    // 同锚点多视角上报
 	RelationProbable      = "PROBABLE"           // 疑似相同 (需人工确认)
 	RelationSplitFrom     = "SPLIT_FROM"         // 一拆多
@@ -186,6 +188,7 @@ type ReconcileRequest struct {
 	ChangedFiles      []string
 	HunkRanges        map[string][]LineRange
 	ScannedFiles      []string
+	AIInvoker         invoker.AIInvoker
 }
 
 // ReconcileResult 对账执行返回结果
