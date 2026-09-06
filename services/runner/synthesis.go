@@ -138,6 +138,9 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 		activeItems = allFindings
 	}
 
+	// 将归并后的全量活动条目同步回任务上下文，确保后续后处理评分基于归并后总数
+	ctx.Findings = activeItems
+
 	// 若活动条目为空，直接写入静态空报告快照
 	if len(activeItems) == 0 {
 		emptyReportMarkdown := fmt.Sprintf(`# Code-Shield 代码检视报告

@@ -163,3 +163,38 @@ func TestExtractLatestComment(t *testing.T) {
 		t.Errorf("expected '排查中，确认为边界缺陷', got %q", got)
 	}
 }
+
+func TestCalculateRiskScoreFromFindings(t *testing.T) {
+	items := []FindingItemDTO{
+		{Severity: SeverityFatal},      // 5
+		{Severity: SeverityFatal},      // 5
+		{Severity: SeverityCritical},   // 4
+		{Severity: SeverityMajor},      // 2
+		{Severity: SeverityMinor},      // 1
+		{Severity: SeveritySuggestion}, // 0
+		{Severity: SeverityPass},       // 0
+	}
+
+	expectedScore := 5*2 + 4*1 + 2*1 + 1*1 // 10 + 4 + 2 + 1 = 17
+	got := CalculateRiskScoreFromFindings(items)
+	if got != expectedScore {
+		t.Errorf("CalculateRiskScoreFromFindings() = %d, expected %d", got, expectedScore)
+	}
+
+	// 针对 7致命 + 3严重 + 21建议的对账归并场景
+	items31 := make([]FindingItemDTO, 0, 31)
+	for i := 0; i < 7; i++ {
+		items31 = append(items31, FindingItemDTO{Severity: SeverityFatal})
+	}
+	for i := 0; i < 3; i++ {
+		items31 = append(items31, FindingItemDTO{Severity: SeverityCritical})
+	}
+	for i := 0; i < 21; i++ {
+		items31 = append(items31, FindingItemDTO{Severity: SeveritySuggestion})
+	}
+	// 7 * 5 + 3 * 4 = 35 + 12 = 47
+	if score31 := CalculateRiskScoreFromFindings(items31); score31 != 47 {
+		t.Errorf("expected score 47 for 7 fatal + 3 critical + 21 suggestion, got %d", score31)
+	}
+}
+

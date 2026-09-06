@@ -203,7 +203,9 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 
 	if result != nil {
 		ctx.HasFailedChunks = result.HasFailedChunks
-		ctx.Findings = result.Findings
+		if len(ctx.Findings) == 0 {
+			ctx.Findings = result.Findings
+		}
 
 		successfulChunks := 0
 		failedChunks := 0
@@ -273,9 +275,11 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		return runErr
 	}
 
-	// Stage 5: 后处理评分计算
+	// Stage 5: 后处理评分计算（必须基于归并后的全量总集计算）
 	UpdateTaskStatus(ctx.Report.ID, models.StatusPostProcessing)
-	taskResult := RunPostProcess(ctx.Findings, ctx.TaskType)
+	effectiveFindings := GetEffectiveFindings(ctx)
+	ctx.Findings = effectiveFindings
+	taskResult := RunPostProcess(effectiveFindings, ctx.TaskType)
 
 	// Stage 6: 事务最终化、治理归并与交付通告
 	return Finalize(ctx, taskResult)
