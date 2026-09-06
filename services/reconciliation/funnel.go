@@ -29,7 +29,9 @@ func PrepareInternalFindings(reportID uint, findings []models.AnalysisFinding, r
 
 	for i := range findings {
 		f := findings[i]
-		normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(f.FilePath)))
+		canonPath := CanonicalizeRelativePath(f.FilePath, repoRoot)
+		f.FilePath = canonPath
+		normPath := strings.ToLower(filepath.ToSlash(canonPath))
 		startLine, endLine := ParseLineNumberRange(f.LineNumber)
 		cleanTrigger := CleanSourceToken(f.TriggerLine)
 		normScope := NormalizeScopeSymbol(f.ScopeSymbol)
@@ -230,6 +232,7 @@ func RunDeterministicFunnel(baseList []InternalFinding, currentList []InternalFi
 
 		bestAIdx := -1
 		bestSim := 0.0
+		bestTierReason := "同文件行区间重叠与物理 Token 相似 (作用域/枚举重定义漂移容错)"
 		for aIdx, a := range baseList {
 			if a.NormPath != b.NormPath {
 				continue
@@ -246,11 +249,29 @@ func RunDeterministicFunnel(baseList []InternalFinding, currentList []InternalFi
 			tokenSim := CalculateTokenJaccard(b.CleanTrigger, a.CleanTrigger)
 			isSameCat := strings.EqualFold(b.Category, a.Category)
 
-			// 准则：(lineOverlap || lineDiff <= 30) && (tokenSim > 0.5 || (isSameCat && tokenSim > 0.35))
-			if (lineOverlap || lineDiff <= 30) && (tokenSim > 0.5 || (isSameCat && tokenSim > 0.35)) {
-				if tokenSim > bestSim {
-					bestSim = tokenSim
+			// 准则 1：物理 Token 相似
+			tokenMatched := (lineOverlap || lineDiff <= 30) && (tokenSim > 0.5 || (isSameCat && tokenSim > 0.35))
+
+			// 准则 2：代码块 (Snippet) 上下文重叠 (相邻行多视角或重叠块，如 printf.h 487 vs 488)
+			snippetSim := 0.0
+			if len(a.Payload.CodeSnippet) > 0 && len(b.Payload.CodeSnippet) > 0 {
+				snippetSim = CalculateSnippetOverlap(a.Payload.CodeSnippet, b.Payload.CodeSnippet)
+			}
+			snippetMatched := (lineOverlap || lineDiff <= 15) && snippetSim >= 0.70
+
+			if tokenMatched || snippetMatched {
+				effectiveSim := tokenSim
+				if snippetSim > effectiveSim {
+					effectiveSim = snippetSim
+				}
+				if effectiveSim > bestSim {
+					bestSim = effectiveSim
 					bestAIdx = aIdx
+					if snippetMatched && !tokenMatched {
+						bestTierReason = "同文件代码块上下文高度重叠 (相邻行多视角)"
+					} else {
+						bestTierReason = "同文件行区间重叠与物理 Token 相似 (作用域/枚举重定义漂移容错)"
+					}
 				}
 			}
 		}
@@ -266,7 +287,7 @@ func RunDeterministicFunnel(baseList []InternalFinding, currentList []InternalFi
 				MatchedTier:    3,
 				Confidence:     0.88,
 				Relation:       RelationSame,
-				Reason:         "同文件行区间重叠与物理 Token 相似 (作用域/枚举重定义漂移容错)",
+				Reason:         bestTierReason,
 				SeverityRange:  sevRange,
 				SeverityTriage: sevConflict,
 			}

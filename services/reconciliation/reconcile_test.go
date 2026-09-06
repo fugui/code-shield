@@ -1,8 +1,11 @@
 package reconciliation
 
 import (
-	"code-shield/models"
+	"os"
 	"testing"
+
+	"code-shield/models"
+	"code-shield/services/invoker"
 )
 
 func TestGenerateItemUID(t *testing.T) {
@@ -208,5 +211,217 @@ func TestColdPoolResurrection(t *testing.T) {
 	}
 	if resurrected.LifecycleStatus != LifecycleActive {
 		t.Errorf("Expected LifecycleStatus ACTIVE, got %s", resurrected.LifecycleStatus)
+	}
+}
+
+func TestCanonicalizeRelativePath(t *testing.T) {
+	cases := []struct {
+		input    string
+		repoRoot string
+		expected string
+	}{
+		{
+			input:    "codes/scylladb/fmt/include/fmt/format.h",
+			repoRoot: "/path/to/repo",
+			expected: "include/fmt/format.h",
+		},
+		{
+			input:    "./include/fmt/chrono.h",
+			repoRoot: "",
+			expected: "include/fmt/chrono.h",
+		},
+		{
+			input:    "src/core/main.cpp",
+			repoRoot: "",
+			expected: "src/core/main.cpp",
+		},
+		{
+			input:    "build/temp/sub/src/util.go",
+			repoRoot: "",
+			expected: "src/util.go",
+		},
+	}
+
+	for _, c := range cases {
+		actual := CanonicalizeRelativePath(c.input, c.repoRoot)
+		if actual != c.expected {
+			t.Errorf("CanonicalizeRelativePath(%q, %q) = %q, expected %q", c.input, c.repoRoot, actual, c.expected)
+		}
+	}
+}
+
+func TestCalculateSnippetOverlap(t *testing.T) {
+	s1 := `template <typename T>
+void print_arg(const T& val) {
+    std::cout << val;
+}`
+	s2 := `template <typename T>
+void print_arg(const T& val) {
+    std::cout << val;
+}`
+	overlap := CalculateSnippetOverlap(s1, s2)
+	if overlap != 1.0 {
+		t.Errorf("Expected overlap 1.0 for identical snippets, got %f", overlap)
+	}
+
+	s3 := `template <typename T>
+void print_arg(const T& val) {
+    // some comment
+    std::cout << val;
+}`
+	overlap3 := CalculateSnippetOverlap(s1, s3)
+	if overlap3 < 0.70 {
+		t.Errorf("Expected overlap >= 0.70, got %f", overlap3)
+	}
+
+	s4 := `int unrelated_function() { return 42; }`
+	overlap4 := CalculateSnippetOverlap(s1, s4)
+	if overlap4 > 0.30 {
+		t.Errorf("Expected low overlap for unrelated snippet, got %f", overlap4)
+	}
+}
+
+func TestSnippetOverlapTier3Funnel(t *testing.T) {
+	// 模拟 printf.h:487 vs 488：触发代码单行 token 差异大，但上下文 snippet 重叠达 100%
+	snippet := `template <typename Char>
+void format_to(basic_format_args<Char> args) {
+    parse_format_string(args);
+}`
+
+	base := InternalFinding{
+		OriginalIndex: 0,
+		Fingerprint:   "fp_printf_487",
+		NormPath:      "include/fmt/printf.h",
+		StartLine:     487,
+		EndLine:       490,
+		CleanTrigger:  "format_to(basic_format_args<Char> args)",
+		Category:      "安全风险",
+		Payload: models.AnalysisFinding{
+			FilePath:    "include/fmt/printf.h",
+			LineNumber:  "487-490",
+			TriggerLine: "void format_to(basic_format_args<Char> args)",
+			CodeSnippet: snippet,
+		},
+	}
+
+	curr := InternalFinding{
+		OriginalIndex: 0,
+		Fingerprint:   "fp_printf_488",
+		NormPath:      "include/fmt/printf.h",
+		StartLine:     488,
+		EndLine:       491,
+		CleanTrigger:  "parse_format_string(args)", // 单行 token 与 base 差异较大
+		Category:      "逻辑漏洞",
+		Payload: models.AnalysisFinding{
+			FilePath:    "include/fmt/printf.h",
+			LineNumber:  "488-491",
+			TriggerLine: "parse_format_string(args);",
+			CodeSnippet: snippet, // snippet 完全重叠
+		},
+	}
+
+	matchedCurrentMap, claimedBase, _ := RunDeterministicFunnel([]InternalFinding{base}, []InternalFinding{curr})
+	if len(matchedCurrentMap) != 1 || !claimedBase[0] {
+		t.Fatalf("Expected 1 match from funnel, got %d", len(matchedCurrentMap))
+	}
+
+	m := matchedCurrentMap[0]
+	if m.MatchedTier != 3 {
+		t.Errorf("Expected MatchedTier 3 (TierFuzzy), got %d", m.MatchedTier)
+	}
+	if m.Relation != RelationSame {
+		t.Errorf("Expected RelationSame, got %s", m.Relation)
+	}
+}
+
+type mockAIInvoker struct {
+	responseJSON string
+	err          error
+}
+
+func (m *mockAIInvoker) Invoke(req invoker.AIRequest) error {
+	if m.err != nil {
+		return m.err
+	}
+	return os.WriteFile(req.OutputPath, []byte(m.responseJSON), 0644)
+}
+
+func (m *mockAIInvoker) Name() string {
+	return "mock-ai"
+}
+
+func TestArbitrateResidualsAI(t *testing.T) {
+	// 模拟 std.h:671 vs 688：分类不同（安全风险 vs 逻辑漏洞），行差 17 行，无法被规则漏斗直接匹配
+	base := InternalFinding{
+		OriginalIndex: 0,
+		ItemUID:       "F181-std01",
+		NormPath:      "include/fmt/std.h",
+		StartLine:     671,
+		EndLine:       675,
+		NormScope:     "format_as",
+		Category:      "安全风险",
+		Severity:      "致命",
+		CleanTrigger:  "format_as(const T& value)",
+		Payload: models.AnalysisFinding{
+			FilePath:    "include/fmt/std.h",
+			LineNumber:  "671-675",
+			Title:       "递归解包未限制最大展开层数可能导致栈溢出",
+			Detail:      "在 format_as 函数中缺少递归深度保护",
+			CodeSnippet: "template <typename T> void format_as(...) { ... }",
+		},
+	}
+
+	curr := InternalFinding{
+		OriginalIndex: 0,
+		ItemUID:       "F182-std01",
+		NormPath:      "include/fmt/std.h",
+		StartLine:     688,
+		EndLine:       692,
+		NormScope:     "format_as",
+		Category:      "逻辑漏洞",
+		Severity:      "严重",
+		CleanTrigger:  "return format_as(val.get())",
+		Payload: models.AnalysisFinding{
+			FilePath:    "include/fmt/std.h",
+			LineNumber:  "688-692",
+			Title:       "解包过程存在无限递归调用风险",
+			Detail:      "递归展开嵌套容器时未设置深度上限",
+			CodeSnippet: "return format_as(val.get());",
+		},
+	}
+
+	mockInv := &mockAIInvoker{
+		responseJSON: `{
+			"is_same_defect": true,
+			"confidence": 0.95,
+			"reason": "两份报告均指向同一递归解包缺少深度控制导致的潜在栈溢出隐患",
+			"primary_uid": "F182-std01"
+		}`,
+	}
+
+	results := ArbitrateResiduals([]InternalFinding{base}, []InternalFinding{curr}, mockInv)
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 arbitration result, got %d", len(results))
+	}
+
+	r := results[0]
+	if r.Relation != RelationSameSemantic {
+		t.Errorf("Expected RelationSameSemantic, got %s", r.Relation)
+	}
+	if r.Confidence != 0.95 {
+		t.Errorf("Expected Confidence 0.95, got %f", r.Confidence)
+	}
+	if r.SeverityRange != "[\"严重\",\"致命\"]" {
+		t.Errorf("Expected SeverityRange [\"严重\",\"致命\"], got %s", r.SeverityRange)
+	}
+	if r.SeverityTriage {
+		t.Errorf("Expected SeverityTriage false (严重 w=3 vs 致命 w=4 差异为1 < 2，无需打回人工)")
+	}
+
+	// 验证等级跨度悬殊 (如建议 w=1 vs 致命 w=4) 时触发 SeverityTriage
+	base.Severity = "建议"
+	resultsConflict := ArbitrateResiduals([]InternalFinding{base}, []InternalFinding{curr}, mockInv)
+	if len(resultsConflict) != 1 || !resultsConflict[0].SeverityTriage {
+		t.Errorf("Expected SeverityTriage true for 建议 vs 致命, got %+v", resultsConflict)
 	}
 }

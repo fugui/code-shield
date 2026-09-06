@@ -73,6 +73,7 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 		HeadCommit:        ctx.Report.HeadCommit,
 		RepoUnchanged:     repoUnchanged,
 		GovernanceMode:    ctx.TaskType.GovernanceMode,
+		AIInvoker:         GetAIInvoker(models.AppConfig.AI.Backend),
 	}
 
 	reconResult, reconErr := reconciliation.Reconcile(reconReq)

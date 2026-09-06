@@ -31,6 +31,14 @@ func Reconcile(req *ReconcileRequest) (*ReconcileResult, error) {
 		if err := json.Unmarshal(req.BaseSynthesisJSON, &parsedLedger); err == nil && len(parsedLedger.Items) > 0 {
 			baseItems = parsedLedger.Items
 			baseArchived = parsedLedger.ArchivedItems
+			for i := range baseItems {
+				baseItems[i].FilePath = CanonicalizeRelativePath(baseItems[i].FilePath, req.RepoRoot)
+				baseItems[i].Payload.FilePath = baseItems[i].FilePath
+			}
+			for i := range baseArchived {
+				baseArchived[i].FilePath = CanonicalizeRelativePath(baseArchived[i].FilePath, req.RepoRoot)
+				baseArchived[i].Payload.FilePath = baseArchived[i].FilePath
+			}
 		} else {
 			// 回退兼容旧版 []models.AnalysisFinding 平铺数组
 			var legacyFindings []models.AnalysisFinding
@@ -74,14 +82,17 @@ func Reconcile(req *ReconcileRequest) (*ReconcileResult, error) {
 		sLine, eLine := ParseLineNumberRange(it.LineNumber)
 		cleanTrig := CleanSourceToken(it.Payload.TriggerLine)
 		normScope := NormalizeScopeSymbol(it.Payload.ScopeSymbol)
+		canonPath := CanonicalizeRelativePath(it.FilePath, req.RepoRoot)
+		it.Payload.FilePath = canonPath
+		normPath := strings.ToLower(filepath.ToSlash(canonPath))
 		if normScope == "" {
-			normScope = filepath.Base(strings.ToLower(filepath.ToSlash(it.FilePath)))
+			normScope = filepath.Base(normPath)
 		}
 
 		baseInternal[idx] = InternalFinding{
 			OriginalIndex: idx,
 			Payload:       it.Payload,
-			NormPath:      strings.ToLower(filepath.ToSlash(strings.TrimSpace(it.FilePath))),
+			NormPath:      normPath,
 			NormScope:     normScope,
 			CleanTrigger:  cleanTrig,
 			StartLine:     sLine,
@@ -110,9 +121,9 @@ func Reconcile(req *ReconcileRequest) (*ReconcileResult, error) {
 		}
 	}
 
-	// 执行 R5 残差二部图对齐 (带复杂度熔断)
+	// 执行 R5 残差二部图对齐 (带复杂度熔断与 AI 语义判决)
 	if len(baseResiduals) > 0 && len(currentResiduals) > 0 {
-		r5Results := ArbitrateResiduals(baseResiduals, currentResiduals)
+		r5Results := ArbitrateResiduals(baseResiduals, currentResiduals, req.AIInvoker)
 		for _, r5 := range r5Results {
 			if matchedCurrentMap[r5.CurrentIndex] == nil && !claimedBaseMap[r5.BaseIndex] {
 				claimedBaseMap[r5.BaseIndex] = true

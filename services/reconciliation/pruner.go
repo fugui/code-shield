@@ -27,7 +27,8 @@ func EvaluateUnmatchedBaseItem(
 ) PrunerDecision {
 	// 1. 守卫 L1：检查物理文件是否存在
 	if repoRoot != "" && item.FilePath != "" {
-		fullPath := filepath.Join(repoRoot, item.FilePath)
+		canonPath := CanonicalizeRelativePath(item.FilePath, repoRoot)
+		fullPath := filepath.Join(repoRoot, canonPath)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			return PrunerDecision{
 				ShouldArchive: true,
