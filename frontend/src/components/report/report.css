@@ -671,6 +671,123 @@
   margin-top: 1.15rem;
 }
 
+[data-theme='dark'] .report-viewer-container .suggestion-box {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #86efac;
+}
+
+/* ==========================================================================
+   修复建议 Markdown 与代码块专用视觉规范
+   ========================================================================== */
+
+.suggestion-content {
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: inherit;
+}
+
+.suggestion-content p {
+  margin: 0.4rem 0;
+}
+
+.suggestion-content p:first-child {
+  margin-top: 0;
+}
+
+.suggestion-content p:last-child {
+  margin-bottom: 0;
+}
+
+.suggestion-content ul,
+.suggestion-content ol {
+  margin: 0.4rem 0;
+  padding-left: 1.25rem;
+}
+
+.suggestion-content li {
+  margin: 0.2rem 0;
+}
+
+/* 行内代码片段高亮标签 */
+.suggestion-inline-code {
+  font-family: "JetBrains Mono", Consolas, "Fira Code", monospace;
+  font-size: 0.86em;
+  padding: 0.12rem 0.38rem;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  word-break: break-word;
+}
+
+[data-theme='dark'] .suggestion-inline-code {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+/* 修复建议块级代码外层容器 */
+.suggestion-code-container {
+  margin: 0.75rem 0;
+}
+
+.code-block-container {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid #334155;
+  background: #0f172a;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1e293b;
+  padding: 0.35rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+
+.code-block-lang-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+.code-block-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 4px;
+  padding: 0.18rem 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.code-block-copy-btn:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.code-block-body {
+  overflow-x: auto;
+}
+
+.code-block-body pre,
+.code-block-body div {
+  max-height: 480px;
+}
+
 /* ==========================================================================
    运行轨迹与诊断中心 (流水线时序流 / 分片矩阵 / 日志查看器)
    ========================================================================== */

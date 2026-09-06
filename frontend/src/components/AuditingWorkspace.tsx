@@ -7,6 +7,7 @@ import MemberSearchSelect from './MemberSearchSelect';
 import { sshToHttps } from '../utils/urlUtils';
 import { extractFirstLineNumber } from '../utils/reportUtils';
 import DebateVerdictView from './report/DebateVerdictView';
+import SuggestionMarkdown from './report/SuggestionMarkdown';
 
 export interface WorkspaceRepoDetails {
   id: number;
@@ -869,8 +870,8 @@ export default function AuditingWorkspace({
                   <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', fontWeight: 600, textAlign: 'left', color: 'var(--text-color)' }}>
                     {workspaceType === 'ut' ? '整改优化建议' : '修复改进建议'}
                   </h4>
-                  <div style={{ margin: 0, padding: '1rem', background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.1)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, whiteSpace: 'pre-wrap', textAlign: 'left' }}>
-                    {editingFinding.suggestion}
+                  <div style={{ margin: 0, padding: '1rem', background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.1)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--text-color)', lineHeight: 1.5, textAlign: 'left' }}>
+                    <SuggestionMarkdown content={editingFinding.suggestion} />
                   </div>
                 </div>
               )}

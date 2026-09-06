@@ -117,6 +117,7 @@ function parseNumberedItems(text: string): ParsedNumberedItem[] | null {
   if (!text || !text.trim()) return null;
 
   // 正则匹配每条编号项
+  // eslint-disable-next-line no-useless-escape
   const itemRegex = /(?:^|\n)\s*(\d+)[\.、\)]\s*([^\n]+(?:\n(?!\s*\d+[\.、\)]).*)*)/g;
   const matches: { num: number; raw: string }[] = [];
   let m: RegExpExecArray | null;
@@ -398,6 +399,7 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
         const numbered = parseNumberedItems(content);
         if (numbered) {
           // 将编号列表前的一句话作为裁决 summary
+          // eslint-disable-next-line no-useless-escape
           const firstNumIndex = content.search(/(?:^|\n)\s*1[\.、\)]/);
           if (firstNumIndex > 0) {
             verdictSummary = content.substring(0, firstNumIndex).trim();

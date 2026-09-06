@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { TaskDebateLog, TaskReportMeta } from '../../types/report';
 import { copyToClipboardWithFallback } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
+import SuggestionMarkdown from './SuggestionMarkdown';
 
 interface ReportDebateTabProps {
   meta?: TaskReportMeta;
@@ -548,7 +549,7 @@ export default function ReportDebateTab({
                         <div className="stage-section">
                           <div className="stage-section-label">💡 修复与防护建议:</div>
                           <div className="stage-section-text stage-suggestion">
-                            {judge.suggestion}
+                            <SuggestionMarkdown content={judge.suggestion} />
                           </div>
                         </div>
                       )}
