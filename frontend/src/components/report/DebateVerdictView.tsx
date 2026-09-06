@@ -135,8 +135,8 @@ function parseNumberedItems(text: string): ParsedNumberedItem[] | null {
   }
 
   return matches.map((it) => {
-    // 检查是否有小标题，例如 "语法与语义核实：控方指控准确..."
-    const titleMatch = it.raw.match(/^([^：:\n]{2,25})[：:]([\s\S]*)$/);
+    // 检查是否有小标题，例如 "编译期格式串路径的安全设计（辩护成立部分）：..."
+    const titleMatch = it.raw.match(/^([^：:\n]{2,50})[：:]([\s\S]*)$/);
     if (titleMatch) {
       return {
         index: it.num,
@@ -224,15 +224,27 @@ function classifySectionTag(rawTitle: string): {
     };
   }
 
-  // 6. 事实、源码、代码、成因、分析、认定、调查、假设、架构、定位、规范
-  if (/事实|源码|代码|成因|认定|分析|调查|假设|架构|定位|生命周期|状态|机制|契约|规范/i.test(norm)) {
+  // 6. 事实、源码、代码、成因、分析、认定、调查、假设、架构、定位、规范、裁定、结论
+  if (/事实|源码|代码|成因|认定|分析|调查|假设|架构|定位|生命周期|状态|机制|契约|规范|裁定|裁决|结论|判决|定性/i.test(norm)) {
     return {
       type: 'facts',
       title: norm,
-      icon: '📌',
+      icon: '📜',
       color: 'var(--color-primary, #3b82f6)',
       borderColor: 'var(--color-primary, #3b82f6)',
       bgColor: 'var(--color-primary-subtle, rgba(59, 130, 246, 0.05))',
+    };
+  }
+
+  // 7. 修复、建议、整改、防护、加固
+  if (/修复|建议|整改|防护|加固|改法|优化/i.test(norm)) {
+    return {
+      type: 'mitigations',
+      title: norm,
+      icon: '💡',
+      color: 'var(--color-success, #10b981)',
+      borderColor: 'var(--color-success, #10b981)',
+      bgColor: 'var(--color-success-subtle, rgba(16, 185, 129, 0.05))',
     };
   }
 
@@ -247,6 +259,24 @@ function classifySectionTag(rawTitle: string): {
   };
 }
 
+const NON_SECTION_TAGS = new Set([
+  '致命',
+  '严重',
+  '高危',
+  '中等',
+  '中危',
+  '低危',
+  '低',
+  '轻微',
+  '建议',
+  '提示',
+  'CONFIRMED',
+  'CONDITIONAL',
+  'REJECTED',
+  'CHALLENGE_FAILED',
+  'DEFENSE_SUCCESSFUL',
+]);
+
 /**
  * 智能通配解析法官裁决与辩论长文本
  */
@@ -260,7 +290,9 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
   // 判断是否属于结构化法官裁决或辩论流
   const hasJudgeKeywords =
     text.includes('【仲裁法官裁决词】') ||
+    text.includes('【仲裁法官裁判词】') ||
     text.includes('仲裁法官裁决') ||
+    text.includes('仲裁法官裁判') ||
     text.includes('【综合裁决】') ||
     text.includes('综合裁决') ||
     text.includes('【事实认定') ||
@@ -284,15 +316,22 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
   let intro = '';
   let judgeBody = text;
 
-  const judgeIndex = text.indexOf('【仲裁法官裁决词】');
-  if (judgeIndex !== -1) {
-    intro = text.substring(0, judgeIndex).trim();
-    judgeBody = text.substring(judgeIndex + '【仲裁法官裁决词】'.length).replace(/^[：:\s]+/, '');
+  const judgePrefixRegex = /(?:^|\n)\s*【?(?:仲裁法官裁决词|仲裁法官裁判词|仲裁法官裁决|仲裁法官裁判|法官裁决词|法官裁判词|法官裁决|法官裁判)】?[：:\s]*/;
+  const judgeMatch = text.match(judgePrefixRegex);
+  if (judgeMatch && judgeMatch.index !== undefined) {
+    intro = text.substring(0, judgeMatch.index).trim();
+    judgeBody = text.substring(judgeMatch.index + judgeMatch[0].length).trim();
+  }
+
+  // 提前从正文中精准提取严重度定级（如 严重度定级为【高危】）
+  let severityLevel: string | undefined = undefined;
+  const sevMatch = judgeBody.match(/(?:严重度定级为|初步严重度定级为|初步定级为|严重程度[：:]|定级[：:])\s*【?([高危中低提示建议轻微严重致命]+)】?/);
+  if (sevMatch) {
+    severityLevel = sevMatch[1];
   } else {
-    const altIndex = text.indexOf('仲裁法官裁决词');
-    if (altIndex !== -1 && altIndex < 100) {
-      intro = text.substring(0, altIndex).trim();
-      judgeBody = text.substring(altIndex + '仲裁法官裁决词'.length).replace(/^[：:\s]+/, '');
+    const inlineSev = judgeBody.match(/【(致命|严重|高危|中等|中危|低危|轻微|建议|提示)】/);
+    if (inlineSev) {
+      severityLevel = inlineSev[1];
     }
   }
 
@@ -305,11 +344,11 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
     endIndex: number;
   }
 
-  const tagMatches: TagMatch[] = [];
+  const rawTagMatches: TagMatch[] = [];
   let m: RegExpExecArray | null;
 
   while ((m = tagRegex.exec(judgeBody)) !== null) {
-    tagMatches.push({
+    rawTagMatches.push({
       rawTag: m[0],
       tagName: m[1].trim(),
       startIndex: m.index,
@@ -317,26 +356,34 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
     });
   }
 
+  // 关键过滤：剔除行内严重度或判定状态标签（如【高危】、【致命】、【CONFIRMED】），避免切断句子导致后续要点全部丢失
+  const tagMatches = rawTagMatches.filter((t) => !NON_SECTION_TAGS.has(t.tagName));
+
   let verdictBadge: ParsedDebateResult['verdictBadge'] = undefined;
-  let severityLevel: string | undefined = undefined;
   let verdictSummary = '';
   const sections: ParsedDebateSection[] = [];
 
-  // 单字严重度标签白名单（如 【致命】、【严重】、【高危】、【轻微】、【建议】），这些不作为卡片标题，而是定级
-  const severityTags = new Set(['致命', '严重', '高危', '中等', '中危', '低危', '低', '轻微', '建议', '提示']);
-
   if (tagMatches.length === 0) {
-    // 没有标签，检查是否可直接从首句或编号列表切分
+    // 没有有效二级标签，检查是否可直接从首句或编号列表切分
     const numbered = parseNumberedItems(judgeBody);
     if (numbered) {
+      // eslint-disable-next-line no-useless-escape
+      const firstNumIndex = judgeBody.search(/(?:^|\n)\s*1[\.、\)]/);
+      if (firstNumIndex > 0) {
+        verdictSummary = judgeBody.substring(0, firstNumIndex).trim();
+      } else {
+        verdictSummary = judgeBody.split('\n')[0].trim();
+      }
+
       for (const item of numbered) {
+        const classInfo = classifySectionTag(item.title || `分析要点 ${item.index}`);
         sections.push({
-          type: 'facts',
-          title: item.title || `分析要点 ${item.index}`,
-          icon: '📌',
-          color: 'var(--color-primary, #3b82f6)',
-          borderColor: 'var(--color-primary, #3b82f6)',
-          bgColor: 'var(--color-primary-subtle, rgba(59, 130, 246, 0.05))',
+          type: classInfo.type,
+          title: item.title ? `${item.index}. ${item.title}` : `要点 ${item.index}`,
+          icon: classInfo.icon,
+          color: classInfo.color,
+          borderColor: classInfo.borderColor,
+          bgColor: classInfo.bgColor,
           content: item.content,
         });
       }
@@ -354,20 +401,8 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
       const nextStart = i + 1 < tagMatches.length ? tagMatches[i + 1].startIndex : judgeBody.length;
       const content = judgeBody.substring(cur.endIndex, nextStart).trim();
 
-      // 1. 如果是单独出现的严重度标签（如【严重】、【致命】），记录定级
-      if (severityTags.has(cur.tagName)) {
-        severityLevel = cur.tagName;
-        continue;
-      }
-
-      // 2. 如果是综合裁决/法官裁决
-      if (/综合裁决|终审裁决|裁决结论|法官裁决|裁决结果/i.test(cur.tagName)) {
-        // 提取定级
-        const sevMatch = content.match(/(?:严重度定级为|初步严重度定级为|初步定级为|严重程度[：:]|定级[：:])([高危中低提示建议轻微严重致命]+)/);
-        if (sevMatch) {
-          severityLevel = sevMatch[1];
-        }
-
+      // 如果是综合裁决/法官裁决
+      if (/综合裁决|终审裁决|裁决结论|法官裁决|裁决结果|仲裁裁决/i.test(cur.tagName)) {
         // 提取裁决徽章状态
         if (/CONFIRMED|缺陷事实成立|成立/i.test(content)) {
           verdictBadge = {
@@ -395,7 +430,7 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
           };
         }
 
-        // 检查裁决内容后是否直接紧跟编号列表（如 Item 0: 没有二级标签，全写在综合裁决里）
+        // 检查裁决内容后是否紧跟编号列表（全写在综合裁决段落中）
         const numbered = parseNumberedItems(content);
         if (numbered) {
           // 将编号列表前的一句话作为裁决 summary
@@ -424,7 +459,7 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
           verdictSummary = content;
         }
       } else {
-        // 3. 其他所有业务标签（【事实认定与分析】、【源码事实】、【实测验证】等），全量解析为独立卡片
+        // 其他所有业务标签（【事实认定与分析】、【源码事实】、【实测验证】等），全量解析为独立卡片
         const classInfo = classifySectionTag(cur.tagName);
         const numbered = parseNumberedItems(content);
 
@@ -459,6 +494,14 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
         color: 'var(--color-warning, #f59e0b)',
         bg: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.1))',
         border: 'var(--color-warning-border, rgba(245, 158, 11, 0.3))',
+      };
+    } else if (/REJECTED/i.test(judgeBody)) {
+      verdictBadge = {
+        status: 'REJECTED',
+        label: '误报驳回 (REJECTED)',
+        color: 'var(--color-danger, #ef4444)',
+        bg: 'var(--color-danger-subtle, rgba(239, 68, 68, 0.1))',
+        border: 'var(--color-danger-border, rgba(239, 68, 68, 0.3))',
       };
     }
   }
