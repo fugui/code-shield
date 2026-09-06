@@ -366,4 +366,3 @@ func isSafetyFilterBlocked(text string) (bool, string) {
 	}
 	return false, ""
 }
-

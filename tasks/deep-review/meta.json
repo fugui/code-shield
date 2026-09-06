@@ -3,6 +3,19 @@
   "display_name": "深度代码检视",
   "description": "对整个代码仓进行深度的架构审计与全量存量代码安全质量评估，扫描隐藏的系统性风险",
   "engine_mode": "debate_full",
+  "domain_family": "comprehensive_evolution",
+  "defense_dimensions": [
+    {
+      "key": "ContextDefense",
+      "name": "全局上下文防御",
+      "description": "全局架构或外层已具备拦截校验机制，单点无需过度防御"
+    },
+    {
+      "key": "HistoricalLegacy",
+      "name": "历史兼容与协议约束",
+      "description": "代码遵循特定历史硬件/网络协议契约约束，非架构缺陷"
+    }
+  ],
   "engine_config": {
     "exclude_paths": [
       "thirdparts"

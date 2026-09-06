@@ -3,6 +3,19 @@
   "display_name": "单元测试代码质量审计",
   "description": "针对单元测试的代码质量进行审计，识别代码坏味道、脆弱测试、资源泄漏、过度 Mock 及硬编码等工程质量问题",
   "engine_mode": "debate_selective",
+  "domain_family": "test_engineering",
+  "defense_dimensions": [
+    {
+      "key": "ContractIntegration",
+      "name": "集成环境契约约束",
+      "description": "测试用例依赖真实组件或外部环境初始化契约，非多余脆弱代码"
+    },
+    {
+      "key": "ParametrizedTest",
+      "name": "参数化测试矩阵",
+      "description": "重复结构系参数化展开或覆盖不同边界场景，具备设计合理性"
+    }
+  ],
   "engine_config": {
     "file_extensions": [
       ".c",

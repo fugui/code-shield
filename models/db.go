@@ -156,6 +156,17 @@ func seedBuiltinTaskTypes() {
 				"campaign_config":  taskType.CampaignConfig,
 				"categories":       taskType.Categories,
 			}
+
+			// 领域族群与抗辩维度：仅填空不覆盖策略 (Fill-If-Empty)
+			if existing.DomainFamily == "" || existing.DomainFamily == DomainFamilyComprehensive {
+				if taskType.DomainFamily != "" {
+					updates["domain_family"] = taskType.DomainFamily
+				}
+			}
+			if len(existing.DefenseDimensions) == 0 && len(taskType.DefenseDimensions) > 0 {
+				updates["defense_dimensions"] = taskType.DefenseDimensions
+			}
+
 			if err := DB.Model(&existing).Updates(updates).Error; err != nil {
 				log.Printf("Error: failed to update task type %s in db: %v", taskType.Name, err)
 			}

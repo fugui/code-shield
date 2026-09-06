@@ -27,6 +27,22 @@
   "is_campaign": true,
   "campaign_path": "float",
   "governance_mode": "defect_tracking",
+  "domain_family": "numerical_determinism",
+  "defense_dimensions": [
+    {
+      "dimension": "DiscreteInteger",
+      "description": "参与比较的浮点变量取值仅为离散整型字面量重置校验（如 0.0 与 1.0），无舍入误差"
+    },
+    {
+      "dimension": "EpsilonChecked",
+      "description": "上游或外层逻辑已封装标准近似容差比较（std::fabs 或 math.isclose）"
+    },
+    {
+      "dimension": "EnumState",
+      "description": "仅作为业务协议枚举状态或标志位标记，不参与浮点数值累加与除法运算"
+    }
+  ],
+
   "categories": [
     "浮点数比较缺陷-直接等值比较",
     "浮点数比较缺陷-直接不等比较",

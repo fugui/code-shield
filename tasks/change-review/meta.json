@@ -4,6 +4,19 @@
   "display_name": "近期变更检视",
   "description": "对代码仓库最近一周的提交变更 (最近一周 commit) 进行全面的 AI 审查，确保多线程安全、内存泄漏、第三方库引用符合标准",
   "engine_mode": "debate_full",
+  "domain_family": "comprehensive_evolution",
+  "defense_dimensions": [
+    {
+      "key": "RegressionGuarded",
+      "name": "回归防护充分",
+      "description": "变更已有充分的伴随测试或上下游防护，不构成实际回归隐患"
+    },
+    {
+      "key": "IntentionalContractChange",
+      "name": "有意接口契约演进",
+      "description": "变更属于版本演进契约变更，调用方已同步适配，非兼容性破坏"
+    }
+  ],
   "engine_config": {
     "since_days": 7,
     "exclude_paths": [

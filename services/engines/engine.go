@@ -24,24 +24,30 @@ type ChunkDetails struct {
 
 // EngineContext 纯内存化的引擎执行上下文，与持久层解耦
 type EngineContext struct {
-	Ctx               context.Context
-	ReportID          uint
-	RepoID            uint
-	RepoName          string
-	TaskTypeID        uint
-	TaskTypeName      string
-	CodesPath         string
-	ReportPath        string
-	JSONPath          string
-	WorkDir           string
-	EngineConfig      json.RawMessage
-	RunParams         models.RunParams
-	NegativeRules     []string                                                                             // 预加载的免扫/负样本例外规则
-	ProgressReport    func(total, processed, success int)                                                  // 进度回调，解耦直接操作 DB
-	Invoker           invoker.AIInvoker                                                                    // 算力分配后的调用驱动
-	AIExecutor        func(fileList []string, customPromptSuffix, promptFilePath, outputPath string) error // 底层通用 AI 执行器
-	AnalysisExecutor  func(fileList []string) ([]models.AnalysisFinding, error)                            // 单片/单仓分析执行器
-	SynthesisExecutor func(findings []models.AnalysisFinding, scannedFilesOpt ...[]string) error // 报告综合生成执行器
+	Ctx                context.Context
+	ReportID           uint
+	RepoID             uint
+	RepoName           string
+	TaskTypeID         uint
+	TaskTypeName       string
+	TaskTypeKey        string                    // 任务英文标识，如 "ut-effectiveness"
+	TaskDir            string                    // 任务文件目录，如 "tasks/ut-effectiveness"
+	AnalysisPromptPath string                    // 任务分析提示词文件绝对路径
+	AllowedCategories  []string                  // 受控标准分类白名单 (SSOT)
+	DomainFamily       string                    // 任务领域族群枚举
+	DefenseDimensions  []models.DefenseDimension // 任务级专有抗辩维度 (优先级高于族群默认)
+	CodesPath          string
+	ReportPath         string
+	JSONPath           string
+	WorkDir            string
+	EngineConfig       json.RawMessage
+	RunParams          models.RunParams
+	NegativeRules      []string                                                                             // 预加载的免扫/负样本例外规则
+	ProgressReport     func(total, processed, success int)                                                  // 进度回调，解耦直接操作 DB
+	Invoker            invoker.AIInvoker                                                                    // 算力分配后的调用驱动
+	AIExecutor         func(fileList []string, customPromptSuffix, promptFilePath, outputPath string) error // 底层通用 AI 执行器
+	AnalysisExecutor   func(fileList []string) ([]models.AnalysisFinding, error)                            // 单片/单仓分析执行器
+	SynthesisExecutor  func(findings []models.AnalysisFinding, scannedFilesOpt ...[]string) error           // 报告综合生成执行器
 }
 
 // EngineResult 引擎纯内存计算与扫描输出结果

@@ -56,7 +56,6 @@ func EnrichSourceAnchor(repoRoot, filePath, lineNumber, triggerLine string) (*So
 	return defects.EnrichSourceAnchor(repoRoot, filePath, lineNumber, triggerLine)
 }
 
-
 // SanitizeCategory 白名单分类吸附
 func SanitizeCategory(rawCat string) string {
 	s := strings.TrimSpace(rawCat)

@@ -166,6 +166,7 @@ func main() {
 
 				// Task type management (read-only for normal users)
 				api.GET("/task-types", handlers.GetTaskTypes)
+				api.GET("/task-types/domain-families", handlers.GetDomainFamilies)
 				api.GET("/task-types/:id", handlers.GetTaskType)
 				api.GET("/task-types/:id/files", handlers.GetTaskTypeFiles)
 

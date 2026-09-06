@@ -159,18 +159,25 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	overallStartTime := time.Now()
 	engine := engines.GetEngine(ctx.TaskType.EngineMode)
 	engCtx := &engines.EngineContext{
-		Ctx:           ctx.Ctx,
-		ReportID:      ctx.Report.ID,
-		RepoID:        ctx.Repo.ID,
-		RepoName:      ctx.Repo.Name,
-		TaskTypeID:    ctx.TaskType.ID,
-		TaskTypeName:  ctx.TaskType.DisplayName,
-		CodesPath:     ctx.CodesPath,
-		ReportPath:    ctx.ReportPath,
-		JSONPath:      ctx.JsonPath,
-		EngineConfig:  json.RawMessage(ctx.TaskType.EngineConfig),
-		RunParams:     ctx.RunParams,
-		NegativeRules: governance.GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
+		Ctx:                ctx.Ctx,
+		ReportID:           ctx.Report.ID,
+		RepoID:             ctx.Repo.ID,
+		RepoName:           ctx.Repo.Name,
+		TaskTypeID:         ctx.TaskType.ID,
+		TaskTypeName:       ctx.TaskType.DisplayName,
+		TaskTypeKey:        ctx.TaskType.Name,
+		TaskDir:            ctx.TaskType.TaskDir(),
+		AnalysisPromptPath: models.AppConfig.GetAbsPath(ctx.TaskType.AnalysisPromptFile()),
+		AllowedCategories:  ctx.TaskType.GetAllowedCategories(),
+		DomainFamily:       ctx.TaskType.GetDomainFamily(),
+		DefenseDimensions:  ctx.TaskType.GetDefenseDimensions(),
+		CodesPath:          ctx.CodesPath,
+		ReportPath:         ctx.ReportPath,
+		JSONPath:           ctx.JsonPath,
+		EngineConfig:       json.RawMessage(ctx.TaskType.EngineConfig),
+		RunParams:          ctx.RunParams,
+		NegativeRules:      governance.GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
+
 		ProgressReport: func(total, processed, success int) {
 			UpdateTaskProgress(ctx.Report.ID, total, processed, success, "")
 		},

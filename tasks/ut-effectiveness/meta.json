@@ -3,6 +3,24 @@
   "display_name": "测试用例有效性评估",
   "description": "以单个测试用例为最小单位，深度审计其断言有效性、提前返回、空测试等，评估每个用例是否真实独立地校验了业务逻辑",
   "engine_mode": "chunked_fast",
+  "domain_family": "test_engineering",
+  "defense_dimensions": [
+    {
+      "key": "HelperAssertion",
+      "name": "辅助函数内聚断言",
+      "description": "断言逻辑封装在专用辅助/校验函数中，并非空断言或无断言"
+    },
+    {
+      "key": "ExpectedNoThrow",
+      "name": "无异常即成功契约",
+      "description": "用例旨在验证操作不抛出异常或安全兜底，无需显式 ASSERT"
+    },
+    {
+      "key": "StubContract",
+      "name": "存根契约覆盖",
+      "description": "Mock 或 Stub 的调用期望本身构成隐式逻辑检验"
+    }
+  ],
   "engine_config": {
     "file_extensions": [
       ".c",
