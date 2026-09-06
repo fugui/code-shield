@@ -52,17 +52,17 @@ gantt
         *   新增 `Challenger Agent`：负责在源码中反向寻找防御逻辑与边界保护；
         *   新增 `Judge Agent`：权衡质询证据，过滤幻觉并输出高置信度结论。
     2.  **升级模型调度器 (`services/dispatcher.go`)**：
-        *   在 `config.yaml` 中支持按阶梯（`tier_fast`, `tier_reasoning`, `tier_synthesis`）配置不同的后端模型。
-        *   初筛阶段优先调用高吞吐快模型，辩论阶段调度高算力强推理模型。
+        *   在 `config.yaml` 中支持按 4 阶梯（`tier1_hunter`, `tier2_challenger`, `tier3_judge`, `tier4_synthesis`）配置不同的后端模型与资源池。
+        *   初筛阶段调用 Thick Agent 遍历文件树，辩护阶段调用高吞吐 Thin LLM，法官阶段独立分配旗舰推理算力与超时时限。
         *   引入异步管道与背压流控机制（Backpressure Queue），防止跨 Tier 资源死锁与任务饿死。
     3.  **新引擎模式注册与回退集成 (`services/engine.go`)**：
         *   在 `init()` 中注册三种新引擎模式：`debate_full`（全量深度辩论）、`debate_selective`（选择性辩论）、`chunked_fast`（快速规则流），统一挂载到现有 `engineRegistry` 机制。
         *   `TaskType.EngineMode` 枚举扩展支持新模式，历史任务的 `single`/`chunked` 模式保持完全兼容，`GetEngine()` 未命中新模式时自动回退到 `single`。
         *   数据库中已有 `TaskType` 记录无需迁移，仅新创建或手动修改的任务类型才会使用新引擎模式。
     4.  **调度器渐进式升级 (`services/dispatcher.go`)**：
-        *   采用**适配器模式**：新增 `TierRouter` 层，将 Tier 枚举（`tier1_fast`/`tier2_reasoning`/`tier3_synthesis`）映射为对应的 backend + model，然后复用现有 `ModelDispatcher.Acquire(ctx, backend)` 获取槽位。
+        *   采用**适配器模式**：新增 `TierRouter` 层，将 Tier 枚举（`tier1_hunter`/`tier2_challenger`/`tier3_judge`/`tier4_synthesis` 及历史别名）映射为对应的 backend + model，然后复用现有 `ModelDispatcher.Acquire(ctx, backend)` 获取槽位。
         *   现有的工作时间限流、手动流控、心跳广播等已上线稳定机制**零改动**，`TierRouter` 仅在上层增加一层路由转换。
-        *   若未配置 `ai.tiers`，`TierRouter` 自动降级为直接调用全局 `ai.backend`，100% 兼容既有部署环境。
+        *   若未配置新版字段，`TierRouter` 自动平滑向下回退至 `tier2_reasoning` 或全局 `ai.backend`，100% 兼容既有部署环境。
 *   **交付产物**：
     *   `services/engine_debate.go`
     *   升级版 `services/dispatcher.go`
