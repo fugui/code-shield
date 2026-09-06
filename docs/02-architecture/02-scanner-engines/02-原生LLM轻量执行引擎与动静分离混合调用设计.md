@@ -77,9 +77,9 @@ graph TD
 
     Thin --> N1["JSON 语法与结构修复 RepairJSON"]
     Thin --> N2["缺陷指纹跨周期语义匹配 Finding Match"]
-    Thin --> N3["辩论终审法官 Judge Agent"]
-    Thin --> N4["辩护人反向抗辩 Challenger Agent"]
-    Thin --> N5["Tier 3 全量报告汇总与态势总结"]
+    Thin --> N3["Tier 3 辩论终审法官 Judge Agent"]
+    Thin --> N4["Tier 2 辩护人反向抗辩 Challenger Agent"]
+    Thin --> N5["Tier 4 全量报告汇总与态势总结"]
     Thin --> N6["误报反馈负样本特征提炼"]
 ```
 
@@ -89,9 +89,9 @@ graph TD
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **场景 1** | **JSON 语法修复** | [`services/ai_cli.go:RepairJSON`](file:///home/fugui/codes/code-shield/services/ai_cli.go#L99) | 输入破损 JSON 文本，修复语法并输出合法 JSON。零文件读取需求。 | **Thin LLM** (`native`) | 耗时由 5~15s 降至 $\le 800\text{ms}$，`temperature=0` + `json_object` 保证严格合法。 |
 | **场景 2** | **缺陷指纹语义比对** | [`services/hooks.go:askLLMIfSameFinding`](file:///home/fugui/codes/code-shield/services/hooks.go#L624) | 输入 Old Finding 与 New Finding 详情，判断是否同一缺陷。纯文本二分类。 | **Thin LLM** (`native`) | 消除临时文件与 CLI 进程，单次比对毫秒级返回。 |
-| **场景 3** | **辩论终审法官 (Judge)** | [`services/engine_debate.go:buildJudgePrompt`](file:///home/fugui/codes/code-shield/services/engine_debate.go#L546) | Prompt 已内联 Hunter 候选列表与 Challenger 抗辩列表，按规则裁决。 | **Thin LLM** (`native`) | 原生 JSON Schema 输出，消除 Markdown 清洗。*(注：需经 A/B 基准测试验证裁决深度)* |
-| **场景 4** | **辩护人抗辩 (Challenger)** | [`services/engine_debate.go:buildChallengerPrompt`](file:///home/fugui/codes/code-shield/services/engine_debate.go#L508) | Prompt 已内联候选缺陷与代码片段，反向推演保护性代码。 | **Thin LLM** (`native`) | 辩护请求并发吞吐提升，消除排队等待。 |
-| **场景 5** | **报告汇总与摘要 (Tier 3)** | [`models/config.go:Tier3Synthesis`](file:///home/fugui/codes/code-shield/models/config.go#L94) | 内存中所有确诊缺陷聚合生成高管层综述。纯文本汇总。 | **Thin LLM** (`native`) | 内存数据直传 API，秒级生成 Markdown/HTML，零磁盘 I/O。 |
+| **场景 3** | **辩护人抗辩 (Challenger · Tier 2)** | [`services/engine_debate.go:buildChallengerPrompt`](file:///home/fugui/codes/code-shield/services/engine_debate.go#L508) | Prompt 已内联候选缺陷与代码片段，反向推演保护性代码。 | **Thin LLM** (`native`) | 辩护请求并发吞吐提升，消除排队等待。 |
+| **场景 4** | **辩论终审法官 (Judge · Tier 3)** | [`services/engine_debate.go:buildJudgePrompt`](file:///home/fugui/codes/code-shield/services/engine_debate.go#L546) | Prompt 已内联 Hunter 候选列表与 Challenger 抗辩列表，基于事实终审裁决。 | **高阶 Thin / 旗舰 Thick** | 独立分配充足推理时限，客观中立定性。 |
+| **场景 5** | **报告汇总与摘要 (Tier 4)** | [`models/config.go:Tier4Synthesis`](file:///home/fugui/codes/code-shield/models/config.go#L98) | 内存中所有确诊缺陷聚合生成高管层综述。纯文本汇总。 | **Thin LLM** (`native`) | 内存数据直传 API，秒级生成 Markdown/HTML，零磁盘 I/O。 |
 | **场景 6** | **误报反馈规则提炼** | [`services/feedback_memory.go`](file:///home/fugui/codes/code-shield/services/feedback_memory.go) | 研发人员标记误报时，提炼出结构化负样本规则。Few-shot 抽取。 | **Thin LLM** (`native`) | UI 交互即时响应（$<1\text{s}$），前端无卡顿。 |
 | **反例 1** | **Hunter 分片初筛 (Tier 1)** | [`services/engine_debate.go:buildHunterPrompt`](file:///home/fugui/codes/code-shield/services/engine_debate.go#L485) | `buildHunterPrompt` **仅传入文件名列表**，Agent 需自主从 WorkDir 读取源码。 | **Thick Agent** (`agy`/`claude`) | **必须 Thick**：Thin 无法读取磁盘代码文件。 |
 | **反例 2** | **Single/Chunked 深度分析** | [`services/task_runner.go:executeAI`](file:///home/fugui/codes/code-shield/services/task_runner.go#L413) | 传统单仓或分片分析，Agent 需遍历读取 `InputFiles`。 | **Thick Agent** (`agy`/`claude`) | **必须 Thick**：依赖 Agent 的文件读取能力。 |
@@ -114,8 +114,8 @@ sequenceDiagram
     participant Task as 任务调度层 (TaskRunner)
     participant Tier1_H as Tier 1 Hunter 初筛 (Thick Agent)
     participant Tier2_C as Tier 2 Challenger 辩护 (Thin LLM)
-    participant Tier2_J as Tier 2 Judge 终审 (Thin LLM)
-    participant Tier3_S as Tier 3 报告汇总 (Thin LLM)
+    participant Tier3_J as Tier 3 Judge 终审 (旗舰推理模型)
+    participant Tier4_S as Tier 4 报告汇总 (Thin LLM)
 
     Task->>Tier1_H: 提交代码分片文件名列表 (Thick Agent 自主读取源码)
     Note over Tier1_H: Agent 从 WorkDir 读取文件、深度分析代码
@@ -125,12 +125,12 @@ sequenceDiagram
     Note over Tier2_C: Prompt 内联代码片段，纯推理推演宏保护与前置断言
     Tier2_C-->>Task: 产出辩护案卷 (Defense Cases)
 
-    Task->>Tier2_J: 提交双方案卷进行终审仲裁 (Thin LLM API)
-    Note over Tier2_J: 结构化推理，原生 JSON Schema 输出裁决
-    Tier2_J-->>Task: 产出最终确诊缺陷 (Final Verdicts)
+    Task->>Tier3_J: 提交双方案卷进行独立终审仲裁 (高阶旗舰模型)
+    Note over Tier3_J: 深度推理，兼听双方论据，做不可逆定性裁决
+    Tier3_J-->>Task: 产出最终确诊缺陷 (Final Verdicts)
 
-    Task->>Tier3_S: 提交全量确诊缺陷列表 (Thin LLM API)
-    Tier3_S-->>Task: 输出综合安全态势与修复建议
+    Task->>Tier4_S: 提交全量确诊缺陷列表 (Thin LLM API)
+    Tier4_S-->>Task: 输出综合安全态势与修复建议报告
 ```
 
 ### 3.3 场景级 Thin/Thick 可配置化路由架构
@@ -494,22 +494,27 @@ ai:
         concurrent: 5
         weight: 0                  # 权重 0 作为冷备降级节点
 
-  # ── 异构模型多阶梯资源池配置 (流水线级编排) ──
+  # ── 4 阶梯异构模型多资源池配置 (流水线级编排) ──
   tiers:
-    tier1_fast:                     # Tier 1 Hunter 初筛：Prompt 只传文件名，需自主读文件
+    tier1_hunter:                   # Tier 1 Hunter 初筛：Prompt 只传文件名，需自主读文件
       backend: "agy"                # → 必须使用 Thick Agent
       model: "gemini-3.7-flash"
       concurrent: 5
-      timeout_seconds: 300
-    tier2_reasoning:                # Tier 2 对抗辩论与裁决：Prompt 已内联代码片段
-      backend: "native"             # → 使用 Thin LLM (需经 A/B 基准验证)
+      timeout_seconds: 1200
+    tier2_challenger:               # Tier 2 Challenger 辩护对抗：Prompt 已内联代码片段
+      backend: "native"             # → 推荐使用 Thin LLM
+      model: "deepseek-coder"
+      concurrent: 10
+      timeout_seconds: 1200
+    tier3_judge:                    # Tier 3 Judge 终审裁决：独立权威客观定性
+      backend: "native"             # → 强烈推荐高阶旗舰推理模型 (如 native 旗舰 / 高阶 agy)
       model: "gemini-3.7-pro"
-      concurrent: 10
-      timeout_seconds: 600
-    tier3_synthesis:                # Tier 3 报告汇总：纯文本聚合
-      backend: "native"             # → 使用 Thin LLM
+      concurrent: 5
+      timeout_seconds: 1800
+    tier4_synthesis:                # Tier 4 报告汇总：纯文本聚合直传直出
+      backend: "native"             # → 推荐使用 Thin LLM
       model: "glm-4-plus"
-      concurrent: 10
+      concurrent: 5
       timeout_seconds: 300
 
   # ── 内嵌工具场景级引擎配置 (工具级路由) ──
@@ -623,7 +628,7 @@ graph LR
     Eval --> M3["3. 裁决阶段耗时下降 >= 50%"]
 ```
 
-*   **准入条件**：方案 B 在测试集上的裁决一致性达到 $\ge 95\%$ 且无新增误报漏报，方可将 `ai.tiers.tier2_reasoning.backend` 默认值设为 `native`。
+*   **准入条件**：方案 B 在测试集上的裁决一致性达到 $\ge 95\%$ 且无新增误报漏报，方可将 `scanner.debate.tiers.tier2_challenger.resource` 默认值设为 `native`。
 
 ---
 
@@ -638,7 +643,7 @@ gantt
     配置模型扩展 (Native 与 ToolBackends)  :p1_2, after p1_1, 2d
     RepairJSON 与指纹比对原生化改造        :p1_3, after p1_2, 2d
     section Phase 2 - 报告汇总与基准测试
-    Tier 3 报告汇总原生化接入              :p2_1, 2026-09-10, 2d
+    Tier 4 报告汇总原生化接入              :p2_1, 2026-09-10, 2d
     Judge与Challenger AB基准对照测试       :p2_2, after p2_1, 4d
     section Phase 3 - 全流水线混合编排与上线
     辩论流水线按配置启用 Native 模式       :p3_1, 2026-09-17, 3d
@@ -653,7 +658,7 @@ gantt
     *   将 `RepairJSON`、`askLLMIfSameFinding` 与误报反馈提取逻辑切换为 `native` 路由；
     *   编写完整单测套件 `services/native_cli_test.go`。
 2.  **阶段二：报告汇总与辩论流水线接入 (状态：✅ 已全量交付)**
-    *   将 `Tier3Synthesis` 汇总步骤（`executeSynthesisOnce`）切换为通过阶梯配置优先原生直传生成；
+    *   将 Tier 4 全仓报告汇总步骤（`executeSynthesisOnce`）切换为通过阶梯配置优先原生直传生成；
     *   `services/dispatcher.go` 与 `TierRouter` 完整支持 `Native` 模型的并发槽位与流控管理。
 3.  **阶段三：混合调度与生产治理 (状态：✅ 已全量交付)**
     *   在 `ModelDispatcher` 中完善 Native 并发通道与流控；

@@ -257,26 +257,32 @@ ai:
   debug_logs: false
   output_format: "text"
 
-  # ── 新增: 异构模型多阶梯资源池配置 ──
+  # ── 4 阶梯异构模型多资源池配置 ──
   # 为不同的分析阶段分配最适配性价比的模型，兼顾高吞吐与强推理
   tiers:
-    tier1_fast:                    # Tier 1 快排初筛 (分片初筛、粗粒度扫描)
+    tier1_hunter:                  # Tier 1 源码初筛 (Hunter 角色，必须 Thick Agent)
       backend: "opencode"
       model: "models/qwen2.5-coder-32b"
       concurrent: 15               # 赋予高并发槽位
-      timeout_seconds: 45
+      timeout_seconds: 1200
 
-    tier2_reasoning:               # Tier 2 强推理对抗 (Challenger 辩护与 Judge 终审)
+    tier2_challenger:              # Tier 2 辩护对抗 (Challenger 角色，快速多维度寻找防御依据)
+      backend: "native"
+      model: "deepseek-coder"
+      concurrent: 10               # 高吞吐与极低延迟
+      timeout_seconds: 1200
+
+    tier3_judge:                   # Tier 3 终审法官 (Judge 角色，旗舰模型独立权威仲裁)
       backend: "claude"
       model: "claude-3-5-sonnet-20241022"
       concurrent: 5                # 精准分配高算力槽位
-      timeout_seconds: 90
+      timeout_seconds: 1800
 
-    tier3_synthesis:               # Tier 3 长上下文总结 (报告排版与汇总)
-      backend: "claude"
-      model: "claude-3-5-haiku-20241022"
+    tier4_synthesis:               # Tier 4 全仓汇总 (Synthesis 角色，报告整合排版)
+      backend: "native"
+      model: "qwen-long"
       concurrent: 2
-      timeout_seconds: 60
+      timeout_seconds: 300
 
   # ── 新增: 多智能体辩论流控制 ──
   debate:
@@ -353,9 +359,13 @@ type GovernanceSystemConfig struct {
 
 // ── 以下字段追加到现有 Config.AI 内联结构体中 ──
 // Tiers struct {
-//     Tier1Fast      TierConfig `yaml:"tier1_fast"`
-//     Tier2Reasoning TierConfig `yaml:"tier2_reasoning"`
-//     Tier3Synthesis TierConfig `yaml:"tier3_synthesis"`
+//     Tier1Hunter     TierBindingConfig `yaml:"tier1_hunter"`
+//     Tier2Challenger TierBindingConfig `yaml:"tier2_challenger"`
+//     Tier3Judge      TierBindingConfig `yaml:"tier3_judge"`
+//     Tier4Synthesis  TierBindingConfig `yaml:"tier4_synthesis"`
+//     // 向下兼容
+//     Tier2Reasoning  TierBindingConfig `yaml:"tier2_reasoning,omitempty"`
+//     Tier3Synthesis  TierBindingConfig `yaml:"tier3_synthesis,omitempty"`
 // } `yaml:"tiers"`
 //
 // Debate DebateFlowConfig `yaml:"debate"`
@@ -364,23 +374,63 @@ type GovernanceSystemConfig struct {
 // Governance GovernanceSystemConfig `yaml:"governance"`
 ```
 
-> 💡 **说明**：现有 `Config` 采用内联匿名结构体风格（如 `Server struct { ... } \`yaml:"server"\``），上述新增配置以注释形式标注插入位置，避免与现有代码风格冲突。实际落地时直接在 `config.go` 的对应位置追加即可。
+> 💡 **说明**：在 `config.go` 实际落地中，已升级为独立结构体 `DebateTiersConfig` 并挂载于 `Scanner.Debate.Tiers`，同时提供了 `HasConfig()` 方法检测是否已配置，具备新老配置互填平滑回退能力。
 
 ```go
-// GetTierConfig 智能获取指定 Tier 的配置（带平滑回退兜底）
+// GetTierConfig 智能获取指定 Tier 的配置（带 4 阶梯与旧版别名平滑回退兜底）
 func (c *Config) GetTierConfig(tier string) TierConfig {
+	var binding TierBindingConfig
 	switch tier {
-	case "tier1_fast":
-		if c.AI.Tiers.Tier1Fast.Backend != "" {
-			return c.AI.Tiers.Tier1Fast
+	case "tier1_fast", "tier1_hunter":
+		binding = c.Scanner.Debate.Tiers.Tier1Hunter
+	case "tier2_challenger":
+		if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+	case "tier3_judge":
+		if c.Scanner.Debate.Tiers.Tier3Judge.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		}
+	case "tier4_synthesis":
+		if c.Scanner.Debate.Tiers.Tier4Synthesis.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier3Synthesis
 		}
 	case "tier2_reasoning":
-		if c.AI.Tiers.Tier2Reasoning.Backend != "" {
-			return c.AI.Tiers.Tier2Reasoning
+		if c.Scanner.Debate.Tiers.Tier2Reasoning.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Reasoning
+		} else if c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
 		}
 	case "tier3_synthesis":
-		if c.AI.Tiers.Tier3Synthesis.Backend != "" {
-			return c.AI.Tiers.Tier3Synthesis
+		if c.Scanner.Debate.Tiers.Tier3Synthesis.HasConfig() {
+			binding = c.Scanner.Debate.Tiers.Tier3Synthesis
+		} else {
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		}
+	}
+
+	resources := binding.GetResources()
+	if len(resources) > 0 {
+		primaryResID := resources[0]
+		if res := c.FindResource(primaryResID); res != nil {
+			timeout := binding.TimeoutSeconds
+			if timeout <= 0 {
+				timeout = 600
+			}
+			return TierConfig{
+				Backend:        res.Driver,
+				Model:          res.Model,
+				Concurrent:     res.Concurrent,
+				TimeoutSeconds: timeout,
+			}
 		}
 	}
 

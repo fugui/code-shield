@@ -285,20 +285,26 @@ scanner:
     log_retention_days: 30             # 辩论轨迹日志保留天数
 
     # 各阶段阶梯显式绑定 llm.resources 节点 (支持单一 resource 或 resources 多节点池化打散)
-    # 注：01号文档的 4 角色在配置中清晰归一为 3 层：
-    # Hunter -> tier1_hunter; Challenger 与 Judge -> tier2_reasoning; Synthesis -> tier3_synthesis
+    # 注：4 阶梯架构将 4 大角色一一映射：
+    # Hunter -> tier1_hunter; Challenger -> tier2_challenger; Judge -> tier3_judge; Synthesis -> tier4_synthesis
+    # (并向下完全兼容旧版 tier2_reasoning 与 tier3_synthesis)
     tiers:
       tier1_hunter:                    # Tier 1 初筛 (Hunter 角色，必须 Thick Agent 自主遍历源码)
-        resource: "agy"                # 兼容旧版单一节点绑定
+        resource: "agy"                # 兼容首选单一节点绑定
         resources: ["agy", "opencode"] # 多 Thick Agent 资源池化负载打散 (10 并发初筛)
         timeout_seconds: 1200          # 初筛单片超时 (秒)
 
-      tier2_reasoning:                 # Tier 2 推理与仲裁 (统一承载 Challenger 与 Judge 深度推理)
-        resource: "agy"                # 兼容旧版单一节点绑定
-        resources: ["agy", "native"]   # 深度推理候选算力池 (兼顾模型多样性与集群吞吐)
-        timeout_seconds: 1800          # 辩论仲裁单片超时 (秒)
+      tier2_challenger:                # Tier 2 辩护对抗 (Challenger 角色，高吞吐防御检索)
+        resource: "native"             # 推荐 Thin LLM 低延迟高吞吐
+        resources: ["native", "agy"]   # 辩护对抗候选算力池
+        timeout_seconds: 1200          # 辩护单片超时 (秒)
 
-      tier3_synthesis:                 # Tier 3 全仓态势汇总 (Synthesis 角色，纯文本报告聚合)
+      tier3_judge:                     # Tier 3 终审法官 (Judge 角色，旗舰模型独立权威仲裁)
+        resource: "agy"                # 推荐旗舰推理模型或高阶 Thick Agent
+        resources: ["agy", "native"]   # 终审法官候选算力池
+        timeout_seconds: 1800          # 终审裁决单片超时 (秒)
+
+      tier4_synthesis:                 # Tier 4 全仓态势汇总 (Synthesis 角色，纯文本报告聚合)
         resource: "native"             # 显式精确绑定 native 原生集群
         resources: ["native"]
         timeout_seconds: 300           # 报告汇总超时 (秒)
@@ -502,11 +508,20 @@ type TierBindingConfig struct {
 	TimeoutSeconds int      `yaml:"timeout_seconds" json:"timeout_seconds"`
 }
 
-// DebateTiersConfig 辩论阶梯流水线配置 (3 层组织映射 4 大角色)
+func (tb *TierBindingConfig) HasConfig() bool {
+	return tb.Resource != "" || len(tb.Resources) > 0
+}
+
+// DebateTiersConfig 辩论阶梯流水线配置 (4 层组织映射 4 大角色，向前/后平滑兼容)
 type DebateTiersConfig struct {
-	Tier1Hunter    TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`       // Hunter
-	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning" json:"tier2_reasoning"` // Challenger & Judge
-	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis" json:"tier3_synthesis"` // Synthesis
+	Tier1Hunter     TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`                           // Hunter 初筛角色
+	Tier2Challenger TierBindingConfig `yaml:"tier2_challenger,omitempty" json:"tier2_challenger,omitempty"` // Challenger 辩护对抗角色
+	Tier3Judge      TierBindingConfig `yaml:"tier3_judge,omitempty" json:"tier3_judge,omitempty"`           // Judge 终审法官角色
+	Tier4Synthesis  TierBindingConfig `yaml:"tier4_synthesis,omitempty" json:"tier4_synthesis,omitempty"`   // Synthesis 全仓汇总角色
+
+	// 向下兼容旧版 3 阶梯配置
+	Tier2Reasoning TierBindingConfig `yaml:"tier2_reasoning,omitempty" json:"tier2_reasoning,omitempty"` // 旧版 Challenger & Judge 共享阶梯
+	Tier3Synthesis TierBindingConfig `yaml:"tier3_synthesis,omitempty" json:"tier3_synthesis,omitempty"` // 旧版 Synthesis 汇总阶梯
 }
 
 // DebateConfig 辩论流水线流控与阶梯配置
