@@ -46,6 +46,7 @@ func TestOpenCodeInvoker_BuildArgs(t *testing.T) {
 		"--auto",
 		"--format json",
 		"--thinking",
+		"--dir " + tempDir,
 		"--model glm5.1",
 		"# OpenCode Prompt",
 	} {

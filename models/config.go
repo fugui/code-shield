@@ -94,7 +94,7 @@ func (tb *TierBindingConfig) HasConfig() bool {
 
 // DebateTiersConfig 辩论阶梯流水线配置 (4 层组织映射 4 大角色，向前/后平滑兼容)
 type DebateTiersConfig struct {
-	Tier1Hunter     TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`                           // Hunter 初筛角色
+	Tier1Hunter     TierBindingConfig `yaml:"tier1_hunter" json:"tier1_hunter"`                             // Hunter 初筛角色
 	Tier2Challenger TierBindingConfig `yaml:"tier2_challenger,omitempty" json:"tier2_challenger,omitempty"` // Challenger 辩护对抗角色
 	Tier3Judge      TierBindingConfig `yaml:"tier3_judge,omitempty" json:"tier3_judge,omitempty"`           // Judge 终审法官角色
 	Tier4Synthesis  TierBindingConfig `yaml:"tier4_synthesis,omitempty" json:"tier4_synthesis,omitempty"`   // Synthesis 全仓汇总角色

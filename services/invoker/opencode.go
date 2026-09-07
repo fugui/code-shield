@@ -33,6 +33,10 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, error) {
 		"--thinking",
 	}
 
+	if req.WorkDir != "" {
+		args = append(args, "--dir", req.WorkDir)
+	}
+
 	if req.ModelName != "" {
 		args = append(args, "--model", req.ModelName)
 	}

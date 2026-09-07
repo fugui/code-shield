@@ -52,6 +52,9 @@ func TestCodexInvoker_BuildArgs(t *testing.T) {
 	if !strings.Contains(argsStr, "# Test Codex Prompt") {
 		t.Fatalf("expected prompt file content in args, got %v", args)
 	}
+	if !strings.Contains(argsStr, "-C "+tempDir) {
+		t.Fatalf("expected -C working directory flag in args, got %v", args)
+	}
 	if !strings.Contains(argsStr, "-m gpt-5.6-sol") {
 		t.Fatalf("expected model name in args, got %v", args)
 	}

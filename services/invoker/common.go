@@ -42,6 +42,9 @@ func BuildPromptPayload(req AIRequest, includePromptFile bool) (string, error) {
 	}
 
 	sb.WriteString(fmt.Sprintf("%s（最终分析结果输出到 %s），", req.PromptMsg, req.OutputPath))
+	if req.WorkDir != "" {
+		sb.WriteString(fmt.Sprintf("当前分析运行目录为代码仓根目录：%s，待分析文件的路径均为相对于该根目录的相对路径。", req.WorkDir))
+	}
 	if len(req.InputFiles) > 1 && strings.HasSuffix(req.OutputPath, ".json.raw") {
 		sb.WriteString("任务采用分片执行，本次只")
 	}
@@ -155,6 +158,18 @@ func RunCLIProcess(cliName string, args []string, req AIRequest, mockSummary str
 	}
 	ctxRun, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
+
+	if req.WorkDir != "" {
+		absDir, err := filepath.Abs(req.WorkDir)
+		if err != nil {
+			return fmt.Errorf("invalid workdir %q: %w", req.WorkDir, err)
+		}
+		info, err := os.Stat(absDir)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("workdir does not exist or is not a directory: %s", absDir)
+		}
+		req.WorkDir = absDir
+	}
 
 	cliOutputPath := req.OutputPath + ".output.txt"
 	metaFile, err := os.Create(cliOutputPath)

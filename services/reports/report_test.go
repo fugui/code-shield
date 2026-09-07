@@ -197,4 +197,3 @@ func TestCalculateRiskScoreFromFindings(t *testing.T) {
 		t.Errorf("expected score 47 for 7 fatal + 3 critical + 21 suggestion, got %d", score31)
 	}
 }
-

@@ -35,6 +35,10 @@ func (a *AgyInvoker) buildArgs(req AIRequest) ([]string, error) {
 		"--print-timeout", fmt.Sprintf("%dm", timeoutMin),
 	}
 
+	if req.WorkDir != "" {
+		args = append(args, "--add-dir", req.WorkDir)
+	}
+
 	if req.ModelName != "" {
 		args = append(args, "--model", req.ModelName)
 	}

@@ -172,6 +172,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		DomainFamily:       ctx.TaskType.GetDomainFamily(),
 		DefenseDimensions:  ctx.TaskType.GetDefenseDimensions(),
 		CodesPath:          ctx.CodesPath,
+		WorkDir:            ctx.CodesPath,
 		ReportPath:         ctx.ReportPath,
 		JSONPath:           ctx.JsonPath,
 		EngineConfig:       json.RawMessage(ctx.TaskType.EngineConfig),

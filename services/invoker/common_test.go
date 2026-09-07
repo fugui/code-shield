@@ -370,3 +370,23 @@ func TestRunCLIProcess_AIEngineMissingOutputBlocked(t *testing.T) {
 		t.Errorf("expected missing output error, got: %v", err)
 	}
 }
+
+func TestRunCLIProcess_InvalidWorkDir(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "out.json")
+	nonExistentDir := filepath.Join(tempDir, "not_exist_subdir")
+
+	err := RunCLIProcess("echo", []string{"hi"}, AIRequest{
+		WorkDir:    nonExistentDir,
+		PromptMsg:  "test",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "模拟报告")
+
+	if err == nil {
+		t.Fatalf("expected error for non-existent WorkDir, got nil")
+	}
+	if !strings.Contains(err.Error(), "workdir does not exist or is not a directory") {
+		t.Errorf("expected workdir not exist error, got: %v", err)
+	}
+}
