@@ -20,9 +20,14 @@ type ExtractedFeedbackRule struct {
 }
 
 // ExtractFeedbackRule 使用指定的 AI 驱动提炼误报特征规则
-func ExtractFeedbackRule(inv invoker.AIInvoker, filePath, codeSnippet, defectTitle, userReason string) (*ExtractedFeedbackRule, error) {
+func ExtractFeedbackRule(inv invoker.AIInvoker, filePath, codeSnippet, defectTitle, userReason string, workDirOpt ...string) (*ExtractedFeedbackRule, error) {
 	if inv == nil {
 		return nil, fmt.Errorf("no invoker provided for feedback rule extraction")
+	}
+
+	workDir := ""
+	if len(workDirOpt) > 0 && workDirOpt[0] != "" {
+		workDir = workDirOpt[0]
 	}
 
 	prompt := fmt.Sprintf(`你是一个代码安全规则分析专家。研发人员将以下代码缺陷标记为误报。请根据上下文提炼出结构化的负样本例外规则，供后续扫描引擎避免同类误报。
@@ -53,6 +58,7 @@ func ExtractFeedbackRule(inv invoker.AIInvoker, filePath, codeSnippet, defectTit
 	defer os.Remove(tmpPath)
 
 	req := invoker.AIRequest{
+		WorkDir:        workDir,
 		PromptMsg:      prompt,
 		OutputPath:     tmpPath,
 		TimeoutMin:     1,

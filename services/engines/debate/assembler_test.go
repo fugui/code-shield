@@ -73,6 +73,12 @@ func TestPromptAssembler_BuildHunterPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "test/* 目录免扫") {
 		t.Errorf("expected prompt to contain negative rules")
 	}
+
+	ctx.CodesPath = "/path/to/repo"
+	promptWithWorkDir := assembler.BuildHunterPrompt(ctx, bundle)
+	if !strings.Contains(promptWithWorkDir, "当前分析运行目录为代码仓根目录：/path/to/repo") {
+		t.Errorf("expected prompt to contain workdir explanation")
+	}
 }
 
 func TestPromptAssembler_ChallengerDefensePriority(t *testing.T) {

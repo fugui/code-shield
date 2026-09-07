@@ -145,6 +145,13 @@ func (a *PromptAssembler) BuildHunterPrompt(ctx *engines.EngineContext, bundle c
 
 	// 5. 待检视文件列表
 	sb.WriteString("## 待检视文件列表\n")
+	workDir := ctx.WorkDir
+	if workDir == "" {
+		workDir = ctx.CodesPath
+	}
+	if workDir != "" {
+		sb.WriteString(fmt.Sprintf("当前分析运行目录为代码仓根目录：%s，以下待检视文件路径均为相对于该根目录的相对路径。\n", workDir))
+	}
 	for _, f := range bundle.AllFiles {
 		sb.WriteString(fmt.Sprintf("- `%s`\n", f))
 	}

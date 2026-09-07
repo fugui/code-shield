@@ -123,7 +123,7 @@ func Reconcile(req *ReconcileRequest) (*ReconcileResult, error) {
 
 	// 执行 R5 残差二部图对齐 (带复杂度熔断与 AI 语义判决)
 	if len(baseResiduals) > 0 && len(currentResiduals) > 0 {
-		r5Results := ArbitrateResiduals(baseResiduals, currentResiduals, req.AIInvoker)
+		r5Results := ArbitrateResiduals(baseResiduals, currentResiduals, req.AIInvoker, req.RepoRoot)
 		for _, r5 := range r5Results {
 			if matchedCurrentMap[r5.CurrentIndex] == nil && !claimedBaseMap[r5.BaseIndex] {
 				claimedBaseMap[r5.BaseIndex] = true

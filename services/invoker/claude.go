@@ -24,6 +24,10 @@ func (c *ClaudeInvoker) buildArgs(req AIRequest) ([]string, error) {
 	}
 	args := []string{"-p", promptMsg, "--output-format", formatVal, "--disable-slash-commands"}
 
+	if req.WorkDir != "" {
+		args = append(args, "--add-dir", req.WorkDir)
+	}
+
 	if req.ModelName != "" {
 		args = append(args, "--model", req.ModelName)
 	}

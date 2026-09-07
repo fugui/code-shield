@@ -116,6 +116,9 @@ func PrepareAndSync(ctx context.Context, repo models.Repository, reportID uint, 
 
 	rawPath := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
 	codesPath := filepath.Join(models.AppConfig.GetDataDir(), "codes", rawPath)
+	if absCodesPath, absErr := filepath.Abs(codesPath); absErr == nil {
+		codesPath = absCodesPath
+	}
 
 	if err := os.MkdirAll(filepath.Dir(codesPath), 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)

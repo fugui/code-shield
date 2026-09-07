@@ -97,7 +97,6 @@ func CalculateSnippetOverlap(s1, s2 string) float64 {
 	return CalculateTokenJaccard(t1, t2)
 }
 
-
 // SourceAnchor 物理源码锚点（统一复用 defects.SourceAnchor SSOT）
 type SourceAnchor = defects.SourceAnchor
 

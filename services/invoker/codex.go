@@ -24,6 +24,10 @@ func (c *CodexInvoker) buildArgs(req AIRequest) ([]string, error) {
 
 	args := []string{"exec", "--skip-git-repo-check", "--color", "never"}
 
+	if req.WorkDir != "" {
+		args = append(args, "-C", req.WorkDir)
+	}
+
 	if req.ModelName != "" {
 		args = append(args, "-m", req.ModelName)
 	}

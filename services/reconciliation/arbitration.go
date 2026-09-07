@@ -170,9 +170,14 @@ func cleanArbitrationJSON(raw []byte) []byte {
 	return []byte(s)
 }
 
-func arbitratePairWithAI(inv invoker.AIInvoker, base InternalFinding, curr InternalFinding) (*ArbitrationResult, error) {
+func arbitratePairWithAI(inv invoker.AIInvoker, base InternalFinding, curr InternalFinding, repoRoot ...string) (*ArbitrationResult, error) {
 	if inv == nil {
 		return nil, fmt.Errorf("no AI invoker provided")
+	}
+
+	workDir := ""
+	if len(repoRoot) > 0 && repoRoot[0] != "" {
+		workDir = repoRoot[0]
 	}
 
 	prompt := fmt.Sprintf(`你是一名顶尖的代码静态分析与缺陷对账仲裁专家。
@@ -226,6 +231,7 @@ func arbitratePairWithAI(inv invoker.AIInvoker, base InternalFinding, curr Inter
 
 	req := invoker.AIRequest{
 		ParentContext:  ctx,
+		WorkDir:        workDir,
 		PromptMsg:      prompt,
 		OutputPath:     tmpPath,
 		TimeoutMin:     5,
@@ -273,9 +279,14 @@ func arbitratePairWithAI(inv invoker.AIInvoker, base InternalFinding, curr Inter
 
 // ArbitrateResiduals 执行 R5 单文件残差集合对齐与熔断保护
 // 仅当同文件内残差合计 <= 10 时触发；超时/错误或超过限制时安全降级
-func ArbitrateResiduals(baseResiduals []InternalFinding, currentResiduals []InternalFinding, inv invoker.AIInvoker) []ArbitrationResult {
+func ArbitrateResiduals(baseResiduals []InternalFinding, currentResiduals []InternalFinding, inv invoker.AIInvoker, repoRootOpt ...string) []ArbitrationResult {
 	if len(baseResiduals) == 0 || len(currentResiduals) == 0 {
 		return nil
+	}
+
+	repoRoot := ""
+	if len(repoRootOpt) > 0 {
+		repoRoot = repoRootOpt[0]
 	}
 
 	// 1. 成本与复杂度熔断断路器：残差合计超过 10 条视为大规模重构，禁止触发
@@ -309,7 +320,7 @@ func ArbitrateResiduals(baseResiduals []InternalFinding, currentResiduals []Inte
 				}
 				scopeMatch := (base.NormScope != "" && base.NormScope == curr.NormScope)
 				if scopeMatch || lineDiff <= 60 {
-					res, err := arbitratePairWithAI(inv, base, curr)
+					res, err := arbitratePairWithAI(inv, base, curr, repoRoot)
 					if err == nil && res != nil {
 						claimedBase[base.OriginalIndex] = true
 						claimedCurrent[curr.OriginalIndex] = true
@@ -362,4 +373,3 @@ func ArbitrateResiduals(baseResiduals []InternalFinding, currentResiduals []Inte
 
 	return results
 }
-

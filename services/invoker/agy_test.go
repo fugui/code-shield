@@ -60,8 +60,8 @@ func TestAgyInvoker_BuildArgs(t *testing.T) {
 	if !strings.Contains(argsStr, "--print-timeout 60m") {
 		t.Fatalf("expected --print-timeout flag in args, got %v", args)
 	}
-	if !strings.Contains(argsStr, "# Test Antigravity Prompt") {
-		t.Fatalf("expected prompt file content in args, got %v", args)
+	if !strings.Contains(argsStr, "--add-dir "+tempDir) {
+		t.Fatalf("expected --add-dir flag in args, got %v", args)
 	}
 	if !strings.Contains(argsStr, "--model gemini-3.5-pro") {
 		t.Fatalf("expected model flag in args, got %v", args)
