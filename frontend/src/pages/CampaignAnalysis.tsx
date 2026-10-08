@@ -726,20 +726,17 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                     <th onClick={() => handleSort(isEntityMode ? 'total_entities' : 'total_issues')} style={styles.tableHeader}>
                       {isEntityMode ? '用例总数' : '未关闭缺陷数'} {(sortField === 'total_entities' || sortField === 'total_issues') && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
-                    {isEntityMode ? (
+                    {isEntityMode && (
                       <th onClick={() => handleSort('pass_count')} style={styles.tableHeader}>
                         合格数 {sortField === 'pass_count' && (sortOrder === 'asc' ? '↑' : '↓')}
                       </th>
-                    ) : (
-                      <>
-                        <th onClick={() => handleSort('blocking')} style={styles.tableHeader}>
-                          致命 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}
-                        </th>
-                        <th onClick={() => handleSort('critical')} style={styles.tableHeader}>
-                          严重 {sortField === 'critical' && (sortOrder === 'asc' ? '↑' : '↓')}
-                        </th>
-                      </>
                     )}
+                    <th onClick={() => handleSort('blocking')} style={styles.tableHeader}>
+                      致命 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th onClick={() => handleSort('critical')} style={styles.tableHeader}>
+                      严重 {sortField === 'critical' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </th>
                     <th onClick={() => handleSort(isEntityMode ? 'pass_rate' : 'fix_rate')} style={styles.tableHeader}>
                       {isEntityMode ? '合格率' : '修复进度'} {(sortField === 'pass_rate' || sortField === 'fix_rate') && (sortOrder === 'asc' ? '↑' : '↓')}
                     </th>
@@ -752,7 +749,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                 <tbody>
                   {repos.length === 0 ? (
                     <tr>
-                      <td colSpan={10} style={{ textAlign: 'center', padding: '4rem 1rem', color: '#94a3b8' }}>
+                      <td colSpan={isEntityMode ? 11 : 10} style={{ textAlign: 'center', padding: '4rem 1rem', color: '#94a3b8' }}>
                         未找到包含扫描数据的代码仓。请先在“扫描任务”启动相关任务。
                       </td>
                     </tr>
@@ -779,14 +776,11 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                         <td style={styles.tableCell}>{r.department || '-'}</td>
                         <td style={styles.tableCell}>{r.owner_name}</td>
                         <td style={{ ...styles.tableCell, fontWeight: 500 }}>{isEntityMode ? (r.total_entities || r.total_issues) : r.total_issues}</td>
-                        {isEntityMode ? (
+                        {isEntityMode && (
                           <td style={{ ...styles.tableCell, color: 'var(--color-success)', fontWeight: 600 }}>{r.pass_count || 0}</td>
-                        ) : (
-                          <>
-                            <td style={{ ...styles.tableCell, color: r.blocking > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
-                            <td style={{ ...styles.tableCell, color: r.critical > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
-                          </>
                         )}
+                        <td style={{ ...styles.tableCell, color: r.blocking > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: r.blocking > 0 ? 600 : 'normal' }}>{r.blocking}</td>
+                        <td style={{ ...styles.tableCell, color: r.critical > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: r.critical > 0 ? 600 : 'normal' }}>{r.critical}</td>
                         <td style={styles.tableCell}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '110px' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: 600, width: '40px' }}>{rateVal.toFixed(0)}%</span>
@@ -858,6 +852,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                       <th onClick={() => handleSort('scanned_repos')} style={styles.tableHeader}>覆盖代码仓 {sortField === 'scanned_repos' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                       <th onClick={() => handleSort('total_issues')} style={styles.tableHeader}>{isEntityMode ? '总评估用例数' : '总审计缺陷数'} {sortField === 'total_issues' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                       <th onClick={() => handleSort(isEntityMode ? 'pass_count' : 'open_issues')} style={styles.tableHeader}>{isEntityMode ? '合格用例数' : '未整改缺陷'} {(sortField === 'pass_count' || sortField === 'open_issues') && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => handleSort('blocking')} style={styles.tableHeader}>致命 {sortField === 'blocking' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => handleSort('critical')} style={styles.tableHeader}>严重 {sortField === 'critical' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                       <th onClick={() => handleSort(isEntityMode ? 'pass_rate' : 'fix_rate')} style={styles.tableHeader}>{isEntityMode ? '用例合格率' : '缺陷整改率'} {(sortField === 'pass_rate' || sortField === 'fix_rate') && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                     </tr>
                   </thead>
@@ -885,6 +881,12 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                           <td style={{ ...styles.tableCell, color: isEntityMode ? 'var(--color-success)' : (d.open_issues > 0 ? 'var(--color-danger)' : 'inherit'), fontWeight: 600 }}>
                             {isEntityMode ? (d.pass_count || 0) : d.open_issues}
                           </td>
+                          <td style={{ ...styles.tableCell, color: (d.blocking || 0) > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: (d.blocking || 0) > 0 ? 600 : 'normal' }}>
+                            {d.blocking || 0}
+                          </td>
+                          <td style={{ ...styles.tableCell, color: (d.critical || 0) > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: (d.critical || 0) > 0 ? 600 : 'normal' }}>
+                            {d.critical || 0}
+                          </td>
                           <td style={styles.tableCell}>
                             <span style={{ fontWeight: 700, color: rateVal >= 85 ? 'var(--color-success)' : rateVal >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }}>
                               {rateVal.toFixed(1)}%
@@ -893,7 +895,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                         </tr>
                         {expandedDepts[d.department] && (
                           <tr>
-                            <td colSpan={5} style={{ padding: '0.75rem 1.5rem', background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
+                            <td colSpan={7} style={{ padding: '0.75rem 1.5rem', background: 'var(--bg-color)', borderBottom: '1px solid var(--border-color)' }}>
                               {deptReposLoading[d.department] ? (
                                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1.5rem' }}>
                                   <div style={{ animation: 'spin 1s linear infinite', border: '2px solid rgba(59, 130, 246, 0.1)', borderTop: '2px solid #3b82f6', borderRadius: '50%', width: '20px', height: '20px', marginRight: '0.5rem' }} />
@@ -915,7 +917,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                           <>
                                             <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>用例总数</th>
                                             <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>合格用例</th>
-                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>待优化</th>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>致命</th>
+                                            <th style={{ ...styles.tableHeader, padding: '0.6rem 0.8rem', cursor: 'default', borderBottom: '1px solid var(--border-color)' }}>严重</th>
                                           </>
                                         ) : (
                                           <>
@@ -956,7 +959,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                             <>
                                               <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>{r.total_entities || r.total_issues}</td>
                                               <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: 'var(--color-success)', fontWeight: 600 }}>{r.pass_count || 0}</td>
-                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.open_issues || 0) > 0 ? 'var(--color-warning)' : 'inherit' }}>{r.open_issues || 0}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.blocking || 0) > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: (r.blocking || 0) > 0 ? 600 : 'normal' }}>{r.blocking || 0}</td>
+                                              <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem', color: (r.critical || 0) > 0 ? 'var(--color-warning)' : 'inherit', fontWeight: (r.critical || 0) > 0 ? 600 : 'normal' }}>{r.critical || 0}</td>
                                             </>
                                           ) : (
                                             <>

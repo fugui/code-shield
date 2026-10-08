@@ -25,6 +25,7 @@ func setupCampaignTestDB(t *testing.T) *gorm.DB {
 		&models.TaskType{},
 		&models.TaskReport{},
 		&models.CampaignFinding{},
+		&models.Defect{},
 	)
 	models.DB = db
 	return db
@@ -123,6 +124,17 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 		assert.NoError(t, db.Create(&findings[i]).Error)
 	}
 
+	defects := []models.Defect{
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp1", IdentityKind: "ast", NormPath: "src/core/ptr.c", ScopeKey: "sk1", StmtShape: "shape1", DefectClassMajor: "ptr", Severity: "致命", Status: "ACTIVE"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp2", IdentityKind: "ast", NormPath: "src/core/buf.c", ScopeKey: "sk2", StmtShape: "shape2", DefectClassMajor: "buf", Severity: "严重", Status: "ACTIVE"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp3", IdentityKind: "ast", NormPath: "src/core/closed_ptr.c", ScopeKey: "sk3", StmtShape: "shape3", DefectClassMajor: "ptr", Severity: "致命", Status: "RESOLVED"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp4", IdentityKind: "ast", NormPath: "src/core/closed_buf.c", ScopeKey: "sk4", StmtShape: "shape4", DefectClassMajor: "buf", Severity: "严重", Status: "HUMAN_CLOSED"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp5", IdentityKind: "ast", NormPath: "src/core/mem.c", ScopeKey: "sk5", StmtShape: "shape5", DefectClassMajor: "mem", Severity: "一般", Status: "RESOLVED"},
+	}
+	for i := range defects {
+		assert.NoError(t, db.Create(&defects[i]).Error)
+	}
+
 	// 4. 调用 FetchCampaignRepoSummaries 验证统计指标
 	repoSummaries, err := FetchCampaignRepoSummaries(&taskType, "", "")
 	assert.NoError(t, err)
@@ -206,6 +218,28 @@ func TestExportDynamicCampaignDepartments(t *testing.T) {
 	}
 	assert.NoError(t, db.Create(&finding).Error)
 
+	defect := models.Defect{
+		TaskTypeID:           taskType.ID,
+		RepoID:               repo.ID,
+		CanonicalFingerprint: "fp-export-1",
+		IdentityKind:         "ast",
+		NormPath:             "main.go",
+		ScopeKey:             "sk-main",
+		StmtShape:            "shape-main",
+		DefectClassMajor:     "ptr",
+		Severity:             "致命",
+		Status:               "ACTIVE",
+	}
+	assert.NoError(t, db.Create(&defect).Error)
+
+	report := models.TaskReport{
+		TaskTypeID: taskType.ID,
+		RepoID:     repo.ID,
+		Status:     "success",
+		CreatedAt:  time.Now(),
+	}
+	assert.NoError(t, db.Create(&report).Error)
+
 	// 2. 路由测试
 	router := gin.New()
 	campaignGroup := router.Group("/api/analysis/:campaign")
@@ -263,4 +297,136 @@ func TestExportDynamicCampaignDepartments(t *testing.T) {
 	assert.Equal(t, "1", rows[2][4]) // 代码仓未关闭缺陷数
 	assert.Equal(t, "1", rows[2][5]) // 致命(未关闭)
 	assert.Equal(t, "0", rows[2][6]) // 严重(未关闭)
+}
+
+func TestExportDynamicCampaignDepartments_EntityAssessment(t *testing.T) {
+	db := setupCampaignTestDB(t)
+	if db == nil {
+		return
+	}
+
+	dept := models.Department{Name: "效能测试部-" + time.Now().Format("150405.000")}
+	assert.NoError(t, db.Create(&dept).Error)
+
+	user := models.User{Name: "王五", Email: "wangwu@example.com"}
+	assert.NoError(t, db.Create(&user).Error)
+
+	repo := models.Repository{
+		Name:         "ut-service",
+		URL:          "git@github.com:example/ut-service.git",
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+	}
+	assert.NoError(t, db.Create(&repo).Error)
+
+	taskType := models.TaskType{
+		Name:           "ut",
+		DisplayName:    "单测有效性分析",
+		CampaignPath:   "ut",
+		IsCampaign:     true,
+		GovernanceMode: models.GovernanceModeEntityAssessment,
+	}
+	assert.NoError(t, db.Create(&taskType).Error)
+
+	// 注入 4 个用例：2个合格，1个致命，1个严重
+	findings := []models.CampaignFinding{
+		{
+			TaskTypeID: taskType.ID,
+			RepoID:     repo.ID,
+			FilePath:   "tests/case1_test.go",
+			LineNumber: "10",
+			Title:      "TestCase1",
+			Severity:   "合格",
+			Status:     "closed",
+			CreatedAt:  time.Now(),
+		},
+		{
+			TaskTypeID: taskType.ID,
+			RepoID:     repo.ID,
+			FilePath:   "tests/case2_test.go",
+			LineNumber: "20",
+			Title:      "TestCase2",
+			Severity:   "合格",
+			Status:     "closed",
+			CreatedAt:  time.Now(),
+		},
+		{
+			TaskTypeID: taskType.ID,
+			RepoID:     repo.ID,
+			FilePath:   "tests/case3_test.go",
+			LineNumber: "30",
+			Title:      "TestCase3_DeadAssertion",
+			Severity:   "致命",
+			Status:     "open",
+			CreatedAt:  time.Now(),
+		},
+		{
+			TaskTypeID: taskType.ID,
+			RepoID:     repo.ID,
+			FilePath:   "tests/case4_test.go",
+			LineNumber: "40",
+			Title:      "TestCase4_EmptyTest",
+			Severity:   "严重",
+			Status:     "open",
+			CreatedAt:  time.Now(),
+		},
+	}
+	for i := range findings {
+		assert.NoError(t, db.Create(&findings[i]).Error)
+	}
+
+	router := gin.New()
+	campaignGroup := router.Group("/api/analysis/:campaign")
+	campaignGroup.Use(func(c *gin.Context) {
+		c.Set("taskType", &taskType)
+		c.Next()
+	})
+	campaignGroup.GET("/departments/export", ExportDynamicCampaignDepartments)
+
+	req, _ := http.NewRequest("GET", "/api/analysis/ut/departments/export", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	assert.Equal(t, http.StatusOK, resp.Code)
+
+	excelFile, err := excelize.OpenReader(bytes.NewReader(resp.Body.Bytes()))
+	assert.NoError(t, err)
+	defer func() { _ = excelFile.Close() }()
+
+	sheetList := excelFile.GetSheetList()
+	assert.Contains(t, sheetList, "部门评估排行榜")
+
+	rows, err := excelFile.GetRows("部门评估排行榜")
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(rows), 3)
+
+	// 验证实体模式拓展后的表头 (9列)
+	assert.Equal(t, "序号/排名", rows[0][0])
+	assert.Equal(t, "部门 / 代码仓", rows[0][1])
+	assert.Equal(t, "负责人 / 覆盖仓", rows[0][2])
+	assert.Equal(t, "用例总数", rows[0][3])
+	assert.Equal(t, "合格用例", rows[0][4])
+	assert.Equal(t, "致命", rows[0][5])
+	assert.Equal(t, "严重", rows[0][6])
+	assert.Equal(t, "用例合格率", rows[0][7])
+	assert.Equal(t, "最近扫描", rows[0][8])
+
+	// 验证一级部门行数值
+	assert.Equal(t, "1", rows[1][0])
+	assert.Equal(t, dept.Name, rows[1][1])
+	assert.Equal(t, "4", rows[1][3])     // 总用例数
+	assert.Equal(t, "2", rows[1][4])     // 合格用例数
+	assert.Equal(t, "1", rows[1][5])     // 致命数
+	assert.Equal(t, "1", rows[1][6])     // 严重数
+	assert.Equal(t, "50.0%", rows[1][7]) // 合格率
+
+	// 验证二级代码仓行数值
+	assert.Equal(t, "1.1", rows[2][0])
+	assert.Contains(t, rows[2][1], "ut-service")
+	assert.Equal(t, "王五", rows[2][2])
+	assert.Equal(t, "4", rows[2][3])
+	assert.Equal(t, "2", rows[2][4])
+	assert.Equal(t, "1", rows[2][5])
+	assert.Equal(t, "1", rows[2][6])
+	assert.Equal(t, "50%", rows[2][7])
 }
