@@ -202,8 +202,8 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 		}
 	}
 
-	// 1. 读取 disk 上 synthesis findings json (仅在 ledger 未提交时作为当前视图基线)
-	if len(rawList) == 0 && !useLedger {
+	// 1. 读取 disk 上 synthesis findings json (若数据库中无 Findings，无论是未提交台账还是已受 TTL 清理，均透明回退读取磁盘 JSON 快照)
+	if len(rawList) == 0 {
 		jsonPath := report.GetSynthesisJSONPath()
 		if jsonBytes, err := os.ReadFile(jsonPath); err == nil {
 			if errUnmarshal := json.Unmarshal(jsonBytes, &rawList); errUnmarshal != nil || len(rawList) == 0 {

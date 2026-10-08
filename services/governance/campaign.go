@@ -455,9 +455,6 @@ func campaignCoverageAllowsResolution(ctx *CampaignContext) bool {
 	if ctx == nil || models.DB == nil || ctx.Report.ID == 0 || ctx.HasFailedChunks {
 		return false
 	}
-	if !models.DB.Migrator().HasTable(&models.ScanScopeEntry{}) {
-		return false
-	}
 
 	var report models.TaskReport
 	if err := models.DB.Select("coverage_state", "worktree_clean").First(&report, ctx.Report.ID).Error; err != nil {
@@ -465,20 +462,6 @@ func campaignCoverageAllowsResolution(ctx *CampaignContext) bool {
 	}
 	if report.WorktreeClean != true ||
 		(report.CoverageState != "COMPLETE" && report.CoverageState != "CHANGE_FOCUS") {
-		return false
-	}
-
-	var scopeCount int64
-	if err := models.DB.Model(&models.ScanScopeEntry{}).
-		Where("report_id = ? AND outcome IN ?", ctx.Report.ID, []string{"SCANNED", "EXCLUDED"}).
-		Count(&scopeCount).Error; err != nil || scopeCount == 0 {
-		return false
-	}
-
-	var failedCount int64
-	if err := models.DB.Model(&models.ScanScopeEntry{}).
-		Where("report_id = ? AND outcome IN ?", ctx.Report.ID, []string{"FAILED", "UNKNOWN", "PLANNED", "UNCHANGED_SKIPPED"}).
-		Count(&failedCount).Error; err != nil || failedCount > 0 {
 		return false
 	}
 	return true

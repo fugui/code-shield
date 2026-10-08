@@ -274,3 +274,12 @@ ai_fix:
   fix_url: "https://starmind-dev.sicarrier.com/shield-fix/fixdefect?id={defect_id}"
   context_token: "${AI_FIX_CONTEXT_TOKEN}"
   report_base_url: "https://code.sicarrier.com"
+
+# ==============================================================================
+# 6. 台账快照生命周期与稀疏存储 (Retention & Snapshot Lifecycle - 08号架构设计)
+# ==============================================================================
+retention:
+  ledger_retention_days: 30             # 缺陷台账历史快照保留天数（默认 30 天）
+  max_retained_scans_per_repo: 10       # 同一代码仓保底保留的最新完整扫描快照数（默认 10 轮）
+  enable_sparse_scope: true             # 覆盖明细是否启用稀疏存储（默认 true，推荐开启）
+  scope_manifest_dir: ""                # 覆盖清单全量压缩产物存储目录（留空则跟随 report artifacts 目录）

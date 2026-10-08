@@ -102,6 +102,8 @@ func ListMyDefects(db *gorm.DB, query WorkbenchQuery) (*WorkbenchPage, error) {
 		items[index] = WorkbenchItem{
 			ID: row.ID, TaskTypeID: row.TaskTypeID, RepoID: row.RepoID,
 			FilePath: row.NormPath, Severity: row.Severity, Status: campaignStatusFromLedger(row.Status),
+			Title: row.Title, Category: row.Category, CodeSnippet: row.CodeSnippet,
+			Suggestion: row.Suggestion, Detail: row.DetailSummary,
 			LastSeenReportID: row.LastSeenReportID, AssigneeID: row.AssigneeID,
 			AssignedAt: row.AssignedAt,
 			CreatedAt:  row.CreatedAt, UpdatedAt: row.UpdatedAt,

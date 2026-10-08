@@ -889,6 +889,15 @@ func (r *TaskReport) GetSummaryJSONPath() string {
 	return filepath.Join(dir, fmt.Sprintf("report-%d-summary.json", r.ID))
 }
 
+// GetScopeManifestPath 返回全量覆盖明细压缩清单路径（08号设计 §3.2）
+func (r *TaskReport) GetScopeManifestPath() string {
+	if AppConfig.Retention.ScopeManifestDir != "" {
+		return filepath.Join(AppConfig.Retention.ScopeManifestDir, fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+	}
+	dir := r.GetReportDir()
+	return filepath.Join(dir, fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+}
+
 // GetExecutionLogPath 返回任务 AI 执行输出日志路径
 func (r *TaskReport) GetExecutionLogPath() string {
 	dir := r.GetReportDir()
@@ -1036,43 +1045,51 @@ type TaskChunkExecution struct {
 }
 
 type Defect struct {
-	ID                   uint           `gorm:"primaryKey" json:"id"`
-	RepoID               uint           `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"repo_id"`
-	TaskTypeID           uint           `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"task_type_id"`
-	Status               string         `gorm:"size:32;not null;default:'ACTIVE'" json:"status"`
-	StatusReason         string         `gorm:"type:text;not null;default:''" json:"status_reason"`
-	CanonicalFingerprint string         `gorm:"size:64;not null;uniqueIndex:uq_defects_current_identity" json:"canonical_fingerprint"`
-	IdentityKind         string         `gorm:"size:16;not null" json:"identity_kind"`
-	NormPath             string         `gorm:"size:512;not null" json:"norm_path"`
-	ScopeKey             string         `gorm:"size:64;not null" json:"scope_key"`
-	SymbolPath           string         `gorm:"size:512;not null;default:''" json:"symbol_path"`
-	StmtShape            string         `gorm:"size:64;not null" json:"stmt_shape"`
-	CleanToken           string         `gorm:"type:text;not null;default:''" json:"clean_token"`
-	PrevShape            string         `gorm:"size:64;not null;default:''" json:"prev_shape"`
-	NextShape            string         `gorm:"size:64;not null;default:''" json:"next_shape"`
-	OccurrenceIndex      int            `gorm:"not null;default:0" json:"occurrence_index"`
-	DefectClassMajor     string         `gorm:"size:64;not null" json:"defect_class_major"`
-	Severity             string         `gorm:"size:32;not null;default:''" json:"severity"`
-	LineStart            *int           `json:"line_start"`
-	LineEnd              *int           `json:"line_end"`
-	BlobHash             string         `gorm:"size:64;not null;default:''" json:"blob_hash"`
-	ScopeBodyHash        string         `gorm:"size:64;not null;default:''" json:"scope_body_hash"`
-	FirstReportID        uint           `gorm:"not null" json:"first_report_id"`
-	LastSeenReportID     uint           `gorm:"not null" json:"last_seen_report_id"`
-	LastMatchedReportID  uint           `gorm:"not null;default:0" json:"last_matched_report_id"`
-	MissedCount          int            `gorm:"not null;default:0" json:"missed_count"`
-	DormantRounds        int            `gorm:"not null;default:0" json:"dormant_rounds"`
-	HumanLocked          bool           `gorm:"not null;default:false" json:"human_locked"`
-	HumanDecision        string         `gorm:"size:32;not null;default:''" json:"human_decision"`
-	AssigneeID           *uint          `gorm:"index" json:"assignee_id"`
-	AssignedAt           *time.Time     `json:"assigned_at"`
-	ResolvedReportID     *uint          `json:"resolved_report_id"`
-	ResolvedCommit       string         `gorm:"size:64;not null;default:''" json:"resolved_commit"`
-	MergedIntoID         *uint          `gorm:"index" json:"merged_into_id"`
-	RowVersion           int            `gorm:"not null;default:1" json:"row_version"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
-	DeletedAt            gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+	ID                   uint   `gorm:"primaryKey" json:"id"`
+	RepoID               uint   `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"repo_id"`
+	TaskTypeID           uint   `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"task_type_id"`
+	Status               string `gorm:"size:32;not null;default:'ACTIVE'" json:"status"`
+	StatusReason         string `gorm:"type:text;not null;default:''" json:"status_reason"`
+	CanonicalFingerprint string `gorm:"size:64;not null;uniqueIndex:uq_defects_current_identity" json:"canonical_fingerprint"`
+	IdentityKind         string `gorm:"size:16;not null" json:"identity_kind"`
+	NormPath             string `gorm:"size:512;not null" json:"norm_path"`
+	ScopeKey             string `gorm:"size:64;not null" json:"scope_key"`
+	SymbolPath           string `gorm:"size:512;not null;default:''" json:"symbol_path"`
+	StmtShape            string `gorm:"size:64;not null" json:"stmt_shape"`
+	CleanToken           string `gorm:"type:text;not null;default:''" json:"clean_token"`
+	PrevShape            string `gorm:"size:64;not null;default:''" json:"prev_shape"`
+	NextShape            string `gorm:"size:64;not null;default:''" json:"next_shape"`
+	OccurrenceIndex      int    `gorm:"not null;default:0" json:"occurrence_index"`
+	DefectClassMajor     string `gorm:"size:64;not null" json:"defect_class_major"`
+	Severity             string `gorm:"size:32;not null;default:''" json:"severity"`
+	LineStart            *int   `json:"line_start"`
+	LineEnd              *int   `json:"line_end"`
+
+	// 自包含核心文本元数据：TTL 清理后仍可完整渲染缺陷信息（08号设计 §6.2）
+	Title         string `gorm:"size:500;not null;default:''" json:"title"`
+	Category      string `gorm:"size:255;not null;default:''" json:"category"`
+	CodeSnippet   string `gorm:"type:text;not null;default:''" json:"code_snippet"`
+	Suggestion    string `gorm:"type:text;not null;default:''" json:"suggestion"`
+	DetailSummary string `gorm:"type:text;not null;default:''" json:"detail_summary"`
+
+	BlobHash            string         `gorm:"size:64;not null;default:''" json:"blob_hash"`
+	ScopeBodyHash       string         `gorm:"size:64;not null;default:''" json:"scope_body_hash"`
+	FirstReportID       uint           `gorm:"not null" json:"first_report_id"`
+	LastSeenReportID    uint           `gorm:"not null" json:"last_seen_report_id"`
+	LastMatchedReportID uint           `gorm:"not null;default:0" json:"last_matched_report_id"`
+	MissedCount         int            `gorm:"not null;default:0" json:"missed_count"`
+	DormantRounds       int            `gorm:"not null;default:0" json:"dormant_rounds"`
+	HumanLocked         bool           `gorm:"not null;default:false" json:"human_locked"`
+	HumanDecision       string         `gorm:"size:32;not null;default:''" json:"human_decision"`
+	AssigneeID          *uint          `gorm:"index" json:"assignee_id"`
+	AssignedAt          *time.Time     `json:"assigned_at"`
+	ResolvedReportID    *uint          `json:"resolved_report_id"`
+	ResolvedCommit      string         `gorm:"size:64;not null;default:''" json:"resolved_commit"`
+	MergedIntoID        *uint          `gorm:"index" json:"merged_into_id"`
+	RowVersion          int            `gorm:"not null;default:1" json:"row_version"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at"`
 }
 
 type DefectAlias struct {

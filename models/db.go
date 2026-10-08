@@ -129,6 +129,11 @@ func InitDB() {
 		`).Error; err != nil {
 			log.Fatalf("failed to add bucket defect alias constraint: %v", err)
 		}
+
+		// 会话级事务超时保护（08号设计 §4.4）
+		DB.Exec("SET idle_in_transaction_session_timeout = '10000';") // 10秒空闲事务自动断开
+		DB.Exec("SET statement_timeout = '60000';")                   // 60秒 SQL 语句兜底超时
+		DB.Exec("SET lock_timeout = '5000';")                         // 5秒行锁等待超时
 	}
 
 	// The task queue relies on repository URLs. Persist the invariant in the
