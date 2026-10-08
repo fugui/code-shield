@@ -265,8 +265,9 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		Temperature:    &zeroTemp,
 		ResponseFormat: "json",
 		WorkContext: &invoker.LLMWorkContext{
-			Stage:   "系统工具: JSON 语法修复",
-			SubTask: fmt.Sprintf("修复输出文件 (%s)", filepath.Base(jsonFilePath)),
+			Stage:    "系统工具: JSON 语法修复",
+			SubTask:  fmt.Sprintf("修复输出文件 (%s)", filepath.Base(jsonFilePath)),
+			TierName: "system_tool",
 		},
 	}
 

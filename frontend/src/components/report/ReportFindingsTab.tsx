@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FindingsPageResponse, TaskReportMeta } from '../../types/report';
+import { Pagination } from '@code/common';
+import {
+  FindingsPageResponse,
+  ObservationProjection,
+  ReconciliationSummary,
+  TaskReportMeta,
+} from '../../types/report';
 import FindingCard from './FindingCard';
 import ReportEmptyState from './ReportEmptyState';
 
@@ -10,6 +16,7 @@ const DEFECT_MODE_SEVS = ['fatal', 'critical', 'major', 'suggestion'];
 interface ReportFindingsTabProps {
   meta?: TaskReportMeta;
   findingsPage: FindingsPageResponse | null;
+  reconciliation: ReconciliationSummary | null;
   loading: boolean;
   onFilterChange: (filters: Record<string, any>) => void;
 }
@@ -24,6 +31,7 @@ interface SeverityCardItem {
 export default function ReportFindingsTab({
   meta,
   findingsPage,
+  reconciliation,
   loading,
   onFilterChange,
 }: ReportFindingsTabProps) {
@@ -37,6 +45,7 @@ export default function ReportFindingsTab({
   const [keyword, setKeyword] = useState<string>('');
   const [debouncedKeyword, setDebouncedKeyword] = useState<string>('');
   const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
   // meta 异步到达后治理模式可能从默认值翻转，这里在模式变化时校正默认选中项
   const prevModeRef = useRef(isEntityMode);
   useEffect(() => {
@@ -52,6 +61,15 @@ export default function ReportFindingsTab({
   const metrics = findingsPage?.metrics;
   const items = useMemo(() => findingsPage?.items || [], [findingsPage]);
   const total = findingsPage?.total || 0;
+  const observationByFindingID = useMemo(() => {
+    const index = new Map<number, ObservationProjection>();
+    reconciliation?.observations.forEach(observation => {
+      observation.source_finding_ids.forEach(findingID => {
+        if (!index.has(findingID)) index.set(findingID, observation);
+      });
+    });
+    return index;
+  }, [reconciliation]);
 
   // 搜索输入防抖
   useEffect(() => {
@@ -98,18 +116,16 @@ export default function ReportFindingsTab({
     cards.push({
       key: 'unpass',
       name: '不合格 / 风险',
-      count: (metrics?.fatal_count ?? 0) + (metrics?.critical_count ?? 0) + (metrics?.major_count ?? 0),
+      count: (metrics?.total_findings ?? 0) - (metrics?.pass_count ?? 0),
       color: '#ef4444',
     });
   } else {
-    if ((metrics?.fatal_count ?? 0) > 0) {
-      cards.push({
-        key: 'fatal',
-        name: '致命',
-        count: metrics?.fatal_count ?? 0,
-        color: '#dc2626',
-      });
-    }
+    cards.push({
+      key: 'fatal',
+      name: '致命',
+      count: metrics?.fatal_count ?? 0,
+      color: '#dc2626',
+    });
     cards.push({
       key: 'critical',
       name: '严重',
@@ -132,34 +148,32 @@ export default function ReportFindingsTab({
 
   const allAvailableKeys = cards.map(c => c.key);
   const isAllSelected = allAvailableKeys.length > 0 && allAvailableKeys.every(k => selectedSevs.includes(k));
+  const severityParam = selectedSevs.length === 0
+    ? '__none__'
+    : isAllSelected
+      ? ''
+      : selectedSevs.map(k => (k === 'unpass' ? 'fatal,critical,major,minor,suggestion' : k)).join(',');
 
   useEffect(() => {
-    let sevParam = '';
-    if (selectedSevs.length === 0) {
-      // 当所有级别均被取消勾选时，传 __none__ 使得查询结果为空列表，符合排除过滤直觉
-      sevParam = '__none__';
-    } else if (!isAllSelected) {
-      const mapped = selectedSevs.map(k => (k === 'unpass' ? 'fatal,critical,major' : k));
-      sevParam = mapped.join(',');
-    }
-
     onFilterChange({
-      severity: sevParam,
+      severity: severityParam,
       status: selectedStatus,
       keyword: debouncedKeyword,
       page,
-      pageSize: 50,
+      pageSize,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onFilterChange 由父组件传入，加入依赖可能导致每次渲染重复触发筛选
-  }, [selectedSevs, selectedStatus, debouncedKeyword, page, isAllSelected]);
+  }, [severityParam, selectedStatus, debouncedKeyword, page, pageSize]);
 
   // 标准 Checkbox 常识交互：点击卡片即切换当前级别的选中/取消状态
   const handleCardClick = (key: string) => {
-    if (selectedSevs.includes(key)) {
-      setSelectedSevs(selectedSevs.filter(k => k !== key));
-    } else {
-      setSelectedSevs([...selectedSevs, key]);
-    }
+    const isSelected = selectedSevs.includes(key);
+    const nextSevs = isSelected && selectedSevs.length === 1
+      ? [key]
+      : isSelected
+        ? selectedSevs.filter(selectedKey => selectedKey !== key)
+        : [...selectedSevs, key];
+    setSelectedSevs(nextSevs);
     setPage(1);
   };
 
@@ -170,6 +184,25 @@ export default function ReportFindingsTab({
 
   return (
     <div>
+      {!isEntityMode && reconciliation && (
+        <div className={`reconciliation-strip ${reconciliation.coverage_state !== 'COMPLETE' ? 'degraded' : ''}`}>
+          <div className="reconciliation-strip-main">
+            <strong>跨轮对账</strong>
+            <span>新增 {reconciliation.stats?.NEW || 0}</span>
+            <span>存量 {reconciliation.stats?.EXISTED || 0}</span>
+            <span>复发 {reconciliation.stats?.REOPENED || 0}</span>
+            <span>疑似 {reconciliation.stats?.PROBABLE || 0}</span>
+            <span>修复 {reconciliation.stats?.RESOLVED || 0}</span>
+            <span>覆盖缺口 {reconciliation.stats?.COVERAGE_GAP || 0}</span>
+          </div>
+          <div className="reconciliation-strip-meta">
+            <span>{reconciliation.ledger_ready ? 'Ledger 已提交' : 'Ledger 未提交'}</span>
+            <span>覆盖 {reconciliation.coverage_state}</span>
+            <span>算法 {reconciliation.algorithm_version || '—'}</span>
+          </div>
+        </div>
+      )}
+
       {/* 1. 严重性指标卡片看板 (默认全选中高亮，支持智能单选/多选组合) */}
       <div className="severity-cards-grid no-print">
         {cards.map((c) => {
@@ -225,8 +258,16 @@ export default function ReportFindingsTab({
             className="filter-status-select"
             value={selectedStatus}
             onChange={(e) => {
-              setSelectedStatus(e.target.value);
+              const nextStatus = e.target.value;
+              setSelectedStatus(nextStatus);
               setPage(1);
+              onFilterChange({
+                severity: severityParam,
+                status: nextStatus,
+                keyword: debouncedKeyword,
+                page: 1,
+                pageSize,
+              });
             }}
           >
             <option value="">全部状态</option>
@@ -289,35 +330,38 @@ export default function ReportFindingsTab({
       ) : (
         <div>
           {items.map((item) => (
+            (() => {
+              const observation = item.observation_group_uid ? observationByFindingID.get(item.id) : undefined;
+              const itemKey = observation?.defect_id
+                ? `defect:${observation.defect_id}`
+                : item.observation_group_uid
+                  ? `observation:${meta?.id || 0}:${item.observation_group_uid}`
+                  : `finding:${item.id}`;
+              return (
             <FindingCard
-              key={`${item.id}-${item.file_path}-${item.line_number}`}
-              finding={item}
-              governanceMode={meta?.governance_mode}
-              repoUrl={meta?.repo_url}
-              branch={meta?.branch}
-            />
+                key={itemKey}
+                finding={item}
+                governanceMode={meta?.governance_mode}
+                repoUrl={meta?.repo_url}
+                branch={meta?.branch}
+                reconciliation={observation}
+              />
+              );
+            })()
           ))}
 
-          {/* 分页控制 */}
-          {findingsPage && findingsPage.totalPages > 1 && (
-            <div className="no-print" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
-              <button
-                className="nav-btn"
-                disabled={page <= 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-              >
-                ‹ 上一页
-              </button>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
-                第 {page} / {findingsPage.totalPages} 页 (共 {total} 项)
-              </span>
-              <button
-                className="nav-btn"
-                disabled={page >= findingsPage.totalPages}
-                onClick={() => setPage(p => Math.min(findingsPage.totalPages, p + 1))}
-              >
-                下一页 ›
-              </button>
+          {findingsPage && (
+            <div className="no-print report-findings-pagination">
+              <Pagination
+                totalItems={findingsPage.total}
+                page={page}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={size => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+              />
             </div>
           )}
         </div>

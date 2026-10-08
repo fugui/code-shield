@@ -26,6 +26,72 @@ func ensureConfigExists() {
 	}
 }
 
+func normalizeGovernancePolicy(cfg models.GovernancePolicyConfig) models.GovernancePolicyConfig {
+	if cfg.Identity.AlgorithmVersion == "" {
+		cfg.Identity.AlgorithmVersion = "v1"
+	}
+	if cfg.Identity.MaxCandidatesPerObservation <= 0 {
+		cfg.Identity.MaxCandidatesPerObservation = 64
+	}
+	if cfg.Identity.MaxCandidateEdgesPerReport <= 0 {
+		cfg.Identity.MaxCandidateEdgesPerReport = 20000
+	}
+	if cfg.Identity.MaxAIAssignmentWidth <= 0 {
+		cfg.Identity.MaxAIAssignmentWidth = 16
+	}
+	if cfg.Identity.StrongSameThreshold <= 0 {
+		cfg.Identity.StrongSameThreshold = 0.90
+	}
+	if cfg.Identity.AssignBand <= 0 {
+		cfg.Identity.AssignBand = 0.65
+	}
+	if cfg.Identity.RejectBelow <= 0 {
+		cfg.Identity.RejectBelow = 0.45
+	}
+	if cfg.Identity.AutoResolveGrayZone == nil {
+		enabled := true
+		cfg.Identity.AutoResolveGrayZone = &enabled
+	}
+	if cfg.Identity.AIArbitrationConfidence <= 0 {
+		cfg.Identity.AIArbitrationConfidence = 0.70
+	}
+	if cfg.Identity.GrayZoneFallbackMergeScore <= 0 {
+		cfg.Identity.GrayZoneFallbackMergeScore = 0.60
+	}
+	if cfg.Arbitration.Enabled == nil {
+		enabled := true
+		cfg.Arbitration.Enabled = &enabled
+	}
+	if cfg.Arbitration.MaxCallsPerReport <= 0 {
+		cfg.Arbitration.MaxCallsPerReport = 20
+	}
+	if cfg.Arbitration.ContextLines <= 0 {
+		cfg.Arbitration.ContextLines = 8
+	}
+	if cfg.Arbitration.TimeoutSeconds <= 0 {
+		cfg.Arbitration.TimeoutSeconds = 30
+	}
+	if len(cfg.Lifecycle.HighRiskSeverities) == 0 {
+		cfg.Lifecycle.HighRiskSeverities = []string{"致命", "严重"}
+	}
+	if cfg.Lifecycle.ResolvedRounds <= 0 {
+		cfg.Lifecycle.ResolvedRounds = 2
+	}
+	if cfg.Lifecycle.DormantThreshold <= 0 {
+		cfg.Lifecycle.DormantThreshold = 2
+	}
+	if cfg.Lifecycle.ObsoleteAfterDormant <= 0 {
+		cfg.Lifecycle.ObsoleteAfterDormant = 8
+	}
+	if !cfg.Lifecycle.RequireCoverage {
+		cfg.Lifecycle.RequireCoverage = true
+	}
+	if !cfg.Lifecycle.RequireChange {
+		cfg.Lifecycle.RequireChange = true
+	}
+	return cfg
+}
+
 func GetConfig(c *gin.Context) {
 	ensureConfigExists()
 	var config models.SystemConfig
@@ -131,6 +197,10 @@ func UpdateConfig(c *gin.Context) {
 	})
 }
 
+func syncWorkHoursThrottle() {
+	services.Dispatcher.SetWorkHoursThrottle(models.AppConfig.AI.WorkHoursThrottle)
+}
+
 // GetCategoryConfig 获取指定 Category 的动态配置
 func GetCategoryConfig(c *gin.Context) {
 	cat := c.Param("category")
@@ -159,6 +229,20 @@ func GetCategoryConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, data)
 }
 
+// GetFrontendConfig exposes only non-sensitive UI integration settings.
+func GetFrontendConfig(c *gin.Context) {
+	if err := models.AppConfig.AIFix.Validate(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI fix configuration is invalid"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ai_fix": gin.H{
+			"fix_url": models.AppConfig.AIFix.FixURL,
+		},
+	})
+}
+
 // UpdateCategoryConfig 更新指定 Category 的动态配置
 func UpdateCategoryConfig(c *gin.Context) {
 	cat := c.Param("category")
@@ -175,14 +259,24 @@ func UpdateCategoryConfig(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 LLM 配置 JSON: " + err.Error()})
 			return
 		}
+		if err := models.ValidateTierBindings(&llmCfg, &models.AppConfig.Scanner); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		models.AppConfig.LLM = llmCfg
-		services.Dispatcher.ReloadResources(llmCfg)
+		models.AppConfig.SyncLegacy()
+		services.Dispatcher.ReloadResources(models.AppConfig.LLM)
 	case "scanner":
 		var scannerCfg models.ScannerConfig
 		if err := json.Unmarshal(rawBody, &scannerCfg); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Scanner 配置 JSON: " + err.Error()})
 			return
 		}
+		if err := models.ValidateTierBindings(&models.AppConfig.LLM, &scannerCfg); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		scannerCfg.NormalizeDefaults()
 		models.AppConfig.Scanner = scannerCfg
 		if scannerCfg.WorkerCount > 0 {
 			models.AppConfig.Server.WorkerCount = scannerCfg.WorkerCount
@@ -190,13 +284,20 @@ func UpdateCategoryConfig(c *gin.Context) {
 		if scannerCfg.MaxQueueSize > 0 {
 			models.AppConfig.Server.MaxQueueSize = scannerCfg.MaxQueueSize
 		}
+		if scannerCfg.WorkerCount > 0 {
+			services.ResizeWorkerPool(scannerCfg.WorkerCount)
+		}
 	case "governance":
 		var govCfg models.GovernancePolicyConfig
 		if err := json.Unmarshal(rawBody, &govCfg); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Governance 配置 JSON: " + err.Error()})
 			return
 		}
+		govCfg = normalizeGovernancePolicy(govCfg)
 		models.AppConfig.Governance = govCfg
+		models.AppConfig.Identity = govCfg.Identity
+		models.AppConfig.Arbitration = models.AppConfig.Governance.Arbitration
+		models.AppConfig.Lifecycle = govCfg.Lifecycle
 	case "notification":
 		var notifCfg models.NotificationConfig
 		if err := json.Unmarshal(rawBody, &notifCfg); err != nil {
@@ -210,6 +311,9 @@ func UpdateCategoryConfig(c *gin.Context) {
 	}
 
 	models.AppConfig.SyncLegacy()
+	if cat == "scanner" {
+		syncWorkHoursThrottle()
+	}
 
 	var record models.SystemDynamicConfig
 	res := models.DB.Where("category = ?", cat).First(&record)
@@ -295,20 +399,42 @@ func UpdateFullConfig(c *gin.Context) {
 	}
 
 	if req.LLM != nil {
+		scanner := models.AppConfig.Scanner
+		if req.Scanner != nil {
+			scanner = *req.Scanner
+		}
+		if err := models.ValidateTierBindings(req.LLM, &scanner); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		models.AppConfig.LLM = *req.LLM
-		services.Dispatcher.ReloadResources(*req.LLM)
+		models.AppConfig.SyncLegacy()
+		services.Dispatcher.ReloadResources(models.AppConfig.LLM)
 		_ = saveCategory("llm", *req.LLM)
 	}
 	if req.Scanner != nil {
-		models.AppConfig.Scanner = *req.Scanner
-		if req.Scanner.WorkerCount > 0 {
-			models.AppConfig.Server.WorkerCount = req.Scanner.WorkerCount
+		scanner := *req.Scanner
+		scanner.NormalizeDefaults()
+		if err := models.ValidateTierBindings(&models.AppConfig.LLM, &scanner); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
-		_ = saveCategory("scanner", *req.Scanner)
+		models.AppConfig.Scanner = scanner
+		if scanner.WorkerCount > 0 {
+			models.AppConfig.Server.WorkerCount = scanner.WorkerCount
+		}
+		if scanner.WorkerCount > 0 {
+			services.ResizeWorkerPool(scanner.WorkerCount)
+		}
+		_ = saveCategory("scanner", scanner)
 	}
 	if req.Governance != nil {
-		models.AppConfig.Governance = *req.Governance
-		_ = saveCategory("governance", *req.Governance)
+		governance := normalizeGovernancePolicy(*req.Governance)
+		models.AppConfig.Governance = governance
+		models.AppConfig.Identity = governance.Identity
+		models.AppConfig.Arbitration = models.AppConfig.Governance.Arbitration
+		models.AppConfig.Lifecycle = governance.Lifecycle
+		_ = saveCategory("governance", governance)
 	}
 	if req.Notification != nil {
 		models.AppConfig.Notification = *req.Notification
@@ -316,6 +442,9 @@ func UpdateFullConfig(c *gin.Context) {
 	}
 
 	models.AppConfig.SyncLegacy()
+	if req.Scanner != nil {
+		syncWorkHoursThrottle()
+	}
 
 	commonAudit.SetAuditContext(c, "config", "update_full", models.AuditLevelP1,
 		"更新了系统全量动态配置",
@@ -455,6 +584,7 @@ func ResetCategoryConfig(c *gin.Context) {
 	}
 
 	models.InitDynamicConfigs(seedCfg)
+	syncWorkHoursThrottle()
 
 	commonAudit.SetAuditContext(c, "config", "reset_seed", models.AuditLevelP1,
 		fmt.Sprintf("重置了 %s 配置为初始 YAML 模版", req.Category),

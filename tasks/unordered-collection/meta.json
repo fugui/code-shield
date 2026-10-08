@@ -1,59 +1,15 @@
 {
-  "name": "unordered_collection",
-  "display_name": "无序集合导出缺陷扫描",
-  "description": "针对 map 和 set 等无序集合，检测因直接迭代、导出为数组并依赖其内部排列顺序而导致的数据不稳定或计算一致性风险",
-  "engine_mode": "debate_selective",
-  "engine_config": {
-    "file_extensions": [
-      ".go",
-      ".java",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx",
-      ".js",
-      ".ts",
-      ".jsx",
-      ".tsx",
-      ".py"
-    ],
-    "content_keywords": [
-      "map[",
-      "Map",
-      "Set",
-      "std::map",
-      "std::set",
-      "QMap",
-      "QSet",
-      "TreeMap",
-      "TreeSet",
-      "unordered_map",
-      "unordered_set",
-      "iterator",
-      "iterate",
-      "entrySet",
-      "keySet",
-      "keyEntry",
-      "keys",
-      "values",
-      "entries"
-    ],
-    "exclude_paths": [
-      "thirdparts",
-      "third_party"
-    ]
-  },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
   "campaign_path": "unordered-collection",
-  "governance_mode": "defect_tracking",
-  "domain_family": "numerical_determinism",
+  "categories": [
+    "签名与摘要顺序不稳定",
+    "跨系统契约顺序不稳定",
+    "键值索引错位",
+    "有序输入被重排",
+    "接口列表顺序不稳定",
+    "测试断言顺序依赖",
+    "日志与展示顺序不稳定",
+    "其它顺序依赖风险"
+  ],
   "defense_dimensions": [
     {
       "dimension": "OrderIndependent",
@@ -68,15 +24,317 @@
       "description": "使用的 Map Key 天然单调自增或容器类型为保序实现（如 LinkedHashMap、有序索引表）"
     }
   ],
-
-  "categories": [
-    "无序集合-哈希签名顺序依赖",
-    "无序集合-序列化比较缺陷",
-    "无序集合-API响应不稳定",
-    "无序集合-索引依赖与对齐错位",
-    "无序集合-输入输出序列错位",
-    "无序集合-单元测试断言不确定性",
-    "无序集合-其它顺序依赖隐患"
-  ],
-  "is_active": true
+  "description": "针对 Map/Set 等集合，检测签名验签、跨系统契约、键值映射、输入输出顺序、接口稳定性和测试断言中的顺序依赖风险",
+  "display_name": "无序集合导出缺陷扫描",
+  "display_semantics": {
+    "domain_label": "数值计算与确定性",
+    "target_label": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "domain_family": "numerical_determinism",
+  "domain_label": "数值计算与确定性",
+  "engine_config": {
+    "scan_profile": {
+      "content_keywords": [
+        "map[",
+        "Map",
+        "Set",
+        "std::map",
+        "std::set",
+        "QMap",
+        "QSet",
+        "TreeMap",
+        "TreeSet",
+        "unordered_map",
+        "unordered_set",
+        "iterator",
+        "iterate",
+        "entrySet",
+        "keySet",
+        "keyEntry",
+        "keys",
+        "values",
+        "entries"
+      ],
+      "exclude_paths": [
+        "thirdparts",
+        "third_party"
+      ],
+      "include_extensions": [
+        ".go",
+        ".java",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+        ".py"
+      ],
+      "name": "occurrence_review",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "full_ledger",
+  "is_active": true,
+  "is_campaign": true,
+  "name": "unordered_collection",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "源码文件",
+    "plural": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "UNORDERED_HASH_ORDER",
+        "label": "签名与摘要顺序不稳定",
+        "definition": "Map/Set 导出结果参与签名、Token、摘要或验签时，运行顺序变化导致认证或防篡改结果不一致。",
+        "decision_rules": [
+          "无序容器导出字符串或字节序列",
+          "结果用于签名、Token、摘要或验签",
+          "没有排序或规范化输入"
+        ],
+        "positive_hints": [
+          "签名前使用稳定排序或集合语义"
+        ],
+        "negative_hints": [
+          "输入顺序具有显式契约"
+        ],
+        "default_severity": "严重",
+        "escalate_when": [
+          "影响认证、支付幂等或安全防篡改"
+        ],
+        "downgrade_when": [
+          "只用于本地临时缓存键且冲突可恢复"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_CONTRACT_ORDER",
+        "label": "跨系统契约顺序不稳定",
+        "definition": "持久化数据、RPC 请求、外部 API 报文或深度比较依赖无序集合导出后的顺序，导致跨环境结果漂移。",
+        "decision_rules": [
+          "集合被序列化或导出为有序数组",
+          "跨系统、持久化或比较逻辑依赖顺序",
+          "没有契约指定排序规则"
+        ],
+        "positive_hints": [
+          "使用排序、集合语义或稳定键"
+        ],
+        "negative_hints": [
+          "下游明确将数据视为无序集合"
+        ],
+        "default_severity": "严重",
+        "escalate_when": [
+          "导致持久化记录、外部报文或幂等键错误"
+        ],
+        "downgrade_when": [
+          "只影响内部临时调试数据"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_API_LIST_STABILITY",
+        "label": "接口列表顺序不稳定",
+        "definition": "接口返回、前端列表、导出文件或默认排序由无序集合遍历产生，同一数据在不同请求中顺序不同。",
+        "decision_rules": [
+          "响应列表或导出内容来自无序遍历",
+          "前端、缓存或下游依赖稳定顺序",
+          "没有显式排序契约"
+        ],
+        "positive_hints": [
+          "返回前显式排序或声明无序契约"
+        ],
+        "negative_hints": [
+          "列表会被分页、截断或按序消费"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "列表被分页截断、按序消费或绑定序号"
+        ],
+        "downgrade_when": [
+          "客户端明确按集合语义处理"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_INDEX_ALIGNMENT",
+        "label": "键值索引错位",
+        "definition": "单独导出 keys/values 或用无序遍历位置绑定另一组数据，造成键值或记录错位。",
+        "decision_rules": [
+          "无序遍历提供索引或位置",
+          "索引用于访问另一数组、表格或记录",
+          "没有稳定键重新校验对齐关系"
+        ],
+        "positive_hints": [
+          "使用稳定键映射位置"
+        ],
+        "negative_hints": [
+          "索引通过稳定键验证"
+        ],
+        "default_severity": "严重",
+        "escalate_when": [
+          "错位会写入持久化状态或发送到外部系统"
+        ],
+        "downgrade_when": [
+          "仅用于临时展示且可由用户纠正"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_IO_SEQUENCE",
+        "label": "有序输入被重排",
+        "definition": "原始有序数据经过 Map/Set 去重或转换后，输出顺序不再与输入序列对齐。",
+        "decision_rules": [
+          "有序输入被写入无序集合",
+          "输出按遍历顺序追加或转发",
+          "下游按原始输入顺序消费"
+        ],
+        "positive_hints": [
+          "使用显式键或序列号绑定记录"
+        ],
+        "negative_hints": [
+          "保留并遍历原始有序序列"
+        ],
+        "default_severity": "严重",
+        "escalate_when": [
+          "影响协议报文、文件写入或外部系统顺序"
+        ],
+        "downgrade_when": [
+          "输出顺序对下游语义无关"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_TEST_ASSERT",
+        "label": "测试断言顺序依赖",
+        "definition": "单元或集成测试直接断言无序集合导出的精确顺序，导致相同逻辑输入偶发失败。",
+        "decision_rules": [
+          "测试遍历无序结构",
+          "断言依赖实现顺序",
+          "同一输入可能在不同运行中失败"
+        ],
+        "positive_hints": [
+          "使用集合语义或规范化顺序断言"
+        ],
+        "negative_hints": [
+          "断言前显式排序"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "阻塞发布流水线或掩盖真实数据错位"
+        ],
+        "downgrade_when": [
+          "断言仅验证集合成员关系"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_LOG_DISPLAY",
+        "label": "日志与展示顺序不稳定",
+        "definition": "日志、调试输出或界面展示的顺序由无序集合决定，影响排查体验但不改变业务状态。",
+        "decision_rules": [
+          "无序集合影响日志或展示顺序",
+          "业务状态和下游决策不受影响",
+          "顺序变化可稳定复现"
+        ],
+        "positive_hints": [
+          "结果参与业务契约或自动化决策"
+        ],
+        "negative_hints": [
+          "顺序具有业务语义"
+        ],
+        "default_severity": "建议",
+        "escalate_when": [
+          "影响审计、合规或事故排查链路"
+        ],
+        "downgrade_when": [
+          "仅显示在开发者本地调试输出"
+        ],
+        "priority": 20,
+        "status": "active"
+      },
+      {
+        "code": "UNORDERED_OTHER",
+        "label": "其它顺序依赖风险",
+        "definition": "已确认顺序依赖会造成可观察影响，但不能归入签名、契约、映射、接口、测试或日志展示分类。",
+        "decision_rules": [
+          "无序遍历影响确定性行为",
+          "具体业务后果分类不适用",
+          "顺序依赖证据具体可验证"
+        ],
+        "positive_hints": [
+          "具体业务后果分类适用"
+        ],
+        "negative_hints": [
+          "顺序与业务语义无关"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "影响默认可达业务状态或外部契约"
+        ],
+        "downgrade_when": [
+          "只影响人工排查信息"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ],
+    "deprecated_aliases": [
+      {
+        "label": "无序集合-哈希签名顺序依赖",
+        "target_code": "UNORDERED_HASH_ORDER",
+        "reason": "分类标签改为业务后果导向"
+      },
+      {
+        "label": "无序集合-序列化比较缺陷",
+        "target_code": "UNORDERED_CONTRACT_ORDER",
+        "reason": "分类标签改为业务后果导向"
+      },
+      {
+        "label": "无序集合-API响应不稳定",
+        "target_code": "UNORDERED_API_LIST_STABILITY",
+        "reason": "分类标签改为业务后果导向"
+      },
+      {
+        "label": "无序集合-索引依赖与对齐错位",
+        "target_code": "UNORDERED_INDEX_ALIGNMENT",
+        "reason": "分类标签改为业务后果导向"
+      },
+      {
+        "label": "无序集合-输入输出序列错位",
+        "target_code": "UNORDERED_IO_SEQUENCE",
+        "reason": "分类标签改为业务后果导向"
+      },
+      {
+        "label": "无序集合-单元测试断言不确定性",
+        "target_code": "UNORDERED_TEST_ASSERT",
+        "reason": "分类标签改为业务后果导向"
+      },
+      {
+        "label": "无序集合-其它顺序依赖隐患",
+        "target_code": "UNORDERED_OTHER",
+        "reason": "分类标签改为业务后果导向"
+      }
+    ]
+  },
+  "timeout": 60
 }

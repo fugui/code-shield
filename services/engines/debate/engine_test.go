@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 
 func TestParseJSONFromAIOutput(t *testing.T) {
 	// 测试包含 ```json 包裹的输出
-	rawMarkdown := "下面是初筛结果：\n```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/posix.cc\",\n      \"cwe_category\": \"CWE-476\"\n    }\n  ],\n  \"summary\": \"ok\"\n}\n```\n祝工作顺利！"
+	rawMarkdown := "下面是初筛结果：\n```json\n{\n  \"candidates\": [\n    {\n      \"candidate_id\": \"H-001\",\n      \"file_path\": \"src/posix.cc\",\n      \"cwe_category\": \"CWE-476\"\n    }\n  ]\n}\n```\n祝工作顺利！"
 
 	var out HunterOutput
 	err := parseJSONFromAIOutput(rawMarkdown, &out, t.TempDir())
@@ -42,11 +43,50 @@ func TestParseJSONFromAIOutput(t *testing.T) {
 func TestDebateEngine_FastPass(t *testing.T) {
 	hunterOut := &HunterOutput{
 		Candidates: []HunterCandidate{},
-		Summary:    "Clean code, no defect detected",
 	}
 
 	if len(hunterOut.Candidates) != 0 {
 		t.Errorf("Expected 0 candidates for fast pass")
+	}
+}
+
+func TestFallbackJudgeFromHunterKeepsFailureReason(t *testing.T) {
+	rawReason := "Judge 调用失败: AI execution failed: \x1b[0m\n> shield-base-scanner · test-model\n\x1b[0m$ grep secret src/a.cpp"
+	out := fallbackJudgeFromHunter(rawReason, &HunterOutput{
+		Candidates: []HunterCandidate{{
+			CandidateID:      "H-001",
+			FilePath:         "src/a.cpp",
+			LineRange:        "1-2",
+			TriggerLine:      "state[1] = 2;",
+			ScopeSymbol:      "Service::update",
+			AttackHypothesis: "unsafe access",
+			Category:         "测试分类",
+		}},
+	})
+	if len(out.FinalVerdicts) != 1 {
+		t.Fatalf("expected one fallback verdict, got %d", len(out.FinalVerdicts))
+	}
+	verdict := out.FinalVerdicts[0]
+	rationale := verdict.JudgementRationale
+	if !strings.Contains(rationale, "原因：Judge 调用失败") {
+		t.Fatalf("fallback rationale must retain stable failure category: %q", rationale)
+	}
+	if strings.Contains(rationale, "AI execution failed") || strings.Contains(rationale, "shield-base-scanner") || strings.Contains(rationale, "grep secret") {
+		t.Fatalf("fallback rationale must not expose raw CLI diagnostics: %q", rationale)
+	}
+	if verdict.SeverityPreliminary != "一般" {
+		t.Fatalf("expected fallback severity 一般, got %q", verdict.SeverityPreliminary)
+	}
+	if verdict.EvidenceDegraded != true {
+		t.Fatalf("expected degraded evidence marker to remain true")
+	}
+}
+
+func TestDeriveConciseTitleKeepsFloatingPointLiteral(t *testing.T) {
+	title := "浮点数比较缺陷：变量与阈值 1.05 直接等值比较，可能因精度误差失效"
+
+	if got := DeriveConciseTitle(title, "CWE-000"); got != title {
+		t.Fatalf("expected floating-point title to be preserved, got %q", got)
 	}
 }
 
@@ -123,7 +163,7 @@ func TestCallAITier_ChunkDirPersistence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	outStr, tokens, err := callAITier(ctx, mockBackend, "", "test hunter prompt", tempDir, targetOutPath, 1)
+	outStr, tokens, err := callAITier(ctx, mockBackend, "", "test hunter prompt", tempDir, targetOutPath, 1, aiTimeoutPolicy{})
 	if err != nil {
 		t.Fatalf("callAITier failed: %v", err)
 	}
@@ -137,5 +177,14 @@ func TestCallAITier_ChunkDirPersistence(t *testing.T) {
 
 	if _, err := os.Stat(targetOutPath); os.IsNotExist(err) {
 		t.Fatalf("expected output file to persist at %s, but file not found", targetOutPath)
+	}
+}
+
+func TestIsInvocationTimeoutClassification(t *testing.T) {
+	if !isInvocationTimeout(invoker.NewClassifiedError(invoker.ErrorClassIdleTimeout, "AI execution idle timed out after 10m0s")) {
+		t.Fatal("expected idle timeout to be split-retryable")
+	}
+	if isInvocationTimeout(invoker.NewClassifiedError(invoker.ErrorClassResourceBusy, "failed to acquire LLM server slot")) {
+		t.Fatal("dispatcher wait timeout must not trigger bundle splitting")
 	}
 }

@@ -313,8 +313,8 @@ func DeletePendingExecution(c *gin.Context) {
 		return
 	}
 
-	// 无条件尝试取消：消除 Worker 已领取任务但状态尚未更新为 running 的 TOCTOU 竞态窗口。
-	// CancelRunningTask 在 activeTasks 中找不到 reportID 时安全返回 false，无副作用。
+	// 无条件尝试取消：消除 Worker 已领取任务但尚未注册到取消表的 TOCTOU 竞态窗口。
+	// CancelRunningTask 找不到运行器时会登记取消请求，阻断 worker 稍后启动同一报告。
 	if execLog.TaskReportID != nil {
 		services.CancelRunningTask(*execLog.TaskReportID)
 	}

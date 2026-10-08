@@ -40,9 +40,12 @@ func TestCodexInvoker_BuildArgs(t *testing.T) {
 	t.Cleanup(func() { models.AppConfig.AI.OutputFormat = prevOutputFormat })
 
 	models.AppConfig.AI.OutputFormat = "json"
-	args, err := invoker.buildArgs(req)
+	args, stdinPayload, err := invoker.buildArgs(req)
 	if err != nil {
 		t.Fatalf("buildArgs failed: %v", err)
+	}
+	if stdinPayload != "" {
+		t.Fatalf("small prompt should stay in argv, got stdin payload of %d bytes", len(stdinPayload))
 	}
 
 	argsStr := strings.Join(args, " ")
@@ -61,11 +64,87 @@ func TestCodexInvoker_BuildArgs(t *testing.T) {
 	if !strings.Contains(argsStr, "--output-last-message") {
 		t.Fatalf("expected --output-last-message flag in args, got %v", args)
 	}
+	if !strings.Contains(argsStr, "--sandbox read-only") {
+		t.Fatalf("expected --sandbox read-only flag in args, got %v", args)
+	}
 	if strings.Contains(argsStr, "--json") {
 		t.Fatalf("expected no --json flag (it emits JSONL events, not model output), got %v", args)
 	}
 	if !strings.Contains(argsStr, "output.json.raw.lastmsg") {
 		t.Fatalf("expected last-message capture path derived from OutputPath, got %v", args)
+	}
+}
+
+func TestCodexInvoker_BuildArgsProfilePrefix(t *testing.T) {
+	tempDir := t.TempDir()
+	promptFile := filepath.Join(tempDir, "analysis_prompt.md")
+	if err := os.WriteFile(promptFile, []byte("# Test Codex Prompt"), 0644); err != nil {
+		t.Fatalf("failed to write test prompt file: %v", err)
+	}
+
+	invoker := &CodexInvoker{}
+	req := AIRequest{
+		WorkDir:    tempDir,
+		PromptFile: promptFile,
+		PromptMsg:  "执行测试扫描",
+		InputFiles: []string{"main.go", "util.go"},
+		OutputPath: filepath.Join(tempDir, "output.json.raw"),
+		ModelName:  "profile:sol",
+	}
+
+	prevOutputFormat := models.AppConfig.AI.OutputFormat
+	t.Cleanup(func() { models.AppConfig.AI.OutputFormat = prevOutputFormat })
+
+	models.AppConfig.AI.OutputFormat = "json"
+	args, _, err := invoker.buildArgs(req)
+	if err != nil {
+		t.Fatalf("buildArgs failed: %v", err)
+	}
+	argsStr := strings.Join(args, " ")
+	if !strings.Contains(argsStr, "--profile sol") {
+		t.Fatalf("expected --profile sol in args, got %v", args)
+	}
+	for _, arg := range args {
+		if arg == "-m" {
+			t.Fatalf("expected no -m flag when ModelName has profile: prefix, got %v", args)
+		}
+	}
+}
+
+func TestCodexInvoker_BuildArgsLargePromptUsesStdin(t *testing.T) {
+	tempDir := t.TempDir()
+	invoker := &CodexInvoker{}
+	largePrompt := strings.Repeat("x", codexInlinePromptMaxBytes+1)
+	req := AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  largePrompt,
+		OutputPath: filepath.Join(tempDir, "output.json.raw"),
+		ModelName:  "gpt-5.6-sol",
+	}
+
+	args, stdinPayload, err := invoker.buildArgs(req)
+	if err != nil {
+		t.Fatalf("buildArgs failed: %v", err)
+	}
+	if stdinPayload == "" {
+		t.Fatal("expected large prompt to be returned for stdin transport")
+	}
+	if !strings.Contains(stdinPayload, strings.Repeat("x", 1024)) {
+		t.Fatal("stdin payload did not contain the complete task prompt")
+	}
+	if strings.Contains(stdinPayload, "Output Delivery") {
+		t.Fatal("read-only Codex prompt must not ask the agent to write files")
+	}
+	if !strings.Contains(stdinPayload, "Response Delivery") {
+		t.Fatal("stdin payload did not contain read-only response constraints")
+	}
+
+	argsStr := strings.Join(args, " ")
+	if strings.Contains(argsStr, strings.Repeat("x", 1024)) {
+		t.Fatalf("large prompt was passed through argv: %v", summarizeCLIArgs(args))
+	}
+	if args[len(args)-1] != "-" {
+		t.Fatalf("expected stdin prompt marker as final argument, got %v", args)
 	}
 }
 
@@ -80,7 +159,7 @@ func TestFinalizeCodexOutput(t *testing.T) {
 	if err := os.WriteFile(modelWritten+".lastmsg", []byte(`{"source":"lastmsg"}`), 0644); err != nil {
 		t.Fatalf("failed to write fixture: %v", err)
 	}
-	if err := finalizeCodexOutput(AIRequest{OutputPath: modelWritten}); err != nil {
+	if err := finalizeCodexOutput(AIRequest{OutputPath: modelWritten}, CLIProcessResult{}); err != nil {
 		t.Fatalf("finalize (model written) failed: %v", err)
 	}
 	content, _ := os.ReadFile(modelWritten)
@@ -96,7 +175,7 @@ func TestFinalizeCodexOutput(t *testing.T) {
 	if err := os.WriteFile(fallback+".lastmsg", []byte(`{"source":"lastmsg"}`), 0644); err != nil {
 		t.Fatalf("failed to write fixture: %v", err)
 	}
-	if err := finalizeCodexOutput(AIRequest{OutputPath: fallback}); err != nil {
+	if err := finalizeCodexOutput(AIRequest{OutputPath: fallback}, CLIProcessResult{}); err != nil {
 		t.Fatalf("finalize (fallback) failed: %v", err)
 	}
 	content, _ = os.ReadFile(fallback)
@@ -106,8 +185,25 @@ func TestFinalizeCodexOutput(t *testing.T) {
 
 	// 3. 两者都不存在 → 返回错误
 	missing := filepath.Join(tempDir, "missing.json")
-	if err := finalizeCodexOutput(AIRequest{OutputPath: missing}); err == nil {
-		t.Fatalf("expected error when no output available")
+	err := finalizeCodexOutput(AIRequest{OutputPath: missing}, CLIProcessResult{})
+	if err == nil {
+		t.Fatal("expected error when no output available")
+	}
+	if got := ClassifyError(err); got != ErrorClassOutputMissing {
+		t.Fatalf("missing output class = %v, want %v", got, ErrorClassOutputMissing)
+	}
+
+	// 4. 空白 lastmsg 也必须视为 output missing，供上层重试/拆分。
+	whitespace := filepath.Join(tempDir, "whitespace.json")
+	if err := os.WriteFile(whitespace+".lastmsg", []byte("\n \t\n"), 0644); err != nil {
+		t.Fatalf("failed to write whitespace lastmsg: %v", err)
+	}
+	err = finalizeCodexOutput(AIRequest{OutputPath: whitespace}, CLIProcessResult{})
+	if err == nil {
+		t.Fatal("expected error for whitespace-only output")
+	}
+	if got := ClassifyError(err); got != ErrorClassOutputMissing {
+		t.Fatalf("whitespace output class = %v, want %v", got, ErrorClassOutputMissing)
 	}
 }
 
@@ -157,5 +253,56 @@ echo "codex-run-ok"
 	}
 	if _, statErr := os.Stat(outputPath + ".lastmsg"); !os.IsNotExist(statErr) {
 		t.Fatalf("expected lastmsg capture file to be cleaned, stat err=%v", statErr)
+	}
+}
+
+func TestCodexInvoker_InvokeLargePromptUsesStdin(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeBin := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(fakeBin, 0755); err != nil {
+		t.Fatalf("failed to create fake bin dir: %v", err)
+	}
+	fakeCodex := filepath.Join(fakeBin, "codex")
+	script := `#!/bin/bash
+cat > stdin-captured
+out=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then out="$2"; shift 2; continue; fi
+  shift
+done
+printf '{"findings":[{"title":"fake"}]}' > "$out"
+`
+	if err := os.WriteFile(fakeCodex, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake codex: %v", err)
+	}
+
+	prevPath := os.Getenv("PATH")
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+prevPath)
+
+	outputPath := filepath.Join(tempDir, "report.json.raw")
+	req := AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  strings.Repeat("x", codexInlinePromptMaxBytes+1),
+		OutputPath: outputPath,
+		TimeoutMin: 1,
+	}
+
+	invoker := &CodexInvoker{}
+	if err := invoker.Invoke(req); err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+
+	stdinData, err := os.ReadFile(filepath.Join(tempDir, "stdin-captured"))
+	if err != nil {
+		t.Fatalf("expected fake codex to receive stdin prompt: %v", err)
+	}
+	if !strings.Contains(string(stdinData), strings.Repeat("x", 1024)) {
+		t.Fatal("large prompt was not delivered through stdin")
+	}
+	if strings.Contains(string(stdinData), "Output Delivery") {
+		t.Fatal("read-only Codex prompt must not ask the agent to write files")
+	}
+	if !strings.Contains(string(stdinData), "Response Delivery") {
+		t.Fatal("read-only response constraints were missing from stdin prompt")
 	}
 }

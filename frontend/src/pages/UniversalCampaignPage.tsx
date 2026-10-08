@@ -10,7 +10,7 @@ interface TaskTypeMeta {
   description: string;
   is_campaign: boolean;
   campaign_path: string;
-  governance_mode: 'defect_tracking' | 'entity_assessment';
+  governance_mode: 'full_ledger' | 'change_focus' | 'entity_assessment';
   campaign_icon?: string;
   is_active: boolean;
 }
@@ -70,7 +70,7 @@ export default function UniversalCampaignPage() {
       title={matched.display_name}
       description={matched.description}
       taskTypeName={matched.name}
-      governanceMode={matched.governance_mode || 'defect_tracking'}
+      governanceMode={matched.governance_mode || 'full_ledger'}
     />
   );
 }

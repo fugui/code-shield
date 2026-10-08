@@ -102,7 +102,7 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	reportURL := ""
 	if reportID > 0 {
 		baseURL := strings.TrimSuffix(models.AppConfig.Server.ExternalURL, "/")
-		reportURL = fmt.Sprintf("%s/public/reports/%d", baseURL, reportID)
+		reportURL = fmt.Sprintf("%s/reports/task/%d", baseURL, reportID)
 	}
 
 	if reportID > 0 && reportPath != "" {

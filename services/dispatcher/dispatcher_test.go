@@ -2,7 +2,10 @@ package dispatcher
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -146,6 +149,71 @@ func TestDispatcher_ScaleClamp(t *testing.T) {
 	}
 }
 
+type observabilityCaptureInvoker struct {
+	req *invoker.AIRequest
+}
+
+func (i *observabilityCaptureInvoker) Name() string { return "opencode" }
+
+func (i *observabilityCaptureInvoker) Invoke(req invoker.AIRequest) error {
+	if req.Observability == nil {
+		return fmt.Errorf("dispatcher did not inject observability")
+	}
+	i.req = &req
+	req.Observability.Console.Append("stdout", "stdout", "wrapper console capture")
+	return nil
+}
+
+func TestDispatchingInvoker_InjectsObservabilityIntoConsoleRing(t *testing.T) {
+	d := setupTestDispatcher(1)
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	delegate := &observabilityCaptureInvoker{}
+	inv := NewDispatchingInvoker(delegate, d)
+	if inv == nil {
+		t.Fatal("expected dispatching invoker")
+	}
+
+	err := inv.Invoke(invoker.AIRequest{
+		ParentContext: context.Background(),
+		PromptMsg:     "readonly diagnostic test",
+		ModelName:     "test-opencode",
+		OutputPath:    filepath.Join(t.TempDir(), "out.json"),
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if delegate.req == nil || delegate.req.Observability == nil {
+		t.Fatal("delegate did not receive observability")
+	}
+
+	captured := delegate.req.Observability
+	lease, ok := d.GetLeaseByID(captured.LeaseID)
+	if !ok {
+		t.Fatalf("lease %s not found in recent history", captured.LeaseID)
+	}
+	if lease.Observability != captured {
+		t.Fatal("lease observability and request observability do not match")
+	}
+
+	snapshot, status := lease.Observability.Console.Snapshot(0, 100)
+	if status.TotalEvents == 0 {
+		t.Fatal("expected console events")
+	}
+	found := false
+	for _, event := range snapshot.Events {
+		if event.Stream == "stdout" && event.Message == "wrapper console capture" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected captured console event, got %+v", snapshot.Events)
+	}
+}
+
 func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 	d := setupTestDispatcher(10)
 	defer func() {
@@ -190,6 +258,37 @@ func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 	if infoWeekend.ThrottleMode != "normal" || infoWeekend.EffectiveScale != 1.0 {
 		t.Fatalf("expected weekend to be normal mode with 1.0, got mode=%s, scale=%f",
 			infoWeekend.ThrottleMode, infoWeekend.EffectiveScale)
+	}
+}
+
+func TestDispatcher_SetWorkHoursThrottleImmediate(t *testing.T) {
+	d := setupTestDispatcher(2)
+	defer func() {
+		close(d.stopHeartbeat)
+	}()
+
+	cfg := models.WorkHoursThrottleConfig{
+		Enabled:   true,
+		Workdays:  []int{3},
+		StartTime: "09:00",
+		EndTime:   "18:00",
+		Scale:     0.25,
+	}
+	d.SetWorkHoursThrottle(cfg)
+
+	now := time.Date(2026, time.September, 16, 10, 0, 0, 0, time.UTC)
+	d.mu.Lock()
+	info := d.getEffectiveScaleInfoLocked(now)
+	d.mu.Unlock()
+
+	if info.ThrottleMode != "work_hours" {
+		t.Fatalf("expected mode 'work_hours', got %s", info.ThrottleMode)
+	}
+	if info.EffectiveScale != 0.25 {
+		t.Fatalf("expected scale 0.25, got %f", info.EffectiveScale)
+	}
+	if !reflect.DeepEqual(info.WorkHoursConfig, cfg) {
+		t.Fatalf("expected dispatcher config %+v, got %+v", cfg, info.WorkHoursConfig)
 	}
 }
 
@@ -321,13 +420,16 @@ func TestDispatcher_NativeAutoRegistration(t *testing.T) {
 	origConfig := models.AppConfig
 	defer func() { models.AppConfig = origConfig }()
 
-	models.AppConfig.AI.Models = []models.ModelConfig{
-		{Claude: "claude-3-5", Concurrent: 3},
-	}
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		BaseURL:      "http://192.168.56.18:8000/v1/chat/completions",
-		DefaultModel: "glm-4-flash",
-	}
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:     "native",
+		Driver: "native",
+		Endpoints: []models.ResourceEndpointConfig{{
+			Name:       "default",
+			BaseURL:    "http://192.168.56.18:8000/v1/chat/completions",
+			Model:      "glm-4-flash",
+			Concurrent: 20,
+		}},
+	}}
 
 	InitModelDispatcher()
 	if GlobalDispatcher == nil || !GlobalDispatcher.enabled {
@@ -351,6 +453,41 @@ func TestDispatcher_NativeAutoRegistration(t *testing.T) {
 	GlobalDispatcher.Release(res, "native")
 }
 
+func TestDispatcher_NativeEndpointPoolRegistration(t *testing.T) {
+	origConfig := models.AppConfig
+	defer func() { models.AppConfig = origConfig }()
+
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:     "native",
+		Driver: "native",
+		Endpoints: []models.ResourceEndpointConfig{
+			{Name: "h100", Model: "/GLM-5.3-Flash", Concurrent: 10},
+			{Name: "newgate", Model: "deepseek", Concurrent: 10},
+		},
+	}}
+
+	InitModelDispatcher()
+	if GlobalDispatcher == nil || !GlobalDispatcher.enabled {
+		t.Fatal("expected GlobalDispatcher to be enabled")
+	}
+	defer GlobalDispatcher.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, model, err := GlobalDispatcher.Acquire(ctx, "native")
+	if err != nil {
+		t.Fatalf("Acquire failed for native endpoint pool: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected native endpoint pool to be allocated, got nil")
+	}
+	if model != "native" {
+		t.Fatalf("expected model marker 'native', got %q", model)
+	}
+	GlobalDispatcher.Release(res, "native")
+}
+
 func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 	origConfig := models.AppConfig
 	defer func() { models.AppConfig = origConfig }()
@@ -364,19 +501,27 @@ func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 	mockInv := &mockInvoker{NameStr: mockBackend}
 	invoker.RegisterAIInvoker(mockBackend, mockInv)
 
-	models.AppConfig.AI.Tiers.Tier1Fast.Backend = mockBackend
-	models.AppConfig.AI.Tiers.Tier1Fast.Model = "custom-tier1-model"
+	oldResources := models.AppConfig.LLM.Resources
+	models.AppConfig.LLM.Resources = append(oldResources, models.ComputeResourceConfig{
+		ID:        mockBackend,
+		Driver:    mockBackend,
+		Endpoints: []models.ResourceEndpointConfig{{Name: "default", Model: "custom-tier1-model"}},
+	})
+	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{
+		Resource: mockBackend,
+	}
 
 	tr := &TierRouter{dispatcher: d}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	acq, err := tr.AcquireTier(ctx, "tier1_fast", "")
+	acq, err := tr.AcquireTier(ctx, "tier1_hunter", "")
 	if err != nil {
 		t.Fatalf("AcquireTier failed: %v", err)
 	}
 	defer acq.Release()
+	models.AppConfig.LLM.Resources = oldResources
 
 	if acq.ModelName != "custom-tier1-model" {
 		t.Fatalf("expected ModelName 'custom-tier1-model', got '%s'", acq.ModelName)
@@ -411,15 +556,23 @@ func TestTierRouter_NoDeadlockWithDispatchingInvoker(t *testing.T) {
 	}
 }
 
-func TestDispatchingInvoker_PreserveExplicitModelName(t *testing.T) {
-	d := setupTestDispatcher(2)
+func TestDispatchingInvoker_AlignsRequestModelWithAcquiredSlot(t *testing.T) {
+	d := &ModelDispatcher{
+		manualScale:   1.0,
+		stopHeartbeat: make(chan struct{}),
+		enabled:       true,
+	}
+	d.cond = sync.NewCond(&d.mu)
+	d.resources = []*ModelResource{
+		{Index: 0, ID: "pool-a", OpenCode: "model-a", Concurrent: 1, Active: 1},
+		{Index: 1, ID: "pool-b", OpenCode: "model-b", Concurrent: 1},
+	}
+	GlobalDispatcher = d
 	defer func() {
 		close(d.stopHeartbeat)
 	}()
 
-	mockBackend := "mock-preserve-model"
-	mockInv := &mockInvoker{NameStr: mockBackend}
-	invoker.RegisterAIInvoker(mockBackend, mockInv)
+	mockInv := &mockInvoker{NameStr: "opencode"}
 
 	wrappedInv := NewDispatchingInvoker(mockInv, d)
 
@@ -437,21 +590,22 @@ func TestDispatchingInvoker_PreserveExplicitModelName(t *testing.T) {
 	req := invoker.AIRequest{
 		ParentContext: ctx,
 		OutputPath:    tmpPath,
-		ModelName:     "explicit-model-name",
+		// The logical router chose pool-a, but pool-a became full before the
+		// physical slot was acquired. The slot must win over the stale model.
+		ModelName: "model-a",
 	}
 
 	if err := wrappedInv.Invoke(req); err != nil {
 		t.Fatalf("invoker.Invoke failed: %v", err)
 	}
 
-	if req.ModelName != "explicit-model-name" {
-		t.Fatalf("expected ModelName to be preserved as 'explicit-model-name', got '%s'", req.ModelName)
+	if mockInv.LastModel != "model-b" {
+		t.Fatalf("expected backend request to use acquired slot model 'model-b', got '%s'", mockInv.LastModel)
 	}
 }
 
 func TestTierRouter_MultiResourcePooling(t *testing.T) {
 	d := &ModelDispatcher{
-		cond:        sync.NewCond(&sync.Mutex{}),
 		enabled:     true,
 		manualScale: 1.0,
 		resources: []*ModelResource{
@@ -475,6 +629,7 @@ func TestTierRouter_MultiResourcePooling(t *testing.T) {
 			},
 		},
 	}
+	d.cond = sync.NewCond(&d.mu)
 
 	backend, model := d.PickBestCandidateResource([]string{"agy", "opencode"})
 	if backend != "opencode" || model != "models/glm5.1" {
@@ -498,6 +653,34 @@ func TestTierRouter_MultiResourcePooling(t *testing.T) {
 	}
 	if acq.Backend != "agy" {
 		t.Fatalf("expected TierRouter to select agy, got %s", acq.Backend)
+	}
+}
+
+func TestTierResourcePlanSelectsUniqueResourceID(t *testing.T) {
+	d := &ModelDispatcher{
+		enabled:     true,
+		manualScale: 1.0,
+		resources: []*ModelResource{
+			{Index: 0, ID: "opencode-deepseek", Driver: "opencode", Model: "modelgate/dp", OpenCode: "modelgate/dp", Concurrent: 20, Active: 20},
+			{Index: 1, ID: "codex-deepseek", Driver: "codex", Model: "profile:deepseek", Codex: "profile:deepseek", Concurrent: 60},
+		},
+	}
+	d.cond = sync.NewCond(&d.mu)
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{
+		{ID: "opencode-deepseek", Driver: "opencode", Endpoints: []models.ResourceEndpointConfig{{Name: "default", Model: "modelgate/dp"}}},
+		{ID: "codex-deepseek", Driver: "codex", Endpoints: []models.ResourceEndpointConfig{{Name: "default", Model: "profile:deepseek"}}},
+	}
+	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{
+		Resources: []string{"opencode-deepseek", "codex-deepseek"},
+	}
+
+	tr := &TierRouter{dispatcher: d}
+	plan, err := tr.AcquireTierResourcePlan(context.Background(), "tier1_hunter", nil)
+	if err != nil {
+		t.Fatalf("AcquireTierResourcePlan failed: %v", err)
+	}
+	if plan.Selected.ResourceID != "codex-deepseek" || plan.Selected.Driver != "codex" {
+		t.Fatalf("expected codex-deepseek, got id=%s driver=%s", plan.Selected.ResourceID, plan.Selected.Driver)
 	}
 }
 

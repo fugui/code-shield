@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"code-shield/models"
+	"code-shield/services/coverage"
 	"code-shield/services/governance"
 	"code-shield/services/invoker"
 )
@@ -19,9 +21,11 @@ func UpdateTaskStatus(reportID uint, status string) {
 	if models.DB == nil || reportID == 0 {
 		return
 	}
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(map[string]interface{}{
+	if _, err := models.UpdateActiveTaskReport(models.DB, reportID, map[string]interface{}{
 		"status": status,
-	})
+	}); err != nil && !errors.Is(err, models.ErrTaskReportImmutable) {
+		log.Printf("[Finalize] Failed to update task status for report %d: %v", reportID, err)
+	}
 	models.DB.Model(&models.TaskExecutionLog{}).Where("task_report_id = ?", reportID).Updates(map[string]interface{}{
 		"status":          status,
 		"status_priority": models.GetStatusPriority(status),
@@ -48,7 +52,12 @@ func UpdateTaskProgress(reportID uint, total, processed, success int, currentChu
 		}
 	}
 
-	models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Updates(reportUpdates)
+	if _, err := models.UpdateActiveTaskReport(models.DB, reportID, reportUpdates); err != nil {
+		if errors.Is(err, models.ErrTaskReportImmutable) {
+			return
+		}
+		log.Printf("[Finalize] Failed to update task progress for report %d: %v", reportID, err)
+	}
 
 	logUpdates := map[string]interface{}{
 		"status":          models.StatusAnalyzing,
@@ -64,6 +73,7 @@ func WriteSummaryReport(ctx *TaskContext) {
 	}
 	ctx.Summary.EndTime = time.Now()
 	ctx.Summary.DurationSeconds = ctx.Summary.EndTime.Sub(ctx.Summary.StartTime).Seconds()
+	ctx.Summary.CoverageSummary = buildCoverageExecutionSummary(ctx)
 
 	if ctx.Summary.Status == "" {
 		if ctx.Summary.Analysis.Status == "failed" || ctx.Summary.Synthesis.Status == "failed" {
@@ -90,6 +100,14 @@ func WriteSummaryReport(ctx *TaskContext) {
 func Finalize(ctx *TaskContext, result TaskResult) error {
 	metricsJSON, _ := json.Marshal(result.Metrics)
 
+	if analysis := ctx.Summary.Analysis; analysis.TotalChunks > 0 &&
+		analysis.FailedChunks == analysis.TotalChunks {
+		MarkFailed(ctx, "all primary chunks failed")
+		return nil
+	}
+
+	coverageSummary := buildCoverageExecutionSummary(ctx)
+	terminalStatus := coverage.TerminalTaskStatus(*coverageSummary, false)
 	relReportPath := ctx.ReportPath
 	if rel, err := filepath.Rel(models.AppConfig.GetDataDir(), ctx.ReportPath); err == nil {
 		relReportPath = rel
@@ -146,17 +164,66 @@ func Finalize(ctx *TaskContext, result TaskResult) error {
 	// 5. 最终状态更新为 "success"
 	var err error
 	if models.DB != nil {
-		err = models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(map[string]interface{}{
-			"status":      models.StatusSuccess,
-			"report_path": relReportPath,
-			"ai_summary":  result.Summary,
-			"score":       result.Score,
-			"metrics":     string(metricsJSON),
-			"created_at":  time.Now(),
-		}).Error
+		affected, updateErr := models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
+			"status":                  terminalStatus,
+			"report_path":             relReportPath,
+			"ai_summary":              result.Summary,
+			"score":                   result.Score,
+			"metrics":                 string(metricsJSON),
+			"created_at":              time.Now(),
+			"coverage_complete":       coverageSummary.CoverageComplete,
+			"coverage_degraded":       coverageSummary.CoverageDegraded,
+			"coverage_not_applicable": coverageSummary.CoverageNotApplicable,
+			"coverage_state":          coverageSummary.CoverageState,
+		})
+		err = updateErr
+		if errors.Is(updateErr, models.ErrTaskReportImmutable) {
+			return updateErr
+		}
+		if affected == 0 && updateErr == nil {
+			err = models.ErrTaskReportImmutable
+		}
 	}
 
-	ctx.Summary.Status = "success"
+	degradedReasons := make([]string, 0)
+	ctx.Summary.Status = models.StatusSuccess
+	if !ctx.Summary.Analysis.ArtifactComplete {
+		degradedReasons = append(degradedReasons, "ARTIFACT_INCOMPLETE")
+	}
+	if ctx.Summary.Analysis.CandidateQuarantineCount > 0 {
+		degradedReasons = append(degradedReasons, "CANDIDATE_QUARANTINED")
+	}
+	if len(degradedReasons) > 0 {
+		if models.DB != nil {
+			_, _ = models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
+				"status": models.StatusDegraded,
+			})
+		}
+		ctx.Summary.Status = models.StatusDegraded
+	}
+	if ctx.Coverage != nil {
+		coverageFacts := ctx.Coverage.Summary()
+		if coverageFacts.CoverageDegraded || len(coverageFacts.FailedChunkItems) > 0 || len(coverageFacts.MissingAssessments) > 0 {
+			degradedReasons = append(degradedReasons, coverageFacts.CoverageReasons...)
+			if models.DB != nil {
+				_, _ = models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
+					"status": models.StatusDegraded,
+				})
+			}
+			ctx.Summary.Status = models.StatusDegraded
+		} else if coverageFacts.CoverageNotApplicable {
+			if models.DB != nil {
+				_, _ = models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
+					"coverage_not_applicable": true,
+				})
+			}
+		}
+	}
+	if ctx.Summary.Status == models.StatusDegraded {
+		ctx.Summary.DegradedReasons = degradedReasons
+	} else {
+		ctx.Summary.DegradedReasons = nil
+	}
 	WriteSummaryReport(ctx)
 
 	if ctx.AutoNotify && result.Score >= ctx.TaskType.NotifyThreshold {
@@ -167,11 +234,11 @@ func Finalize(ctx *TaskContext, result TaskResult) error {
 }
 
 // MarkFailed 任务失败处理：更新失败状态、错误原因并记录输出日志
-func MarkFailed(ctx *TaskContext, errMsg string) {
+func MarkFailed(ctx *TaskContext, errMsg string) error {
 	updates := map[string]interface{}{
-		"status":     models.StatusFailed,
-		"ai_summary": fmt.Sprintf("【执行失败】%s", errMsg),
-		"created_at": time.Now(),
+		"status":         models.StatusFailed,
+		"ai_summary":     fmt.Sprintf("【执行失败】%s", errMsg),
+		"coverage_state": coverage.StateFailed,
 	}
 	if ctx.ReportPath != "" {
 		relPath := ctx.ReportPath
@@ -181,7 +248,9 @@ func MarkFailed(ctx *TaskContext, errMsg string) {
 		updates["report_path"] = relPath
 	}
 	if models.DB != nil {
-		models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(updates)
+		if _, err := models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, updates); err != nil {
+			return err
+		}
 	}
 
 	ctx.Summary.Status = "failed"
@@ -217,4 +286,5 @@ func MarkFailed(ctx *TaskContext, errMsg string) {
 			}
 		}
 	}
+	return nil
 }

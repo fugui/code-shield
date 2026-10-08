@@ -1,46 +1,5 @@
 {
-  "name": "coredump_risk",
-  "display_name": "Coredump 风险分析",
-  "description": "专项分析 C/C++ 代码中可能引发进程崩溃（Coredump）的高危风险，如空指针解引用、缓冲区溢出、野指针、除零异常及未捕获信号等问题",
-  "engine_mode": "debate_full",
-  "engine_config": {
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx"
-    ],
-    "exclude_paths": [
-      "thirdparts"
-    ]
-  },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
   "campaign_path": "coredump",
-  "governance_mode": "defect_tracking",
-  "domain_family": "memory_crash",
-  "defense_dimensions": [
-    {
-      "dimension": "Guards",
-      "description": "前置判空、非零校验、下标上界断言或参数前置防御等事实"
-    },
-    {
-      "dimension": "MacroIsolation",
-      "description": "该代码受非默认宏开关隔离，默认生产构建下不可达"
-    },
-    {
-      "dimension": "AsyncSafe",
-      "description": "符合异步信号安全、异常捕获与 RAII 生命周期回收保障"
-    }
-  ],
-
   "categories": [
     "多线程并发问题-数据竞争",
     "多线程并发问题-锁同步不当",
@@ -61,5 +20,474 @@
     "第三方框架限制-Qt跨线程UI操作",
     "其它问题-其它崩溃隐患"
   ],
-  "is_active": true
+  "defense_dimensions": [
+    {
+      "dimension": "Guards",
+      "description": "前置判空、非零校验、下标上界断言或参数前置防御等事实"
+    },
+    {
+      "dimension": "MacroIsolation",
+      "description": "该代码受非默认宏开关隔离，默认生产构建下不可达"
+    },
+    {
+      "dimension": "AsyncSafe",
+      "description": "符合异步信号安全、异常捕获与 RAII 生命周期回收保障"
+    }
+  ],
+  "description": "专项分析 C/C++ 代码中可能引发进程崩溃（Coredump）的高危风险，如空指针解引用、缓冲区溢出、野指针、除零异常及未捕获信号等问题",
+  "display_name": "Coredump 风险分析",
+  "display_semantics": {
+    "domain_label": "内存与底层崩溃防御",
+    "target_label": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "domain_family": "memory_crash",
+  "domain_label": "内存与底层崩溃防御",
+  "engine_config": {
+    "scan_profile": {
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "include_extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx"
+      ],
+      "name": "full_review",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "full_ledger",
+  "is_active": true,
+  "is_campaign": true,
+  "name": "coredump_risk",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "源码文件",
+    "plural": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "THREAD_DATA_RACE",
+        "label": "多线程并发问题-数据竞争",
+        "definition": "Unsynchronized concurrent access to shared mutable state where at least one access writes.",
+        "decision_rules": [
+          "shared state crosses threads",
+          "at least one write",
+          "no happens-before edge"
+        ],
+        "positive_hints": [
+          "global or shared field",
+          "worker/read-write access",
+          "missing lock or memory barrier"
+        ],
+        "negative_hints": [
+          "thread-local value",
+          "immutable value",
+          "fully guarded access"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_LOCK_SYNC",
+        "label": "多线程并发问题-锁同步不当",
+        "definition": "Incorrect lock selection, scope, ordering, or release that fails to protect shared state.",
+        "decision_rules": [
+          "lock or synchronization exists",
+          "protection is incomplete or mismatched",
+          "race remains possible"
+        ],
+        "positive_hints": [
+          "different locks protect one object",
+          "lock released before dependent use",
+          "partial critical section"
+        ],
+        "negative_hints": [
+          "consistent critical section",
+          "lock held through dependent use"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_DEADLOCK",
+        "label": "多线程并发问题-死锁风险",
+        "definition": "Threads can hold locks or resources while waiting for each other in a cyclic dependency.",
+        "decision_rules": [
+          "two or more resources",
+          "locks acquired in inconsistent order",
+          "waiting can form a cycle"
+        ],
+        "positive_hints": [
+          "nested locks",
+          "inverse acquisition order",
+          "conditional wait inside lock"
+        ],
+        "negative_hints": [
+          "single lock",
+          "global lock hierarchy",
+          "try-lock rollback"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "MEM_NULL_DEREF",
+        "label": "内存管理问题-空指针解引用",
+        "definition": "A pointer that may be null is dereferenced without a sufficient guard.",
+        "decision_rules": [
+          "pointer can be null on path",
+          "no effective null check",
+          "dereference occurs"
+        ],
+        "positive_hints": [
+          "allocations checked elsewhere only",
+          "error return leaves null",
+          "unchecked map or getter result"
+        ],
+        "negative_hints": [
+          "definite non-null invariant",
+          "guard rejects null",
+          "allocation failure aborts"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "MEM_BUFFER_OVERFLOW",
+        "label": "内存管理问题-越界访问/缓冲区溢出",
+        "definition": "Access exceeds allocated bounds of an array, buffer, string, or container.",
+        "decision_rules": [
+          "index or length is attacker/path dependent",
+          "bound is wrong or missing",
+          "write or read exceeds allocation"
+        ],
+        "positive_hints": [
+          "off-by-one",
+          "untrusted size",
+          "strcpy, memcpy, or pointer arithmetic"
+        ],
+        "negative_hints": [
+          "checked bounds",
+          "allocation covers requested range"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "MEM_DOUBLE_FREE",
+        "label": "内存管理问题-双重释放",
+        "definition": "Owned memory is deallocated twice or ownership is released through two paths.",
+        "decision_rules": [
+          "same allocation reaches free twice",
+          "no ownership handoff",
+          "pointer is not cleared"
+        ],
+        "positive_hints": [
+          "error and success paths free",
+          "copy of raw owner",
+          "explicit delete in destructor and caller"
+        ],
+        "negative_hints": [
+          "unique ownership",
+          "pointer cleared",
+          "move semantics"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "MEM_USE_AFTER_FREE",
+        "label": "内存管理问题-释放后使用",
+        "definition": "Memory is dereferenced after ownership has been released.",
+        "decision_rules": [
+          "free, delete, or close occurs",
+          "same or aliased pointer is used later",
+          "ownership is not renewed"
+        ],
+        "positive_hints": [
+          "free then dereference",
+          "callback keeps raw buffer",
+          "reset followed by access"
+        ],
+        "negative_hints": [
+          "access precedes release",
+          "copy made before release",
+          "owner remains valid"
+        ],
+        "priority": 70,
+        "status": "active",
+        "aliases": [
+          {
+            "label": "释放后使用"
+          }
+        ]
+      },
+      {
+        "code": "MEM_LEAK_OOM",
+        "label": "内存管理问题-内存泄漏(OOM风险)",
+        "definition": "Owned resources are unreachable without release and can accumulate until memory exhaustion.",
+        "decision_rules": [
+          "allocation succeeds",
+          "no release or caller transfer",
+          "ownership is lost"
+        ],
+        "positive_hints": [
+          "early return after allocation",
+          "container retains raw owner",
+          "resource overwritten"
+        ],
+        "negative_hints": [
+          "RAII owner",
+          "deferred release",
+          "ownership transferred"
+        ],
+        "priority": 65,
+        "status": "active"
+      },
+      {
+        "code": "LIFECYCLE_DANGLING_REF",
+        "label": "生命周期管理问题-悬挂指针与引用",
+        "definition": "A reference remains valid in type but its backing object or scope has ended.",
+        "decision_rules": [
+          "backing object expires",
+          "reference outlives owner",
+          "later use is possible"
+        ],
+        "positive_hints": [
+          "reference to local",
+          "owner resets or is destroyed",
+          "captured temporary"
+        ],
+        "negative_hints": [
+          "value copy",
+          "shared ownership extends lifetime"
+        ],
+        "priority": 60,
+        "status": "active"
+      },
+      {
+        "code": "LIFECYCLE_CALLBACK_DESTROY_RACE",
+        "label": "生命周期管理问题-回调对象销毁竞争",
+        "definition": "A callback, listener, or task can run while its owning host object is being destroyed.",
+        "decision_rules": [
+          "callback can be pending",
+          "host teardown begins",
+          "no cancel-before-destroy synchronization"
+        ],
+        "positive_hints": [
+          "destroy while callback pending",
+          "unregister after destroy",
+          "detached worker holds host"
+        ],
+        "negative_hints": [
+          "cancel then join",
+          "callback owns host lifetime",
+          "destruction is quiescent"
+        ],
+        "priority": 55,
+        "status": "active"
+      },
+      {
+        "code": "INIT_UNINITIALIZED",
+        "label": "时序与初始化问题-未初始化变量",
+        "definition": "A value is read before its first definite initialization.",
+        "decision_rules": [
+          "read precedes assignment",
+          "conditional path can skip initialization",
+          "read influences control flow"
+        ],
+        "positive_hints": [
+          "declaration without initializer",
+          "early return before init",
+          "conditional assignment missed"
+        ],
+        "negative_hints": [
+          "zero initialized",
+          "constructor initializes",
+          "assignment precedes read"
+        ],
+        "priority": 50,
+        "status": "active"
+      },
+      {
+        "code": "RACE_RELEASE_ACCESS",
+        "label": "时序与初始化问题-释放与访问竞态",
+        "definition": "Release of shared state races with a later access because ownership transition is unsynchronized.",
+        "decision_rules": [
+          "shared object is released",
+          "another thread accesses it",
+          "release and access lack ordering"
+        ],
+        "positive_hints": [
+          "unlock then access",
+          "destroy while worker runs",
+          "unsynchronized owner handoff"
+        ],
+        "negative_hints": [
+          "release after join",
+          "ref-count keeps object alive",
+          "lock covers release and access"
+        ],
+        "priority": 45,
+        "status": "active",
+        "aliases": [
+          {
+            "label": "释放竞态"
+          }
+        ]
+      },
+      {
+        "code": "RUNTIME_DIV_ZERO",
+        "label": "运行时异常-除零错误",
+        "definition": "A divisor may be zero on a reachable execution path.",
+        "decision_rules": [
+          "division or modulo",
+          "divisor can be zero",
+          "no effective guard"
+        ],
+        "positive_hints": [
+          "user-controlled divisor",
+          "unvalidated size",
+          "conditional divisor"
+        ],
+        "negative_hints": [
+          "nonzero invariant",
+          "guard returns early"
+        ],
+        "priority": 40,
+        "status": "active"
+      },
+      {
+        "code": "RUNTIME_STACK_OVERFLOW",
+        "label": "运行时异常-栈溢出",
+        "definition": "Recursion or a large stack allocation can exceed the available stack limit.",
+        "decision_rules": [
+          "recursion lacks depth bound",
+          "stack allocation is large",
+          "input can drive depth"
+        ],
+        "positive_hints": [
+          "unbounded recursion",
+          "variable-length array",
+          "deep linked traversal"
+        ],
+        "negative_hints": [
+          "depth limit",
+          "iterative rewrite",
+          "heap allocation"
+        ],
+        "priority": 35,
+        "status": "active"
+      },
+      {
+        "code": "RUNTIME_UNCAUGHT_EXCEPTION",
+        "label": "运行时异常-未捕获异常/致命退出",
+        "definition": "An exception or fatal condition escapes a boundary without recovery.",
+        "decision_rules": [
+          "throwing operation is reachable",
+          "boundary has no handler",
+          "process or service exits"
+        ],
+        "positive_hints": [
+          "throw outside try",
+          "fatal check in library",
+          "unhandled promise or future"
+        ],
+        "negative_hints": [
+          "catch at boundary",
+          "exception-safe conversion"
+        ],
+        "priority": 30,
+        "status": "active"
+      },
+      {
+        "code": "RUNTIME_SIGNAL_MISUSE",
+        "label": "运行时异常-信号处理不当",
+        "definition": "A signal handler performs work that is not async-signal-safe or mishandles signal state.",
+        "decision_rules": [
+          "handler calls unsafe function",
+          "shared signal state is unprotected",
+          "signal mask is mismanaged"
+        ],
+        "positive_hints": [
+          "allocation in handler",
+          "lock in handler",
+          "longjmp from handler"
+        ],
+        "negative_hints": [
+          "handler sets flag",
+          "async-safe API",
+          "blocked signal"
+        ],
+        "priority": 25,
+        "status": "active"
+      },
+      {
+        "code": "FRAMEWORK_QT_CROSS_THREAD_UI",
+        "label": "第三方框架限制-Qt跨线程UI操作",
+        "definition": "A non-GUI thread directly accesses Qt UI objects instead of using a queued signal or invocation.",
+        "decision_rules": [
+          "UI object crosses thread",
+          "direct method or widget access",
+          "no queued transfer"
+        ],
+        "positive_hints": [
+          "worker updates widget",
+          "parent accessed from thread",
+          "direct repaint"
+        ],
+        "negative_hints": [
+          "signal to GUI thread",
+          "QMetaObject invoke",
+          "UI thread only"
+        ],
+        "priority": 20,
+        "status": "active"
+      },
+      {
+        "code": "GENERIC_CRASH_RISK",
+        "label": "其它问题-其它崩溃隐患",
+        "definition": "A credible crash risk that does not fit a more specific controlled category.",
+        "decision_rules": [
+          "failure can terminate process",
+          "specific category does not apply",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "unclassified fatal path",
+          "resource invariant breach",
+          "platform-specific crash"
+        ],
+        "negative_hints": [
+          "style issue",
+          "performance only",
+          "specific controlled category applies"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ],
+    "deprecated_aliases": [
+      {
+        "label": "旧释放竞态",
+        "target_code": "RACE_RELEASE_ACCESS",
+        "reason": "replaced by controlled short code"
+      }
+    ]
+  },
+  "timeout": 60
 }

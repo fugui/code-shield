@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,7 +58,11 @@ func GetTasks(c *gin.Context) {
 			Where("users.name LIKE ? OR users.employee_id LIKE ? OR users.email LIKE ?", "%"+owner+"%", "%"+owner+"%", "%"+owner+"%")
 	}
 	if status != "" {
-		query = query.Where("task_reports.status = ?", status)
+		statuses := strings.Split(status, ",")
+		for i := range statuses {
+			statuses[i] = strings.TrimSpace(statuses[i])
+		}
+		query = query.Where("task_reports.status IN ?", statuses)
 	}
 	if search != "" {
 		query = query.Where("repositories.name LIKE ? OR task_reports.ai_summary LIKE ?", "%"+search+"%", "%"+search+"%")
@@ -142,8 +147,8 @@ func TriggerTask(c *gin.Context) {
 
 	var count int64
 	models.DB.Model(&models.TaskExecutionLog{}).
-		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
-			req.RepoID, req.TaskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
+		Where("repo_id = ? AND task_type_id = ? AND status NOT IN ?",
+			req.RepoID, req.TaskTypeID, models.TerminalTaskStatuses()).
 		Count(&count)
 
 	if count > 0 {
@@ -194,8 +199,8 @@ func TriggerManualNotification(c *gin.Context) {
 		return
 	}
 
-	if report.Status != "success" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Only successful reports can be notified"})
+	if report.Status != "success" && report.Status != "degraded" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only completed reports can be notified"})
 		return
 	}
 
@@ -383,7 +388,7 @@ func ClearInvalidReports(c *gin.Context) {
 	var reportIDs []uint
 	for _, r := range reports {
 		reportIDs = append(reportIDs, r.ID)
-		// 无条件尝试取消：防止正在运行的任务在 Report 被删后继续产生孤儿进程或数据不一致
+		// 无条件尝试取消：同时覆盖运行中任务，以及已被 worker 领取但尚未注册到取消表的任务
 		services.CancelRunningTask(r.ID)
 	}
 
@@ -429,18 +434,22 @@ func ResumeTask(c *gin.Context) {
 	reportID := c.Param("id")
 
 	var report models.TaskReport
-	if err := models.DB.Preload("TaskType").First(&report, reportID).Error; err != nil {
+	if err := models.DB.Preload("Repo").Preload("TaskType").First(&report, reportID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Task report not found"})
 		return
 	}
 
-	if report.Status != "failed" && report.Status != "success" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败或成功状态的任务才能恢复"})
+	if models.IsTerminalTaskStatus(report.Status) {
+		triggerRescanForTerminalReport(c, report)
+		return
+	}
+	if models.IsBusyTaskReportStatus(report.Status) {
+		c.JSON(http.StatusConflict, gin.H{"error": "任务正在执行中，不能重复入队"})
 		return
 	}
 
-	if report.TaskType.EngineMode != "chunked" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持分片模式(chunked)的任务恢复"})
+	if !services.IsBundleResumeEngine(report.TaskType.EngineMode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持 debate_full 引擎的任务恢复"})
 		return
 	}
 
@@ -451,6 +460,67 @@ func ResumeTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "恢复任务已入队，等待排队执行"})
+}
+
+func triggerRescanForTerminalReport(c *gin.Context, report models.TaskReport) {
+	var activeLogCount int64
+	models.DB.Model(&models.TaskExecutionLog{}).
+		Where("repo_id = ? AND task_type_id = ? AND status NOT IN ?",
+			report.RepoID, report.TaskTypeID, models.TerminalTaskStatuses()).
+		Count(&activeLogCount)
+
+	var activeReportCount int64
+	models.DB.Model(&models.TaskReport{}).
+		Where("repo_id = ? AND task_type_id = ? AND status NOT IN ?",
+			report.RepoID, report.TaskTypeID, models.TerminalTaskStatuses()).
+		Count(&activeReportCount)
+
+	if activeLogCount > 0 || activeReportCount > 0 {
+		c.JSON(http.StatusAccepted, gin.H{"message": "终态报告为历史报告；同类任务已在排队或执行中，未重复发起扫描"})
+		return
+	}
+
+	opID, opName, clientIP := getOperatorInfo(c)
+	batchNo := fmt.Sprintf("RSN-%s-%d", time.Now().Format("20060102150405"), report.ID)
+	triggerLog := models.TaskTriggerLog{
+		TriggerBatch:  batchNo,
+		TriggerType:   "manual_single",
+		OperatorID:    opID,
+		OperatorName:  opName,
+		TaskTypeID:    report.TaskTypeID,
+		TargetMode:    "single",
+		TargetSummary: fmt.Sprintf("代码仓: %s（报告 #%d 重新扫描）", report.Repo.Name, report.ID),
+		TotalRepos:    1,
+		SuccessCount:  1,
+		ClientIP:      clientIP,
+		CreatedAt:     time.Now(),
+	}
+	if err := models.DB.Create(&triggerLog).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建重新扫描记录失败: " + err.Error()})
+		return
+	}
+
+	var tLogID *uint
+	if triggerLog.ID > 0 {
+		tLogID = &triggerLog.ID
+	}
+
+	if !services.EnqueueTaskWithTriggerLog(nil, tLogID, report.RepoID, report.Repo.URL, report.TaskTypeID, false, "manual", models.RunParams{}) {
+		models.DB.Model(&models.TaskTriggerLog{}).Where("id = ?", triggerLog.ID).Updates(map[string]interface{}{
+			"success_count": 0,
+			"skip_count":    1,
+			"remark":        "任务入队失败或同类任务并发入队",
+		})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "重新扫描任务入队失败，请稍后重试"})
+		return
+	}
+
+	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
+		fmt.Sprintf("重新发起扫描 [%s] 代码仓: %s", report.TaskType.DisplayName, report.Repo.Name),
+		"task_trigger_log", fmt.Sprintf("%d", triggerLog.ID), triggerLog.TriggerBatch,
+		nil, triggerLog)
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "终态报告为历史报告，已重新发起扫描"})
 }
 
 // TriggerMissingTasks triggers tasks for active repositories that have not undergone the task in the past N days (or all repositories when days <= 0)
@@ -620,6 +690,9 @@ func DeleteTaskReport(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "任务报告不存在"})
 		return
 	}
+
+	// 若报告仍被运行器持有，先请求取消；若尚未进入运行器，取消请求会阻断 worker 稍后启动。
+	services.CancelRunningTask(report.ID)
 
 	// 1. 清理物理磁盘上的所有报告和临时文件
 	services.CleanReportFiles(report.TaskType.Name, report.ID)

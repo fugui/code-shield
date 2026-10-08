@@ -589,8 +589,7 @@
   color: var(--color-primary);
 }
 
-.code-config-tier-card__badge--tier2_challenger,
-.code-config-tier-card__badge--tier2_reasoning {
+.code-config-tier-card__badge--tier2_challenger {
   background: var(--color-warning-subtle);
   color: var(--color-warning);
 }
@@ -600,8 +599,7 @@
   color: var(--color-danger);
 }
 
-.code-config-tier-card__badge--tier4_synthesis,
-.code-config-tier-card__badge--tier3_synthesis {
+.code-config-tier-card__badge--tier4_synthesis {
   background: var(--color-purple-subtle);
   color: var(--color-purple);
 }
@@ -628,16 +626,10 @@
   border: 1px solid var(--color-primary-border);
 }
 
-.code-config-tier-card__role-tag--thin-recommended {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-  border: 1px solid var(--color-warning-border);
-}
-
-.code-config-tier-card__role-tag--thin-suggested {
-  background: var(--color-purple-subtle);
-  color: var(--color-purple);
-  border: 1px solid var(--color-purple-border);
+.code-config-tier-card__role-tag--native-required {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
 }
 
 .code-config-tier-card__desc {
@@ -652,6 +644,51 @@
   font-weight: 600;
   color: var(--color-primary);
   white-space: nowrap;
+}
+
+.code-config-tier-advanced {
+  margin-top: 0.65rem;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg-surface);
+}
+
+.code-config-tier-advanced__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.65rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  list-style: none;
+}
+
+.code-config-tier-advanced__summary::-webkit-details-marker {
+  display: none;
+}
+
+.code-config-tier-advanced__summary::before {
+  content: '▸';
+  margin-right: 0.4rem;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.code-config-tier-advanced[open] .code-config-tier-advanced__summary::before {
+  transform: rotate(90deg);
+}
+
+.code-config-tier-advanced__body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.65rem;
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.code-config-tier-advanced__body .code-config-field {
+  margin-top: 0;
 }
 
 /* 算力节点按钮组 */
@@ -747,4 +784,3 @@
   color: var(--color-success);
   border: 1px solid var(--color-success-border);
 }
-

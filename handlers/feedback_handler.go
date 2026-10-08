@@ -2,7 +2,8 @@ package handlers
 
 import (
 	"code-shield/models"
-	"code-shield/services"
+	"code-shield/services/defectlifecycle"
+	"code-shield/services/governance"
 	"net/http"
 	"strconv"
 
@@ -35,30 +36,54 @@ func SubmitFindingFeedbackHandler(c *gin.Context) {
 		return
 	}
 
-	// 从 Context 获取当前操作用户
 	var currentUserID *uint
 	if userVal, exists := c.Get("currentUser"); exists {
-		if u, ok := userVal.(*models.User); ok && u != nil {
-			currentUserID = &u.ID
+		if user, ok := userVal.(*models.User); ok && user != nil {
+			currentUserID = &user.ID
 		}
 	}
 
-	// 确保指纹存在（若历史数据未生成指纹，现场计算补全）
-	if finding.Fingerprint == "" {
-		finding.Fingerprint = services.CalculateDefectFingerprint(finding.RepoID, finding.TaskTypeID, finding.FilePath, finding.TriggerLine, finding.ScopeSymbol)
-		models.DB.Model(&finding).Update("fingerprint", finding.Fingerprint)
+	if finding.ObservationGroupUID != "" {
+		var observation models.DefectObservation
+		if err := models.DB.Where("report_id = ? AND observation_group_uid = ?", finding.TaskReportID, finding.ObservationGroupUID).
+			First(&observation).Error; err == nil && observation.DefectID != nil {
+			status := "closed"
+			switch req.FeedbackStatus {
+			case "CONFIRMED":
+				status = "open"
+			case "FALSE_POSITIVE":
+				status = "closed"
+			case "WONT_FIX":
+				status = "closed"
+			default:
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid feedback status"})
+				return
+			}
+			if _, err := defectlifecycle.UpdateDefectWorkflow(models.DB, *observation.DefectID, defectlifecycle.DefectWorkflowInput{
+				Status: status, Feedback: req.Reason, ActorID: valueOrDefault(currentUserID),
+			}); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
 	}
 
-	err = services.MarkDefectFeedback(finding.RepoID, finding.TaskTypeID, finding.Fingerprint, req.FeedbackStatus, req.Reason, currentUserID)
+	err = governance.MarkFindingFeedback(&finding, req.FeedbackStatus, req.Reason, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "Feedback submitted and memory rule updated successfully",
-		"fingerprint": finding.Fingerprint,
+		"message": "Current finding feedback submitted successfully",
 	})
+}
+
+func valueOrDefault(value *uint) uint {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 // GetRepoFeedbackRulesHandler 获取代码仓专有的负样本例外规则库

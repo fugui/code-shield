@@ -1,8 +1,12 @@
 package reports
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
+
+	"code-shield/services/coverage"
+	"code-shield/services/engines/planner"
 )
 
 // Canonical Severity 常量定义
@@ -104,40 +108,54 @@ func GetStatusChinese(status string, isEntityMode bool) string {
 
 // ReportMetaDTO 任务报告元数据
 type ReportMetaDTO struct {
-	ID              uint    `json:"id"`
-	RepoID          uint    `json:"repo_id"`
-	RepoName        string  `json:"repo_name"`
-	RepoURL         string  `json:"repo_url"`
-	Branch          string  `json:"branch"`
-	TaskTypeID      uint    `json:"task_type_id"`
-	TaskTypeName    string  `json:"task_type_name"`
-	TaskTypeDisplay string  `json:"task_type_display"`
-	EngineMode      string  `json:"engine_mode"`
-	GovernanceMode  string  `json:"governance_mode"`
-	Status          string  `json:"status"`
-	Score           int     `json:"score"`
-	Rating          string  `json:"rating"` // 优/良/中/差
-	TotalChunks     int     `json:"total_chunks"`
-	ProcessedChunks int     `json:"processed_chunks"`
-	SuccessChunks   int     `json:"success_chunks"`
-	DurationSeconds float64 `json:"duration_seconds"`
-	BaseCommit      string  `json:"base_commit"`
-	HeadCommit      string  `json:"head_commit"`
+	ID                       uint                         `json:"id"`
+	RepoID                   uint                         `json:"repo_id"`
+	RepoName                 string                       `json:"repo_name"`
+	RepoURL                  string                       `json:"repo_url"`
+	Branch                   string                       `json:"branch"`
+	TaskTypeID               uint                         `json:"task_type_id"`
+	TaskTypeName             string                       `json:"task_type_name"`
+	TaskTypeDisplay          string                       `json:"task_type_display"`
+	EngineMode               string                       `json:"engine_mode"`
+	ScopeDecision            *planner.ScopeDecision       `json:"scope_decision,omitempty"`
+	PlanReconciliation       *coverage.PlanReconciliation `json:"plan_reconciliation,omitempty"`
+	CoverageSummary          *coverage.ExecutionSummary   `json:"coverage_summary,omitempty"`
+	ScanProfile              any                          `json:"scan_profile,omitempty"`
+	ScanProfileHash          string                       `json:"scan_profile_hash,omitempty"`
+	PromptVersion            string                       `json:"prompt_version,omitempty"`
+	EngineConfigHash         string                       `json:"engine_config_hash,omitempty"`
+	PlannerVersion           string                       `json:"planner_version,omitempty"`
+	AssessmentConfigHash     string                       `json:"assessment_config_hash,omitempty"`
+	PromptContentHash        string                       `json:"prompt_content_hash,omitempty"`
+	CategorySchemaHash       string                       `json:"category_schema_hash,omitempty"`
+	TaxonomySchemaVersion    int                          `json:"taxonomy_schema_version,omitempty"`
+	TaxonomyHash             string                       `json:"taxonomy_hash,omitempty"`
+	DomainFamily             string                       `json:"domain_family,omitempty"`
+	DomainLabel              string                       `json:"domain_label,omitempty"`
+	DefenseDimensions        json.RawMessage              `json:"defense_dimensions,omitempty"`
+	TargetSemantics          json.RawMessage              `json:"target_semantics,omitempty"`
+	DisplaySemantics         json.RawMessage              `json:"display_semantics,omitempty"`
+	GovernanceMode           string                       `json:"governance_mode"`
+	ExecutionSnapshotVersion int                          `json:"execution_snapshot_version,omitempty"`
+	ExecutionSnapshotState   string                       `json:"execution_snapshot_state,omitempty"`
+	Status                   string                       `json:"status"`
+	Score                    int                          `json:"score"`
+	Rating                   string                       `json:"rating"` // 优/良/中/差
+	TotalChunks              int                          `json:"total_chunks"`
+	ProcessedChunks          int                          `json:"processed_chunks"`
+	SuccessChunks            int                          `json:"success_chunks"`
+	CoverageNotApplicable    bool                         `json:"coverage_not_applicable"`
+	CoverageComplete         bool                         `json:"coverage_complete"`
+	CoverageDegraded         bool                         `json:"coverage_degraded"`
+	CoverageReasons          []string                     `json:"coverage_reasons,omitempty"`
+	ChangedCoverageFiles     []coverage.File              `json:"changed_coverage_files,omitempty"`
+	DurationSeconds          float64                      `json:"duration_seconds"`
+	BaseCommit               string                       `json:"base_commit"`
+	HeadCommit               string                       `json:"head_commit"`
 
-	// ── 增量追踪与 Token 统计 ──
-	NewDefectsCount      int   `json:"new_defects_count"`
-	ExistedDefectsCount  int   `json:"existed_defects_count"`
-	ResolvedDefectsCount int   `json:"resolved_defects_count"`
-	Tier1Tokens          int64 `json:"tier1_tokens"`
-	Tier2Tokens          int64 `json:"tier2_tokens"`
-
-	// ── 跨轮次对账统计与台账汇总 ──
-	BaseReportID          uint `json:"base_report_id,omitempty"`
-	VanishedCoverageGap   int  `json:"vanished_coverage_gap,omitempty"`
-	TemplateFamilyCount   int  `json:"template_family_count,omitempty"`
-	ActiveWorkingCount    int  `json:"active_working_count,omitempty"`
-	DormantArchivedCount  int  `json:"dormant_archived_count,omitempty"`
-	ResolvedByChangeCount int  `json:"resolved_by_change_count,omitempty"`
+	// ── Token 统计 ──
+	Tier1Tokens int64 `json:"tier1_tokens"`
+	Tier2Tokens int64 `json:"tier2_tokens"`
 
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -154,6 +172,7 @@ type KPIMetrics struct {
 	PassRate        float64        `json:"pass_rate,omitempty"`
 	CategoryStats   map[string]int `json:"category_stats"`
 	StatusStats     map[string]int `json:"status_stats"`
+	AssessmentStats map[string]int `json:"assessment_stats,omitempty"`
 }
 
 // ReportSummaryDTO 总结概览 DTO
@@ -166,43 +185,47 @@ type ReportSummaryDTO struct {
 
 // FindingItemDTO 结构化问题/实体项 DTO
 type FindingItemDTO struct {
-	ID              uint   `json:"id"`
-	TaskReportID    uint   `json:"task_report_id"`
-	TaskTypeID      uint   `json:"task_type_id"`
-	RepoID          uint   `json:"repo_id"`
-	Severity        string `json:"severity"`         // Canonical severity
-	SeverityDisplay string `json:"severity_display"` // 中文展示
-	Category        string `json:"category"`
-	FilePath        string `json:"file_path"`
-	LineNumber      string `json:"line_number"`
-	Title           string `json:"title"`
-	Detail          string `json:"detail"`
-	CodeSnippet     string `json:"code_snippet,omitempty"`
-	Suggestion      string `json:"suggestion,omitempty"`
-	Status          string `json:"status"`
-	StatusDisplay   string `json:"status_display"`
-	AssigneeID      *uint  `json:"assignee_id,omitempty"`
-	AssigneeName    string `json:"assignee_name,omitempty"`
-	LatestComment   string `json:"latest_comment,omitempty"`
+	ID                      uint   `json:"id"`
+	TaskReportID            uint   `json:"task_report_id"`
+	TaskTypeID              uint   `json:"task_type_id"`
+	RepoID                  uint   `json:"repo_id"`
+	Severity                string `json:"severity"`         // Canonical severity
+	SeverityDisplay         string `json:"severity_display"` // 中文展示
+	Category                string `json:"category"`
+	CategoryCode            string `json:"category_code,omitempty"`
+	CategorySource          string `json:"category_source,omitempty"`
+	CategoryStatus          string `json:"category_status,omitempty"`
+	ClassificationRationale string `json:"classification_rationale,omitempty"`
+	TaxonomyHash            string `json:"taxonomy_hash,omitempty"`
+	FilePath                string `json:"file_path"`
+	LineNumber              string `json:"line_number"`
+	Title                   string `json:"title"`
+	Detail                  string `json:"detail"`
+	CodeSnippet             string `json:"code_snippet,omitempty"`
+	Suggestion              string `json:"suggestion,omitempty"`
+	Status                  string `json:"status"`
+	StatusDisplay           string `json:"status_display"`
+	AssigneeID              *uint  `json:"assignee_id,omitempty"`
+	AssigneeName            string `json:"assignee_name,omitempty"`
+	LatestComment           string `json:"latest_comment,omitempty"`
 
 	// ── 缺陷指纹、增量状态与智能体辩论链 ──
-	Fingerprint   string `json:"fingerprint,omitempty"`
-	DiffStatus    string `json:"diff_status,omitempty"` // NEW, EXISTED, RESOLVED, REOPENED
-	TriggerLine   string `json:"trigger_line,omitempty"`
-	ScopeSymbol   string `json:"scope_symbol,omitempty"`
-	HunterClaim   string `json:"hunter_claim,omitempty"`
-	ChallengerArg string `json:"challenger_arg,omitempty"`
-	JudgeVerdict  string `json:"judge_verdict,omitempty"`
+	PrimaryUnitID       string                 `json:"primary_unit_id,omitempty"`
+	AssessmentStatus    string                 `json:"assessment_status,omitempty"`
+	AssessmentOutcome   string                 `json:"assessment_outcome,omitempty"`
+	AssessmentArtifact  map[string]interface{} `json:"assessment_artifact,omitempty"`
+	TriggerLine         string                 `json:"trigger_line,omitempty"`
+	ScopeSymbol         string                 `json:"scope_symbol,omitempty"`
+	HunterClaim         string                 `json:"hunter_claim,omitempty"`
+	ChallengerArg       string                 `json:"challenger_arg,omitempty"`
+	JudgeVerdict        string                 `json:"judge_verdict,omitempty"`
+	ObservationGroupUID string                 `json:"observation_group_uid,omitempty"`
+	DefectID            *uint                  `json:"defect_id,omitempty"`
+	Verdict             string                 `json:"verdict,omitempty"`
+	MatchTier           string                 `json:"match_tier,omitempty"`
+	Confidence          float64                `json:"confidence,omitempty"`
 
-	// ── 报告间对账与台账治理字段 ──
-	ItemUID          string `json:"item_uid,omitempty"`
-	LifecycleStatus  string `json:"lifecycle_status,omitempty"`
-	CoverageGap      bool   `json:"coverage_gap,omitempty"`
-	TemplateFamilyID string `json:"template_family_id,omitempty"`
-	ReconRelation    string `json:"recon_relation,omitempty"`
-	SeverityRange    string `json:"severity_range,omitempty"`
-	SeverityTriage   bool   `json:"severity_triage,omitempty"`
-	Note             string `json:"note,omitempty"`
+	Note string `json:"note,omitempty"`
 
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
@@ -226,27 +249,123 @@ type PipelineStep struct {
 
 // ChunkDiagnosticDetail 分片诊断信息
 type ChunkDiagnosticDetail struct {
-	ChunkName       string   `json:"chunk_name"`
-	Status          string   `json:"status"` // success, failed
-	DurationSeconds float64  `json:"duration_seconds"`
-	Attempts        int      `json:"attempts"`
-	FilesCount      int      `json:"files_count"`
-	FindingsCount   int      `json:"findings_count"`
-	ErrorMessage    string   `json:"error_message,omitempty"`
-	Files           []string `json:"files,omitempty"`
+	ChunkName                string    `json:"chunk_name"`
+	Status                   string    `json:"status"` // success, failed
+	DurationSeconds          float64   `json:"duration_seconds"`
+	Attempts                 int       `json:"attempts"`
+	FilesCount               int       `json:"files_count"`
+	FindingsCount            int       `json:"findings_count"`
+	ErrorMessage             string    `json:"error_message,omitempty"`
+	ErrorClass               string    `json:"error_class,omitempty"`
+	ContractRepairs          int       `json:"contract_repairs"`
+	ResourceFailovers        int       `json:"resource_failovers"`
+	DriverFailovers          int       `json:"driver_failovers"`
+	ResourceChain            []string  `json:"resource_chain,omitempty"`
+	ErrorClasses             []string  `json:"error_classes,omitempty"`
+	QueueWaitMS              []int64   `json:"queue_wait_ms,omitempty"`
+	AttemptDurationSeconds   []float64 `json:"attempt_duration_seconds,omitempty"`
+	SplitDepth               int       `json:"split_depth"`
+	SplitCount               int       `json:"split_count"`
+	Resumed                  bool      `json:"resumed,omitempty"`
+	ArtifactComplete         bool      `json:"artifact_complete"`
+	ArtifactState            string    `json:"artifact_state,omitempty"`
+	ArtifactQualityDegraded  bool      `json:"artifact_quality_degraded,omitempty"`
+	UnresolvedIssueCount     int       `json:"unresolved_issue_count,omitempty"`
+	NormalizedIssueCount     int       `json:"normalized_issue_count"`
+	SchemaRepairAttempts     int       `json:"schema_repair_attempts"`
+	SchemaRepairSuccesses    int       `json:"schema_repair_successes"`
+	JSONSyntaxRepairs        int       `json:"json_syntax_repairs"`
+	RepairBaselineKnown      bool      `json:"repair_baseline_known,omitempty"`
+	RepairRepairedKnown      bool      `json:"repair_repaired_signature_known,omitempty"`
+	RepairUnverified         bool      `json:"repair_unverified,omitempty"`
+	RepairOutcome            string    `json:"repair_outcome,omitempty"`
+	CandidateQuarantineCount int       `json:"candidate_quarantine_count"`
+	SchemaRepairIssues       []string  `json:"schema_repair_issues,omitempty"`
+	ArtifactSchemaID         string    `json:"artifact_schema_id,omitempty"`
+	ArtifactSchemaHash       string    `json:"artifact_schema_hash,omitempty"`
+	ResponseFormatMode       string    `json:"response_format_mode,omitempty"`
+	ResponseFormatFallbacks  int       `json:"response_format_fallbacks,omitempty"`
+	Files                    []string  `json:"files,omitempty"`
 }
 
 // DiagnosticsDTO 运行轨迹与诊断 DTO
 type DiagnosticsDTO struct {
-	Meta             ReportMetaDTO           `json:"meta"`
-	PipelineSteps    []PipelineStep          `json:"pipeline_steps"`
-	TotalDuration    float64                 `json:"total_duration"`
-	AnalysisDuration float64                 `json:"analysis_duration"`
-	Chunks           []ChunkDiagnosticDetail `json:"chunks"`
-	RawOutputLog     string                  `json:"raw_output_log"`
-	LogTruncated     bool                    `json:"log_truncated"`
-	TotalLogLines    int                     `json:"total_log_lines"`
-	ErrorMessage     string                  `json:"error_message,omitempty"`
+	Meta                     ReportMetaDTO               `json:"meta"`
+	PipelineSteps            []PipelineStep              `json:"pipeline_steps"`
+	TotalDuration            float64                     `json:"total_duration"`
+	AnalysisDuration         float64                     `json:"analysis_duration"`
+	Attempts                 int                         `json:"attempts"`
+	Retries                  int                         `json:"retries"`
+	ContractRepairs          int                         `json:"contract_repairs"`
+	ResourceFailovers        int                         `json:"resource_failovers"`
+	DriverFailovers          int                         `json:"driver_failovers"`
+	SplitInvocations         int                         `json:"split_invocations"`
+	RecoveredChunks          int                         `json:"recovered_chunks"`
+	ArtifactComplete         bool                        `json:"artifact_complete"`
+	ArtifactState            string                      `json:"artifact_state,omitempty"`
+	ArtifactQualityDegraded  bool                        `json:"artifact_quality_degraded,omitempty"`
+	UnresolvedIssueCount     int                         `json:"unresolved_issue_count,omitempty"`
+	NormalizedIssueCount     int                         `json:"normalized_issue_count"`
+	SchemaRepairAttempts     int                         `json:"schema_repair_attempts"`
+	SchemaRepairSuccesses    int                         `json:"schema_repair_successes"`
+	JSONSyntaxRepairs        int                         `json:"json_syntax_repairs"`
+	RepairBaselineKnown      bool                        `json:"repair_baseline_known"`
+	RepairRepairedKnown      bool                        `json:"repair_repaired_signature_known"`
+	RepairUnverified         bool                        `json:"repair_unverified,omitempty"`
+	RepairOutcome            string                      `json:"repair_outcome,omitempty"`
+	CandidateQuarantineCount int                         `json:"candidate_quarantine_count"`
+	ArtifactSchemaID         string                      `json:"artifact_schema_id,omitempty"`
+	ArtifactSchemaHash       string                      `json:"artifact_schema_hash,omitempty"`
+	ResponseFormatMode       string                      `json:"response_format_mode,omitempty"`
+	ResponseFormatFallbacks  int                         `json:"response_format_fallbacks"`
+	Category                 *CategoryDiagnosticsSummary `json:"category,omitempty"`
+	DegradedReasons          []string                    `json:"degraded_reasons,omitempty"`
+	Chunks                   []ChunkDiagnosticDetail     `json:"chunks"`
+	Synthesis                *SynthesisDiagnosticSummary `json:"synthesis,omitempty"`
+	RawOutputLog             string                      `json:"raw_output_log"`
+	LogTruncated             bool                        `json:"log_truncated"`
+	TotalLogLines            int                         `json:"total_log_lines"`
+	ErrorMessage             string                      `json:"error_message,omitempty"`
+}
+
+type SynthesisDiagnosticSummary struct {
+	Status                 string    `json:"status,omitempty"`
+	Attempts               int       `json:"attempts"`
+	ResourceID             string    `json:"resource_id,omitempty"`
+	ResourceFailovers      int       `json:"resource_failovers"`
+	DriverFailovers        int       `json:"driver_failovers"`
+	ResourceChain          []string  `json:"resource_chain,omitempty"`
+	ErrorClasses           []string  `json:"error_classes,omitempty"`
+	QueueWaitMS            []int64   `json:"queue_wait_ms,omitempty"`
+	AttemptDurationSeconds []float64 `json:"attempt_duration_seconds,omitempty"`
+	DurationSeconds        float64   `json:"duration_seconds"`
+	ErrorMessage           string    `json:"error_message,omitempty"`
+}
+
+type CategoryDiagnosticsSummary struct {
+	Hunter CategoryHunterDiagnostics `json:"hunter"`
+	Judge  CategoryJudgeDiagnostics  `json:"judge"`
+}
+
+type CategoryHunterDiagnostics struct {
+	ModelCandidates         int `json:"model_candidates"`
+	ModelCodeValid          int `json:"model_code_valid"`
+	ModelCodeInvalid        int `json:"model_code_invalid"`
+	ModelCodeAbsent         int `json:"model_code_absent"`
+	DeterministicRepairs    int `json:"deterministic_repairs"`
+	LLMRepairAttempts       int `json:"llm_repair_attempts"`
+	LLMRepairs              int `json:"llm_repairs"`
+	ReviewRequired          int `json:"review_required"`
+	CategoryOnlyQuarantined int `json:"category_only_quarantined"`
+}
+
+type CategoryJudgeDiagnostics struct {
+	ModelCandidates         int `json:"model_candidates"`
+	ModelCodeValid          int `json:"model_code_valid"`
+	ModelCodeInvalid        int `json:"model_code_invalid"`
+	ModelCodeAbsent         int `json:"model_code_absent"`
+	ReviewRequired          int `json:"review_required"`
+	CategoryOnlyQuarantined int `json:"category_only_quarantined"`
 }
 
 // ReportAggregateDTO 全量聚合 DTO

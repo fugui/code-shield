@@ -42,6 +42,7 @@ func TestPromptAssembler_BuildHunterPrompt(t *testing.T) {
 
 	ctx := &engines.EngineContext{
 		TaskTypeName:       "死锁与竞争专项",
+		EngineMode:         "debate_full",
 		AnalysisPromptPath: promptPath,
 		AllowedCategories:  []string{"并发安全-死锁", "并发安全-竞态"},
 		DomainFamily:       models.DomainFamilyMemoryCrash,
@@ -57,6 +58,12 @@ func TestPromptAssembler_BuildHunterPrompt(t *testing.T) {
 	}
 
 	prompt := assembler.BuildHunterPrompt(ctx, bundle)
+	if strings.Contains(prompt, `"findings":`) {
+		t.Errorf("hunter prompt must not contain findings output contract")
+	}
+	if !strings.Contains(prompt, "candidates") || !strings.Contains(prompt, "code-shield.candidates.v1") {
+		t.Errorf("hunter prompt must contain generated candidates contract")
+	}
 
 	if !strings.Contains(prompt, "死锁与竞争专项") {
 		t.Errorf("expected prompt to contain task name")
@@ -78,6 +85,24 @@ func TestPromptAssembler_BuildHunterPrompt(t *testing.T) {
 	promptWithWorkDir := assembler.BuildHunterPrompt(ctx, bundle)
 	if !strings.Contains(promptWithWorkDir, "当前分析运行目录为代码仓根目录：/path/to/repo") {
 		t.Errorf("expected prompt to contain workdir explanation")
+	}
+}
+
+func TestPromptAssembler_StripsLegacyOutputContracts(t *testing.T) {
+	assembler := &PromptAssembler{}
+	root := t.TempDir()
+	promptPath := filepath.Join(root, "analysis_prompt.md")
+	content := "# 领域规则\n重点检查浮点数比较。\n\n## 输出格式与约束\n```json\n{\"findings\":[]}\n```\n\n## 保留规则\n必须收集触发证据。"
+	if err := os.WriteFile(promptPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write prompt: %v", err)
+	}
+
+	cleaned := assembler.loadTaskDomainPrompt(promptPath, root)
+	if strings.Contains(cleaned, "findings") || strings.Contains(cleaned, "输出格式") {
+		t.Fatalf("legacy output contract was not stripped:\n%s", cleaned)
+	}
+	if !strings.Contains(cleaned, "重点检查浮点数比较") || !strings.Contains(cleaned, "保留规则") {
+		t.Fatalf("domain rules were damaged:\n%s", cleaned)
 	}
 }
 
@@ -104,7 +129,7 @@ func TestPromptAssembler_ChallengerDefensePriority(t *testing.T) {
 		TaskTypeName: "SQL注入检测",
 		DomainFamily: models.DomainFamilySecurityInjection,
 	}
-	promptFallback, err := assembler.BuildChallengerPrompt(ctxFallback, bundle, hunterOut)
+	promptFallback, err := assembler.BuildChallengerPrompt(ctxFallback, bundle, hunterOut, nil)
 	if err != nil {
 		t.Fatalf("BuildChallengerPrompt failed: %v", err)
 	}
@@ -123,7 +148,7 @@ func TestPromptAssembler_ChallengerDefensePriority(t *testing.T) {
 			},
 		},
 	}
-	promptCustom, err := assembler.BuildChallengerPrompt(ctxCustom, bundle, hunterOut)
+	promptCustom, err := assembler.BuildChallengerPrompt(ctxCustom, bundle, hunterOut, nil)
 	if err != nil {
 		t.Fatalf("BuildChallengerPrompt custom failed: %v", err)
 	}
@@ -156,7 +181,19 @@ func TestPromptAssembler_JudgePromptCategories(t *testing.T) {
 
 	bundle := chunker.SemanticBundle{Name: "bundle-1"}
 
-	judgePrompt, err := assembler.BuildJudgePrompt(ctx, bundle, hunterOut, challOut)
+	evidencePacks := []JudgeCaseEvidencePack{
+		{
+			CandidateID: "H-001",
+			Claim: JudgeCandidateView{
+				CandidateID: "H-001",
+				Title:       "可疑问题",
+			},
+			WorkspaceRoot:        "/repo",
+			TargetFiles:          bundle.AllFiles,
+			AllowedEvidencePaths: bundle.AllFiles,
+		},
+	}
+	judgePrompt, err := assembler.BuildJudgePrompt(ctx, bundle, hunterOut, challOut, evidencePacks)
 	if err != nil {
 		t.Fatalf("BuildJudgePrompt failed: %v", err)
 	}
@@ -195,5 +232,58 @@ func TestPromptAssembler_SecurityPathAndTruncation(t *testing.T) {
 	}
 	if len(loaded) > MaxPromptRuleBytes+500 {
 		t.Errorf("expected length to be strictly bounded")
+	}
+}
+
+func TestPromptAssembler_PrefersAnalysisPromptContent(t *testing.T) {
+	assembler := &PromptAssembler{}
+	content := "重点检查并发竞态。\n\n## 输出格式\n```json\n{\"findings\":[]}\n```\n\n## 保留规则\n必须给出触发位置。"
+	ctx := &engines.EngineContext{
+		TaskTypeName:          "并发检测",
+		AnalysisPromptContent: content,
+		AnalysisPromptPath:    filepath.Join(t.TempDir(), "missing.md"),
+	}
+
+	prompt := assembler.BuildHunterPrompt(ctx, chunker.SemanticBundle{Name: "bundle-1"})
+	if !strings.Contains(prompt, "重点检查并发竞态") || !strings.Contains(prompt, "必须给出触发位置") {
+		t.Fatalf("analysis prompt content was not injected:\n%s", prompt)
+	}
+	loaded := assembler.loadTaskDomainPromptContent(content)
+	if strings.Contains(loaded, "findings") || strings.Contains(loaded, "输出格式") {
+		t.Fatalf("legacy output contract was not stripped:\n%s", loaded)
+	}
+}
+
+func TestPromptAssembler_TruncatesAnalysisPromptContent(t *testing.T) {
+	assembler := &PromptAssembler{}
+	content := strings.Repeat("A", MaxPromptRuleBytes+1000)
+
+	loaded := assembler.loadTaskDomainPromptContent(content)
+	if !strings.Contains(loaded, "规则文件过长，后续内容已被物理安全截断") {
+		t.Fatalf("content was not truncated:\n%s", loaded)
+	}
+	if len(loaded) > MaxPromptRuleBytes+500 {
+		t.Fatalf("content length = %d, want bounded", len(loaded))
+	}
+}
+
+func TestPromptAssembler_FallsBackToLegacyTaskPromptPath(t *testing.T) {
+	assembler := &PromptAssembler{}
+	dataDir := t.TempDir()
+	oldDataDir := models.AppConfig.Server.DataDir
+	models.AppConfig.Server.DataDir = dataDir
+	t.Cleanup(func() { models.AppConfig.Server.DataDir = oldDataDir })
+
+	promptPath := filepath.Join(dataDir, "tasks", "analysis_prompt.md")
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0755); err != nil {
+		t.Fatalf("create tasks dir: %v", err)
+	}
+	if err := os.WriteFile(promptPath, []byte("legacy path domain rule"), 0644); err != nil {
+		t.Fatalf("write legacy prompt: %v", err)
+	}
+
+	domainRules := assembler.loadTaskDomainPrompt(promptPath, filepath.Join(dataDir, "tasks"))
+	if domainRules != "legacy path domain rule" {
+		t.Fatalf("legacy prompt path fallback = %q, want %q", domainRules, "legacy path domain rule")
 	}
 }

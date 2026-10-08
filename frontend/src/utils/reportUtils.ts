@@ -1,5 +1,6 @@
 import { CanonicalSeverity, SeverityMeta } from '../types/report';
 import { sshToHttps } from './urlUtils';
+import { AUTH_TOKEN_KEY } from '../config';
 
 export const SEVERITY_CONFIG: Record<CanonicalSeverity, SeverityMeta> = {
   fatal: {
@@ -93,6 +94,58 @@ export const normalizeSeverity = (raw?: string): CanonicalSeverity => {
       return 'minor';
   }
 };
+
+export function isAIFixURLValid(fixURL?: string | null): boolean {
+  if (!fixURL) {
+    return false;
+  }
+  const firstIndex = fixURL.indexOf('{defect_id}');
+  if (firstIndex < 0 || firstIndex !== fixURL.lastIndexOf('{defect_id}')) {
+    return false;
+  }
+  try {
+    const parsed = new URL(fixURL);
+    return parsed.protocol === 'https:' && Boolean(parsed.host);
+  } catch {
+    return false;
+  }
+}
+
+export function buildAIFixURL(fixURL: string, defectId: number): string {
+  return fixURL.replace('{defect_id}', encodeURIComponent(String(defectId)));
+}
+
+let aiFixURLRequest: Promise<string | null> | null = null;
+
+export function getAIFixURL(): Promise<string | null> {
+  if (aiFixURLRequest) {
+    return aiFixURLRequest;
+  }
+
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  aiFixURLRequest = fetch('/api/config/frontend', { headers })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error('AI fix config request failed');
+      }
+      const data: { ai_fix?: { fix_url?: string } } = await response.json();
+      return data.ai_fix?.fix_url || null;
+    })
+    .catch((error: unknown) => {
+      aiFixURLRequest = null;
+      throw error;
+    });
+
+  return aiFixURLRequest;
+}
+
+export function resetAIFixURLCache(): void {
+  aiFixURLRequest = null;
+}
 
 export const getSeverityMeta = (raw?: string): SeverityMeta => {
   const key = normalizeSeverity(raw);

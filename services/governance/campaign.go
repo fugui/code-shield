@@ -38,6 +38,13 @@ func HandleGenericCampaign(ctx *CampaignContext, findings []models.AnalysisFindi
 	log.Printf("[CampaignGovernance] Processing generic campaign for Task: %s, Mode: %s, Repo ID: %d, findings count: %d",
 		ctx.TaskType.Name, ctx.TaskType.GovernanceMode, ctx.Repo.ID, len(findings))
 
+	// Non-entity governance has exactly one lifecycle authority: the
+	// defectlifecycle ledger. This hook must never create a second state table.
+	if models.ResolveGovernanceMode(ctx.TaskType.GovernanceMode) != models.GovernanceModeEntityAssessment {
+		log.Printf("[CampaignGovernance] Skipping non-entity campaign; mode is owned by defectlifecycle")
+		return nil
+	}
+
 	// 规范化并清洗 findings 字段（防御性清洗超长标题/多行换行，防止超长字符串破坏数据库、索引及前端展示）
 	for i := range findings {
 		rawTitle := strings.TrimSpace(findings[i].Title)
@@ -400,6 +407,10 @@ func HandleGenericCampaign(ctx *CampaignContext, findings []models.AnalysisFindi
 	if ctx.HasFailedChunks {
 		log.Printf("[CampaignGovernance] Notice: Skipped auto-resolving obsolete findings because task report %d had failed chunks.", ctx.Report.ID)
 	} else {
+		if !campaignCoverageAllowsResolution(ctx) {
+			log.Printf("[CampaignGovernance] Skipped auto-resolving obsolete findings because report %d lacks complete file-level coverage.", ctx.Report.ID)
+			return nil
+		}
 		for i := range allOldFindings {
 			oldF := &allOldFindings[i]
 			if !matchedOldIDs[oldF.ID] {
@@ -438,6 +449,39 @@ func HandleGenericCampaign(ctx *CampaignContext, findings []models.AnalysisFindi
 	}
 
 	return nil
+}
+
+func campaignCoverageAllowsResolution(ctx *CampaignContext) bool {
+	if ctx == nil || models.DB == nil || ctx.Report.ID == 0 || ctx.HasFailedChunks {
+		return false
+	}
+	if !models.DB.Migrator().HasTable(&models.ScanScopeEntry{}) {
+		return false
+	}
+
+	var report models.TaskReport
+	if err := models.DB.Select("coverage_state", "worktree_clean").First(&report, ctx.Report.ID).Error; err != nil {
+		return false
+	}
+	if report.WorktreeClean != true ||
+		(report.CoverageState != "COMPLETE" && report.CoverageState != "CHANGE_FOCUS") {
+		return false
+	}
+
+	var scopeCount int64
+	if err := models.DB.Model(&models.ScanScopeEntry{}).
+		Where("report_id = ? AND outcome IN ?", ctx.Report.ID, []string{"SCANNED", "EXCLUDED"}).
+		Count(&scopeCount).Error; err != nil || scopeCount == 0 {
+		return false
+	}
+
+	var failedCount int64
+	if err := models.DB.Model(&models.ScanScopeEntry{}).
+		Where("report_id = ? AND outcome IN ?", ctx.Report.ID, []string{"FAILED", "UNKNOWN", "PLANNED", "UNCHANGED_SKIPPED"}).
+		Count(&failedCount).Error; err != nil || failedCount > 0 {
+		return false
+	}
+	return true
 }
 
 // ParseLineInterval 解析 "55", "55-63", "55,56" 等行号格式为闭区间
@@ -666,8 +710,9 @@ func AskLLMIfSameFinding(ctx *CampaignContext, oldPath, oldLine, oldTitle, oldDe
 		TimeoutMin:     10,
 		ResponseFormat: "json",
 		WorkContext: &invoker.LLMWorkContext{
-			Stage:   "专项治理: 历史缺陷模糊比对",
-			SubTask: fmt.Sprintf("比对: %s", newPath),
+			Stage:    "专项治理: 历史缺陷模糊比对",
+			SubTask:  fmt.Sprintf("比对: %s", newPath),
+			TierName: "system_tool",
 		},
 	}
 

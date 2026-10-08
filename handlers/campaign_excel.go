@@ -14,17 +14,17 @@ import (
 )
 
 type ExcelFindingItem struct {
-	ID         string
-	Severity   string
-	Category   string
-	FilePath   string
-	LineNumber string
-	Title      string
-	Detail     string
-	Suggestion string
-	Status     string
-	Assignee   string
-	Comment    string
+	ID         string `json:"id"`
+	Severity   string `json:"severity"`
+	Category   string `json:"category"`
+	FilePath   string `json:"file_path"`
+	LineNumber string `json:"line_number"`
+	Title      string `json:"title"`
+	Detail     string `json:"detail"`
+	Suggestion string `json:"suggestion"`
+	Status     string `json:"status"`
+	Assignee   string `json:"assignee"`
+	Comment    string `json:"comment"`
 }
 
 func convertCampaignFindingsToExcelItems(dbFindings []models.CampaignFinding) []ExcelFindingItem {

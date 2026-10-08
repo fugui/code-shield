@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@code/common": "file:../../code-common/frontend",
     "@types/react-syntax-highlighter": "^15.5.13",
     "lucide-react": "^0.577.0",
     "react": "^18.2.0",
@@ -17,11 +19,12 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.22.3",
     "react-syntax-highlighter": "^16.1.1",
-    "remark-gfm": "^4.0.1",
-    "@code/common": "file:../../code-common/frontend"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@originjs/vite-plugin-federation": "^1.4.1",
+    "@testing-library/dom": "^9.3.4",
+    "@testing-library/react": "^14.3.1",
     "@types/node": "^25.9.1",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
@@ -31,7 +34,9 @@
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
+    "jsdom": "^22.1.0",
     "typescript": "^5.2.2",
-    "vite": "^5.2.0"
+    "vite": "^5.2.0",
+    "vitest": "^1.6.1"
   }
 }

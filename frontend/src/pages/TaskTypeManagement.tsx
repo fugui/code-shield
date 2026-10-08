@@ -3,7 +3,26 @@ import { Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import { Code2, Settings, Trash2, Plus, RefreshCw, X, Shield, Layers, CheckCircle2 } from 'lucide-react';
 
-type FileTab = 'analysis_prompt' | 'synthesis_prompt' | 'precondition';
+type FileTab = 'analysis_prompt' | 'synthesis_prompt';
+
+type ScanProfileName = 'full_review' | 'occurrence_review' | 'keyword_review' | 'change_review' | 'entity_review';
+
+interface EditableScanProfile {
+  version: number;
+  name: ScanProfileName;
+  target_scope?: string;
+  languages?: string[];
+  include_extensions?: string[];
+  exclude_paths?: string[];
+  content_keywords?: string[];
+  primary_unit?: string;
+  scope_policy?: string;
+  context_policy?: string;
+  base_policy?: { strategy: 'since_days'; since_days: number };
+  entity_kind?: string;
+  max_files?: number;
+  depth?: number;
+}
 
 export interface DefenseDimension {
   key?: string;
@@ -37,11 +56,77 @@ export interface TaskTypeItem {
   is_campaign?: boolean;
   campaign_path?: string;
   governance_mode?: string;
+  domain_label?: string;
+  target_semantics?: Record<string, string> | string | null;
+  display_semantics?: Record<string, string> | string | null;
   campaign_icon?: string;
   campaign_config?: Record<string, unknown> | string | null;
   domain_family?: string;
+  scan_profile_hash?: string;
   defense_dimensions?: DefenseDimension[] | string | null;
   categories?: string[] | string | null;
+  updated_at?: string;
+}
+
+const PROFILE_LABELS: Record<ScanProfileName, string> = {
+  full_review: '全量检视 (full_review)',
+  occurrence_review: '发生点评视 (occurrence_review)',
+  keyword_review: '关键字检视 (keyword_review)',
+  change_review: '近期变更检视 (change_review)',
+  entity_review: '测试用例有效性 (entity_review)'
+};
+
+const CHANGE_LANGUAGES = ['cpp', 'python', 'java'];
+const TEST_LANGUAGES = ['cpp', 'python', 'java', 'go'];
+
+function semanticConfigText(value: Record<string, string> | string | null | undefined): string {
+  if (!value) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function defaultScanProfile(name: ScanProfileName): EditableScanProfile {
+  const base: EditableScanProfile = { version: 1, name };
+  if (name === 'full_review') return { ...base, target_scope: 'business' };
+  if (name === 'occurrence_review' || name === 'keyword_review') {
+    return { ...base, target_scope: 'business', include_extensions: [], content_keywords: [], primary_unit: 'file' };
+  }
+  if (name === 'change_review') {
+    return {
+      ...base,
+      languages: [...CHANGE_LANGUAGES],
+      scope_policy: 'changed_hunks',
+      context_policy: 'changed_files',
+      base_policy: { strategy: 'since_days', since_days: 7 }
+    };
+  }
+  return { ...base, target_scope: 'test', languages: [...TEST_LANGUAGES], entity_kind: 'test_case' };
+}
+
+function extractScanProfile(value: TaskTypeItem['engine_config']): EditableScanProfile | null {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    const profile = parsed?.scan_profile;
+    if (!profile || typeof profile.name !== 'string') return null;
+    if (profile.name === 'test_entity_review') {
+      return {
+        ...defaultScanProfile('entity_review'),
+        ...profile,
+        name: 'entity_review',
+        entity_kind: 'test_case'
+      };
+    }
+    return { ...defaultScanProfile(profile.name as ScanProfileName), ...profile } as EditableScanProfile;
+  } catch {
+    return null;
+  }
+}
+
+function serializeScanProfile(profile: EditableScanProfile): string {
+  return JSON.stringify({ scan_profile: profile }, null, 2);
+}
+
+function parseListValue(value: string): string[] {
+  return value.split(/[,\n]/).map(item => item.trim()).filter(Boolean);
 }
 
 export interface StandardDimensionDef {
@@ -108,15 +193,19 @@ function TaskTypeManagement() {
   const [taskTypes, setTaskTypes] = useState<TaskTypeItem[]>([]);
   const [domainFamilies, setDomainFamilies] = useState<DomainFamilyInfo[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [scanProfile, setScanProfile] = useState<EditableScanProfile>(() => defaultScanProfile('full_review'));
 
   const [form, setForm] = useState({
     name: '',
     display_name: '',
     description: '',
-    engine_mode: 'single',
-    engine_config: '',
+    engine_mode: 'debate_full',
+    engine_config: JSON.stringify({ scan_profile: { version: 1, name: 'full_review', target_scope: 'business' } }, null, 2),
     target_scope: 'business',
     domain_family: 'comprehensive_evolution',
+    domain_label: '',
+    target_semantics: '',
+    display_semantics: '',
     defense_dimensions: [] as DefenseDimension[],
     categories: [] as string[],
     notify_template: '',
@@ -126,9 +215,10 @@ function TaskTypeManagement() {
     is_active: true,
     is_campaign: false,
     campaign_path: '',
-    governance_mode: 'defect_tracking',
+    governance_mode: 'full_ledger',
     campaign_icon: '',
-    campaign_config: ''
+    campaign_config: '',
+    updated_at: ''
   });
 
   const [ccInput, setCcInput] = useState('');
@@ -141,8 +231,8 @@ function TaskTypeManagement() {
   const [fileEditorTaskId, setFileEditorTaskId] = useState<number | null>(null);
   const [fileEditorTaskName, setFileEditorTaskName] = useState('');
   const [activeFileTab, setActiveFileTab] = useState<FileTab>('analysis_prompt');
-  const [fileContents, setFileContents] = useState({ analysis_prompt: '', synthesis_prompt: '', precondition: '' });
-  const [fileDirty, setFileDirty] = useState({ analysis_prompt: false, synthesis_prompt: false, precondition: false });
+  const [fileContents, setFileContents] = useState({ analysis_prompt: '', synthesis_prompt: '' });
+  const [fileDirty, setFileDirty] = useState({ analysis_prompt: false, synthesis_prompt: false });
   const [fileSaving, setFileSaving] = useState(false);
 
   const fetchTaskTypes = React.useCallback(async () => {
@@ -179,10 +269,13 @@ function TaskTypeManagement() {
       name: '',
       display_name: '',
       description: '',
-      engine_mode: 'single',
-      engine_config: '',
+      engine_mode: 'debate_full',
+      engine_config: serializeScanProfile(defaultScanProfile('full_review')),
       target_scope: 'business',
       domain_family: 'comprehensive_evolution',
+      domain_label: '',
+      target_semantics: '',
+      display_semantics: '',
       defense_dimensions: [],
       categories: [],
       notify_template: '',
@@ -192,11 +285,13 @@ function TaskTypeManagement() {
       is_active: true,
       is_campaign: false,
       campaign_path: '',
-      governance_mode: 'defect_tracking',
+      governance_mode: 'full_ledger',
       campaign_icon: '',
-      campaign_config: ''
+      campaign_config: '',
+      updated_at: ''
     });
     setEditingId(null);
+    setScanProfile(defaultScanProfile('full_review'));
     setCcInput('');
     setNewCatInput('');
     setSelectedCatalogKey('');
@@ -230,24 +325,27 @@ function TaskTypeManagement() {
       }
     }
 
-    let configStr = '';
-    if (tt.engine_config) {
-      configStr = typeof tt.engine_config === 'string' ? tt.engine_config : JSON.stringify(tt.engine_config, null, 2);
-    }
+    const profile = extractScanProfile(tt.engine_config) ?? defaultScanProfile('full_review');
+    const configStr = serializeScanProfile(profile);
 
     let campConfigStr = '';
     if (tt.campaign_config) {
       campConfigStr = typeof tt.campaign_config === 'string' ? tt.campaign_config : JSON.stringify(tt.campaign_config, null, 2);
     }
 
+    const targetSemantics = semanticConfigText(tt.target_semantics);
+    const displaySemantics = semanticConfigText(tt.display_semantics);
     setForm({
       name: tt.name,
       display_name: tt.display_name,
       description: tt.description || '',
-      engine_mode: tt.engine_mode || 'single',
+      engine_mode: 'debate_full',
       engine_config: configStr,
       target_scope: tt.target_scope || 'business',
       domain_family: tt.domain_family || 'comprehensive_evolution',
+      domain_label: tt.domain_label || '',
+      target_semantics: targetSemantics,
+      display_semantics: displaySemantics,
       defense_dimensions: Array.isArray(dims) ? dims : [],
       categories: Array.isArray(cats) ? cats : [],
       notify_template: tt.notify_template || '',
@@ -257,10 +355,12 @@ function TaskTypeManagement() {
       is_active: tt.is_active,
       is_campaign: !!tt.is_campaign,
       campaign_path: tt.campaign_path || '',
-      governance_mode: tt.governance_mode || 'defect_tracking',
+      governance_mode: tt.governance_mode || 'full_ledger',
       campaign_icon: tt.campaign_icon || '',
-      campaign_config: campConfigStr
+      campaign_config: campConfigStr,
+      updated_at: tt.updated_at || ''
     });
+    setScanProfile(profile);
     setEditingId(tt.id);
     setCcInput('');
     setNewCatInput('');
@@ -358,9 +458,43 @@ function TaskTypeManagement() {
     if (!currentFamily || !currentFamily.recommended_mode) return;
     setForm(prev => ({
       ...prev,
-      engine_mode: currentFamily.recommended_mode
+      engine_mode: 'debate_full'
     }));
-    showToast(`已切换至族群推荐模式: ${currentFamily.recommended_mode}`, 'info');
+      showToast('已切换至统一执行模式: debate_full', 'info');
+  };
+
+  const applyProfile = (profile: EditableScanProfile) => {
+    setScanProfile(profile);
+    setForm(prev => ({
+      ...prev,
+      engine_config: serializeScanProfile(profile),
+      target_scope: profile.name === 'change_review' ? prev.target_scope : (profile.target_scope || prev.target_scope)
+    }));
+  };
+
+  const updateProfile = (patch: Partial<EditableScanProfile>) => {
+    applyProfile({ ...scanProfile, ...patch });
+  };
+
+  const updateProfileTargetScope = (targetScope: string) => {
+    setForm(prev => ({ ...prev, target_scope: targetScope }));
+    if (scanProfile.name !== 'change_review') {
+      applyProfile({ ...scanProfile, target_scope: targetScope });
+    }
+  };
+
+  const changeProfileName = (name: ScanProfileName) => {
+    const next = defaultScanProfile(name);
+    if (name !== 'change_review') {
+      next.target_scope = scanProfile.target_scope || 'business';
+    }
+    applyProfile(next);
+  };
+
+  const toggleLanguage = (language: string) => {
+    const allowed = scanProfile.name === 'change_review' ? CHANGE_LANGUAGES : TEST_LANGUAGES;
+    const current = scanProfile.languages || [];
+    updateProfile({ languages: current.includes(language) ? current.filter(item => item !== language) : allowed.filter(item => current.includes(item) || item === language) });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -373,6 +507,10 @@ function TaskTypeManagement() {
       defense_dimensions: form.defense_dimensions.length > 0 ? form.defense_dimensions : null,
       categories: form.categories.length > 0 ? form.categories : null
     };
+    delete payload.updated_at;
+    if (editingId && form.updated_at) {
+      payload.updated_at = form.updated_at;
+    }
 
     if (form.engine_config) {
       try {
@@ -394,6 +532,14 @@ function TaskTypeManagement() {
       }
     } else {
       payload.campaign_config = null;
+    }
+
+    try {
+      payload.target_semantics = form.target_semantics.trim() ? JSON.parse(form.target_semantics) : null;
+      payload.display_semantics = form.display_semantics.trim() ? JSON.parse(form.display_semantics) : null;
+    } catch {
+      showToast('领域语义配置必须是有效的 JSON', 'error');
+      return;
     }
 
     const res = await fetch(url, {
@@ -444,7 +590,7 @@ function TaskTypeManagement() {
     setFileEditorTaskId(tt.id);
     setFileEditorTaskName(tt.display_name);
     setActiveFileTab('analysis_prompt');
-    setFileDirty({ analysis_prompt: false, synthesis_prompt: false, precondition: false });
+    setFileDirty({ analysis_prompt: false, synthesis_prompt: false });
     try {
       const res = await fetch(`/api/task-types/${tt.id}/files`);
       if (res.ok) {
@@ -452,7 +598,6 @@ function TaskTypeManagement() {
         setFileContents({
           analysis_prompt: data.analysis_prompt || '',
           synthesis_prompt: data.synthesis_prompt || '',
-          precondition: data.precondition || ''
         });
       }
     } catch {
@@ -511,7 +656,6 @@ function TaskTypeManagement() {
   const fileTabLabels: Record<FileTab, string> = {
     analysis_prompt: '分析提示词 (analysis_prompt)',
     synthesis_prompt: '综合报告提示词 (synthesis_prompt)',
-    precondition: '前置检查脚本 (precondition.sh)'
   };
 
   const activeFamilyInfo = domainFamilies.find(f => f.key === form.domain_family);
@@ -599,6 +743,17 @@ function TaskTypeManagement() {
                       }}>
                         {famMeta.label}
                       </span>
+                      {tt.domain_label && (
+                        <span style={{
+                          fontSize: '0.7rem',
+                          background: 'var(--color-bg-muted)',
+                          color: 'var(--color-text-secondary)',
+                          padding: '0.1rem 0.45rem',
+                          borderRadius: '4px'
+                        }}>
+                          {tt.domain_label}
+                        </span>
+                      )}
                       {tt.is_campaign && (
                         <span style={{
                           fontSize: '0.7rem',
@@ -620,14 +775,8 @@ function TaskTypeManagement() {
                   <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem' }}>
                     {tt.engine_mode === 'debate_full' ? (
                       <span style={{ color: '#7c3aed', background: 'rgba(124,58,237,0.1)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>全量对抗辩论</span>
-                    ) : tt.engine_mode === 'debate_selective' ? (
-                      <span style={{ color: 'var(--color-primary)', background: 'rgba(37,99,235,0.1)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>选择性辩论</span>
-                    ) : tt.engine_mode === 'chunked_fast' ? (
-                      <span style={{ color: 'var(--color-success)', background: 'rgba(16,185,129,0.1)', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>分片快扫</span>
-                    ) : tt.engine_mode === 'chunked' ? (
-                      <span style={{ color: '#0284c7', background: 'rgba(2,132,199,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 500 }}>分片引擎</span>
                     ) : (
-                      <span style={{ color: 'var(--color-text-muted)', background: 'var(--color-bg-muted)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>单引擎</span>
+                      <span style={{ color: 'var(--color-text-muted)', background: 'var(--color-bg-muted)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>历史引擎</span>
                     )}
                   </td>
                   <td style={{ padding: '0.85rem 1rem', fontSize: '0.85rem' }}>
@@ -801,6 +950,49 @@ function TaskTypeManagement() {
                   💡 族群说明: {activeFamilyInfo.description}
                 </p>
               )}
+            </div>
+          </div>
+
+          <div style={{
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-primary)',
+            borderRadius: '8px',
+            padding: '1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-primary)' }}>
+                领域语义 (Domain Semantics)
+              </span>
+            </div>
+            <div>
+              <label style={labelStyle}>领域标签</label>
+              <input
+                style={fieldStyle}
+                value={form.domain_label}
+                onChange={e => setForm({ ...form, domain_label: e.target.value })}
+                placeholder="如: 内存安全"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>目标语义 JSON</label>
+              <textarea
+                style={{ ...fieldStyle, minHeight: '70px', resize: 'vertical' }}
+                value={form.target_semantics}
+                onChange={e => setForm({ ...form, target_semantics: e.target.value })}
+                placeholder='{"singular":"revision","plural":"revisions"}'
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>展示语义 JSON</label>
+              <textarea
+                style={{ ...fieldStyle, minHeight: '70px', resize: 'vertical' }}
+                value={form.display_semantics}
+                onChange={e => setForm({ ...form, display_semantics: e.target.value })}
+                placeholder='{"target_label":"修订项","not_target_label":"非评估目标"}'
+              />
             </div>
           </div>
 
@@ -1062,10 +1254,6 @@ function TaskTypeManagement() {
                 onChange={e => setForm({ ...form, engine_mode: e.target.value })}
               >
                 <option value="debate_full">🤖 全量多智能体辩论 (debate_full - 猎手+辩护人+法官)</option>
-                <option value="debate_selective">⚖️ 选择性智能体辩论 (debate_selective - 疑点仲裁)</option>
-                <option value="chunked_fast">⚡ 语义分片快扫 (chunked_fast - 规则极速初筛)</option>
-                <option value="chunked">📦 经典分片引擎 (chunked - 目录并发扫描)</option>
-                <option value="single">📄 单次全仓引擎 (single - 单次整仓检视)</option>
               </select>
             </div>
             <div>
@@ -1073,7 +1261,8 @@ function TaskTypeManagement() {
               <select
                 style={fieldStyle}
                 value={form.target_scope}
-                onChange={e => setForm({ ...form, target_scope: e.target.value })}
+                disabled={scanProfile.name === 'change_review'}
+                onChange={e => updateProfileTargetScope(e.target.value)}
               >
                 <option value="business">仅业务核心代码 (跳过测试用例)</option>
                 <option value="test">仅测试代码 (针对单元测试套专项)</option>
@@ -1082,22 +1271,116 @@ function TaskTypeManagement() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <label style={labelStyle}>
-              引擎高级参数 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(JSON 格式，可选)</span>
-            </label>
-            <textarea
-              style={{
-                ...fieldStyle,
-                minHeight: '60px',
-                resize: 'vertical',
-                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                fontSize: '0.8rem'
-              }}
-              value={form.engine_config}
-              onChange={e => setForm({ ...form, engine_config: e.target.value })}
-              placeholder={'{\n  "max_files": 20,\n  "depth": 1,\n  "concurrency": 6\n}'}
-            />
+          <div style={{
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-primary)',
+            borderRadius: '8px',
+            padding: '1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '1rem' }}>
+              <div>
+                <label style={labelStyle}>Scan Profile (v1 封闭枚举)</label>
+                <select
+                  style={fieldStyle}
+                  value={scanProfile.name}
+                  onChange={e => changeProfileName(e.target.value as ScanProfileName)}
+                >
+                  {(Object.keys(PROFILE_LABELS) as ScanProfileName[]).map(name => (
+                    <option key={name} value={name}>{PROFILE_LABELS[name]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Profile Hash</label>
+                <input
+                  style={fieldStyle}
+                  readOnly
+                  value={taskTypes.find(tt => tt.id === editingId)?.scan_profile_hash || '保存后生成'}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem' }}>
+              {scanProfile.name === 'full_review' && (
+                <>
+                  <div>
+                    <label style={labelStyle}>单分片文件上限</label>
+                    <input type="number" min={1} style={fieldStyle} value={scanProfile.max_files || 8} onChange={e => updateProfile({ max_files: Number(e.target.value) || undefined })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>目录聚合深度</label>
+                    <input type="number" min={1} style={fieldStyle} value={scanProfile.depth || 1} onChange={e => updateProfile({ depth: Number(e.target.value) || undefined })} />
+                  </div>
+                </>
+              )}
+
+              {(scanProfile.name === 'occurrence_review' || scanProfile.name === 'keyword_review') && (
+                <>
+                  <div>
+                    <label style={labelStyle}>Primary Unit</label>
+                    <select style={fieldStyle} value={scanProfile.primary_unit || 'file'} onChange={e => updateProfile({ primary_unit: e.target.value })}>
+                      <option value="file">file（按文件评估）</option>
+                      <option value="keyword_occurrence">keyword_occurrence（按发生点评估）</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>文件扩展名（逗号分隔）</label>
+                    <input style={fieldStyle} value={(scanProfile.include_extensions || []).join(', ')} onChange={e => updateProfile({ include_extensions: parseListValue(e.target.value) })} placeholder=".c, .cpp, .h" />
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={labelStyle}>Content Keywords（逗号分隔）</label>
+                    <input style={fieldStyle} value={(scanProfile.content_keywords || []).join(', ')} onChange={e => updateProfile({ content_keywords: parseListValue(e.target.value) })} placeholder="pthread_create, std::thread" />
+                  </div>
+                </>
+              )}
+
+              {(scanProfile.name === 'change_review' || scanProfile.name === 'entity_review') && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={labelStyle}>Languages</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {(scanProfile.name === 'change_review' ? CHANGE_LANGUAGES : TEST_LANGUAGES).map(language => (
+                      <label key={language} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem' }}>
+                        <input type="checkbox" checked={(scanProfile.languages || []).includes(language)} onChange={() => toggleLanguage(language)} />
+                        {language}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {scanProfile.name === 'change_review' && (
+                <div>
+                  <label style={labelStyle}>Since Days</label>
+                  <input type="number" min={1} max={90} style={fieldStyle} value={scanProfile.base_policy?.since_days || 7} onChange={e => updateProfile({ base_policy: { strategy: 'since_days', since_days: Number(e.target.value) || 7 } })} />
+                </div>
+              )}
+
+              {scanProfile.name !== 'change_review' && (
+                <div>
+                  <label style={labelStyle}>Exclude Paths（逗号分隔）</label>
+                  <input style={fieldStyle} value={(scanProfile.exclude_paths || []).join(', ')} onChange={e => updateProfile({ exclude_paths: parseListValue(e.target.value) })} placeholder="thirdparts, generated" />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label style={labelStyle}>Effective Config（只读）</label>
+              <pre style={{
+                margin: 0,
+                padding: '0.65rem',
+                borderRadius: '6px',
+                background: 'var(--color-bg-muted)',
+                color: 'var(--color-text-secondary)',
+                fontSize: '0.75rem',
+                overflowX: 'auto'
+              }}>{form.engine_config}</pre>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              保存仅影响后续扫描；已排队任务继续使用入队时的报告快照。
+            </p>
           </div>
 
           {/* 5. 专项分析看板与治理模式 */}
@@ -1201,24 +1484,6 @@ function TaskTypeManagement() {
                       </div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
                         度量实体总数/合格数/合格率，适合单元测试用例有效性等场景
-                      </div>
-                    </div>
-
-                    <div
-                      onClick={() => setForm({ ...form, governance_mode: 'defect_tracking' })}
-                      style={{
-                        padding: '0.75rem',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        border: `1.5px solid ${form.governance_mode === 'defect_tracking' ? 'var(--color-primary)' : 'var(--color-border-primary)'}`,
-                        background: form.governance_mode === 'defect_tracking' ? 'rgba(99,102,241,0.06)' : 'var(--color-bg-surface)'
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: form.governance_mode === 'defect_tracking' ? '#4f46e5' : 'var(--color-text-primary)' }}>
-                        缺陷攻关模式 (defect_tracking)
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
-                        经典平铺攻关模式（引擎内部将自动按 full_ledger 自愈对账）
                       </div>
                     </div>
                   </div>
@@ -1370,7 +1635,7 @@ function TaskTypeManagement() {
       >
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border-primary)', flexShrink: 0, background: 'var(--color-bg-muted)' }}>
-          {(['analysis_prompt', 'synthesis_prompt', 'precondition'] as FileTab[]).map(tab => (
+          {(['analysis_prompt', 'synthesis_prompt'] as FileTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveFileTab(tab)}

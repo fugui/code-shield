@@ -4,8 +4,6 @@ export interface ResourceEndpoint {
   api_key: string;
   model: string;
   concurrent: number;
-  weight: number;
-  temperature: number;
 }
 
 export interface ComputeResource {
@@ -16,8 +14,14 @@ export interface ComputeResource {
   base_url?: string;
   api_key?: string;
   response_format_json?: boolean;
+  enable_thinking?: boolean;
+  max_tokens?: number;
   max_retries?: number;
   retry_backoff_ms?: number;
+  attempt_timeout_seconds?: number;
+  first_byte_timeout_seconds?: number;
+  idle_timeout_seconds?: number;
+  max_output_bytes?: number;
   endpoints?: ResourceEndpoint[];
 }
 
@@ -39,6 +43,10 @@ export interface TierBinding {
   resource?: string;
   resources?: string[];
   timeout_seconds: number;
+  attempt_timeout_seconds?: number;
+  first_byte_timeout_seconds?: number;
+  idle_timeout_seconds?: number;
+  max_output_bytes?: number;
 }
 
 export interface DebateTiers {
@@ -46,8 +54,6 @@ export interface DebateTiers {
   tier2_challenger?: TierBinding;
   tier3_judge?: TierBinding;
   tier4_synthesis?: TierBinding;
-  tier2_reasoning?: TierBinding;
-  tier3_synthesis?: TierBinding;
 }
 
 export interface DebateConfig {
@@ -68,28 +74,72 @@ export interface ToolsConfig {
 
 export interface ScannerConfig {
   worker_count: number;
+  chunk_concurrency: number;
   max_queue_size: number;
   mock_on_missing_cli: boolean;
+  analysis?: {
+    max_retries?: number;
+    retry_backoff_ms?: number;
+    max_backoff_seconds?: number;
+    retryable_errors?: string[];
+  };
+  artifact?: {
+    normalization_enabled?: boolean;
+    max_schema_repair_attempts?: number;
+    schema_repair_timeout_seconds?: number;
+    schema_repair_resource?: string;
+    allow_candidate_salvage?: boolean;
+    max_quarantined_candidate_ratio?: number;
+  };
+  resume?: {
+    legacy_v2_policy?: string;
+  };
   throttling: {
     work_hours: WorkHoursConfig;
   };
+  opencode?: {
+    continuation: {
+      enabled: boolean;
+      max_seconds: number;
+    };
+  };
   debate: DebateConfig;
   tools: ToolsConfig;
+  determinism: {
+    enabled: boolean;
+    temperature: number;
+    bind_model_per_task: boolean;
+    prefer_seed: boolean;
+    seed_policy: string;
+  };
 }
 
 export interface GovernancePolicyConfig {
-  fingerprint: {
-    enabled: boolean;
-    similarity_threshold: number;
+  identity?: {
+    algorithm_version?: string;
+    max_candidates_per_observation?: number;
+    max_candidate_edges_per_report?: number;
+    max_assignment_width?: number;
+    strong_same_threshold?: number;
+    assign_band?: number;
+    reject_below?: number;
+    auto_resolve_gray_zone?: boolean;
+    ai_arbitration_confidence?: number;
+    gray_zone_fallback_merge_score?: number;
   };
-  lifecycle: {
-    scope_guard_enabled: boolean;
-    auto_resolve_missing: boolean;
-    diff_gate_strict: boolean;
+  arbitration?: {
+    enabled?: boolean;
+    max_calls_per_report: number;
+    context_lines: number;
+    timeout_seconds: number;
   };
-  feedback_memory: {
-    injection_enabled: boolean;
-    max_rules_injected: number;
+  lifecycle?: {
+    high_risk_severities?: string[];
+    resolved_rounds?: number;
+    dormant_rounds?: number;
+    obsolete_after_dormant_rounds?: number;
+    require_coverage?: boolean;
+    require_change?: boolean;
   };
 }
 

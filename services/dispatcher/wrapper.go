@@ -2,7 +2,7 @@ package dispatcher
 
 import (
 	"context"
-	"fmt"
+	"time"
 
 	"code-shield/services/invoker"
 )
@@ -64,22 +64,74 @@ func (w *DispatchingInvoker) Invoke(req invoker.AIRequest) error {
 	}
 
 	if d != nil && d.enabled {
+		queueStarted := time.Now()
+		tierName := resolveTierName(req, workCtx)
+		req.TierName = tierName
+		d.RecordDispatchStarted(tierName)
+		preferredResourceID := req.ResourceID
+		if preferredResourceID == "" && workCtx != nil {
+			preferredResourceID = workCtx.ResourceID
+		}
+
 		// 1. 申请 LLM 服务器资源（支持模型亲和性与容量加权优先分配）
-		res, modelName, err := d.AcquireWithPreference(ctx, backend, req.ModelName)
+		res, modelName, err := d.AcquireWithPreference(ctx, backend, req.ModelName, preferredResourceID)
 		if err != nil {
-			return fmt.Errorf("failed to acquire LLM server slot: %w", err)
+			d.RecordDispatchAcquireFailure(tierName, err)
+			return invoker.WrapClassifiedError(
+				invoker.ErrorClassResourceBusy,
+				err,
+				"failed to acquire LLM server slot",
+			)
 		}
 
 		if res != nil {
+			queueWait := time.Since(queueStarted)
+			if req.Metrics != nil {
+				req.Metrics.QueueWaitMs = queueWait.Milliseconds()
+			}
+			d.RecordDispatchAssigned(tierName, res, queueWait)
 			defer d.Release(res, backend)
-			if req.ModelName == "" && modelName != "" {
+			// The acquired slot is authoritative: if the logical tier selected a
+			// model whose pool filled between selection and acquisition, keep the
+			// backend request aligned with the resource that owns this slot.
+			if modelName != "" {
 				req.ModelName = modelName
 			}
-			leaseID := d.RegisterSlotLease(res, backend, modelName, workCtx)
+			driver := backend
+			if res.Driver != "" {
+				driver = res.Driver
+			}
+			obs := invoker.NewCallObservability(req, backend, driver)
+			// NewCallObservability receives AIRequest by value. The underlying
+			// invoker needs the same diagnostic object to attach stdout/stderr
+			// and native stream producers to the lease's ConsoleRing.
+			req.Observability = obs
+			leaseID := d.RegisterSlotLeaseWithQueue(res, backend, modelName, workCtx, tierName, queueStarted, obs)
 			if leaseID != "" {
 				defer d.UnregisterSlotLease(leaseID)
 			}
+
+			executionStarted := time.Now()
+			invokeErr := w.delegate.Invoke(req)
+			if req.Metrics != nil {
+				req.Metrics.DurationMs = time.Since(executionStarted).Milliseconds()
+			}
+			obs.FlushConsole()
+			obs.Finish(invokeErr)
+			d.RecordDispatchCompleted(tierName, res, time.Since(executionStarted), invokeErr)
+			d.RecordResourceResult(res, invokeErr)
+			d.CompleteSlotLease(leaseID, invokeErr)
+			return invokeErr
 		}
+
+		d.RecordDispatchPassthrough(tierName)
+		executionStarted := time.Now()
+		invokeErr := w.delegate.Invoke(req)
+		if req.Metrics != nil {
+			req.Metrics.DurationMs = time.Since(executionStarted).Milliseconds()
+		}
+		d.RecordDispatchCompleted(tierName, nil, time.Since(executionStarted), invokeErr)
+		return invokeErr
 	}
 
 	// 2. 调用底层真正的 AI 驱动

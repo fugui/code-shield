@@ -2,7 +2,10 @@ package queue
 
 import (
 	"code-shield/models"
+	"code-shield/services/engines/profile"
 	"code-shield/services/runner"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,14 +22,57 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func engineConfigHash(raw json.RawMessage) string {
+	var normalized any
+	if err := json.Unmarshal(raw, &normalized); err != nil {
+		sum := sha256.Sum256(raw)
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	canonical, err := json.Marshal(normalized)
+	if err != nil {
+		sum := sha256.Sum256(raw)
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(canonical)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
 // ErrSkipped 在前置条件未满足时返回，映射自 runner 子包
 var ErrSkipped = runner.ErrSkipped
 
-// workerNotifyChan 用于在新任务入队时即时唤醒空闲 Worker
-var workerNotifyChan = make(chan struct{}, 1)
+// ErrTaskCanceled 在任务启动前已被取消时返回，映射自 runner 子包
+var ErrTaskCanceled = runner.ErrTaskCanceled
 
-// workerCount 记录当前 Worker 池规模，恢复派发时用于广播唤醒全部 Worker
+// ErrResumeTerminalReport rejects attempts to resurrect an immutable historical report.
+var ErrResumeTerminalReport = errors.New("terminal task report cannot be resumed")
+
+// ErrResumeBusyReport rejects attempts to queue a task that is already executing.
+var ErrResumeBusyReport = errors.New("active task report cannot be resumed")
+
+// ErrResumeActiveLog rejects attempts to reset an execution log that is still active.
+var ErrResumeActiveLog = errors.New("active execution log cannot be resumed")
+
+// workerNotifyChan 用于在新任务入队时即时唤醒空闲 Worker；容量足够覆盖常见动态扩容广播
+var workerNotifyChan = make(chan struct{}, workerNotifyCapacity)
+
+// workerCount 记录当前 Worker 池目标规模；调整后无需重启服务即可生效
 var workerCount int
+
+// nextWorkerID 生成单调递增的 Worker ID，避免缩容后快速扩容时复用仍在收尾的 ID
+var nextWorkerID int
+
+// workerCountLock 保护 workerCount 的读取与热更新
+var workerCountLock sync.RWMutex
+
+// workerStops 保存每个活跃 Worker 的独立停止信号；关闭后 Worker 会在当前任务结束后退出
+var workerStops = make(map[int]chan struct{})
+
+// workerDones tracks worker goroutine completion so callers can safely wait for
+// a replaced worker to stop reading shared worker state.
+var workerDones = make(map[int]chan struct{})
+
+// workerNotifyCapacity 为唤醒广播预留容量，避免动态扩容后被 notify 信号占满
+const workerNotifyCapacity = 1024
 
 // isQueuePaused 内存级原子开关缓存（优雅排空模式/暂停派发）
 var isQueuePaused atomic.Bool
@@ -40,7 +87,10 @@ func SetQueuePaused(paused bool) {
 	isQueuePaused.Store(paused)
 	if !paused {
 		// 恢复派发时广播唤醒所有 Worker（每个 Worker 一个信号）
-		for i := 0; i < workerCount; i++ {
+		workerCountLock.RLock()
+		current := workerCount
+		workerCountLock.RUnlock()
+		for i := 0; i < current; i++ {
 			NotifyWorker()
 		}
 	}
@@ -70,17 +120,124 @@ func NotifyWorker() {
 
 // StartWorkerPool starts the background workers
 func StartWorkerPool(workers int) {
+	if workers < 1 {
+		workers = 1
+	}
+
+	workerCountLock.Lock()
+	oldStops := make([]chan struct{}, 0, len(workerStops))
+	for _, stop := range workerStops {
+		oldStops = append(oldStops, stop)
+	}
+
+	newStops := make(map[int]chan struct{}, workers)
+	for i := 0; i < workers; i++ {
+		nextWorkerID++
+		newStops[nextWorkerID] = make(chan struct{})
+	}
 	workerCount = workers
-	// 广播唤醒需要至少能容纳全部 Worker 的信号容量
-	capacity := workers
-	if capacity < 1 {
-		capacity = 1
+	workerStops = newStops
+	workerCountLock.Unlock()
+
+	for _, stop := range oldStops {
+		close(stop)
 	}
-	workerNotifyChan = make(chan struct{}, capacity)
+
 	log.Printf("[WorkerPool] Starting %d background workers (DB-backed persistent queue)\n", workers)
-	for i := 1; i <= workers; i++ {
-		go worker(i)
+	for id, stop := range newStops {
+		startWorker(id, stop)
 	}
+}
+
+// ResizeWorkerPool 热更新任务 Worker 并发数。
+// 扩容时立即启动新 Worker；缩容时不取消当前任务，空闲 Worker 或完成当前任务的 Worker 会自然退出。
+func ResizeWorkerPool(workers int) {
+	if workers < 1 {
+		workers = 1
+	}
+
+	workerCountLock.Lock()
+	old := workerCount
+	if old == workers {
+		workerCountLock.Unlock()
+		return
+	}
+	workerCount = workers
+	workerCountLock.Unlock()
+
+	if workers > old {
+		log.Printf("[WorkerPool] Scaling workers up: %d -> %d\n", old, workers)
+		newWorkers := make([]struct {
+			id   int
+			stop chan struct{}
+		}, 0, workers-old)
+		for i := old; i < workers; i++ {
+			workerCountLock.Lock()
+			nextWorkerID++
+			id := nextWorkerID
+			stop := make(chan struct{})
+			workerStops[id] = stop
+			workerCountLock.Unlock()
+			newWorkers = append(newWorkers, struct {
+				id   int
+				stop chan struct{}
+			}{id: id, stop: stop})
+		}
+		for _, w := range newWorkers {
+			startWorker(w.id, w.stop)
+		}
+		return
+	}
+
+	log.Printf("[WorkerPool] Scaling workers down: %d -> %d; running tasks will continue to completion\n", old, workers)
+	workerCountLock.Lock()
+	surplus := len(workerStops) - workers
+	stopsToClose := make([]chan struct{}, 0, max(surplus, 0))
+	for id, stop := range workerStops {
+		if len(stopsToClose) >= surplus {
+			break
+		}
+		delete(workerStops, id)
+		stopsToClose = append(stopsToClose, stop)
+	}
+	workerCountLock.Unlock()
+
+	for _, stop := range stopsToClose {
+		close(stop)
+	}
+}
+
+// workerPoolSize 返回当前目标 Worker 数
+func workerPoolSize() int {
+	workerCountLock.RLock()
+	defer workerCountLock.RUnlock()
+	return workerCount
+}
+
+// WorkerPoolSize 返回当前目标 Worker 数，供调试与监控接口使用
+func WorkerPoolSize() int {
+	return workerPoolSize()
+}
+
+// removeWorker 在 Worker 退出时清理停止信号映射
+func removeWorker(id int, stop <-chan struct{}) {
+	workerCountLock.Lock()
+	if workerStops[id] == stop {
+		delete(workerStops, id)
+	}
+	delete(workerDones, id)
+	workerCountLock.Unlock()
+}
+
+func startWorker(id int, stop <-chan struct{}) {
+	done := make(chan struct{})
+	workerCountLock.Lock()
+	workerDones[id] = done
+	workerCountLock.Unlock()
+	go func() {
+		defer close(done)
+		worker(id, stop)
+	}()
 }
 
 // EnqueueTask adds a new task to the queue and creates a pending TaskExecutionLog
@@ -90,30 +247,7 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 
 // EnqueueTaskWithTriggerLog supports linking a parent TaskTriggerLog and returns true if enqueued successfully
 func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) bool {
-	// 双重去重保护：检查 ExecutionLog 和 TaskReport，防止用户删除 pending 后 Cron 重入队风暴。
-	// 1. 检查执行日志：是否有未完成的执行记录
-	var logCount int64
-	models.DB.Model(&models.TaskExecutionLog{}).
-		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
-			repoID, taskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
-		Count(&logCount)
-	if logCount > 0 {
-		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active execution log.\n", repoID, taskTypeID)
-		return false
-	}
-
-	// 2. 检查任务报告：是否有尚未完成的报告
-	var reportCount int64
-	models.DB.Model(&models.TaskReport{}).
-		Where("repo_id = ? AND task_type_id = ? AND status NOT IN (?, ?, ?)",
-			repoID, taskTypeID, models.StatusSuccess, models.StatusFailed, models.StatusSkipped).
-		Count(&reportCount)
-	if reportCount > 0 {
-		log.Printf("[WorkerPool] Skipped enqueuing Repo %d (TaskType %d) — already has active task report.\n", repoID, taskTypeID)
-		return false
-	}
-
-	// 3. 检查队列最大排队上限 (MaxQueueSize，-1 表示不限)
+	// 检查队列最大排队上限 (MaxQueueSize，-1 表示不限)
 	if models.AppConfig.Server.MaxQueueSize > 0 {
 		var pendingCount int64
 		models.DB.Model(&models.TaskExecutionLog{}).
@@ -126,39 +260,119 @@ func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint
 		}
 	}
 
-	// 1. Create a pending execution log
-	execLog := models.TaskExecutionLog{
-		ScheduleID:     scheduleID,
-		TriggerLogID:   triggerLogID,
-		RepoID:         repoID,
-		TaskTypeID:     taskTypeID,
-		TriggerType:    triggerType,
-		Status:         models.StatusPending,
-		StatusPriority: models.GetStatusPriority(models.StatusPending),
-		StartTime:      time.Now(),
-	}
+	var execLog models.TaskExecutionLog
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		var activeLogCount int64
+		if err := tx.Model(&models.TaskExecutionLog{}).
+			Where("repo_id = ? AND task_type_id = ? AND status NOT IN ?",
+				repoID, taskTypeID, models.TerminalTaskStatuses()).
+			Count(&activeLogCount).Error; err != nil {
+			return fmt.Errorf("check active execution log: %w", err)
+		}
+		if activeLogCount > 0 {
+			return fmt.Errorf("repo %d task type %d already has an active execution log", repoID, taskTypeID)
+		}
 
-	if err := models.DB.Create(&execLog).Error; err != nil {
-		log.Printf("[WorkerPool] Failed to create TaskExecutionLog for Repo %d: %v\n", repoID, err)
+		var activeReportCount int64
+		if err := tx.Model(&models.TaskReport{}).
+			Where("repo_id = ? AND task_type_id = ? AND status NOT IN ?",
+				repoID, taskTypeID, models.TerminalTaskStatuses()).
+			Count(&activeReportCount).Error; err != nil {
+			return fmt.Errorf("check active task report: %w", err)
+		}
+		if activeReportCount > 0 {
+			return fmt.Errorf("repo %d task type %d already has an active task report", repoID, taskTypeID)
+		}
+
+		var taskType models.TaskType
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&taskType, taskTypeID).Error; err != nil {
+			return fmt.Errorf("load task type: %w", err)
+		}
+		parsedProfile, scanProfileHash, err := profile.Parse(json.RawMessage(taskType.EngineConfig))
+		if err != nil {
+			return fmt.Errorf("invalid engine config: %w", err)
+		}
+		scanProfileRaw, err := json.Marshal(parsedProfile)
+		if err != nil {
+			return fmt.Errorf("encode scan profile snapshot: %w", err)
+		}
+		revisionContent, err := buildTaskTypeRevision(taskType)
+		if err != nil {
+			return fmt.Errorf("build task type revision: %w", err)
+		}
+		revision, err := ensureTaskTypeRevision(tx, revisionContent)
+		if err != nil {
+			return fmt.Errorf("ensure task type revision: %w", err)
+		}
+		if err := tx.Model(&models.TaskType{}).Where("id = ?", taskType.ID).
+			Update("current_revision_id", revision.ID).Error; err != nil {
+			return fmt.Errorf("bind current task type revision: %w", err)
+		}
+		executionSnapshot, err := buildExecutionSnapshot(revision, scanProfileRaw, scanProfileHash)
+		if err != nil {
+			return fmt.Errorf("build execution snapshot: %w", err)
+		}
+
+		execLog = models.TaskExecutionLog{
+			ScheduleID:     scheduleID,
+			TriggerLogID:   triggerLogID,
+			RepoID:         repoID,
+			TaskTypeID:     taskTypeID,
+			TriggerType:    triggerType,
+			Status:         models.StatusPending,
+			StatusPriority: models.GetStatusPriority(models.StatusPending),
+			StartTime:      time.Now(),
+		}
+		if err := tx.Create(&execLog).Error; err != nil {
+			return fmt.Errorf("create execution log: %w", err)
+		}
+
+		report := models.TaskReport{
+			RepoID:           repoID,
+			TaskTypeID:       taskTypeID,
+			Status:           models.StatusQueued,
+			CloneStatus:      models.StatusPending,
+			EngineMode:       taskType.EngineMode,
+			ScanProfile:      scanProfileRaw,
+			ScanProfileHash:  scanProfileHash,
+			PromptVersion:    "v1",
+			EngineConfigHash: revision.EngineConfigHash,
+			PlannerVersion:   "v1",
+
+			AssessmentConfig:         datatypes.JSON(executionSnapshot.Snapshot.AssessmentConfig),
+			AssessmentConfigHash:     executionSnapshot.Snapshot.AssessmentConfigHash,
+			PromptContent:            executionSnapshot.Snapshot.PromptContent,
+			PromptContentHash:        executionSnapshot.Snapshot.PromptContentHash,
+			Categories:               datatypes.JSON(marshalSnapshotProjection(executionSnapshot.Snapshot.Categories)),
+			CategorySchemaHash:       executionSnapshot.Snapshot.CategorySchemaHash,
+			TaxonomySchemaVersion:    executionSnapshot.Snapshot.TaxonomySchemaVersion,
+			TaxonomyHash:             executionSnapshot.Snapshot.TaxonomyHash,
+			DomainFamily:             executionSnapshot.Snapshot.DomainFamily,
+			DefenseDimensions:        datatypes.JSON(executionSnapshot.Snapshot.DefenseDimensions),
+			GovernanceMode:           executionSnapshot.Snapshot.GovernanceMode,
+			DomainLabel:              executionSnapshot.Snapshot.DomainLabel,
+			TargetSemantics:          datatypes.JSON(executionSnapshot.Snapshot.TargetSemantics),
+			DisplaySemantics:         datatypes.JSON(executionSnapshot.Snapshot.DisplaySemantics),
+			PostprocessContent:       executionSnapshot.Snapshot.PostprocessContent,
+			PostprocessHash:          executionSnapshot.Snapshot.PostprocessHash,
+			TaskTypeRevisionID:       &revision.ID,
+			ExecutionSnapshot:        datatypes.JSON(executionSnapshot.Encoded),
+			ExecutionSnapshotVersion: executionSnapshotVersion,
+			ExecutionSnapshotState:   "complete",
+		}
+		if err := tx.Create(&report).Error; err != nil {
+			return fmt.Errorf("create task report: %w", err)
+		}
+		if err := tx.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).
+			Update("task_report_id", report.ID).Error; err != nil {
+			return fmt.Errorf("link execution log: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("[WorkerPool] Failed to enqueue Repo %d (TaskType %d): %v\n", repoID, taskTypeID, err)
 		return false
 	}
-
-	// 2. Create the initial queued TaskReport
-	report := models.TaskReport{
-		RepoID:      repoID,
-		TaskTypeID:  taskTypeID,
-		BaseCommit:  "HEAD~1",
-		HeadCommit:  "HEAD",
-		Status:      models.StatusQueued,
-		CloneStatus: models.StatusPending,
-	}
-	if err := models.DB.Create(&report).Error; err != nil {
-		log.Printf("[WorkerPool] Failed to create TaskReport for Repo %d: %v\n", repoID, err)
-		return false
-	}
-
-	// Link the execution log to its task report
-	models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Update("task_report_id", report.ID)
 
 	// 触发 Worker 唤醒
 	NotifyWorker()
@@ -179,42 +393,70 @@ func EnqueueResumeTask(report models.TaskReport) error {
 		}
 	}
 
-	// 将关联的执行日志置为 pending 并标记为恢复任务，供 Worker 原子抢占
 	var execLog models.TaskExecutionLog
-	err := models.DB.Where("task_report_id = ?", report.ID).First(&execLog).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 容错：执行日志丢失时补建一条恢复日志，保证队列链路完整
-		execLog = models.TaskExecutionLog{
-			RepoID:         report.RepoID,
-			TaskReportID:   &report.ID,
-			TaskTypeID:     report.TaskTypeID,
-			TriggerType:    "resume",
-			Status:         models.StatusPending,
-			StatusPriority: models.GetStatusPriority(models.StatusPending),
-			IsResume:       true,
-			StartTime:      time.Now(),
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		var lockedReport models.TaskReport
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedReport, report.ID).Error; err != nil {
+			return fmt.Errorf("lock task report: %w", err)
 		}
-		if err := models.DB.Create(&execLog).Error; err != nil {
-			return fmt.Errorf("创建恢复任务执行日志失败: %w", err)
+		if models.IsTerminalTaskStatus(lockedReport.Status) {
+			return fmt.Errorf("%w: report %d status %q", ErrResumeTerminalReport, report.ID, lockedReport.Status)
 		}
-	} else if err != nil {
-		return fmt.Errorf("查询恢复任务执行日志失败: %w", err)
-	} else {
-		// 复用原执行日志，重置为 pending 并标记恢复
-		if err := models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
-			"status":          models.StatusPending,
-			"status_priority": models.GetStatusPriority(models.StatusPending),
-			"error_message":   "",
-			"end_time":        nil,
-			"is_resume":       true,
-		}).Error; err != nil {
-			return fmt.Errorf("重置恢复任务执行日志失败: %w", err)
+		if models.IsBusyTaskReportStatus(lockedReport.Status) {
+			return fmt.Errorf("%w: report %d status %q", ErrResumeBusyReport, report.ID, lockedReport.Status)
 		}
-	}
 
-	// 更新报告状态为 queued，表示排队等待执行
-	if err := models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Update("status", models.StatusQueued).Error; err != nil {
-		return fmt.Errorf("更新任务报告状态失败: %w", err)
+		var lockedLog models.TaskExecutionLog
+		logErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("task_report_id = ?", report.ID).
+			First(&lockedLog).Error
+		if errors.Is(logErr, gorm.ErrRecordNotFound) {
+			// 容错：执行日志丢失时补建一条恢复日志，保证队列链路完整
+			lockedLog = models.TaskExecutionLog{
+				RepoID:         lockedReport.RepoID,
+				TaskReportID:   &lockedReport.ID,
+				TaskTypeID:     lockedReport.TaskTypeID,
+				TriggerType:    "resume",
+				Status:         models.StatusPending,
+				StatusPriority: models.GetStatusPriority(models.StatusPending),
+				IsResume:       true,
+				StartTime:      time.Now(),
+			}
+			if err := tx.Create(&lockedLog).Error; err != nil {
+				return fmt.Errorf("创建恢复任务执行日志失败: %w", err)
+			}
+		} else if logErr != nil {
+			return fmt.Errorf("查询恢复任务执行日志失败: %w", logErr)
+		} else if !models.IsTerminalTaskStatus(lockedLog.Status) {
+			return fmt.Errorf("%w: log %d status %q", ErrResumeActiveLog, lockedLog.ID, lockedLog.Status)
+		} else {
+			if err := tx.Model(&models.TaskExecutionLog{}).Where("id = ?", lockedLog.ID).Updates(map[string]interface{}{
+				"status":          models.StatusPending,
+				"status_priority": models.GetStatusPriority(models.StatusPending),
+				"error_message":   "",
+				"end_time":        nil,
+				"is_resume":       true,
+			}).Error; err != nil {
+				return fmt.Errorf("重置恢复任务执行日志失败: %w", err)
+			}
+			lockedLog.Status = models.StatusPending
+		}
+
+		result := tx.Model(&models.TaskReport{}).
+			Where("id = ? AND status NOT IN ?", lockedReport.ID, models.TerminalTaskStatuses()).
+			Update("status", models.StatusQueued)
+		if result.Error != nil {
+			return fmt.Errorf("更新任务报告状态失败: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("%w: report %d", ErrResumeTerminalReport, lockedReport.ID)
+		}
+
+		execLog = lockedLog
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	NotifyWorker()
@@ -266,6 +508,17 @@ func fetchNextPendingTask() (*Task, bool) {
 			return err
 		}
 
+		// Reload the claimed row on the transaction connection. PostgreSQL
+		// may route subsequent reads through another pool connection whose
+		// snapshot misses the task_report_id link written immediately before
+		// the worker was notified.
+		if err := tx.
+			Preload("Repo").
+			Preload("Schedule").
+			First(&execLog, execLog.ID).Error; err != nil {
+			return err
+		}
+
 		found = true
 		return nil
 	})
@@ -274,10 +527,25 @@ func fetchNextPendingTask() (*Task, bool) {
 		return nil, false
 	}
 
+	failClaimedTask := func(message string) {
+		now := time.Now()
+		models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
+			"status":          models.StatusFailed,
+			"status_priority": models.GetStatusPriority(models.StatusFailed),
+			"error_message":   message,
+			"end_time":        &now,
+		})
+	}
+
 	// 反查关联的 TaskReport
+	if execLog.TaskReportID == nil {
+		failClaimedTask(fmt.Sprintf("task report is missing for execution log %d", execLog.ID))
+		return nil, false
+	}
 	var report models.TaskReport
-	if execLog.TaskReportID != nil {
-		models.DB.First(&report, *execLog.TaskReportID)
+	if err := models.DB.First(&report, *execLog.TaskReportID).Error; err != nil {
+		failClaimedTask(fmt.Sprintf("report %d not found: %v", *execLog.TaskReportID, err))
+		return nil, false
 	}
 
 	var runParams models.RunParams
@@ -302,12 +570,24 @@ func taskFromExecLog(execLog *models.TaskExecutionLog, report models.TaskReport,
 	}
 }
 
-func worker(id int) {
+func worker(id int, stop <-chan struct{}) {
+	defer removeWorker(id, stop)
+
 	for {
+		select {
+		case <-stop:
+			log.Printf("[Worker %d] Stopped gracefully after completing current work\n", id)
+			return
+		default:
+		}
+
 		task, found := fetchNextPendingTask()
 		if !found {
 			// 当前无任务，等待新任务通知信号，或每 2 秒自愈轮询
 			select {
+			case <-stop:
+				log.Printf("[Worker %d] Stopped gracefully while idle\n", id)
+				return
 			case <-workerNotifyChan:
 			case <-time.After(2 * time.Second):
 			}
@@ -319,7 +599,7 @@ func worker(id int) {
 
 		var err error
 		if task.IsResume {
-			err = runner.ResumeFailedChunks(task.ReportID)
+			err = runner.ResumeChunkedTask(task.ReportID)
 		} else {
 			err = runner.RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
 		}
@@ -333,13 +613,32 @@ func worker(id int) {
 				log.Printf("[Worker %d] Resume task completed for ReportID %d\n", id, task.ReportID)
 			}
 		} else if errors.Is(err, ErrSkipped) {
-			log.Printf("[Worker %d] Skipping Repo %d — precondition not met.\n", id, task.RepoID)
-			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":          models.StatusSkipped,
-				"status_priority": models.GetStatusPriority(models.StatusSkipped),
-				"error_message":   "前置条件未满足，跳过执行",
-				"end_time":        &now,
+			log.Printf("[Worker %d] Skipping Repo %d — scope planner skipped task.\n", id, task.RepoID)
+			models.DB.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
+					"status":          models.StatusSkipped,
+					"status_priority": models.GetStatusPriority(models.StatusSkipped),
+					"error_message":   "scope planner skipped task",
+					"end_time":        &now,
+				}).Error; err != nil {
+					return err
+				}
+				return tx.Model(&models.TaskReport{}).Where("id = ? AND status NOT IN ?", task.ReportID, models.TerminalTaskStatuses()).Update("status", models.StatusSkipped).Error
 			})
+		} else if errors.Is(err, ErrTaskCanceled) {
+			log.Printf("[Worker %d] Task canceled before execution for Repo %d (TaskType %d, LogID: %d, ReportID: %d)\n",
+				id, task.RepoID, task.TaskTypeID, task.LogID, task.ReportID)
+			if task.LogID != 0 {
+				models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
+					"status":          models.StatusFailed,
+					"status_priority": models.GetStatusPriority(models.StatusFailed),
+					"error_message":   "任务已在删除前取消",
+					"end_time":        &now,
+				})
+			}
+			models.DB.Model(&models.TaskReport{}).
+				Where("id = ? AND status NOT IN ?", task.ReportID, models.TerminalTaskStatuses()).
+				Updates(map[string]interface{}{"status": models.StatusFailed})
 		} else if err != nil {
 			log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
 			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
@@ -388,7 +687,7 @@ func RecoverPendingTasks(action string) {
 	}
 
 	var staleReports []models.TaskReport
-	terminatedStatuses := []string{models.StatusSuccess, models.StatusFailed, models.StatusSkipped}
+	terminatedStatuses := models.TerminalTaskStatuses()
 
 	// 1. 查询所有未完成的核心任务报告
 	err := models.DB.
@@ -431,6 +730,26 @@ func RecoverPendingTasks(action string) {
 
 	// 默认恢复 (recover)
 	recovered := 0
+	type bundleResumeKey struct {
+		taskTypeName string
+		engineMode   string
+	}
+	bundleResumeArtifacts := make(map[bundleResumeKey]map[uint]bool)
+	for _, report := range staleReports {
+		key := bundleResumeKey{taskTypeName: report.TaskType.Name, engineMode: report.TaskType.EngineMode}
+		if _, exists := bundleResumeArtifacts[key]; exists {
+			continue
+		}
+
+		reportIDs := make([]uint, 0, len(staleReports))
+		for _, candidate := range staleReports {
+			if candidate.TaskType.Name == key.taskTypeName && candidate.TaskType.EngineMode == key.engineMode {
+				reportIDs = append(reportIDs, candidate.ID)
+			}
+		}
+		bundleResumeArtifacts[key] = runner.FindBundleResumeArtifacts(key.taskTypeName, key.engineMode, reportIDs)
+	}
+
 	for _, report := range staleReports {
 		// 2. 反查对应的执行日志
 		var execLog models.TaskExecutionLog
@@ -452,27 +771,39 @@ func RecoverPendingTasks(action string) {
 			}
 		}
 
-		// 3. 清理已执行到一半（非排队、非就绪）任务的物理磁盘报告文件
-		if report.Status != models.StatusQueued && report.Status != models.StatusPending {
+		key := bundleResumeKey{taskTypeName: report.TaskType.Name, engineMode: report.TaskType.EngineMode}
+		hasResumeArtifacts := bundleResumeArtifacts[key][report.ID]
+
+		// 3. 清理已执行到一半（非排队、非就绪）任务的物理磁盘报告文件；
+		// 存在 bundle checkpoint 时保留产物，交给统一恢复入口复用。
+		if report.Status != models.StatusQueued && report.Status != models.StatusPending && !hasResumeArtifacts {
 			CleanReportFiles(report.TaskType.Name, report.ID)
 		}
-		// 4. 重置 Report 和 Log 的状态为 pending / queued
-		models.DB.Model(&models.TaskReport{}).Where("id = ?", report.ID).Updates(map[string]interface{}{
+		// 4. 重置 Report 和 Log 的状态为 pending / queued；
+		// 可恢复任务保留 report_path，避免原 checkpoint 目录在恢复时漂移。
+		reportUpdates := map[string]interface{}{
 			"status":           models.StatusQueued,
 			"clone_status":     models.StatusPending,
 			"total_chunks":     0,
 			"processed_chunks": 0,
 			"success_chunks":   0,
 			"ai_summary":       "",
-			"report_path":      "",
 			"score":            0,
 			"metrics":          datatypes.JSON("null"),
-		})
+		}
+		if !hasResumeArtifacts {
+			reportUpdates["report_path"] = ""
+		}
+		if _, err := models.UpdateActiveTaskReport(models.DB, report.ID, reportUpdates); err != nil {
+			log.Printf("[Recovery] Skip immutable report %d: %v", report.ID, err)
+			continue
+		}
 		models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", execLog.ID).Updates(map[string]interface{}{
 			"status":          models.StatusPending,
 			"status_priority": models.GetStatusPriority(models.StatusPending),
 			"error_message":   "",
 			"end_time":        nil,
+			"is_resume":       hasResumeArtifacts,
 		})
 
 		recovered++
@@ -506,7 +837,8 @@ func CleanReportFiles(taskTypeName string, reportID uint) {
 			strings.Contains(name, fmt.Sprintf("summary-%d-", reportID)) ||
 			strings.Contains(name, fmt.Sprintf("synthesis-input-%d.", reportID)) ||
 			strings.Contains(name, fmt.Sprintf("chunk-%d-", reportID)) ||
-			(info.IsDir() && strings.HasPrefix(name, fmt.Sprintf("chunks-%d-", reportID))) {
+			(info.IsDir() && (strings.HasPrefix(name, fmt.Sprintf("chunks-%d-", reportID)) ||
+				strings.HasPrefix(name, fmt.Sprintf("debate-chunks-%d-", reportID)))) {
 			isTarget = true
 		}
 

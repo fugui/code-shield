@@ -10,29 +10,40 @@ import (
 	"sort"
 	"strings"
 
+	"code-shield/services/coverage"
 	"code-shield/services/engines"
 )
 
 // SemanticBundle 语义感知分片数据包
 type SemanticBundle struct {
-	Name          string            `json:"name"`           // 分片名称
-	PrimaryFiles  []string          `json:"primary_files"`  // 核心实现文件 (.cc/.cpp/.go/.java)
-	HeaderFiles   []string          `json:"header_files"`   // 跨目录配对头文件 (.h/.hpp)
-	AllFiles      []string          `json:"all_files"`      // 分片包含的全部有效文件
-	MacroContext  map[string]string `json:"macro_context"`  // 提取的构建宏定义 {"FMT_USE_GRISU": "0"}
-	NegativeRules []string          `json:"negative_rules"` // 历史负样本与例外规则
-	HeaderOutline string            `json:"header_outline"` // 基础公用头文件声明摘要 (Header Outline)
+	Name          string              `json:"name"`           // 分片名称
+	PrimaryFiles  []string            `json:"primary_files"`  // 核心实现文件 (.cc/.cpp/.go/.java)
+	HeaderFiles   []string            `json:"header_files"`   // 跨目录配对头文件 (.h/.hpp)
+	AllFiles      []string            `json:"all_files"`      // 分片包含的全部有效文件
+	MacroContext  map[string]string   `json:"macro_context"`  // 提取的构建宏定义 {"FMT_USE_GRISU": "0"}
+	NegativeRules []string            `json:"negative_rules"` // 历史负样本与例外规则
+	HeaderOutline string              `json:"header_outline"` // 基础公用头文件声明摘要 (Header Outline)
+	PrimaryUnits  []coverage.PlanUnit `json:"primary_units,omitempty"`
 }
 
 // BuildSemanticBundles 扫描仓库文件并构建语义感知分片
 func BuildSemanticBundles(codesPath string, cfg engines.ChunkConfig, targetScope string, negativeRules []string) ([]SemanticBundle, error) {
+	bundles, _, err := BuildSemanticBundlesWithPlan(codesPath, cfg, targetScope, negativeRules)
+	return bundles, err
+}
+
+func BuildSemanticBundlesWithPlan(codesPath string, cfg engines.ChunkConfig, targetScope string, negativeRules []string) ([]SemanticBundle, coverage.ScanPlan, error) {
 	// 1. 获取过滤后的源文件列表
-	filteredFiles, err := GetFilteredFiles(codesPath, cfg, targetScope)
+	plan, err := PlanFiles(codesPath, cfg, targetScope)
 	if err != nil {
-		return nil, err
+		return nil, plan, err
+	}
+	filteredFiles := make([]string, 0, len(plan.Selected))
+	for _, planned := range plan.Selected {
+		filteredFiles = append(filteredFiles, planned.Path)
 	}
 	if len(filteredFiles) == 0 {
-		return []SemanticBundle{}, nil
+		return []SemanticBundle{}, plan, nil
 	}
 
 	// 2. 提取全局构建宏与配置
@@ -51,6 +62,163 @@ func BuildSemanticBundles(codesPath string, cfg engines.ChunkConfig, targetScope
 		bundles[i].NegativeRules = negativeRules
 	}
 
+	return bundles, plan, nil
+}
+
+func BuildSemanticBundlesFromPlan(codesPath string, plan coverage.ScanPlan, cfg engines.ChunkConfig, negativeRules []string) ([]SemanticBundle, error) {
+	filteredFiles := make([]string, 0, len(plan.Selected))
+	for _, planned := range plan.Selected {
+		filteredFiles = append(filteredFiles, planned.Path)
+	}
+	if len(filteredFiles) == 0 {
+		return []SemanticBundle{}, nil
+	}
+
+	macroContext := ExtractGlobalMacros(codesPath)
+	headerOutline := ExtractHeaderOutline(codesPath, filteredFiles)
+	bundles := ProjectAndGroupFiles(filteredFiles, cfg)
+	for i := range bundles {
+		bundles[i].MacroContext = macroContext
+		bundles[i].HeaderOutline = headerOutline
+		bundles[i].NegativeRules = negativeRules
+	}
+	return bundles, nil
+}
+
+// BuildPrimaryUnitBundles groups specialized primary units by their source file.
+// The manifest remains global; bundles only carry the subset needed by one call.
+func BuildPrimaryUnitBundles(
+	codesPath string,
+	units []coverage.PlanUnit,
+	maxUnits int,
+	negativeRules []string,
+) ([]SemanticBundle, error) {
+	if len(units) == 0 {
+		return []SemanticBundle{}, nil
+	}
+	if maxUnits <= 0 {
+		maxUnits = 10
+	}
+
+	orderedPaths := make([]string, 0)
+	byPath := make(map[string][]coverage.PlanUnit)
+	for _, unit := range units {
+		if unit.Path == "" || unit.ID == "" {
+			return nil, fmt.Errorf("primary unit %q has an empty path or id", unit.ID)
+		}
+		if _, exists := byPath[unit.Path]; !exists {
+			orderedPaths = append(orderedPaths, unit.Path)
+		}
+		byPath[unit.Path] = append(byPath[unit.Path], unit)
+	}
+	sort.Strings(orderedPaths)
+
+	paths := make([]string, 0, len(orderedPaths))
+	for _, path := range orderedPaths {
+		sort.SliceStable(byPath[path], func(left, right int) bool {
+			if byPath[path][left].StartLine != byPath[path][right].StartLine {
+				return byPath[path][left].StartLine < byPath[path][right].StartLine
+			}
+			return byPath[path][left].ID < byPath[path][right].ID
+		})
+		paths = append(paths, path)
+	}
+
+	macroContext := ExtractGlobalMacros(codesPath)
+	headerOutline := ExtractHeaderOutline(codesPath, paths)
+	bundles := make([]SemanticBundle, 0)
+	for _, path := range orderedPaths {
+		pathUnits := byPath[path]
+		bundleFiles := make([]string, 0, 1)
+		if _, err := os.Stat(filepath.Join(codesPath, filepath.FromSlash(path))); err == nil {
+			bundleFiles = append(bundleFiles, path)
+		}
+		for start := 0; start < len(pathUnits); start += maxUnits {
+			end := start + maxUnits
+			if end > len(pathUnits) {
+				end = len(pathUnits)
+			}
+			bundles = append(bundles, SemanticBundle{
+				Name:          fmt.Sprintf("%s-%03d", pathUnits[start].Kind, len(bundles)+1),
+				PrimaryFiles:  []string{path},
+				AllFiles:      []string{path},
+				MacroContext:  macroContext,
+				HeaderOutline: headerOutline,
+				NegativeRules: append([]string(nil), negativeRules...),
+				PrimaryUnits:  append([]coverage.PlanUnit(nil), pathUnits[start:end]...),
+			})
+		}
+	}
+	return bundles, nil
+}
+
+func BuildChangeUnitBundles(
+	codesPath string,
+	units []coverage.PlanUnit,
+	maxUnits int,
+	negativeRules []string,
+) ([]SemanticBundle, error) {
+	if len(units) == 0 {
+		return []SemanticBundle{}, nil
+	}
+	if maxUnits <= 0 {
+		maxUnits = 8
+	}
+
+	orderedPaths := make([]string, 0)
+	byPath := make(map[string][]coverage.PlanUnit)
+	for _, unit := range units {
+		if unit.ID == "" || unit.Path == "" || unit.Kind != coverage.PlanUnitChangeHunk {
+			return nil, fmt.Errorf("invalid change primary unit %q", unit.ID)
+		}
+		if len(unit.Evidence) == 0 {
+			return nil, fmt.Errorf("change primary unit %q has no evidence pack", unit.ID)
+		}
+		if _, exists := byPath[unit.Path]; !exists {
+			orderedPaths = append(orderedPaths, unit.Path)
+		}
+		byPath[unit.Path] = append(byPath[unit.Path], unit)
+	}
+	sort.Strings(orderedPaths)
+
+	paths := make([]string, 0, len(orderedPaths))
+	for _, path := range orderedPaths {
+		sort.SliceStable(byPath[path], func(left, right int) bool {
+			if byPath[path][left].StartLine != byPath[path][right].StartLine {
+				return byPath[path][left].StartLine < byPath[path][right].StartLine
+			}
+			return byPath[path][left].ID < byPath[path][right].ID
+		})
+		if _, err := os.Stat(filepath.Join(codesPath, filepath.FromSlash(path))); err == nil {
+			paths = append(paths, path)
+		}
+	}
+
+	macroContext := ExtractGlobalMacros(codesPath)
+	headerOutline := ExtractHeaderOutline(codesPath, paths)
+	bundles := make([]SemanticBundle, 0)
+	for _, path := range orderedPaths {
+		pathUnits := byPath[path]
+		bundleFiles := make([]string, 0, 1)
+		if _, err := os.Stat(filepath.Join(codesPath, filepath.FromSlash(path))); err == nil {
+			bundleFiles = append(bundleFiles, path)
+		}
+		for start := 0; start < len(pathUnits); start += maxUnits {
+			end := start + maxUnits
+			if end > len(pathUnits) {
+				end = len(pathUnits)
+			}
+			bundles = append(bundles, SemanticBundle{
+				Name:          fmt.Sprintf("change-%03d-%s", len(bundles)+1, path),
+				PrimaryFiles:  []string{path},
+				AllFiles:      bundleFiles,
+				MacroContext:  macroContext,
+				HeaderOutline: headerOutline,
+				NegativeRules: append([]string(nil), negativeRules...),
+				PrimaryUnits:  append([]coverage.PlanUnit(nil), pathUnits[start:end]...),
+			})
+		}
+	}
 	return bundles, nil
 }
 
@@ -183,6 +351,102 @@ func GetDirectoryChunkName(file string, depth int) string {
 		depth = len(parts) - 1
 	}
 	return filepath.Join(parts[:depth]...)
+}
+
+// SplitSemanticBundleInHalf splits a semantic bundle into two smaller bundles.
+// It keeps same-basename implementation/header files together so later
+// evidence extraction still sees the source/header pair.
+func SplitSemanticBundleInHalf(bundle SemanticBundle) []SemanticBundle {
+	files := bundle.AllFiles
+	if len(files) == 0 {
+		files = append(append([]string{}, bundle.PrimaryFiles...), bundle.HeaderFiles...)
+	}
+	if len(files) < 2 {
+		return nil
+	}
+
+	headerMap := make(map[string][]string)
+	isHeader := make(map[string]bool)
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f))
+		if ext == ".h" || ext == ".hpp" || ext == ".hxx" {
+			isHeader[f] = true
+			base := strings.TrimSuffix(filepath.Base(f), ext)
+			headerMap[base] = append(headerMap[base], f)
+		}
+	}
+
+	type fileUnit struct {
+		primary []string
+		headers []string
+	}
+	var units []fileUnit
+	pairedHeaders := make(map[string]bool)
+	for _, f := range files {
+		if isHeader[f] {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(f))
+		base := strings.TrimSuffix(filepath.Base(f), ext)
+		unit := fileUnit{primary: []string{f}}
+		for _, h := range headerMap[base] {
+			if !pairedHeaders[h] {
+				unit.headers = append(unit.headers, h)
+				pairedHeaders[h] = true
+			}
+		}
+		units = append(units, unit)
+	}
+	for _, f := range files {
+		if isHeader[f] && !pairedHeaders[f] {
+			units = append(units, fileUnit{headers: []string{f}})
+			pairedHeaders[f] = true
+		}
+	}
+	if len(units) < 2 {
+		return nil
+	}
+
+	// Contiguous halves preserve the original semantic ordering better than
+	// round-robin distribution. Split by file count rather than unit count:
+	// a unit may contain a primary plus several same-basename headers, so
+	// splitting units by count alone could otherwise create an empty half.
+	totalFiles := len(files)
+	targetFiles := (totalFiles + 1) / 2
+	splitAt := 0
+	firstHalfFiles := 0
+	for splitAt < len(units)-1 && firstHalfFiles < targetFiles {
+		firstHalfFiles += len(units[splitAt].primary) + len(units[splitAt].headers)
+		splitAt++
+	}
+	if splitAt <= 0 {
+		splitAt = 1
+	}
+	if splitAt >= len(units) {
+		splitAt = len(units) - 1
+	}
+	halves := [][]fileUnit{units[:splitAt], units[splitAt:]}
+
+	subBundles := make([]SemanticBundle, 0, len(halves))
+	for i, half := range halves {
+		var primary, headers, all []string
+		for _, unit := range half {
+			primary = append(primary, unit.primary...)
+			headers = append(headers, unit.headers...)
+			all = append(all, unit.primary...)
+			all = append(all, unit.headers...)
+		}
+		subBundles = append(subBundles, SemanticBundle{
+			Name:          fmt.Sprintf("%s-split%d", bundle.Name, i+1),
+			PrimaryFiles:  primary,
+			HeaderFiles:   headers,
+			AllFiles:      all,
+			MacroContext:  bundle.MacroContext,
+			NegativeRules: bundle.NegativeRules,
+			HeaderOutline: bundle.HeaderOutline,
+		})
+	}
+	return subBundles
 }
 
 // ExtractGlobalMacros 扫描构建文件（如 CMakeLists.txt 等）提取宏开关

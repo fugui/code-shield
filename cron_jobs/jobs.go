@@ -8,6 +8,7 @@ import (
 
 	"code-shield/models"
 	"code-shield/services"
+	"code-shield/services/governance"
 
 	"github.com/robfig/cron/v3"
 )
@@ -36,7 +37,50 @@ func StartCronJobs() {
 		log.Println("[Cron] Registered daily temp artifact disk GC cron (03:30 AM).")
 	}
 
+	_, err = globalCron.AddFunc("30 4 * * *", RunCategoryRegressionTrendJob)
+	if err != nil {
+		log.Printf("[Cron] Failed to register category semantic regression cron job: %v\n", err)
+	} else {
+		log.Println("[Cron] Registered daily category semantic regression cron (04:30 AM).")
+	}
+
+	_, err = globalCron.AddFunc("0 5 1 * *", BuildCategoryConfusionMatrixJob)
+	if err != nil {
+		log.Printf("[Cron] Failed to register category confusion matrix cron job: %v\n", err)
+	} else {
+		log.Println("[Cron] Registered monthly category confusion matrix cron (05:00 AM, day 1).")
+	}
+
 	SyncSchedules()
+}
+
+func RunCategoryRegressionTrendJob() {
+	if models.DB == nil {
+		return
+	}
+	synced, runCount, err := governance.RunCategoryGovernanceJobs(
+		models.DB, governance.DefaultCategoryRegressionCorpusPath(), nil,
+	)
+	if err != nil {
+		log.Printf("[Cron] Category semantic regression failed: synced=%d run=%d error=%v\n", synced, runCount, err)
+		return
+	}
+	log.Printf("[Cron] Category semantic regression completed: synced=%d run=%d\n", synced, runCount)
+}
+
+func BuildCategoryConfusionMatrixJob() {
+	if models.DB == nil {
+		return
+	}
+	now := time.Now()
+	periodEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	periodStart := periodEnd.AddDate(0, -1, 0)
+	matrices, err := governance.BuildMonthlyCategoryConfusionMatrices(models.DB, periodStart, periodEnd)
+	if err != nil {
+		log.Printf("[Cron] Category confusion matrix failed: matrices=%d error=%v\n", len(matrices), err)
+		return
+	}
+	log.Printf("[Cron] Category confusion matrix completed: matrices=%d\n", len(matrices))
 }
 
 // SyncSchedules clears existing dynamic jobs and reloads them from the database

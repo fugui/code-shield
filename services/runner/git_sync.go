@@ -147,6 +147,23 @@ func PrepareAndSync(ctx context.Context, repo models.Repository, reportID uint, 
 		}
 
 		errStr := string(output) + " " + gitErr.Error()
+		// A previous failed clone may have left a non-empty directory without
+		// a valid .git, causing "already exists" on every subsequent attempt.
+		// Detect this condition, remove the stale directory, and retry.
+		if strings.Contains(errStr, "already exists and is not an empty directory") {
+			if stat, statErr := os.Stat(filepath.Join(codesPath, ".git")); statErr != nil || !stat.IsDir() {
+				log.Printf("[GitSync] Stale partial clone detected at %s (no valid .git), removing and retrying...\n", codesPath)
+				if rmErr := os.RemoveAll(codesPath); rmErr != nil {
+					log.Printf("[GitSync] Failed to remove stale directory %s: %v\n", codesPath, rmErr)
+					break
+				}
+				output, gitErr = ExecGitSync(ctx, codesPath, branch, repoURL)
+				if gitErr == nil {
+					break
+				}
+				errStr = string(output) + " " + gitErr.Error()
+			}
+		}
 		if strings.Contains(errStr, ".lock") || strings.Contains(errStr, "File exists") || strings.Contains(errStr, "Another git process") {
 			log.Printf("[GitSync] Git lock contention detected on attempt %d for %s, auto-healing locks and retrying...\n",
 				attempt, codesPath)
@@ -159,13 +176,17 @@ func PrepareAndSync(ctx context.Context, repo models.Repository, reportID uint, 
 
 	if gitErr != nil {
 		if models.DB != nil {
-			models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Update("clone_status", "failed")
+			_, _ = models.UpdateActiveTaskReport(models.DB, reportID, map[string]interface{}{
+				"clone_status": "failed",
+			})
 		}
 		return codesPath, fmt.Errorf("git operation failed: %s", string(output))
 	}
 
 	if models.DB != nil {
-		models.DB.Model(&models.TaskReport{}).Where("id = ?", reportID).Update("clone_status", "success")
+		_, _ = models.UpdateActiveTaskReport(models.DB, reportID, map[string]interface{}{
+			"clone_status": "success",
+		})
 	}
 	return codesPath, nil
 }
@@ -177,6 +198,9 @@ func ExecGitSync(ctx context.Context, codesPath, branch, repoURL string) ([]byte
 
 	if stat, errStat := os.Stat(filepath.Join(codesPath, ".git")); errStat == nil && stat.IsDir() {
 		log.Printf("[GitSync] Updating existing repository in %s for branch %s\n", codesPath, branch)
+		if cleanErr := CleanExistingWorkspace(ctx, codesPath); cleanErr != nil {
+			return nil, fmt.Errorf("clean existing workspace: %w", cleanErr)
+		}
 		remotesOut, _, _ := ExecCommandWithProcessGroup(ctx, codesPath, "git", "-C", codesPath, "remote")
 		hasOrigin := strings.Contains(string(remotesOut), "origin")
 
@@ -224,4 +248,20 @@ func ExecGitSync(ctx context.Context, codesPath, branch, repoURL string) ([]byte
 	}
 
 	return output, gitErr
+}
+
+// CleanExistingWorkspace resets scanner-owned worktrees before synchronization.
+// The scanner owns these cache directories and no human edits them, so untracked
+// artifacts from a previous run must not leak into the next coverage manifest.
+func CleanExistingWorkspace(ctx context.Context, codesPath string) error {
+	if _, _, err := ExecCommandWithProcessGroup(ctx, codesPath, "git", "-C", codesPath, "rev-parse", "--verify", "HEAD"); err != nil {
+		return fmt.Errorf("resolve current HEAD: %w", err)
+	}
+	if out, _, err := ExecCommandWithProcessGroup(ctx, codesPath, "git", "-C", codesPath, "reset", "--hard"); err != nil {
+		return fmt.Errorf("reset worktree: %s: %w", string(out), err)
+	}
+	if out, _, err := ExecCommandWithProcessGroup(ctx, codesPath, "git", "-C", codesPath, "clean", "-fd"); err != nil {
+		return fmt.Errorf("clean untracked files: %s: %w", string(out), err)
+	}
+	return nil
 }

@@ -53,6 +53,40 @@ func TestBuildPromptPayload(t *testing.T) {
 	}
 }
 
+func TestBuildReadOnlyPromptPayload(t *testing.T) {
+	tempDir := t.TempDir()
+	promptFile := filepath.Join(tempDir, "prompt.md")
+	if err := os.WriteFile(promptFile, []byte("# Prompt"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(tempDir, "out.json")
+	req := AIRequest{
+		PromptFile: promptFile,
+		PromptMsg:  "执行扫描",
+		InputFiles: []string{"main.go"},
+		OutputPath: outputPath,
+	}
+
+	payload, err := BuildReadOnlyPromptPayload(req, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(payload, "Output Delivery") {
+		t.Fatalf("read-only payload must not ask the agent to write files:\n%s", payload)
+	}
+	for _, want := range []string{
+		"# Prompt",
+		"执行扫描",
+		"main.go",
+		"## Response Delivery",
+		"严禁创建、写入、修改或删除任何文件",
+	} {
+		if !strings.Contains(payload, want) {
+			t.Fatalf("payload missing %q:\n%s", want, payload)
+		}
+	}
+}
+
 func TestRunCLIProcess_MockFallbackStrictness(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -126,8 +160,8 @@ func TestRunCLIProcess_RuntimeNotFoundIsNotMocked(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("failed to read stdout mirror: %v", readErr)
 	}
-	if !strings.Contains(string(mirror), "model not found") {
-		t.Fatalf("expected error message in stdout mirror, got %q", string(mirror))
+	if !strings.Contains(string(mirror), "sh exit code 1") {
+		t.Fatalf("expected compact failure in stdout mirror, got %q", string(mirror))
 	}
 }
 
@@ -194,6 +228,60 @@ func TestRunCLIProcess_ParentCancelKillsProcessGroup(t *testing.T) {
 	}
 }
 
+func TestRunCLIProcess_IdleTimeoutKillsProcess(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "idle.json")
+
+	start := time.Now()
+	err := RunCLIProcess("sh", []string{"-c", "echo started; sleep 5"}, AIRequest{
+		WorkDir:            tempDir,
+		PromptMsg:          "test",
+		OutputPath:         outPath,
+		TimeoutMin:         1,
+		IdleTimeoutSeconds: 1,
+	}, "模拟报告")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("expected idle timeout error")
+	}
+	if !strings.Contains(err.Error(), "idle timed out") {
+		t.Fatalf("expected idle timeout error, got %v", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("idle watchdog returned too late: %v", elapsed)
+	}
+	mirror, readErr := os.ReadFile(outPath + ".output.txt")
+	if readErr != nil {
+		t.Fatalf("failed to read stdout mirror: %v", readErr)
+	}
+	if !strings.Contains(string(mirror), "idle timed out") {
+		t.Fatalf("expected idle timeout marker in stdout mirror, got %q", string(mirror))
+	}
+}
+
+// This is a regression test for the idle watchdog consuming the single value
+// buffered on the process-result channel. When the race hit, RunCLIProcess
+// waited for the idle timeout (or wall-clock timeout) even though the child
+// had already exited successfully.
+func TestRunCLIProcess_ExitWinsIdleWatchdog(t *testing.T) {
+	tempDir := t.TempDir()
+
+	for i := 0; i < 20; i++ {
+		outPath := filepath.Join(tempDir, fmt.Sprintf("exit-%d.json", i))
+		err := RunCLIProcess("true", nil, AIRequest{
+			WorkDir:            tempDir,
+			PromptMsg:          "test",
+			OutputPath:         outPath,
+			TimeoutMin:         1,
+			IdleTimeoutSeconds: 1,
+		}, "模拟报告")
+		if err != nil {
+			t.Fatalf("iteration %d: successful child was treated as idle: %v", i, err)
+		}
+	}
+}
+
 func TestRunCLIProcess_SuccessCleansStdoutMirror(t *testing.T) {
 	tempDir := t.TempDir()
 	outPath := filepath.Join(tempDir, "report.json")
@@ -213,6 +301,159 @@ func TestRunCLIProcess_SuccessCleansStdoutMirror(t *testing.T) {
 	}
 	if _, statErr := os.Stat(outPath + ".output.txt"); !os.IsNotExist(statErr) {
 		t.Fatalf("stdout mirror should be removed after successful output, stat err=%v", statErr)
+	}
+}
+
+func TestRunCLIProcess_CleansStaleInvocationArtifacts(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "report.json")
+	stale := `{"stale":true}`
+	for _, path := range []string{outPath, outPath + ".output.txt", outPath + ".debug.log", outPath + ".lastmsg"} {
+		if err := os.WriteFile(path, []byte(stale), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	promptPath := outPath + ".judge-prompt.md"
+	if err := os.WriteFile(promptPath, []byte("# judge prompt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	script := `test ! -e "$1" && printf '{"fresh":true}' > "$1"`
+	err := RunCLIProcess("sh", []string{"-c", script, "sh", outPath}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "模拟报告")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(content) != `{"fresh":true}` {
+		t.Fatalf("expected fresh output, got %q", string(content))
+	}
+	for _, path := range []string{outPath + ".output.txt", outPath + ".debug.log", outPath + ".lastmsg"} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("expected stale artifact %s to be removed", path)
+		}
+	}
+	if content, readErr := os.ReadFile(promptPath); readErr != nil || string(content) != "# judge prompt" {
+		t.Fatalf("judge prompt file must be retained, readErr=%v content=%q", readErr, content)
+	}
+}
+
+func TestRunCLIProcess_OpenCodeRecoversNestedOutputFile(t *testing.T) {
+	tempDir := t.TempDir()
+	binDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create fake CLI dir: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	script := "#!/bin/sh\nout=$3\nmkdir -p \"$out\"\nprintf '{\"ok\":true}' > \"$out/%s\"\n"
+	script = fmt.Sprintf(script, filepath.Base(filepath.Join(tempDir, "report.json")))
+	scriptPath := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake CLI: %v", err)
+	}
+
+	outPath := filepath.Join(tempDir, "report.json")
+	err := RunCLIProcess("opencode", []string{"run", "--", outPath}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "")
+	if err != nil {
+		t.Fatalf("expected directory output to be recovered, got %v", err)
+	}
+	content, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("failed to read recovered output: %v", readErr)
+	}
+	if string(content) != `{"ok":true}` {
+		t.Fatalf("unexpected recovered output: %q", content)
+	}
+	if stat, statErr := os.Lstat(outPath); statErr != nil {
+		t.Fatalf("failed to stat recovered output: %v", statErr)
+	} else if !stat.Mode().IsRegular() {
+		t.Fatalf("expected regular file output, got directory")
+	}
+	if _, statErr := os.Stat(outPath + ".output.txt"); !os.IsNotExist(statErr) {
+		t.Fatalf("stdout mirror should be removed after recovery, stat err=%v", statErr)
+	}
+}
+
+func TestRunCLIProcess_OpenCodeRecoversVerdictFile(t *testing.T) {
+	tempDir := t.TempDir()
+	binDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create fake CLI dir: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	script := `#!/bin/sh
+out=$3
+mkdir -p "$out"
+printf '{"ok":true}' > "$out/verdict.json"
+`
+	scriptPath := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake CLI: %v", err)
+	}
+
+	outPath := filepath.Join(tempDir, "report.json")
+	if err := RunCLIProcess("opencode", []string{"run", "--", outPath}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, ""); err != nil {
+		t.Fatalf("expected verdict.json to be recovered, got %v", err)
+	}
+	content, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("failed to read recovered output: %v", readErr)
+	}
+	if string(content) != `{"ok":true}` {
+		t.Fatalf("unexpected recovered output: %q", content)
+	}
+}
+
+func TestRunCLIProcess_OpenCodeFailsWhenDirectoryHasNoJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	binDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create fake CLI dir: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	script := `#!/bin/sh
+out=$3
+mkdir -p "$out"
+printf 'not json' > "$out/readme.txt"
+`
+	scriptPath := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake CLI: %v", err)
+	}
+
+	outPath := filepath.Join(tempDir, "report.json")
+	err := RunCLIProcess("opencode", []string{"run", "--", outPath}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "")
+	if err == nil {
+		t.Fatalf("expected failure when no recoverable JSON exists")
+	}
+	if !strings.Contains(err.Error(), "no recoverable JSON payload") {
+		t.Fatalf("unexpected recovery error: %v", err)
 	}
 }
 

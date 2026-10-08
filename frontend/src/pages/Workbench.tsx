@@ -441,7 +441,7 @@ export default function Workbench() {
 											const sevStyle = getSeverityStyle(f.severity);
 											return (
 												<div
-													key={`${f.type}-${f.id}`}
+													key={`defect:${f.id}`}
 													onClick={() => openAudit(f)}
 													className="code-card cursor-pointer flex-col gap-xs"
 													style={{
@@ -733,8 +733,7 @@ export default function Workbench() {
 											<option value="open">待处理 (Open)</option>
 											<option value="analyzing">问题分析 (Analyzing)</option>
 											<option value="resolved">已解决 (Resolved)</option>
-											<option value="closed">已关闭 (Closed)</option>
-											<option value="invalid">忽略/误报 (Invalid)</option>
+											<option value="closed">已关闭 / 不修 / 误报 (Closed)</option>
 										</select>
 									</div>
 								</div>

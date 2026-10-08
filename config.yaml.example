@@ -78,7 +78,7 @@ llm:
     # 节点 2: OpenCode 算力节点 (备选 Thick Agent)
     - id: "opencode"
       driver: "opencode"
-      model: "models/glm5.1"
+      model: "modelgate/GLM-4.7-XS"
       concurrent: 5
 
     # 节点 3: 原生 Thin LLM 执行引擎 (统一 ID 为 native，内含高并发算力集群 endpoints)
@@ -89,6 +89,12 @@ llm:
       base_url: "https://api.deepseek.com/v1/chat/completions"
       api_key: "sk-be919fc7cb9d429abffbf7e2c0aabb3a"
       response_format_json: false
+      enable_thinking: false           # false 下发 "thinking": {"type":"disabled"}；true 时不下发该字段
+      max_tokens: 32768                # text 流默认上限；同时仍有 MaxOutputBytes 字节保护
+      attempt_timeout_seconds: 300     # 单次 Native HTTP attempt 超时
+      first_byte_timeout_seconds: 60   # SSE 首包看门狗
+      idle_timeout_seconds: 60         # SSE 空闲看门狗
+      max_output_bytes: 32768          # Markdown/文本流输出上限
       max_retries: 3                   # 最大重试次数
       retry_backoff_ms: 500            # 指数退避基准时长 (毫秒)
 
@@ -110,6 +116,28 @@ scanner:
   worker_count: 5                      # 全局扫描任务并发 Worker 数 (根据大模型并发综合推导)
   max_queue_size: 2000                 # 待处理扫描任务排队最大上限 (超限返回 HTTP 429，-1 为无上限)
   mock_on_missing_cli: false           # CLI 未就绪时是否阻断或模拟 (生产建议 false)
+
+  # 通用 AI 分析的业务层重试策略 (单 chunk / 单仓分析；不包含 native endpoint failover)
+  analysis:
+    max_retries: 3                     # 首次失败后的最大重试次数，总尝试次数为 max_retries + 1
+    retry_backoff_ms: 2000             # 指数退避基准：2s / 4s / 8s...
+    max_backoff_seconds: 30            # 单次重试等待上限
+    retryable_errors:                  # 只允许对以下类型化错误进行业务层重试
+      - "rate_limited"
+      - "network_transient"
+      - "unknown"                      # 兼容项：未分类错误；生产稳定后建议移除，详见恢复治理设计文档
+
+  # OpenCode Thick Agent 失败恢复 (复用同一 session，只补写目标输出)
+  opencode:
+    continuation:
+      enabled: true                    # 默认开启；设置为 false 可完全回滚为立即失败
+      max_seconds: 300                 # 单次续跑预算上限，且不超过原请求剩余预算
+
+  # 扫描 checkpoint 兼容策略
+  resume:
+    # v2 bundle checkpoint 写盘时还没有 artifact 完整性状态。
+    # 默认 reject 会重扫；确认旧 checkpoint 不含 quarantined candidate 后才可切换。
+    legacy_v2_policy: reject
 
   # 全局流控与避峰策略 (Throttling & Work Hours)
   throttling:
@@ -135,22 +163,71 @@ scanner:
       tier1_hunter:                    # Tier 1 源码初筛 (Hunter 角色，Thick Agent 探索遍历源码)
         resource: "agy"                # 兼容首选字段
         resources: ["agy", "opencode"] # 多 Thick Agent 资源池化负载打散 (10 并发初筛)
-        timeout_seconds: 1200          # 初筛单片超时 (秒)
+        attempt_timeout_seconds: 1800  # 每次 Hunter AI 调用上限 (秒)
+        timeout_seconds: 7200          # Hunter 拆片总预算 (秒)，覆盖首次调用与二分重试
+        idle_timeout_seconds: 600      # 初筛空闲看门狗 (秒)，无 stdout/stderr 活动提前判死
+        timeout_recovery: "split"      # 超时恢复策略: split / retry / fail
+        max_split_depth: 8             # 语义分片二分深度上限（额外保护，不替代总预算）
+        recovery:
+          max_total_attempts: 3              # stage 总逻辑尝试数
+          max_attempts_per_resource: 3       # 普通 retry 不切换 resource
+          max_candidate_failovers: 0         # 候选资源切换默认关闭
+          retry_backoff_ms: 2000             # retry 前退避
+          max_backoff_seconds: 15            # retry 退避上限
+          split_on: ["idle_timeout", "timeout"] # 可拆分 bundle 的优先恢复
+          retry_on: ["idle_timeout", "timeout", "output_missing", "resource_busy", "rate_limited", "network_transient"]
+          candidate_failover_on: []          # 仅显式填入可用性类错误才生效
+          contract_repair_on: ["contract_mismatch", "json_invalid"] # 合同错误先定向 repair
 
       tier2_challenger:                # Tier 2 辩护对抗 (Challenger 角色，快速多维度寻找防御依据)
         resource: "native"             # 推荐 Thin LLM 低延迟高吞吐
         resources: ["native", "agy"]   # 辩护对抗候选算力池
         timeout_seconds: 1200          # 辩护对抗单片超时 (秒)
+        recovery:
+          max_total_attempts: 3
+          max_attempts_per_resource: 3
+          max_candidate_failovers: 0
+          retry_backoff_ms: 2000
+          max_backoff_seconds: 15
+          retry_on: ["idle_timeout", "timeout", "output_missing", "resource_busy", "rate_limited", "network_transient"]
+          candidate_failover_on: []
 
       tier3_judge:                     # Tier 3 终审法官 (Judge 角色，旗舰模型独立权威仲裁)
         resource: "agy"                # 推荐旗舰推理模型或旗舰 Thick Agent
         resources: ["agy", "native"]   # 终审法官候选算力池
         timeout_seconds: 1800          # 终审裁决单片超时 (秒)
+        recovery:
+          max_total_attempts: 3
+          max_attempts_per_resource: 3
+          max_candidate_failovers: 0
+          retry_backoff_ms: 2000
+          max_backoff_seconds: 15
+          retry_on: ["idle_timeout", "timeout", "output_missing", "resource_busy", "rate_limited", "network_transient"]
+          candidate_failover_on: []
 
       tier4_synthesis:                 # Tier 4 全仓态势汇总 (Synthesis 角色，报告聚合)
         resource: "native"             # 显式精确绑定 native 算力集群
         resources: ["native"]
         timeout_seconds: 300           # 报告汇总超时 (秒)
+        attempt_timeout_seconds: 300   # 单次 HTTP attempt 超时 (秒)
+        first_byte_timeout_seconds: 60 # 流式首包看门狗 (秒)
+        idle_timeout_seconds: 60       # 流式事件间空闲看门狗 (秒)
+        recovery:
+          max_total_attempts: 2
+          max_attempts_per_resource: 2
+          max_candidate_failovers: 0
+          retry_backoff_ms: 2000
+          max_backoff_seconds: 15
+          retry_on: ["idle_timeout", "timeout", "output_missing", "resource_busy", "rate_limited", "network_transient"]
+          candidate_failover_on: []
+
+  # 确定性解码与跨轮可比性
+  determinism:
+    enabled: true
+    temperature: 0.0
+    bind_model_per_task: true
+    prefer_seed: true
+    seed_policy: "repo+task+commit+chunk"
 
   # 内置场景微任务路由 (Utility Tools Routing)
   tools:
@@ -160,29 +237,40 @@ scanner:
       finding_match: "native"
       feedback_extraction: "native"
 
+  # 扫描产物确定性修复与候选抢救
+  artifact:
+    normalization_enabled: true
+    max_schema_repair_attempts: 2
+    schema_repair_timeout_seconds: 600
+    schema_repair_resource: "native"
+    category_repair_enabled: true
+    category_repair_timeout_seconds: 60
+    category_repair_max_candidates: 20
+    allow_candidate_salvage: true
+    max_quarantined_candidate_ratio: 0.50
+
 # ==============================================================================
 # 4. 企业多任务治理与历史记忆闭环 (Enterprise Governance - 初次导入种子模版)
 # 职责：专注解决“质量红线、缺陷指纹防抖、范围守卫、PR门禁与知识沉淀”
 # ==============================================================================
 governance:
-  # 跨扫描缺陷抗抖动指纹
-  fingerprint:
-    enabled: true                      # 启用抗行号抖动的语义缺陷指纹
-    similarity_threshold: 0.85         # 跨版本模糊匹配相似度门限
-
-  # 缺陷生命周期与门禁状态
-  lifecycle:
-    scope_guard_enabled: true          # 扫描范围守卫 (杜绝局部扫描产生的假修复)
-    auto_resolve_missing: true         # 守卫范围内消失的缺陷自动标记为 RESOLVED
-    diff_gate_strict: true             # PR/MR 门禁流水线仅阻断 [NEW] 增量缺陷
-
-  # 研发误报记忆与反馈注入
-  feedback_memory:
-    injection_enabled: true            # 自动将研发标记的误报规则注入 Prompt
-    max_rules_injected: 10             # 单次扫描最大注入负样本规则数 (防 Prompt 溢出)
+  # 跨轮疑似重复缺陷仲裁
+  arbitration:
+    enabled: true
+    max_calls_per_report: 20
+    context_lines: 8
+    timeout_seconds: 30
+  # 分类语义回归批处理的成本与故障保护
+  category_regression_batch_size: 50
+  category_regression_max_failures: 5
 
 # ==============================================================================
 # 5. 事件通知服务 (Notification - 初次导入种子模版)
 # ==============================================================================
 notification:
   webhook: "http://127.0.0.1:8081/api/notify/email" # 通知回调地址
+
+ai_fix:
+  fix_url: "https://starmind-dev.sicarrier.com/shield-fix/fixdefect?id={defect_id}"
+  context_token: "${AI_FIX_CONTEXT_TOKEN}"
+  report_base_url: "https://code.sicarrier.com"

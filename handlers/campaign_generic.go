@@ -5,7 +5,9 @@ import (
 	commonAuth "code-common/backend/auth"
 	commonModels "code-common/backend/models"
 	"code-shield/models"
+	"code-shield/services/defectlifecycle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -184,6 +186,34 @@ func GetDynamicCampaignRepos(c *gin.Context) {
 func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string) ([]DynamicCampaignRepoSummary, error) {
 	isEntityMode := tt.GovernanceMode == models.GovernanceModeEntityAssessment
 
+	if !isEntityMode {
+		ledgerSummaries, err := defectlifecycle.ListLedgerRepoSummaries(models.DB, tt.ID)
+		if err != nil {
+			return nil, err
+		}
+		summaries := make([]DynamicCampaignRepoSummary, 0, len(ledgerSummaries))
+		for _, item := range ledgerSummaries {
+			if department != "" && item.Department != department {
+				continue
+			}
+			if keyword != "" && !strings.Contains(strings.ToLower(item.RepoName), strings.ToLower(keyword)) {
+				continue
+			}
+			summaries = append(summaries, DynamicCampaignRepoSummary{
+				RepoID: item.RepoID, RepoName: item.RepoName, RepoURL: item.RepoURL,
+				Department: item.Department, OwnerName: item.OwnerName,
+				TotalIssues: item.TotalIssues, TotalDefects: item.TotalDefects,
+				TotalEntities: item.TotalEntities, PassCount: item.PassCount,
+				PassRate: item.PassRate, Blocking: item.Blocking,
+				Critical: item.Critical, Major: item.Major, Hint: item.Hint,
+				Suggestion: item.Suggestion, OpenIssues: item.OpenIssues,
+				ResolvedIssues: item.ResolvedIssues, FixRate: item.FixRate,
+				LastScanTime: item.LastScanTime,
+			})
+		}
+		return summaries, nil
+	}
+
 	// 1. Fetch repositories
 	var repos []models.Repository
 	query := models.DB.Preload("Owner").Preload("Department")
@@ -191,60 +221,83 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 		return nil, err
 	}
 
-	// 2. Fetch campaign findings severity stats (缺陷模式下仅统计未关闭缺陷)
-	type DbSeverityStat struct {
-		RepoID   uint   `gorm:"column:repo_id"`
-		Severity string `gorm:"column:severity"`
-		Count    int    `gorm:"column:count"`
+	type DbFindingStat struct {
+		RepoID        uint `gorm:"column:repo_id"`
+		ActiveCount   int  `gorm:"column:active_count"`
+		ResolvedCount int  `gorm:"column:resolved_count"`
+		PassCount     int  `gorm:"column:pass_count"`
+		BlockingCount int  `gorm:"column:blocking_count"`
+		CriticalCount int  `gorm:"column:critical_count"`
+		MajorCount    int  `gorm:"column:major_count"`
+		SuggestCount  int  `gorm:"column:suggest_count"`
 	}
-	var severityStats []DbSeverityStat
-	sevQuery := models.DB.Model(&models.CampaignFinding{}).
-		Select("repo_id, severity, count(*) as count").
-		Where("task_type_id = ?", tt.ID)
-	if !isEntityMode {
-		sevQuery = sevQuery.Where("status IN ?", []string{"open", "analyzing"})
-	}
-	sevQuery.Group("repo_id, severity").Scan(&severityStats)
-
-	severityMap := make(map[uint]map[string]int)
-	for _, stat := range severityStats {
-		if _, ok := severityMap[stat.RepoID]; !ok {
-			severityMap[stat.RepoID] = make(map[string]int)
+	findingMap := make(map[uint]DbFindingStat, len(repos))
+	if isEntityMode {
+		// Entity assessment treats every record as a ledger entry, including closed cases.
+		var entityStats []DbFindingStat
+		if err := models.DB.Model(&models.CampaignFinding{}).
+			Select(`
+				repo_id,
+				COUNT(*) FILTER (WHERE status IN ('open', 'analyzing')) AS active_count,
+				COUNT(*) FILTER (WHERE status IN ('resolved', 'closed', 'invalid')) AS resolved_count,
+				COUNT(*) FILTER (WHERE severity = '合格') AS pass_count,
+				COUNT(*) FILTER (WHERE severity IN ('致命', '阻塞')) AS blocking_count,
+				COUNT(*) FILTER (WHERE severity = '严重') AS critical_count,
+				COUNT(*) FILTER (WHERE severity IN ('一般', '主要', '提示')) AS major_count,
+				COUNT(*) FILTER (WHERE severity = '建议') AS suggest_count
+			`).
+			Where("task_type_id = ?", tt.ID).
+			Group("repo_id").
+			Scan(&entityStats).Error; err != nil {
+			return nil, err
 		}
-		severityMap[stat.RepoID][stat.Severity] = stat.Count
+		for _, stat := range entityStats {
+			findingMap[stat.RepoID] = stat
+		}
+	} else {
+		// Defect tracking only needs severity buckets for unclosed findings. Scanning
+		// the two smaller lifecycle partitions avoids re-reading all resolved history.
+		var activeStats []DbFindingStat
+		if err := models.DB.Model(&models.CampaignFinding{}).
+			Select(`
+				repo_id,
+				COUNT(*) AS active_count,
+				COUNT(*) FILTER (WHERE severity = '合格') AS pass_count,
+				COUNT(*) FILTER (WHERE severity IN ('致命', '阻塞')) AS blocking_count,
+				COUNT(*) FILTER (WHERE severity = '严重') AS critical_count,
+				COUNT(*) FILTER (WHERE severity IN ('一般', '主要', '提示')) AS major_count,
+				COUNT(*) FILTER (WHERE severity = '建议') AS suggest_count
+			`).
+			Where("task_type_id = ? AND status IN ?", tt.ID, []string{"open", "analyzing"}).
+			Group("repo_id").
+			Scan(&activeStats).Error; err != nil {
+			return nil, err
+		}
+		for _, stat := range activeStats {
+			findingMap[stat.RepoID] = stat
+		}
+
+		type DbResolvedStat struct {
+			RepoID        uint `gorm:"column:repo_id"`
+			ResolvedCount int  `gorm:"column:resolved_count"`
+		}
+		var resolvedStats []DbResolvedStat
+		if err := models.DB.Model(&models.CampaignFinding{}).
+			Select("repo_id, COUNT(*) AS resolved_count").
+			Where("task_type_id = ? AND status IN ?", tt.ID, []string{"resolved", "closed", "invalid"}).
+			Group("repo_id").
+			Scan(&resolvedStats).Error; err != nil {
+			return nil, err
+		}
+		for _, stat := range resolvedStats {
+			item := findingMap[stat.RepoID]
+			item.RepoID = stat.RepoID
+			item.ResolvedCount = stat.ResolvedCount
+			findingMap[stat.RepoID] = item
+		}
 	}
 
-	// 3. Fetch active issues stats (status is 'open' or 'analyzing')
-	type DbStatusStat struct {
-		RepoID uint `gorm:"column:repo_id"`
-		Count  int  `gorm:"column:count"`
-	}
-	var statusStats []DbStatusStat
-	models.DB.Model(&models.CampaignFinding{}).
-		Select("repo_id, count(*) as count").
-		Where("task_type_id = ? AND status IN ?", tt.ID, []string{"open", "analyzing"}).
-		Group("repo_id").
-		Scan(&statusStats)
-
-	statusMap := make(map[uint]int)
-	for _, stat := range statusStats {
-		statusMap[stat.RepoID] = stat.Count
-	}
-
-	// 4. Fetch resolved issues stats
-	var resolvedStats []DbStatusStat
-	models.DB.Model(&models.CampaignFinding{}).
-		Select("repo_id, count(*) as count").
-		Where("task_type_id = ? AND status IN ?", tt.ID, []string{"resolved", "closed", "invalid"}).
-		Group("repo_id").
-		Scan(&resolvedStats)
-
-	resolvedMap := make(map[uint]int)
-	for _, stat := range resolvedStats {
-		resolvedMap[stat.RepoID] = stat.Count
-	}
-
-	// 5. Fetch last scan times from reports
+	// 3. Fetch last scan times from reports
 	type DbScanTime struct {
 		RepoID    uint       `gorm:"column:repo_id"`
 		CreatedAt *time.Time `gorm:"column:created_at"`
@@ -278,16 +331,16 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 			continue
 		}
 
-		repoSeverities := severityMap[repo.ID]
-		passCount := repoSeverities["合格"]
-		blocking := repoSeverities["致命"] + repoSeverities["阻塞"]
-		critical := repoSeverities["严重"]
-		major := repoSeverities["一般"] + repoSeverities["主要"] + repoSeverities["提示"]
+		finding := findingMap[repo.ID]
+		passCount := finding.PassCount
+		blocking := finding.BlockingCount
+		critical := finding.CriticalCount
+		major := finding.MajorCount
 		hint := 0
-		suggestion := repoSeverities["建议"]
+		suggestion := finding.SuggestCount
 
-		openCount := statusMap[repo.ID]
-		resolvedCount := resolvedMap[repo.ID]
+		openCount := finding.ActiveCount
+		resolvedCount := finding.ResolvedCount
 
 		// 实体模式下的总实体数与合格率
 		totalEntities := passCount + blocking + critical + major + hint + suggestion
@@ -376,6 +429,26 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 	var parsedRepoID int
 	if repoIDStr != "" {
 		parsedRepoID, _ = strconv.Atoi(repoIDStr)
+	}
+
+	if models.ResolveGovernanceMode(tt.GovernanceMode) != models.GovernanceModeEntityAssessment {
+		pageResult, err := defectlifecycle.ListCampaignDefects(models.DB, defectlifecycle.CampaignQuery{
+			TaskTypeID: tt.ID, RepoID: uint(parsedRepoID),
+			Severity: severity, Status: status, Category: category,
+			Keyword: keyword, Page: page, PageSize: pageSize,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"total": pageResult.Total, "page": pageResult.Page, "page_size": pageResult.PageSize,
+			"items": pageResult.Items, "severity_stats": pageResult.SeverityStats, "severityStats": pageResult.SeverityStats,
+			"status_stats": pageResult.StatusStats, "statusStats": pageResult.StatusStats,
+			"category_stats": pageResult.CategoryStats, "categoryStats": pageResult.CategoryStats,
+			"categories": pageResult.Categories,
+		})
+		return
 	}
 
 	// 构建用于总数计数的独立 Query 句柄（避免 GORM Statement 污染）
@@ -516,6 +589,16 @@ func GetDynamicCampaignFinding(c *gin.Context) {
 	}
 	tt := taskTypeVal.(*models.TaskType)
 
+	if models.ResolveGovernanceMode(tt.GovernanceMode) != models.GovernanceModeEntityAssessment {
+		finding, err := defectlifecycle.GetCampaignDefect(models.DB, tt.ID, uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, finding)
+		return
+	}
+
 	var finding models.CampaignFinding
 	if err := models.DB.Preload("Assignee").Preload("Repo").Where("id = ? AND task_type_id = ?", id, tt.ID).First(&finding).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Finding not found"})
@@ -540,6 +623,56 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 		return
 	}
 	tt := taskTypeVal.(*models.TaskType)
+
+	if models.ResolveGovernanceMode(tt.GovernanceMode) != models.GovernanceModeEntityAssessment {
+		userIDValue, exists := c.Get("userID")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+		var input struct {
+			Status     string      `json:"status"`
+			AssigneeID interface{} `json:"assignee_id"`
+			Feedback   string      `json:"feedback"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		var assigneeID *uint
+		switch value := input.AssigneeID.(type) {
+		case float64:
+			if value > 0 {
+				converted := uint(value)
+				assigneeID = &converted
+			}
+		case int:
+			if value > 0 {
+				converted := uint(value)
+				assigneeID = &converted
+			}
+		}
+		workflowInput := defectlifecycle.DefectWorkflowInput{
+			Status: input.Status, Feedback: input.Feedback,
+			AssigneeID: assigneeID, AssigneeSet: input.AssigneeID != nil,
+			ActorID: userIDValue.(uint),
+		}
+		updated, err := defectlifecycle.UpdateDefectWorkflow(models.DB, uint(id), workflowInput)
+		if err != nil {
+			if errors.Is(err, defectlifecycle.ErrDefectChanged) {
+				c.JSON(http.StatusConflict, gin.H{"error": "defect changed; refresh and retry"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		commonAudit.SetAuditContext(c, "campaign", "audit_finding", commonModels.AuditLevelP1,
+			fmt.Sprintf("人工更新台账缺陷 #%d", id), "defect", fmt.Sprintf("%d", id),
+			fmt.Sprintf("缺陷-%d", id), nil, updated)
+		invalidateTrendCache(tt.ID)
+		c.JSON(http.StatusOK, updated)
+		return
+	}
 
 	var finding models.CampaignFinding
 	if err := models.DB.Where("id = ? AND task_type_id = ?", id, tt.ID).First(&finding).Error; err != nil {
@@ -655,7 +788,7 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 	// 注入全局操作审计打点
 	summaryText := fmt.Sprintf("人工核销了专项缺陷 #%d (状态更新为: %s)", id, input.Status)
 	if input.Feedback != "" {
-		summaryText += fmt.Sprintf(", 处置意见: %s", input.Feedback)
+		summaryText += ", 已填写处置意见"
 	}
 	commonAudit.SetAuditContext(c, "campaign", "audit_finding", commonModels.AuditLevelP1,
 		summaryText,
@@ -666,7 +799,7 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 	c.JSON(http.StatusOK, finding)
 }
 
-// ExportDynamicCampaignFindings 通用专项缺陷/用例导出至 Excel
+// ExportDynamicCampaignFindings 通用专项缺陷/用例导出至 Excel 或 JSON
 func ExportDynamicCampaignFindings(c *gin.Context) {
 	taskTypeVal, exists := c.Get("taskType")
 	if !exists {
@@ -693,6 +826,39 @@ func ExportDynamicCampaignFindings(c *gin.Context) {
 	status := c.Query("status")
 	category := c.Query("category")
 	keyword := c.Query("keyword")
+	exportFormat := strings.ToLower(c.DefaultQuery("format", "excel"))
+	if exportFormat != "excel" && exportFormat != "xlsx" && exportFormat != "json" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported export format: " + exportFormat})
+		return
+	}
+
+	if models.ResolveGovernanceMode(tt.GovernanceMode) != models.GovernanceModeEntityAssessment {
+		ledgerItems := make([]defectlifecycle.CampaignFinding, 0)
+		page := 1
+		for {
+			pageResult, err := defectlifecycle.ListCampaignDefects(models.DB, defectlifecycle.CampaignQuery{
+				TaskTypeID: tt.ID, RepoID: uint(repoID), Severity: severity,
+				Status: status, Category: category, Keyword: keyword,
+				Page: page, PageSize: 500,
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			ledgerItems = append(ledgerItems, pageResult.Items...)
+			if int64(page)*500 >= pageResult.Total || len(pageResult.Items) == 0 {
+				break
+			}
+			page++
+		}
+		items := convertLedgerDefectsToExcelItems(ledgerItems)
+		if exportFormat == "json" {
+			c.JSON(http.StatusOK, items)
+			return
+		}
+		generateCampaignExcel(c, repo.Name, tt.DisplayName, items, false)
+		return
+	}
 
 	query := models.DB.Model(&models.CampaignFinding{}).
 		Preload("Assignee").Preload("Repo").
@@ -721,7 +887,37 @@ func ExportDynamicCampaignFindings(c *gin.Context) {
 
 	items := convertCampaignFindingsToExcelItems(dbFindings)
 
+	if exportFormat == "json" {
+		c.JSON(http.StatusOK, items)
+		return
+	}
 	generateCampaignExcel(c, repo.Name, tt.DisplayName, items, isEntityMode)
+}
+
+func convertLedgerDefectsToExcelItems(items []defectlifecycle.CampaignFinding) []ExcelFindingItem {
+	excelItems := make([]ExcelFindingItem, 0, len(items))
+	for _, item := range items {
+		assignee := ""
+		if item.Assignee != nil {
+			assignee = item.Assignee.Name
+		}
+		comment := ""
+		if len(item.StatusLog) > 0 {
+			if value, ok := item.StatusLog[len(item.StatusLog)-1]["comment"].(string); ok {
+				comment = value
+			}
+		}
+		if comment == "" {
+			comment = item.Feedback
+		}
+		excelItems = append(excelItems, ExcelFindingItem{
+			ID: fmt.Sprintf("%d", item.ID), Severity: item.Severity, Category: item.Category,
+			FilePath: item.FilePath, LineNumber: item.LineNumber, Title: item.Title,
+			Detail: item.Detail, Suggestion: item.Suggestion, Status: item.Status,
+			Assignee: assignee, Comment: comment,
+		})
+	}
+	return excelItems
 }
 
 // DynamicCampaignDeptSummary 部门维度专项汇总结构
@@ -794,70 +990,62 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 
 // FetchCampaignDeptSummaries 获取指定专项下的所有部门指标汇总列表
 func FetchCampaignDeptSummaries(tt *models.TaskType) ([]DynamicCampaignDeptSummary, error) {
+	repoSummaries, err := FetchCampaignRepoSummaries(tt, "", "")
+	if err != nil {
+		return nil, err
+	}
+
 	var depts []models.Department
 	if err := models.DB.Find(&depts).Error; err != nil {
 		return nil, err
 	}
 
-	type DeptMetrics struct {
-		DepartmentID   uint
-		TotalRepos     int
-		ScannedRepos   int
-		TotalIssues    int
-		OpenIssues     int
-		ResolvedIssues int
-		PassCount      int
-	}
-
-	query := `
-		SELECT
-			r.department_id,
-			COUNT(DISTINCT r.id) AS total_repos,
-			COUNT(DISTINCT cf.repo_id) AS scanned_repos,
-			COUNT(cf.id) AS total_issues,
-			COUNT(CASE WHEN cf.status IN ('open', 'analyzing') THEN 1 END) AS open_issues,
-			COUNT(CASE WHEN cf.status IN ('resolved', 'closed', 'invalid') THEN 1 END) AS resolved_issues,
-			COUNT(CASE WHEN cf.severity = '合格' THEN 1 END) AS pass_count
-		FROM repositories r
-		LEFT JOIN campaign_findings cf ON cf.repo_id = r.id AND cf.task_type_id = ?
-		WHERE r.department_id IS NOT NULL
-		GROUP BY r.department_id
-	`
-	var metrics []DeptMetrics
-	if err := models.DB.Raw(query, tt.ID).Scan(&metrics).Error; err != nil {
-		return nil, err
-	}
-
-	metricsMap := make(map[uint]DeptMetrics)
-	for _, m := range metrics {
-		metricsMap[m.DepartmentID] = m
+	metricsMap := make(map[string]*DynamicCampaignDeptSummary)
+	for _, repo := range repoSummaries {
+		department := repo.Department
+		if department == "" {
+			continue
+		}
+		metric := metricsMap[department]
+		if metric == nil {
+			metric = &DynamicCampaignDeptSummary{Department: department}
+			metricsMap[department] = metric
+		}
+		metric.TotalRepos++
+		if !repo.LastScanTime.IsZero() {
+			metric.ScannedRepos++
+		}
+		metric.TotalIssues += repo.TotalIssues
+		metric.OpenIssues += repo.OpenIssues
+		metric.ResolvedIssues += repo.ResolvedIssues
+		metric.PassCount += repo.PassCount
 	}
 
 	var summaries []DynamicCampaignDeptSummary
 	for _, dept := range depts {
-		m, ok := metricsMap[dept.ID]
-		if !ok || m.TotalRepos == 0 {
+		metric, ok := metricsMap[dept.Name]
+		if !ok || metric.TotalRepos == 0 {
 			continue
 		}
 
 		fixRate := 100.0
-		if m.TotalIssues > 0 {
-			fixRate = (float64(m.ResolvedIssues) / float64(m.TotalIssues)) * 100.0
+		if metric.TotalIssues > 0 {
+			fixRate = (float64(metric.ResolvedIssues) / float64(metric.TotalIssues)) * 100.0
 		}
 
 		passRate := 100.0
-		if m.TotalIssues > 0 {
-			passRate = (float64(m.PassCount) / float64(m.TotalIssues)) * 100.0
+		if metric.TotalIssues > 0 {
+			passRate = (float64(metric.PassCount) / float64(metric.TotalIssues)) * 100.0
 		}
 
 		summaries = append(summaries, DynamicCampaignDeptSummary{
-			Department:     dept.Name,
-			ScannedRepos:   m.ScannedRepos,
-			TotalRepos:     m.TotalRepos,
-			TotalIssues:    m.TotalIssues,
-			OpenIssues:     m.OpenIssues,
-			ResolvedIssues: m.ResolvedIssues,
-			PassCount:      m.PassCount,
+			Department:     metric.Department,
+			ScannedRepos:   metric.ScannedRepos,
+			TotalRepos:     metric.TotalRepos,
+			TotalIssues:    metric.TotalIssues,
+			OpenIssues:     metric.OpenIssues,
+			ResolvedIssues: metric.ResolvedIssues,
+			PassCount:      metric.PassCount,
 			PassRate:       passRate,
 			FixRate:        fixRate,
 		})
@@ -886,6 +1074,37 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 		return
 	}
 	trendCacheLock.RUnlock()
+
+	if models.ResolveGovernanceMode(tt.GovernanceMode) != models.GovernanceModeEntityAssessment {
+		repoIDs := make([]uint, 0)
+		if repoIDStr != "" {
+			if repoID, err := strconv.Atoi(repoIDStr); err == nil && repoID > 0 {
+				repoIDs = append(repoIDs, uint(repoID))
+			}
+		} else if deptName != "" {
+			var dept models.Department
+			if err := models.DB.Where("name = ?", deptName).First(&dept).Error; err != nil {
+				c.JSON(http.StatusOK, []defectlifecycle.CampaignTrendPoint{})
+				return
+			}
+			var repos []models.Repository
+			if err := models.DB.Where("department_id = ?", dept.ID).Find(&repos).Error; err == nil {
+				for _, repo := range repos {
+					repoIDs = append(repoIDs, repo.ID)
+				}
+			}
+		}
+		trend, err := defectlifecycle.LedgerTrend(models.DB, tt.ID, repoIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		trendCacheLock.Lock()
+		trendCache[cacheKey] = campaignTrendCacheEntry{data: trend, expiresAt: time.Now().Add(60 * time.Second)}
+		trendCacheLock.Unlock()
+		c.JSON(http.StatusOK, trend)
+		return
+	}
 
 	query := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
 

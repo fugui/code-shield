@@ -13,5 +13,5 @@ type Task struct {
 	AutoNotify bool
 	LogID      uint             // ID of TaskExecutionLog
 	RunParams  models.RunParams // 运行时参数（从 ScheduleConfig 传入）
-	IsResume   bool             // true 时 worker 调用 ResumeFailedChunks 而非 RunTaskSync
+	IsResume   bool             // true 时 worker 通过 bundle checkpoint 恢复 debate_full 任务
 }

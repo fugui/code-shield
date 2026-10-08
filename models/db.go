@@ -34,6 +34,7 @@ func InitDB() {
 		&Department{},
 		&Repository{},
 		&TaskType{},
+		&TaskTypeRevision{},
 		&TaskReport{},
 		&KeyIssue{},
 		&SystemConfig{},
@@ -42,16 +43,108 @@ func InitDB() {
 		&TaskTriggerLog{},
 		&TaskExecutionLog{},
 		&AnalysisFinding{},
+		&ArtifactRepairAudit{},
+		&ScanScopeEntry{},
+		&TaskChunkExecution{},
+		&Defect{},
+		&DefectAlias{},
+		&DefectObservation{},
+		&DefectEvent{},
 		&CampaignFinding{},
 		&SysAuditLog{},
-		&DefectFingerprintRecord{},
 		&TaskDebateLog{},
 		&RepoFeedbackRule{},
-		&ScanReconciliation{},
-		&ReconciliationLink{},
+		&CategoryAliasUsage{},
+		&CategoryRegressionSample{},
+		&CategoryRegressionReview{},
+		&CategoryConfusionMatrix{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
+	}
+	if err := DB.Exec("UPDATE analysis_findings SET category_status = 'LEGACY' WHERE category_status = ''").Error; err != nil {
+		log.Fatalf("failed to mark legacy category status: %v", err)
+	}
+
+	// P0 removes all legacy cross-scan reconciliation storage. These tables and
+	// denormalized lifecycle columns must not survive as a fallback state path.
+	for _, table := range []string{
+		"defect_fingerprint_records",
+		"scan_reconciliations",
+		"reconciliation_links",
+		"defect_entities",
+		"defect_entity_aliases",
+		"defect_entity_relations",
+		"defect_occurrences",
+		"report_file_coverages",
+		"defect_anchor_keys",
+		"defect_entity_state_versions",
+		"defect_entity_events",
+		"defect_assignments",
+	} {
+		if err := DB.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
+			log.Fatalf("failed to drop legacy reconciliation table %s: %v", table, err)
+		}
+	}
+	for _, column := range []string{"fingerprint", "diff_status", "anchor_state", "assignee_id", "assignee", "feedback", "feedback_at"} {
+		if DB.Migrator().HasColumn(&AnalysisFinding{}, column) {
+			if err := DB.Migrator().DropColumn(&AnalysisFinding{}, column); err != nil {
+				log.Fatalf("failed to drop legacy analysis_findings column %s: %v", column, err)
+			}
+		}
+	}
+	for _, column := range []string{"new_defects_count", "existed_defects_count", "resolved_defects_count"} {
+		if DB.Migrator().HasColumn(&TaskReport{}, column) {
+			if err := DB.Migrator().DropColumn(&TaskReport{}, column); err != nil {
+				log.Fatalf("failed to drop legacy task_reports column %s: %v", column, err)
+			}
+		}
+	}
+
+	if err := DB.Model(&TaskType{}).
+		Where("is_campaign = ? AND governance_mode IN ?", true, []string{"", "defect_tracking"}).
+		Update("governance_mode", GovernanceModeFullLedger).Error; err != nil {
+		log.Fatalf("failed to normalize governance modes: %v", err)
+	}
+
+	if err := EnsureActiveTaskReportUniqueIndex(DB); err != nil {
+		log.Fatalf("failed to create active task report unique index: %v", err)
+	}
+
+	if DB.Dialector.Name() == "postgres" {
+		if err := ensureLedgerForeignKeys(DB); err != nil {
+			log.Fatalf("failed to create ledger foreign keys: %v", err)
+		}
+		if err := DB.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_alias_strong
+			ON defect_aliases (repo_id, task_type_id, alias_type, alias_value)
+			WHERE alias_class IN ('STRONG', 'HUMAN');
+		`).Error; err != nil {
+			log.Fatalf("failed to add strong defect alias constraint: %v", err)
+		}
+		if err := DB.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_alias_bucket
+			ON defect_aliases (repo_id, task_type_id, alias_type, alias_value, defect_id)
+			WHERE alias_class = 'BUCKET';
+		`).Error; err != nil {
+			log.Fatalf("failed to add bucket defect alias constraint: %v", err)
+		}
+	}
+
+	// The task queue relies on repository URLs. Persist the invariant in the
+	// database as well so out-of-process imports cannot insert blank URLs.
+	if err := DB.Exec(`
+		ALTER TABLE repositories
+		DROP CONSTRAINT IF EXISTS chk_repositories_url_not_blank
+	`).Error; err != nil {
+		log.Fatalf("failed to prepare repositories URL constraint: %v", err)
+	}
+	if err := DB.Exec(`
+		ALTER TABLE repositories
+		ADD CONSTRAINT chk_repositories_url_not_blank
+		CHECK (url IS NOT NULL AND btrim(url) <> '')
+	`).Error; err != nil {
+		log.Fatalf("failed to add repositories URL constraint: %v", err)
 	}
 
 	// 确保任务类型 campaign_path 的部分唯一索引
@@ -62,6 +155,18 @@ func InitDB() {
 
 	// Seed built-in task types
 	seedBuiltinTaskTypes()
+}
+
+// EnsureActiveTaskReportUniqueIndex enforces at most one live report per scan identity.
+func EnsureActiveTaskReportUniqueIndex(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_task_reports_active_repo_type
+		ON task_reports (repo_id, task_type_id)
+		WHERE status NOT IN ('success', 'degraded', 'failed', 'skipped');
+	`).Error
 }
 
 func seedDatabase() {
@@ -122,6 +227,12 @@ func seedBuiltinTaskTypes() {
 			log.Printf("Error: failed to parse %s: %v", metaFilePath, err)
 			continue
 		}
+		if taxonomy := taskType.GetCategoryTaxonomy(); taxonomy != nil {
+			if taskType.TaxonomySchemaVersion == 0 {
+				taskType.TaxonomySchemaVersion = taxonomy.SchemaVersion
+			}
+			taskType.TaxonomyHash = HashCategoryTaxonomy(taxonomy)
+		}
 
 		expectedDir := strings.ReplaceAll(taskType.Name, "_", "-")
 		if dirName != expectedDir {
@@ -139,36 +250,41 @@ func seedBuiltinTaskTypes() {
 			}
 		} else {
 			updates := map[string]interface{}{
-				"display_name":     taskType.DisplayName,
-				"description":      taskType.Description,
-				"engine_mode":      taskType.EngineMode,
-				"engine_config":    taskType.EngineConfig,
-				"target_scope":     taskType.TargetScope,
-				"notify_template":  taskType.NotifyTemplate,
-				"notify_threshold": taskType.NotifyThreshold,
-				"notify_cc":        taskType.NotifyCc,
-				"timeout":          taskType.Timeout,
-				"is_active":        taskType.IsActive,
-				"is_campaign":      taskType.IsCampaign,
-				"campaign_path":    taskType.CampaignPath,
-				"governance_mode":  taskType.GovernanceMode,
-				"campaign_icon":    taskType.CampaignIcon,
-				"campaign_config":  taskType.CampaignConfig,
-				"categories":       taskType.Categories,
+				"display_name":            taskType.DisplayName,
+				"description":             taskType.Description,
+				"engine_mode":             taskType.EngineMode,
+				"engine_config":           taskType.EngineConfig,
+				"assessment_config":       taskType.AssessmentConfig,
+				"assessment_config_hash":  HashAssessmentConfig(taskType.AssessmentConfig),
+				"current_revision_id":     nil,
+				"target_scope":            taskType.TargetScope,
+				"notify_template":         taskType.NotifyTemplate,
+				"notify_threshold":        taskType.NotifyThreshold,
+				"notify_cc":               taskType.NotifyCc,
+				"timeout":                 taskType.Timeout,
+				"is_active":               taskType.IsActive,
+				"is_campaign":             taskType.IsCampaign,
+				"campaign_path":           taskType.CampaignPath,
+				"governance_mode":         taskType.GovernanceMode,
+				"campaign_icon":           taskType.CampaignIcon,
+				"campaign_config":         taskType.CampaignConfig,
+				"categories":              taskType.Categories,
+				"taxonomy":                taskType.Taxonomy,
+				"taxonomy_schema_version": taskType.TaxonomySchemaVersion,
+				"taxonomy_hash":           taskType.TaxonomyHash,
+				"domain_family":           taskType.DomainFamily,
+				"domain_label":            taskType.DomainLabel,
+				"target_semantics":        taskType.TargetSemantics,
+				"display_semantics":       taskType.DisplaySemantics,
 			}
-
-			// 领域族群与抗辩维度：仅填空不覆盖策略 (Fill-If-Empty)
-			if existing.DomainFamily == "" || existing.DomainFamily == DomainFamilyComprehensive {
-				if taskType.DomainFamily != "" {
-					updates["domain_family"] = taskType.DomainFamily
-				}
-			}
-			if len(existing.DefenseDimensions) == 0 && len(taskType.DefenseDimensions) > 0 {
+			if len(taskType.DefenseDimensions) > 0 {
 				updates["defense_dimensions"] = taskType.DefenseDimensions
 			}
 
 			if err := DB.Model(&existing).Updates(updates).Error; err != nil {
 				log.Printf("Error: failed to update task type %s in db: %v", taskType.Name, err)
+			} else {
+				log.Printf("Synced task type from disk: %s (%s)", taskType.Name, taskType.DisplayName)
 			}
 		}
 	}
@@ -186,6 +302,7 @@ func seedBuiltinTaskTypes() {
 
 				if reportCount == 0 {
 					// Safe to physically delete if there are no historical execution reports
+					DB.Unscoped().Where("task_type_id = ?", dbTask.ID).Delete(&TaskTypeRevision{})
 					if err := DB.Unscoped().Delete(&dbTask).Error; err == nil {
 						log.Printf("Orphan Cleanup: Successfully deleted unused task type %q from database", dbTask.Name)
 					}
@@ -260,7 +377,11 @@ func InitDynamicConfigs(seed Config) {
 	}
 
 	// 同步回旧字段，保证全系统向前与向后兼容
+	AppConfig.Identity = AppConfig.Governance.Identity
+	AppConfig.Arbitration = AppConfig.Governance.Arbitration
+	AppConfig.Lifecycle = AppConfig.Governance.Lifecycle
 	AppConfig.SyncLegacy()
+	AppConfig.Scanner.NormalizeDefaults()
 
 	log.Println("================================================================================")
 	log.Println("[Config Source] RUNTIME DYNAMIC CONFIG LOADED FROM DATABASE (SSOT)")

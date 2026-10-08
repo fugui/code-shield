@@ -1,34 +1,7 @@
 {
-  "name": "deep_review",
-  "display_name": "深度代码检视",
-  "description": "对整个代码仓进行深度的架构审计与全量存量代码安全质量评估，扫描隐藏的系统性风险",
-  "engine_mode": "debate_full",
-  "domain_family": "comprehensive_evolution",
-  "defense_dimensions": [
-    {
-      "key": "ContextDefense",
-      "name": "全局上下文防御",
-      "description": "全局架构或外层已具备拦截校验机制，单点无需过度防御"
-    },
-    {
-      "key": "HistoricalLegacy",
-      "name": "历史兼容与协议约束",
-      "description": "代码遵循特定历史硬件/网络协议契约约束，非架构缺陷"
-    }
-  ],
-  "engine_config": {
-    "exclude_paths": [
-      "thirdparts"
-    ]
-  },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 20,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
+  "campaign_config": null,
+  "campaign_icon": "",
   "campaign_path": "deep-review",
-  "governance_mode": "full_ledger",
   "categories": [
     "逻辑与正确性-并发安全",
     "逻辑与正确性-边界处理",
@@ -48,5 +21,365 @@
     "架构与设计-三方依赖",
     "其它问题-其它架构风险"
   ],
-  "is_active": true
+  "created_at": "2026-05-28T14:55:50.987291+08:00",
+  "debate_enabled": true,
+  "defense_dimensions": [
+    {
+      "key": "ContextDefense",
+      "name": "全局上下文防御",
+      "description": "全局架构或外层已具备拦截校验机制，单点无需过度防御"
+    },
+    {
+      "key": "HistoricalLegacy",
+      "name": "历史兼容与协议约束",
+      "description": "代码遵循特定历史硬件/网络协议契约约束，非架构缺陷"
+    }
+  ],
+  "description": "对整个代码仓进行深度的架构审计与全量存量代码安全质量评估，扫描隐藏的系统性风险",
+  "display_name": "深度代码检视",
+  "display_semantics": {
+    "domain_label": "综合演进与深度检视",
+    "target_label": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "domain_family": "comprehensive_evolution",
+  "domain_label": "综合演进与深度检视",
+  "engine_config": {
+    "scan_profile": {
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "name": "full_review",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "full_ledger",
+  "id": 12,
+  "is_active": true,
+  "is_campaign": false,
+  "name": "deep_review",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 20,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "源码文件",
+    "plural": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "DEEP_CONCURRENCY",
+        "label": "逻辑与正确性-并发安全",
+        "definition": "Concurrent access lacks synchronization and can produce an unsafe race or ordering failure.",
+        "decision_rules": [
+          "shared state crosses threads",
+          "at least one access writes",
+          "no happens-before edge exists"
+        ],
+        "positive_hints": [
+          "guard covers all accesses"
+        ],
+        "negative_hints": [
+          "state is immutable or thread-local"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_BOUNDARY",
+        "label": "逻辑与正确性-边界处理",
+        "definition": "A code path mishandles boundary values or invalid input.",
+        "decision_rules": [
+          "empty, minimum, maximum, or malformed input is possible",
+          "check is absent or incorrect",
+          "failure propagates unsafely"
+        ],
+        "positive_hints": [
+          "bounds and invalid shapes are handled"
+        ],
+        "negative_hints": [
+          "caller guarantees valid input"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_LOGIC",
+        "label": "逻辑与正确性-逻辑漏洞",
+        "definition": "Implementation contradicts the intended requirement or invariant.",
+        "decision_rules": [
+          "branch or calculation contradicts specification",
+          "invariant is violated",
+          "observable behavior is wrong"
+        ],
+        "positive_hints": [
+          "code matches contract"
+        ],
+        "negative_hints": [
+          "business rule is explicitly different"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_EXCEPTION",
+        "label": "逻辑与正确性-异常控制",
+        "definition": "Exception or error flow corrupts state, loses diagnostics, or leaves resources unsafe.",
+        "decision_rules": [
+          "throwable path reaches vulnerable cleanup",
+          "error state is swallowed or double-handled",
+          "invariant is not restored"
+        ],
+        "positive_hints": [
+          "error path restores invariants"
+        ],
+        "negative_hints": [
+          "no exceptional path exists"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_MEM_LEAK",
+        "label": "性能与运行效率-内存泄漏",
+        "definition": "Owned heap memory becomes unreachable before release.",
+        "decision_rules": [
+          "allocation loses its last owner",
+          "error or loop path omits free",
+          "ownership is ambiguous"
+        ],
+        "positive_hints": [
+          "all paths release memory"
+        ],
+        "negative_hints": [
+          "ownership is explicitly managed"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_RESOURCE_LEAK",
+        "label": "性能与运行效率-资源未释放",
+        "definition": "A non-memory resource is acquired without a guaranteed close or rollback.",
+        "decision_rules": [
+          "file, lock, socket, or handle is acquired",
+          "close is not exception-safe",
+          "resource can remain held indefinitely"
+        ],
+        "positive_hints": [
+          "RAII or defer closes resource"
+        ],
+        "negative_hints": [
+          "resource is intentionally long-lived"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_CPU_IO",
+        "label": "性能与运行效率-CPU与I/O瓶颈",
+        "definition": "An avoidable algorithm or I/O pattern creates disproportionate CPU, blocking, or network cost.",
+        "decision_rules": [
+          "work is repeated unnecessarily",
+          "I/O occurs inside a hot loop",
+          "blocking path hurts responsiveness"
+        ],
+        "positive_hints": [
+          "complexity and I/O are bounded"
+        ],
+        "negative_hints": [
+          "measured profile shows negligible impact"
+        ],
+        "priority": 70,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_MEM_CORRUPTION",
+        "label": "安全风险-内存破坏",
+        "definition": "An access or memory operation can overwrite, underflow, overflow, or corrupt valid memory.",
+        "decision_rules": [
+          "unsafe pointer arithmetic or copy exists",
+          "bounds are attacker or path dependent",
+          "write can exceed allocation"
+        ],
+        "positive_hints": [
+          "safe API and checked bounds are used"
+        ],
+        "negative_hints": [
+          "allocation provably covers the range"
+        ],
+        "priority": 65,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_HARDCODED_SECRET",
+        "label": "安全风险-敏感硬编码",
+        "definition": "A credential, key, token, or other secret is embedded in source.",
+        "decision_rules": [
+          "literal contains secret-like value",
+          "value is deployable or reusable",
+          "redaction and external config are absent"
+        ],
+        "positive_hints": [
+          "secret is loaded from secure config"
+        ],
+        "negative_hints": [
+          "value is a public test fixture"
+        ],
+        "priority": 60,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_INPUT_INJECTION",
+        "label": "安全风险-输入注入",
+        "definition": "Untrusted input can alter command, query, path, markup, or protocol interpretation.",
+        "decision_rules": [
+          "untrusted text reaches an interpreter",
+          "delimiter or query context is not escaped",
+          "injected payload changes semantics"
+        ],
+        "positive_hints": [
+          "parameterization or escaping is used"
+        ],
+        "negative_hints": [
+          "input is strictly allowlisted"
+        ],
+        "priority": 55,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_MAGIC_NUMBER",
+        "label": "可维护性-魔鬼数字",
+        "definition": "A semantically meaningful numeric literal is repeated or unexplained.",
+        "decision_rules": [
+          "number has domain meaning",
+          "same value is copied in multiple places",
+          "no named constant exists"
+        ],
+        "positive_hints": [
+          "named constant or configuration is used"
+        ],
+        "negative_hints": [
+          "number is a local indexing convention"
+        ],
+        "priority": 50,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_COMPLEXITY",
+        "label": "可维护性-圈复杂度过高",
+        "definition": "Control-flow complexity exceeds the level needed for the behavior and impedes safe change.",
+        "decision_rules": [
+          "branch or loop nesting is deep",
+          "decision paths are hard to test",
+          "a simpler decomposition exists"
+        ],
+        "positive_hints": [
+          "behavior requires the branch matrix"
+        ],
+        "negative_hints": [
+          "validation is extracted cleanly"
+        ],
+        "priority": 45,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_DEAD_CODE",
+        "label": "可维护性-冗余代码",
+        "definition": "Unreachable or redundant code obscures active behavior.",
+        "decision_rules": [
+          "condition or branch is provably unreachable",
+          "duplicates active logic",
+          "dead code requires maintenance"
+        ],
+        "positive_hints": [
+          "guard supports multiple environments"
+        ],
+        "negative_hints": [
+          "code is retained deliberately"
+        ],
+        "priority": 40,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_COUPLING",
+        "label": "架构与设计-高耦合",
+        "definition": "A module depends on unrelated implementation details, reducing replaceability.",
+        "decision_rules": [
+          "module reaches into another component internals",
+          "change forces edits across domains",
+          "interface boundary is bypassed"
+        ],
+        "positive_hints": [
+          "interaction uses a stable interface"
+        ],
+        "negative_hints": [
+          "one-way dependency is intentional"
+        ],
+        "priority": 35,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_RESPONSIBILITY",
+        "label": "架构与设计-职责违背",
+        "definition": "A component combines unrelated responsibilities and lacks a clear contract.",
+        "decision_rules": [
+          "component changes for multiple unrelated reasons",
+          "domain, infrastructure, and presentation are mixed",
+          "behavior cannot be described simply"
+        ],
+        "positive_hints": [
+          "responsibility is singular"
+        ],
+        "negative_hints": [
+          "separation would duplicate context"
+        ],
+        "priority": 30,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_THIRD_PARTY",
+        "label": "架构与设计-三方依赖",
+        "definition": "Third-party dependency use violates its contract or creates an avoidable supply-chain risk.",
+        "decision_rules": [
+          "API is deprecated, unsafe, or misused",
+          "version or license is not controlled",
+          "dependency duplicates platform capability"
+        ],
+        "positive_hints": [
+          "approved version and API are used"
+        ],
+        "negative_hints": [
+          "no suitable standard alternative"
+        ],
+        "priority": 25,
+        "status": "active"
+      },
+      {
+        "code": "DEEP_OTHER",
+        "label": "其它问题-其它架构风险",
+        "definition": "A credible architecture or review risk that does not fit a more specific controlled category.",
+        "decision_rules": [
+          "specific category does not apply",
+          "risk affects behavior, safety, or maintainability",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "specific category applies"
+        ],
+        "negative_hints": [
+          "style-only preference"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "timeout": 60,
+  "updated_at": "2026-09-08T11:14:49.470097+08:00"
 }

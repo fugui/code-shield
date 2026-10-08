@@ -10,7 +10,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
     report?.status && report.status !== 'queued' && report.status !== 'pending'
       ? report.status
       : log.status;
-  const isDebate = ['debate_full', 'debate_selective'].includes(log.engine_mode || '');
+  const isDebate = log.engine_mode === 'debate_full';
   const totalChunks = report?.total_chunks ?? 0;
   const processedChunks = report?.processed_chunks ?? 0;
 

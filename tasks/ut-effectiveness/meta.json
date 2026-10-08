@@ -1,9 +1,29 @@
 {
-  "name": "ut_effectiveness",
-  "display_name": "测试用例有效性评估",
-  "description": "以单个测试用例为最小单位，深度审计其断言有效性、提前返回、空测试等，评估每个用例是否真实独立地校验了业务逻辑",
-  "engine_mode": "chunked_fast",
-  "domain_family": "test_engineering",
+  "assessment_config": {
+    "version": 1,
+    "profile": "entityreview",
+    "schema": "code-shield.assessment-config.v1",
+    "domain": "test_case_effectiveness",
+    "target": {
+      "singular": "测试用例",
+      "pass_label": "测试用例合格",
+      "needs_human_label": "测试用例需人工评估"
+    }
+  },
+  "campaign_path": "ut",
+  "categories": [
+    "无问题",
+    "断言有效性-空测试",
+    "断言有效性-预期结果不完整",
+    "断言有效性-永真断言",
+    "断言有效性-无效捕获",
+    "断言有效性-Mock遗漏",
+    "提前返回-非法退出",
+    "提前返回-静默跳过",
+    "功能单一性-面条测试",
+    "功能单一性-路径混合",
+    "其它"
+  ],
   "defense_dimensions": [
     {
       "key": "HelperAssertion",
@@ -21,42 +41,248 @@
       "description": "Mock 或 Stub 的调用期望本身构成隐式逻辑检验"
     }
   ],
-  "engine_config": {
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx",
-      ".py",
-      ".java",
-      ".go"
-    ],
-    "exclude_paths": [
-      "thirdparts"
-    ]
+  "description": "以单个测试用例为最小单位，深度审计其断言有效性、提前返回、空测试等，评估每个用例是否真实独立地校验了业务逻辑",
+  "display_name": "测试用例有效性评估",
+  "display_semantics": {
+    "domain_label": "测试工程与有效性",
+    "target_label": "测试用例",
+    "not_target_label": "非目标测试用例"
   },
-  "target_scope": "test",
+  "domain_family": "test_engineering",
+  "domain_label": "测试工程与有效性",
+  "engine_config": {
+    "scan_profile": {
+      "entity_kind": "test_case",
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "languages": [
+        "cpp",
+        "go",
+        "java",
+        "python"
+      ],
+      "name": "entity_review",
+      "target_scope": "test",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "entity_assessment",
+  "is_active": true,
+  "is_campaign": true,
+  "name": "ut_effectiveness",
+  "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
-  "campaign_path": "ut",
-  "governance_mode": "entity_assessment",
-  "categories": [
-    "无问题",
-    "断言有效性-空测试",
-    "断言有效性-永真断言",
-    "断言有效性-无效捕获",
-    "断言有效性-Mock遗漏",
-    "提前返回-非法退出",
-    "提前返回-静默跳过",
-    "功能单一性-面条测试",
-    "功能单一性-路径混合",
-    "其它"
-  ],
-  "is_active": true
+  "target_scope": "test",
+  "target_semantics": {
+    "singular": "测试用例",
+    "plural": "测试用例",
+    "not_target_label": "非目标测试用例"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "UTE_NO_ISSUE",
+        "label": "无问题",
+        "definition": "The test case independently verifies meaningful behavior and has no material effectiveness defect.",
+        "decision_rules": [
+          "assertions verify observable outcomes",
+          "mocks and setup match the contract",
+          "return behavior is intentional"
+        ],
+        "positive_hints": [
+          "no finding"
+        ],
+        "negative_hints": [
+          "specific defect category applies"
+        ],
+        "priority": 110,
+        "status": "active"
+      },
+      {
+        "code": "UTE_EMPTY_TEST",
+        "label": "断言有效性-空测试",
+        "definition": "A test case performs no meaningful assertion or verification.",
+        "decision_rules": [
+          "test body lacks assertion",
+          "explicit assertion is trivially true",
+          "test can pass without executing behavior"
+        ],
+        "positive_hints": [
+          "helper or implicit expectation verifies behavior"
+        ],
+        "negative_hints": [
+          "no-throw contract is explicit"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "UTE_INCOMPLETE_EXPECTATION",
+        "label": "断言有效性-预期结果不完整",
+        "definition": "The test verifies only part of the required outcome or state.",
+        "decision_rules": [
+          "one important result is unverified",
+          "side effect or error path is ignored",
+          "assertion is weaker than contract"
+        ],
+        "positive_hints": [
+          "all contract outcomes are asserted"
+        ],
+        "negative_hints": [
+          "remaining behavior is covered by another test"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "UTE_ALWAYS_TRUE",
+        "label": "断言有效性-永真断言",
+        "definition": "An assertion or condition can pass regardless of the behavior under test.",
+        "decision_rules": [
+          "condition mirrors the input or implementation tautologically",
+          "assertion is on an unchanged default",
+          "failure cannot change the result"
+        ],
+        "positive_hints": [
+          "assertion compares meaningful expected value"
+        ],
+        "negative_hints": [
+          "test explicitly checks a non-throwing contract"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "UTE_INVALID_CAPTURE",
+        "label": "断言有效性-无效捕获",
+        "definition": "The test fails to capture the exception, result, callback, or state needed for verification.",
+        "decision_rules": [
+          "expected failure or callback is not captured",
+          "control flow skips assertion",
+          "captured value is discarded"
+        ],
+        "positive_hints": [
+          "result is captured and asserted"
+        ],
+        "negative_hints": [
+          "side effect is unnecessary by contract"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "UTE_MISSING_MOCK",
+        "label": "断言有效性-Mock遗漏",
+        "definition": "A collaborator interaction required by the test contract is not mocked, verified, or controlled.",
+        "decision_rules": [
+          "external or expensive dependency is invoked",
+          "interaction result affects behavior",
+          "test cannot isolate the unit"
+        ],
+        "positive_hints": [
+          "stub or mock controls the dependency"
+        ],
+        "negative_hints": [
+          "real integration is intentional"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "UTE_INVALID_EARLY_RETURN",
+        "label": "提前返回-非法退出",
+        "definition": "A test exits through return, throw, or abort before completing its intended verification.",
+        "decision_rules": [
+          "early path is taken for invalid setup",
+          "remaining assertions are skipped",
+          "cleanup or result evaluation is lost"
+        ],
+        "positive_hints": [
+          "early return expresses the completed contract"
+        ],
+        "negative_hints": [
+          "control flow continues to verification"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "UTE_SILENT_SKIP",
+        "label": "提前返回-静默跳过",
+        "definition": "A test is skipped or neutered without an actionable reason or tracking.",
+        "decision_rules": [
+          "skip is unconditional or overly broad",
+          "condition hides a persistent defect",
+          "no ticket or environment rationale exists"
+        ],
+        "positive_hints": [
+          "skip is conditional and documented"
+        ],
+        "negative_hints": [
+          "environment satisfies the requirement"
+        ],
+        "priority": 70,
+        "status": "active"
+      },
+      {
+        "code": "UTE_SPAGHETTI_TEST",
+        "label": "功能单一性-面条测试",
+        "definition": "One test case verifies too many unrelated behaviors or scenarios.",
+        "decision_rules": [
+          "unrelated scenarios share one test",
+          "failure cannot identify the violated behavior",
+          "setup serves conflicting cases"
+        ],
+        "positive_hints": [
+          "one test verifies one behavior"
+        ],
+        "negative_hints": [
+          "shared scenario is intentionally atomic"
+        ],
+        "priority": 65,
+        "status": "active"
+      },
+      {
+        "code": "UTE_MIXED_PATHS",
+        "label": "功能单一性-路径混合",
+        "definition": "Success and failure paths are mixed in one test and obscure the verified contract.",
+        "decision_rules": [
+          "happy and error cases are interleaved",
+          "expected state differs by path",
+          "failure diagnosis is ambiguous"
+        ],
+        "positive_hints": [
+          "separate tests cover each path"
+        ],
+        "negative_hints": [
+          "parameterization keeps cases distinct"
+        ],
+        "priority": 60,
+        "status": "active"
+      },
+      {
+        "code": "UTE_OTHER",
+        "label": "其它",
+        "definition": "A credible test-effectiveness risk that does not fit a more specific controlled category.",
+        "decision_rules": [
+          "specific category does not apply",
+          "verification is materially weakened",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "specific category applies"
+        ],
+        "negative_hints": [
+          "style-only preference"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "timeout": 60
 }

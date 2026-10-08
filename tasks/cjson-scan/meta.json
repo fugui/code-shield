@@ -1,35 +1,16 @@
 {
-  "id": 2,
-  "name": "cjson_scan",
-  "display_name": "cJSON 内存泄漏扫描",
-  "description": "检测代码中 cJSON 库相关的内存申请与释放（内存泄漏）问题",
-  "engine_mode": "debate_selective",
-  "engine_config": {
-    "exclude_paths": [
-      "thirdparts"
-    ],
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx"
-    ],
-    "content_keywords": [
-      "cJSON_"
-    ]
-  },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
+  "campaign_config": null,
+  "campaign_icon": "",
   "campaign_path": "cjson",
-  "governance_mode": "defect_tracking",
-  "domain_family": "memory_crash",
+  "categories": [
+    "cJSON 解析结果未释放",
+    "cJSON 组装临时节点泄漏",
+    "cJSON 序列化输出未释放",
+    "cJSON 深拷贝副本泄漏",
+    "cJSON 节点摘除后泄漏",
+    "其它 cJSON 生命周期泄漏"
+  ],
+  "created_at": "2026-07-24T09:11:10.530508+08:00",
   "defense_dimensions": [
     {
       "dimension": "AdoptedByItem",
@@ -40,18 +21,214 @@
       "description": "cJSON 指针为 NULL 或 Parse 返回失败时已做安全阻断，不触发物理泄露"
     }
   ],
-
-  "categories": [
-    "cJSON_Parse 内存泄漏",
-    "cJSON_Create 内存泄漏",
-    "cJSON_Print 内存泄漏",
-    "cJSON_Duplicate 内存泄漏",
-    "cJSON_DetachItem 内存泄漏",
-    "其它 cJSON 泄漏"
-  ],
-  "campaign_icon": "",
-  "campaign_config": null,
+  "description": "检测 cJSON 解析、组装、序列化、复制和摘除等所有权生命周期失衡导致的内存泄漏问题",
+  "display_name": "cJSON 内存泄漏扫描",
+  "display_semantics": {
+    "domain_label": "内存与底层崩溃防御",
+    "target_label": "cJSON 内存操作命中",
+    "not_target_label": "非目标命中"
+  },
+  "domain_family": "memory_crash",
+  "domain_label": "内存与底层崩溃防御",
+  "engine_config": {
+    "scan_profile": {
+      "content_keywords": [
+        "cJSON_"
+      ],
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "include_extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx"
+      ],
+      "name": "occurrence_review",
+      "primary_unit": "keyword_occurrence",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "full_ledger",
+  "id": 2,
   "is_active": true,
-  "created_at": "2026-07-24T09:11:10.530508+08:00",
+  "is_campaign": true,
+  "name": "cjson_scan",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "cJSON 内存操作命中",
+    "plural": "cJSON 内存操作命中",
+    "not_target_label": "非目标命中"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "CJSON_PARSE_LEAK",
+        "label": "cJSON 解析结果未释放",
+        "definition": "报文或文本解析出的 JSON 树对象在正常、失败或提前返回路径中失去所有权。",
+        "decision_rules": [
+          "cJSON_Parse 返回调用方持有的 JSON 树",
+          "失败或提前返回路径没有调用 cJSON_Delete",
+          "结果没有被移交给长生命周期管理者"
+        ],
+        "positive_hints": [
+          "成功与失败路径都释放解析结果"
+        ],
+        "negative_hints": [
+          "所有权已明确移交给树或管理者"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "长驻服务请求或消息回调中重复触发",
+          "泄漏点位于循环或高频事件路径"
+        ],
+        "downgrade_when": [
+          "仅进程退出前的一次性低频构建"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "CJSON_CREATE_LEAK",
+        "label": "cJSON 组装临时节点泄漏",
+        "definition": "构造或修改 JSON 时的临时节点在挂载失败、校验失败或提前返回后不可达。",
+        "decision_rules": [
+          "Create API 返回调用方持有的临时对象",
+          "挂载失败后没有回收该对象",
+          "本地提前返回路径丢失所有权"
+        ],
+        "positive_hints": [
+          "临时对象成功挂载或被显式释放"
+        ],
+        "negative_hints": [
+          "所有权已成功转移给父节点或管理者"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "长驻服务请求或消息回调中重复触发",
+          "泄漏点位于循环或高频事件路径"
+        ],
+        "downgrade_when": [
+          "仅进程退出前的一次性低频构建"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "CJSON_PRINT_LEAK",
+        "label": "cJSON 序列化输出未释放",
+        "definition": "格式化或序列化得到的堆内存字符串既没有被释放，也没有移交给管理者。",
+        "decision_rules": [
+          "Print API 返回堆上分配的字符串",
+          "调用方没有释放输出缓冲区",
+          "多个返回路径都没有完成释放或移交"
+        ],
+        "positive_hints": [
+          "输出缓冲区只释放一次"
+        ],
+        "negative_hints": [
+          "输出结果所有权由管理者接管"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "长驻服务请求或消息回调中重复触发",
+          "序列化结果较大且高频生成"
+        ],
+        "downgrade_when": [
+          "仅进程退出前的一次性低频输出"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "CJSON_DUPLICATE_LEAK",
+        "label": "cJSON 深拷贝副本泄漏",
+        "definition": "深拷贝生成的 JSON 树副本在消费、失败或移交后未被释放。",
+        "decision_rules": [
+          "Duplicate 返回独立的深拷贝对象",
+          "副本从未被释放",
+          "成功或失败路径丢弃副本指针"
+        ],
+        "positive_hints": [
+          "副本消费完成后被释放"
+        ],
+        "negative_hints": [
+          "副本所有权已明确移交"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "长驻服务请求或消息回调中重复触发",
+          "深拷贝发生在循环或高频事件路径"
+        ],
+        "downgrade_when": [
+          "仅进程退出前的一次性低频复制"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "CJSON_DETACH_LEAK",
+        "label": "cJSON 节点摘除后泄漏",
+        "definition": "节点从 JSON 树摘除后既没有保存到新所有者，也没有释放。",
+        "decision_rules": [
+          "DetachItem 使节点脱离原树所有权",
+          "摘除后的节点被直接丢弃",
+          "后续没有释放或重新接管"
+        ],
+        "positive_hints": [
+          "摘除节点被释放或保存"
+        ],
+        "negative_hints": [
+          "节点仍由原树持有"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "长驻服务请求或消息回调中重复触发",
+          "摘除操作发生在循环或高频事件路径"
+        ],
+        "downgrade_when": [
+          "仅进程退出前的一次性低频修改"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "CJSON_OTHER",
+        "label": "其它 cJSON 生命周期泄漏",
+        "definition": "已确认 cJSON 所有权失衡，但不属于解析、组装、序列化、拷贝或摘除的典型场景。",
+        "decision_rules": [
+          "cJSON 所有权可能丢失",
+          "典型生命周期分类不适用",
+          "泄漏证据具体可验证"
+        ],
+        "positive_hints": [
+          "典型生命周期分类适用"
+        ],
+        "negative_hints": [
+          "非 cJSON 资源泄漏"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "长驻服务请求或消息回调中重复触发",
+          "泄漏点位于循环或高频事件路径"
+        ],
+        "downgrade_when": [
+          "仅进程退出前的一次性低频操作"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "timeout": 60,
   "updated_at": "2026-08-22T07:36:50.396405+08:00"
 }

@@ -153,21 +153,13 @@ func LoadActiveFindingsFromSynthesis(synthesisPath string) ([]models.AnalysisFin
 	// 1. 尝试以台账格式解析 (SynthesisLedger schema)
 	var ledger struct {
 		Items []struct {
-			Payload     models.AnalysisFinding `json:"payload"`
-			DiffStatus  string                 `json:"diff_status"`
-			CoverageGap bool                   `json:"coverage_gap"`
+			Payload models.AnalysisFinding `json:"payload"`
 		} `json:"items"`
 	}
 	if errUnmarshal := json.Unmarshal(data, &ledger); errUnmarshal == nil && len(ledger.Items) > 0 {
 		var list []models.AnalysisFinding
 		for _, it := range ledger.Items {
 			f := it.Payload
-			if it.DiffStatus != "" {
-				f.DiffStatus = it.DiffStatus
-			}
-			if it.CoverageGap {
-				f.DiffStatus = "COVERAGE_GAP"
-			}
 			list = append(list, f)
 		}
 		return list, nil
