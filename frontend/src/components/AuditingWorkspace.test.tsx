@@ -209,9 +209,10 @@ describe('AuditingWorkspace debate evidence', () => {
     const hunterClaim = baseFinding.hunter_claim ?? '';
     const challengerArg = baseFinding.challenger_arg ?? '';
 
-    expect(await screen.findByText('🎯 问题概述 (Hunter 初筛)')).toBeTruthy();
+    expect(await screen.findByText('📌 缺陷机理与成因剖析')).toBeTruthy();
     expect(screen.getByText(hunterClaim)).toBeTruthy();
-    expect(screen.getByText('⚖️ Challenger 对抗证据:')).toBeTruthy();
+    fireEvent.click(screen.getByText('🛡️ AI 智能体仲裁与对抗事实链'));
+    expect(screen.getByText('⚖️ Challenger (对抗辩护论证与抗辩证据):')).toBeTruthy();
     expect(screen.getByText(challengerArg)).toBeTruthy();
   });
 });
@@ -244,7 +245,7 @@ describe('AuditingWorkspace source link', () => {
     mockWorkspaceFetch(findingWithoutRepo);
     renderWorkspace();
 
-    await screen.findByText('🎯 问题概述 (Hunter 初筛)');
+    await screen.findByText('📌 缺陷机理与成因剖析');
     expect(screen.queryByTitle('在代码仓中查看源码')).toBeNull();
   });
 });

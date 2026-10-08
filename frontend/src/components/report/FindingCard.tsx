@@ -25,7 +25,6 @@ export default function FindingCard({
 }: FindingCardProps) {
   const { showToast } = useToast();
   const [codeExpanded, setCodeExpanded] = useState(false);
-  const [debateExpanded, setDebateExpanded] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState('FALSE_POSITIVE');
@@ -124,7 +123,6 @@ export default function FindingCard({
     }
   };
 
-  const hasDebateInfo = Boolean(finding.hunter_claim || finding.challenger_arg || finding.judge_verdict);
   const assessmentIssues = finding.assessment_artifact?.issues || [];
   const assessmentStatusLabels: Record<string, string> = {
     valid: '评估合格',
@@ -315,10 +313,18 @@ export default function FindingCard({
         </div>
       </div>
 
-      {/* 详细描述 */}
-      {finding.detail && (
+      {/* 缺陷机理剖析与智能体存证 */}
+      {(finding.detail || finding.hunter_claim || finding.judge_verdict) && (
         <div style={{ margin: '0.85rem 0' }}>
-          <DebateVerdictView detail={finding.detail} title={finding.title} />
+          <DebateVerdictView
+            detail={finding.detail}
+            title={finding.title}
+            hunterClaim={finding.hunter_claim}
+            challengerArg={finding.challenger_arg}
+            judgeVerdict={finding.judge_verdict}
+            triggerLine={finding.trigger_line}
+            scopeSymbol={finding.scope_symbol}
+          />
         </div>
       )}
 
@@ -349,45 +355,7 @@ export default function FindingCard({
         </div>
       )}
 
-      {/* 智能体三方对抗辩论事实链 (Hunter -> Challenger -> Judge) */}
-      {hasDebateInfo && (
-        <div style={{ margin: '0.85rem 0', background: 'var(--color-bg-muted, #f8fafc)', borderRadius: '8px', border: '1px solid var(--color-border-primary, #e2e8f0)', padding: '0.75rem 1rem' }}>
-          <div
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
-            onClick={() => setDebateExpanded(!debateExpanded)}
-          >
-            <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              🤖 智能体三方对抗事实链 (Hunter ➜ Challenger ➜ Judge)
-            </span>
-            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-              {debateExpanded ? '▲ 收起' : '▼ 展开辩论'}
-            </span>
-          </div>
 
-          {debateExpanded && (
-            <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem', fontSize: '0.84rem' }}>
-              {finding.hunter_claim && (
-                <div style={{ padding: '0.5rem 0.75rem', background: 'rgba(239, 68, 68, 0.05)', borderLeft: '3px solid #ef4444', borderRadius: '4px' }}>
-                  <div style={{ fontWeight: 600, color: '#dc2626', marginBottom: '0.2rem' }}>🎯 Hunter (初筛猎手主张):</div>
-                  <div style={{ color: '#475569' }}>{finding.hunter_claim}</div>
-                </div>
-              )}
-              {finding.challenger_arg && (
-                <div style={{ padding: '0.5rem 0.75rem', background: 'rgba(59, 130, 246, 0.05)', borderLeft: '3px solid #3b82f6', borderRadius: '4px' }}>
-                  <div style={{ fontWeight: 600, color: '#2563eb', marginBottom: '0.2rem' }}>⚖️ Challenger (对抗辩护证据):</div>
-                  <div style={{ color: '#475569' }}>{finding.challenger_arg}</div>
-                </div>
-              )}
-              {finding.judge_verdict && (
-                <div style={{ padding: '0.5rem 0.75rem', background: 'rgba(16, 185, 129, 0.05)', borderLeft: '3px solid #10b981', borderRadius: '4px' }}>
-                  <div style={{ fontWeight: 600, color: '#059669', marginBottom: '0.2rem' }}>📜 Judge (终审法官裁决书):</div>
-                  <div style={{ color: '#475569' }}>{finding.judge_verdict}</div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 代码片段 */}
       {finding.code_snippet && (

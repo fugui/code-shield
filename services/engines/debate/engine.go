@@ -612,7 +612,7 @@ func (e *DebateEngine) ProcessBundle(ctx *engines.EngineContext, bundle chunker.
 				TaxonomyGoverned:        normalizedCategory.Governed,
 				ReviewRequired:          jv.ReviewRequired,
 				Title:                   DeriveConciseTitle(jv.Title, cleanCategory),
-				Detail:                  fmt.Sprintf("%s\n\n【仲裁法官裁决词】: %s", jv.Title, jv.JudgementRationale),
+				Detail:                  deriveDefectDetail(origCand, jv),
 				Suggestion:              jv.Suggestion,
 				HunterClaim:             origCand.AttackHypothesis,
 				ChallengerArg:           challArgText,
@@ -1937,6 +1937,24 @@ func DeriveConciseTitle(rawTitle, fallbackCategory string) string {
 		return string(runes[:197]) + "..."
 	}
 	return title
+}
+
+// deriveDefectDetail 提取并构造面向开发者的客观缺陷成因与触发机理描述
+func deriveDefectDetail(origCand HunterCandidate, jv JudgeFinalVerdict) string {
+	claim := strings.TrimSpace(origCand.AttackHypothesis)
+	if claim == "" {
+		claim = strings.TrimSpace(origCand.TriggerCondition)
+	}
+	if claim == "" {
+		claim = strings.TrimSpace(origCand.SuspectedTrigger)
+	}
+	if claim != "" {
+		return claim
+	}
+	if strings.TrimSpace(jv.Title) != "" {
+		return jv.Title
+	}
+	return "未提供缺陷机理描述"
 }
 
 // sanitizeCandidatesForPrompt 清洗与缩减 candidate，避免大 Prompt 溢出
