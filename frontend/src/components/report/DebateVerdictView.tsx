@@ -519,6 +519,65 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
   };
 }
 
+export interface DefectInsights {
+  trigger?: string;
+  impact?: string;
+  reference?: string;
+}
+
+/**
+ * 从缺陷描述或分析文本中智能提取结构化要点（触发条件、危害后果、参考对照）
+ */
+export function extractDefectInsights(text: string): DefectInsights {
+  if (!text) return {};
+  const insights: DefectInsights = {};
+
+  // 1. 触发前置条件：匹配 "触发需依赖"、"前置条件"、"触发条件"、"当以"、"运行时格式串" 等
+  const triggerMatch = text.match(
+    /(?:(?:触发需依赖|前置条件[：:]|触发条件[：:]|当以|在传入)[^。；;\n]+(?:。|；|;|\n|$))/
+  );
+  if (triggerMatch) {
+    const t = triggerMatch[0].trim().replace(/^[，,。；;]+|[，,。；;]+$/g, '');
+    if (t.length > 5 && t.length < 240) {
+      insights.trigger = t;
+    }
+  } else {
+    const formatMatch = text.match(/(?:运行时格式串\s*["“][^"”]+["”][^。；;\n]*)/);
+    if (formatMatch && formatMatch[0].length < 160) {
+      insights.trigger = formatMatch[0].trim();
+    }
+  }
+
+  // 2. 潜在危害与影响：匹配 ASan、越界读、SIGSEGV、buffer-overflow、真实 UB、崩溃 等
+  const impactMatch = text.match(
+    /(?:(?:该越界读为真实\s*UB|ASan\s*可检出|可触发\s*SIGSEGV|属于越界读|导致内存破坏|引发拒绝服务|触发崩溃)[^。；;\n]+(?:。|；|;|\n|$))/
+  );
+  if (impactMatch) {
+    const imp = impactMatch[0].trim().replace(/^[，,。；;]+|[，,。；;]+$/g, '');
+    if (imp.length > 5 && imp.length < 240) {
+      insights.impact = imp;
+    }
+  } else {
+    const ubMatch = text.match(/([^。；;\n]*(?:ASan|SIGSEGV|buffer-overflow|内存越界|未定义行为)[^。；;\n]*)/);
+    if (ubMatch && ubMatch[0].trim().length > 10 && ubMatch[0].trim().length < 180) {
+      insights.impact = ubMatch[0].trim();
+    }
+  }
+
+  // 3. 规范对照 / 参考实现：匹配 "对照同一文件"、"同文件中"、"参考实现" 等
+  const refMatch = text.match(
+    /(?:(?:对照同一文件|同文件中|参考实现)[^。；;\n]+(?:均有|保护|实现|缺陷)[^。；;\n]*(?:。|；|;|\n|$))/
+  );
+  if (refMatch) {
+    const ref = refMatch[0].trim().replace(/^[，,。；;]+|[，,。；;]+$/g, '');
+    if (ref.length > 10 && ref.length < 260) {
+      insights.reference = ref;
+    }
+  }
+
+  return insights;
+}
+
 export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
   detail = '',
   title,
@@ -529,354 +588,324 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
   scopeSymbol,
   className,
 }) => {
-  const [showRaw, setShowRaw] = useState(false);
-  const parsed = parseDebateContent(detail || judgeVerdict || '');
-  const challengerOverview = challengerArg ? (
-    <div>
-      <strong style={{ color: 'var(--color-primary, #3b82f6)', marginRight: '0.35rem' }}>
-        ⚖️ Challenger 对抗证据:
-      </strong>
-      <span style={{ color: 'var(--color-text-secondary, #94a3b8)', whiteSpace: 'pre-wrap' }}>
-        {renderInlineFormattedText(challengerArg)}
-      </span>
-    </div>
-  ) : null;
-  const hunterOverview = hunterClaim ? (
-    <div
-      style={{
-        padding: '0.75rem 1rem',
-        background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.03))',
-        border: '1px solid var(--color-border-primary, #334155)',
-        borderLeft: '4px solid var(--color-danger, #ef4444)',
-        borderRadius: 'var(--radius-md, 8px)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.45rem',
-      }}
-    >
-      <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--color-danger, #ef4444)' }}>
-        🎯 问题概述 (Hunter 初筛)
-      </div>
-      <div style={{ fontSize: '0.86rem', lineHeight: 1.6, color: 'var(--color-text-primary, #f8fafc)', whiteSpace: 'pre-wrap' }}>
-        {renderInlineFormattedText(hunterClaim)}
-      </div>
-      {(triggerLine || scopeSymbol) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', fontSize: '0.76rem', color: 'var(--color-text-secondary, #94a3b8)' }}>
-          {triggerLine && (
-            <code
-              style={{
-                padding: '0.15rem 0.4rem',
-                background: 'var(--color-bg-surface, #1e293b)',
-                border: '1px solid var(--color-border-primary, #334155)',
-                borderRadius: '4px',
-                color: 'var(--color-primary, #3b82f6)',
-              }}
-            >
-              触发行：{triggerLine}
-            </code>
-          )}
-          {scopeSymbol && (
-            <code
-              style={{
-                padding: '0.15rem 0.4rem',
-                background: 'var(--color-bg-surface, #1e293b)',
-                border: '1px solid var(--color-border-primary, #334155)',
-                borderRadius: '4px',
-                color: 'var(--color-primary, #3b82f6)',
-              }}
-            >
-              作用域：{scopeSymbol}
-            </code>
-          )}
-        </div>
-      )}
-    </div>
-  ) : null;
+  const [debateExpanded, setDebateExpanded] = useState(false);
+  const [showRawJudge, setShowRawJudge] = useState(false);
 
-  if (!detail && !judgeVerdict) {
+  // 解析法官裁决结构
+  const parsed = parseDebateContent(judgeVerdict || detail || '');
+
+  // 1. 确定缺陷本体核心机理描述（优先 Hunter 客观事实描述，其次 detail 中剥离的成因）
+  let primaryMechanism = '';
+  if (hunterClaim && hunterClaim.trim()) {
+    primaryMechanism = hunterClaim.trim();
+  } else if (detail && detail.trim()) {
+    const trimmedDetail = detail.trim();
+    const judgePrefixRegex = /(?:^|\n)\s*【?(?:仲裁法官裁决词|仲裁法官裁判词|仲裁法官裁决|仲裁法官裁判|法官裁决词|法官裁判词|法官裁决|法官裁判)】?[：:\s]*/;
+    const judgeMatch = trimmedDetail.match(judgePrefixRegex);
+    if (judgeMatch && judgeMatch.index !== undefined && judgeMatch.index > 0) {
+      const preJudge = trimmedDetail.substring(0, judgeMatch.index).trim();
+      if (preJudge && preJudge !== title) {
+        primaryMechanism = preJudge;
+      }
+    }
+    if (!primaryMechanism) {
+      if (!judgeMatch) {
+        primaryMechanism = trimmedDetail;
+      } else {
+        // detail 包含法官裁决，提取判词中事实与成因部分
+        const matchIdx = judgeMatch.index ?? 0;
+        const judgeBody = trimmedDetail.substring(matchIdx + judgeMatch[0].length).trim();
+        primaryMechanism = judgeBody;
+      }
+    }
+  } else if (judgeVerdict && judgeVerdict.trim()) {
+    primaryMechanism = judgeVerdict.trim();
+  } else if (title) {
+    primaryMechanism = title;
+  }
+
+  // 2. 提取判词正文（用于审理存证胶囊）
+  let judgeBodyText = judgeVerdict?.trim() || '';
+  if (!judgeBodyText && detail) {
+    const judgePrefixRegex = /(?:^|\n)\s*【?(?:仲裁法官裁决词|仲裁法官裁判词|仲裁法官裁决|仲裁法官裁判|法官裁决词|法官裁判词|法官裁决|法官裁判)】?[：:\s]*/;
+    const judgeMatch = detail.match(judgePrefixRegex);
+    if (judgeMatch) {
+      judgeBodyText = detail.substring((judgeMatch.index ?? 0) + judgeMatch[0].length).trim();
+    }
+  }
+
+  // 3. 结构化要点提取（触发条件、危害后果、对照参考）
+  const insights = extractDefectInsights(`${primaryMechanism} ${judgeBodyText}`);
+  const hasInsights = Boolean(insights.trigger || insights.impact || insights.reference);
+
+  // 4. 仲裁事实链存证信息判定
+  const hasAuditInfo = Boolean(
+    hunterClaim ||
+    challengerArg ||
+    judgeBodyText ||
+    parsed.isDebate ||
+    (parsed.verdictBadge && parsed.verdictBadge.status !== 'UNKNOWN')
+  );
+
+  const verdictBadge = parsed.verdictBadge || (
+    judgeBodyText && /CONFIRMED/i.test(judgeBodyText)
+      ? {
+          status: 'CONFIRMED' as const,
+          label: '缺陷事实成立 (CONFIRMED)',
+          color: 'var(--color-success, #10b981)',
+          bg: 'var(--color-success-subtle, rgba(16, 185, 129, 0.1))',
+          border: 'var(--color-success-border, rgba(16, 185, 129, 0.3))',
+        }
+      : undefined
+  );
+
+  if (!primaryMechanism && !hasAuditInfo) {
     return null;
   }
 
-  // 如果不是法官辩论格式，或者用户点击了切换纯文本
-  if (!parsed.isDebate || showRaw) {
-    return (
-      <div className={className} style={{ position: 'relative' }}>
-        {hunterOverview}
-        <div
-          style={{
-            margin: 0,
-            fontSize: '0.85rem',
-            color: 'var(--color-text-primary, #f8fafc)',
-            textAlign: 'left',
-            lineHeight: 1.6,
-            background: 'var(--color-bg-surface, #1e293b)',
-            border: '1px solid var(--color-border-primary, #334155)',
-            padding: '1rem',
-            borderRadius: 'var(--radius-md, 8px)',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {renderInlineFormattedText(detail || judgeVerdict || '')}
-        </div>
-        {challengerOverview}
-        {parsed.isDebate && (
-          <button
-            type="button"
-            onClick={() => setShowRaw(false)}
-            style={{
-              marginTop: '0.5rem',
-              fontSize: '0.75rem',
-              color: 'var(--color-primary, #3b82f6)',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            ✨ 切换回结构化卡片视图
-          </button>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div
-      className={className}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-        textAlign: 'left',
-      }}
-    >
-      {hunterOverview}
+    <div className={`code-defect-view-container ${className || ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', textAlign: 'left' }}>
+      {/* 1. 缺陷机理与成因剖析 (Root Cause & Mechanism - 黄金首屏主角) */}
+      {primaryMechanism && (
+        <div className="code-defect-mechanism">
+          <div className="code-defect-mechanism__header">
+            <div className="code-defect-mechanism__title">
+              <span>📌 缺陷机理与成因剖析</span>
+            </div>
+            <div className="code-defect-mechanism__badges">
+              {triggerLine && (
+                <span className="code-defect-mechanism__pill" title="引发风险的关键单一语句">
+                  触发行：<code>{triggerLine}</code>
+                </span>
+              )}
+              {scopeSymbol && (
+                <span className="code-defect-mechanism__pill" title="AST 作用域符号">
+                  作用域：<code>{scopeSymbol}</code>
+                </span>
+              )}
+            </div>
+          </div>
 
-      {/* 1. 顶部初筛概述 (若存在且与标题不同) */}
-      {parsed.intro && parsed.intro !== title && !hunterClaim && (
-        <div
-          style={{
-            fontSize: '0.85rem',
-            color: 'var(--color-text-secondary, #94a3b8)',
-            lineHeight: 1.55,
-            padding: '0.65rem 0.9rem',
-            background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.03))',
-            borderRadius: 'var(--radius-sm, 6px)',
-            border: '1px solid var(--color-border-primary, #334155)',
-          }}
-        >
-          <span style={{ fontWeight: 600, color: 'var(--color-text-primary, #f8fafc)', marginRight: '0.4rem' }}>
-            📋 问题概述:
-          </span>
-          {renderInlineFormattedText(parsed.intro)}
+          {/* 客观机理主文本 */}
+          <div className="code-defect-mechanism__body">
+            {renderInlineFormattedText(primaryMechanism)}
+          </div>
+
+          {/* 结构化要点提取 (触发条件、危害、对照) */}
+          {hasInsights && (
+            <div className="code-defect-insights">
+              {insights.trigger && (
+                <div className="code-defect-insight-item code-defect-insight-item--trigger">
+                  <span className="code-defect-insight-label">⚡ 触发条件：</span>
+                  <span className="code-defect-insight-content">
+                    {renderInlineFormattedText(insights.trigger)}
+                  </span>
+                </div>
+              )}
+              {insights.impact && (
+                <div className="code-defect-insight-item code-defect-insight-item--impact">
+                  <span className="code-defect-insight-label">💥 潜在危害：</span>
+                  <span className="code-defect-insight-content">
+                    {renderInlineFormattedText(insights.impact)}
+                  </span>
+                </div>
+              )}
+              {insights.reference && (
+                <div className="code-defect-insight-item code-defect-insight-item--reference">
+                  <span className="code-defect-insight-label">📐 规范对照：</span>
+                  <span className="code-defect-insight-content">
+                    {renderInlineFormattedText(insights.reference)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* 2. 仲裁法官终审裁决 Banner */}
-      <div
-        style={{
-          background: parsed.verdictBadge?.bg || 'var(--color-success-subtle, rgba(16, 185, 129, 0.06))',
-          border: `1.5px solid ${parsed.verdictBadge?.border || 'var(--color-success-border, rgba(16, 185, 129, 0.3))'}`,
-          borderRadius: 'var(--radius-md, 8px)',
-          padding: '0.85rem 1rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.45rem',
-          boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1))',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span
-              style={{
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                color: parsed.verdictBadge?.color || 'var(--color-success, #10b981)',
-                background: 'var(--color-bg-surface, #1e293b)',
-                border: `1px solid ${parsed.verdictBadge?.border || 'var(--color-success, #10b981)'}`,
-                padding: '0.2rem 0.65rem',
-                borderRadius: 'var(--radius-xs, 4px)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.3rem',
-              }}
-            >
-              ⚖️ {parsed.verdictBadge?.label || '法官终审裁决'}
-            </span>
-            {parsed.severityLevel && (
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: 'var(--color-warning, #f59e0b)',
-                  background: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.12))',
-                  border: '1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3))',
-                  padding: '0.15rem 0.5rem',
-                  borderRadius: 'var(--radius-xs, 4px)',
-                }}
-              >
-                定级：{parsed.severityLevel}
-              </span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowRaw(true)}
-            title="查看纯文本格式"
-            style={{
-              fontSize: '0.75rem',
-              color: 'var(--color-text-muted, #64748b)',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              transition: 'all 0.2s',
-            }}
-          >
-            📄 查看纯文本
-          </button>
-        </div>
-
-        {parsed.verdictSummary && (
+      {/* 2. AI 智能体仲裁与对抗事实链胶囊 (Audit Trail Capsule - 默认轻量收拢) */}
+      {hasAuditInfo && (
+        <div className="code-audit-capsule">
           <div
-            style={{
-              fontSize: '0.88rem',
-              fontWeight: 500,
-              color: 'var(--color-text-primary, #f8fafc)',
-              lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
-            }}
+            className="code-audit-capsule__bar"
+            onClick={() => setDebateExpanded(!debateExpanded)}
+            title="点击展开或收起多智能体（Hunter ➜ Challenger ➜ Judge）对抗事实链与仲裁依据"
           >
-            {renderInlineFormattedText(parsed.verdictSummary)}
-          </div>
-        )}
-      </div>
-
-      {/* 3. 结构化事实与证据链条卡片流 (Sections Stream) */}
-      {parsed.sections.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-          {parsed.sections.map((section, idx) => {
-            return (
-              <div
-                key={idx}
-                style={{
-                  padding: '0.75rem 1rem',
-                  background: 'var(--color-bg-surface, #1e293b)',
-                  border: '1px solid var(--color-border-primary, #334155)',
-                  borderLeft: `4px solid ${section.borderColor}`,
-                  borderRadius: 'var(--radius-md, 8px)',
-                  fontSize: '0.85rem',
-                  lineHeight: 1.6,
-                  color: 'var(--color-text-primary, #f8fafc)',
-                  boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1))',
-                }}
-              >
-                {/* 卡片头部标题 */}
-                <div
+            <div className="code-audit-capsule__lead">
+              {verdictBadge && (
+                <span
+                  className="code-audit-capsule__badge"
                   style={{
-                    fontWeight: 700,
-                    color: section.color,
-                    marginBottom: '0.45rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    fontSize: '0.84rem',
+                    background: verdictBadge.bg,
+                    color: verdictBadge.color,
+                    borderColor: verdictBadge.border,
                   }}
                 >
-                  <span style={{ fontSize: '0.95rem' }}>{section.icon}</span>
-                  <span>{section.title}</span>
+                  ⚖️ {verdictBadge.label}
+                </span>
+              )}
+              <span className="code-audit-capsule__title">
+                🛡️ AI 智能体仲裁与对抗事实链
+              </span>
+              {parsed.severityLevel && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: 'var(--color-warning, #f59e0b)',
+                    background: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.1))',
+                    border: '1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3))',
+                    padding: '0.12rem 0.45rem',
+                    borderRadius: '4px',
+                  }}
+                >
+                  定级：{parsed.severityLevel}
+                </span>
+              )}
+            </div>
+
+            <div className="code-audit-capsule__toggle">
+              <span>{debateExpanded ? '▲ 收起事实链' : '▼ 展开辩论与判词'}</span>
+            </div>
+          </div>
+
+          {debateExpanded && (
+            <div className="code-audit-capsule__body">
+              {/* 阶段 1: Hunter 初筛猎手主张 */}
+              {hunterClaim && (
+                <div className="code-audit-stage code-audit-stage--hunter">
+                  <div className="code-audit-stage__title" style={{ color: 'var(--color-danger, #ef4444)' }}>
+                    🎯 Hunter (初筛猎手主张与攻击假设):
+                  </div>
+                  <div className="code-audit-stage__content">
+                    {renderInlineFormattedText(hunterClaim)}
+                  </div>
                 </div>
+              )}
 
-                {/* 卡片正文：若含有编号条目，以结构化列表呈现 */}
-                {section.items && section.items.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.35rem' }}>
-                    {section.items.map((item, iIdx) => (
-                      <div
-                        key={iIdx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '0.55rem',
-                          background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.02))',
-                          padding: '0.45rem 0.65rem',
-                          borderRadius: 'var(--radius-sm, 6px)',
-                          border: '1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.04))',
-                        }}
-                      >
-                        {/* 序号徽章 */}
-                        <span
-                          style={{
-                            flexShrink: 0,
-                            minWidth: '20px',
-                            height: '20px',
-                            borderRadius: '4px',
-                            background: section.bgColor,
-                            color: section.color,
-                            border: `1px solid ${section.borderColor}`,
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            marginTop: '0.15rem',
-                          }}
-                        >
-                          {item.index}
-                        </span>
+              {/* 阶段 2: Challenger 对抗辩护证据 */}
+              {challengerArg && (
+                <div className="code-audit-stage code-audit-stage--challenger">
+                  <div className="code-audit-stage__title" style={{ color: 'var(--color-primary, #3b82f6)' }}>
+                    ⚖️ Challenger (对抗辩护论证与抗辩证据):
+                  </div>
+                  <div className="code-audit-stage__content">
+                    {renderInlineFormattedText(challengerArg)}
+                  </div>
+                </div>
+              )}
 
-                        {/* 条目正文 */}
-                        <div style={{ flex: 1, fontSize: '0.84rem', lineHeight: 1.55 }}>
-                          {item.title && (
-                            <strong style={{ color: section.color, marginRight: '0.4rem' }}>
-                              {item.title}：
-                            </strong>
-                          )}
-                          <span style={{ color: 'var(--color-text-primary, #f8fafc)', whiteSpace: 'pre-wrap' }}>
-                            {renderInlineFormattedText(item.content)}
-                          </span>
+              {/* 阶段 3: Judge 终审法官裁决书 */}
+              {(judgeBodyText || parsed.verdictSummary) && (
+                <div className="code-audit-stage code-audit-stage--judge">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <div className="code-audit-stage__title" style={{ color: 'var(--color-success, #10b981)' }}>
+                      📜 Judge (终审法官裁决书与法理推演):
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowRawJudge(!showRawJudge);
+                      }}
+                      style={{
+                        fontSize: '0.74rem',
+                        color: 'var(--color-text-muted, #64748b)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {showRawJudge ? '✨ 切换结构化' : '📄 查看纯文本'}
+                    </button>
+                  </div>
+
+                  {showRawJudge ? (
+                    <div className="code-audit-stage__content">
+                      {renderInlineFormattedText(judgeBodyText || parsed.rawText || '')}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      {parsed.verdictSummary && (
+                        <div className="code-audit-stage__content" style={{ fontWeight: 500 }}>
+                          {renderInlineFormattedText(parsed.verdictSummary)}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      whiteSpace: 'pre-wrap',
-                      color: 'var(--color-text-primary, #f8fafc)',
-                      fontSize: '0.84rem',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {renderInlineFormattedText(section.content)}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 4. 原生三方对抗独立数据补充 (若存在单独字段) */}
-      {challengerArg && (
-        <div
-          style={{
-            marginTop: '0.25rem',
-            padding: '0.65rem 0.9rem',
-            background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.02))',
-            border: '1px dashed var(--color-border-primary, #334155)',
-            borderRadius: 'var(--radius-md, 8px)',
-            fontSize: '0.82rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.45rem',
-          }}
-        >
-          {challengerOverview}
+                      )}
+                      {parsed.sections.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', marginTop: '0.35rem' }}>
+                          {parsed.sections.map((section, sIdx) => (
+                            <div
+                              key={sIdx}
+                              style={{
+                                padding: '0.65rem 0.85rem',
+                                background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.02))',
+                                border: '1px solid var(--color-border-primary, #334155)',
+                                borderLeft: `3px solid ${section.borderColor}`,
+                                borderRadius: 'var(--radius-sm, 6px)',
+                                fontSize: '0.84rem',
+                                lineHeight: 1.55,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 700,
+                                  color: section.color,
+                                  marginBottom: '0.35rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  fontSize: '0.82rem',
+                                }}
+                              >
+                                <span>{section.icon}</span>
+                                <span>{section.title}</span>
+                              </div>
+                              {section.items && section.items.length > 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                                  {section.items.map((it, iIdx) => (
+                                    <div key={iIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.82rem' }}>
+                                      <span
+                                        style={{
+                                          flexShrink: 0,
+                                          minWidth: '18px',
+                                          height: '18px',
+                                          borderRadius: '3px',
+                                          background: section.bgColor,
+                                          color: section.color,
+                                          fontSize: '0.7rem',
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          marginTop: '0.15rem',
+                                        }}
+                                      >
+                                        {it.index}
+                                      </span>
+                                      <div style={{ flex: 1, lineHeight: 1.5 }}>
+                                        {it.title && <strong style={{ color: section.color, marginRight: '0.35rem' }}>{it.title}：</strong>}
+                                        <span>{renderInlineFormattedText(it.content)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="code-audit-stage__content">
+                                  {renderInlineFormattedText(section.content)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

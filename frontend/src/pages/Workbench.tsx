@@ -30,6 +30,11 @@ interface WorkbenchFinding {
 	status: string;
 	status_log: string | null;
 	assignee_id?: number | null;
+	hunter_claim?: string;
+	challenger_arg?: string;
+	judge_verdict?: string;
+	trigger_line?: string;
+	scope_symbol?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -664,8 +669,16 @@ export default function Workbench() {
 
 						{/* Detail */}
 						<div>
-							<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left' }}>缺陷描述</h4>
-							<DebateVerdictView detail={selectedFinding.detail} title={selectedFinding.title} />
+							<h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'left' }}>缺陷详情</h4>
+							<DebateVerdictView
+								detail={selectedFinding.detail}
+								title={selectedFinding.title}
+								hunterClaim={selectedFinding.hunter_claim}
+								challengerArg={selectedFinding.challenger_arg}
+								judgeVerdict={selectedFinding.judge_verdict}
+								triggerLine={selectedFinding.trigger_line}
+								scopeSymbol={selectedFinding.scope_symbol}
+							/>
 						</div>
 
 						{/* Code snippet */}

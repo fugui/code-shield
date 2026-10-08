@@ -2989,3 +2989,218 @@
   color: var(--color-text-secondary, #64748b);
   font-size: 0.88rem;
 }
+
+/* ==========================================================================
+   Defect Mechanism & Audit Capsule Redesign (用户视角缺陷成因与智能体存证)
+   ========================================================================== */
+
+.code-defect-mechanism {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-primary);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md, 8px);
+  padding: 1rem 1.25rem;
+  margin: 0.85rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+}
+
+.code-defect-mechanism__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.code-defect-mechanism__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+}
+
+.code-defect-mechanism__badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.code-defect-mechanism__pill {
+  padding: 0.15rem 0.5rem;
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-xs, 4px);
+  color: var(--color-primary);
+  font-size: 0.76rem;
+  font-family: var(--font-mono, "JetBrains Mono", Consolas, monospace);
+}
+
+.code-defect-mechanism__body {
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code-defect-insights {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.code-defect-insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  border: 1px solid var(--color-border-primary);
+}
+
+.code-defect-insight-item--trigger {
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.08));
+  border-color: var(--color-warning-border, rgba(245, 158, 11, 0.25));
+  color: var(--color-text-primary);
+}
+
+.code-defect-insight-item--impact {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.08));
+  border-color: var(--color-danger-border, rgba(239, 68, 68, 0.25));
+  color: var(--color-text-primary);
+}
+
+.code-defect-insight-item--reference {
+  background: var(--color-info-subtle, rgba(14, 165, 233, 0.08));
+  border-color: var(--color-info-border, rgba(14, 165, 233, 0.25));
+  color: var(--color-text-primary);
+}
+
+.code-defect-insight-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.code-defect-insight-content {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* ── 智能体仲裁与对抗事实链胶囊 (Audit Trail Capsule) ── */
+.code-audit-capsule {
+  margin: 0.85rem 0;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg-muted);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.code-audit-capsule__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  background: var(--color-bg-muted);
+  transition: background-color 0.2s ease;
+}
+
+.code-audit-capsule__bar:hover {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.03));
+}
+
+.code-audit-capsule__lead {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.code-audit-capsule__badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-xs, 4px);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid transparent;
+}
+
+.code-audit-capsule__title {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.code-audit-capsule__toggle {
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.code-audit-capsule__body {
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--color-border-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--color-bg-surface);
+}
+
+.code-audit-stage {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.code-audit-stage--hunter {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.04));
+  border-left: 3px solid var(--color-danger, #ef4444);
+}
+
+.code-audit-stage--challenger {
+  background: var(--color-info-subtle, rgba(59, 130, 246, 0.04));
+  border-left: 3px solid var(--color-primary, #3b82f6);
+}
+
+.code-audit-stage--judge {
+  background: var(--color-success-subtle, rgba(16, 185, 129, 0.04));
+  border-left: 3px solid var(--color-success, #10b981);
+}
+
+.code-audit-stage__title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.code-audit-stage__content {
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
