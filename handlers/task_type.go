@@ -4,6 +4,8 @@ import (
 	commonAudit "code-common/backend/audit"
 	"code-shield/models"
 	"code-shield/services"
+	"code-shield/services/engines"
+	"code-shield/services/engines/profile"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +23,13 @@ import (
 func logTaskTypeFileErr(action, path string, err error) {
 	if err != nil {
 		log.Printf("[TaskType] %s failed for %s: %v\n", action, path, err)
+	}
+}
+
+func decorateScanProfileHash(taskType *models.TaskType) {
+	_, profileHash, err := profile.Parse(json.RawMessage(taskType.EngineConfig))
+	if err == nil {
+		taskType.ScanProfileHash = profileHash
 	}
 }
 
@@ -39,6 +49,9 @@ func GetTaskTypes(c *gin.Context) {
 	}
 
 	query.Find(&taskTypes)
+	for i := range taskTypes {
+		decorateScanProfileHash(&taskTypes[i])
+	}
 	c.JSON(http.StatusOK, taskTypes)
 }
 
@@ -50,6 +63,7 @@ func GetTaskType(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Task type not found"})
 		return
 	}
+	decorateScanProfileHash(&taskType)
 	c.JSON(http.StatusOK, taskType)
 }
 
@@ -61,6 +75,18 @@ func CreateTaskType(c *gin.Context) {
 		return
 	}
 
+	if !engines.EngineExists(req.EngineMode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_mode: 引擎未注册"})
+		return
+	}
+	if _, _, err := profile.Parse(json.RawMessage(req.EngineConfig)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_config: " + err.Error()})
+		return
+	}
+	canonicalProfile, profileHash, _ := profile.Parse(json.RawMessage(req.EngineConfig))
+	canonicalProfileJSON, _ := json.Marshal(canonicalProfile)
+	req.EngineConfig = datatypes.JSON(canonicalProfileJSON)
+
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
 	}
@@ -70,10 +96,10 @@ func CreateTaskType(c *gin.Context) {
 
 	if req.IsCampaign {
 		if req.GovernanceMode == "" {
-			req.GovernanceMode = models.GovernanceModeDefectTracking
+			req.GovernanceMode = models.GovernanceModeFullLedger
 		}
-		if req.GovernanceMode != models.GovernanceModeDefectTracking && req.GovernanceMode != models.GovernanceModeEntityAssessment {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的治理模式: 仅支持 defect_tracking 或 entity_assessment"})
+		if req.GovernanceMode != models.GovernanceModeFullLedger && req.GovernanceMode != models.GovernanceModeChangeFocus && req.GovernanceMode != models.GovernanceModeEntityAssessment {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的治理模式: 仅支持 full_ledger、change_focus 或 entity_assessment"})
 			return
 		}
 		if req.CampaignPath != "" {
@@ -134,32 +160,10 @@ func CreateTaskType(c *gin.Context) {
 		"- 给出文件定位、风险分类、严重级别、原始代码片段以及具体可靠的修复代码方案。\n\n" +
 		"### 三、总结与建议\n" +
 		"- 一个简洁的问题缺陷总结和预防改进指导。\n"
-	defaultPrecondition := `#!/bin/bash
-# 前置检查脚本
-# exit 0 = 继续执行, exit 1 = 跳过, exit 2 = 失败
-REPO_DIR="$1"
-
-if [ -z "$REPO_DIR" ] || [ ! -d "$REPO_DIR" ]; then
-    echo "代码仓路径不存在或未提供"
-    exit 2
-fi
-
-# 检查代码仓是否为空目录
-if [ -z "$(ls -A "$REPO_DIR" 2>/dev/null)" ]; then
-    echo "代码仓为空目录，无需执行扫描"
-    exit 1
-fi
-
-echo "代码仓校验成功，开始执行扫描。"
-exit 0
-`
-
 	logTaskTypeFileErr("write analysis prompt", req.AnalysisPromptFile(),
 		os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644))
 	logTaskTypeFileErr("write synthesis prompt", req.SynthesisPromptFile(),
 		os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644))
-	logTaskTypeFileErr("write precondition script", req.PreconditionScript(),
-		os.WriteFile(models.AppConfig.GetAbsPath(req.PreconditionScript()), []byte(defaultPrecondition), 0755))
 
 	// 写入 meta.json
 	if metaBytes, err := json.MarshalIndent(req, "", "  "); err != nil {
@@ -177,6 +181,7 @@ exit 0
 		"task_type", fmt.Sprintf("%d", req.ID), req.DisplayName,
 		nil, req)
 
+	req.ScanProfileHash = profileHash
 	c.JSON(http.StatusCreated, req)
 }
 
@@ -196,6 +201,7 @@ func UpdateTaskType(c *gin.Context) {
 		Description       *string          `json:"description"`
 		EngineMode        *string          `json:"engine_mode"`
 		EngineConfig      *json.RawMessage `json:"engine_config"`
+		AssessmentConfig  *json.RawMessage `json:"assessment_config"`
 		TargetScope       *string          `json:"target_scope"`
 		NotifyTemplate    *string          `json:"notify_template"`
 		NotifyThreshold   *int             `json:"notify_threshold"`
@@ -209,11 +215,32 @@ func UpdateTaskType(c *gin.Context) {
 		CampaignConfig    *json.RawMessage `json:"campaign_config"`
 		DomainFamily      *string          `json:"domain_family"`
 		DefenseDimensions *json.RawMessage `json:"defense_dimensions"`
+		DomainLabel       *string          `json:"domain_label"`
+		TargetSemantics   *json.RawMessage `json:"target_semantics"`
+		DisplaySemantics  *json.RawMessage `json:"display_semantics"`
 		Categories        *json.RawMessage `json:"categories"`
+		UpdatedAt         *time.Time       `json:"updated_at"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if req.EngineMode != nil && !engines.EngineExists(*req.EngineMode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_mode: 引擎未注册"})
+		return
+	}
+	var profileHash string
+	if req.EngineConfig != nil {
+		canonicalProfile, parsedHash, parseErr := profile.Parse(*req.EngineConfig)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_config: " + parseErr.Error()})
+			return
+		}
+		canonicalProfileJSON, _ := json.Marshal(canonicalProfile)
+		canonicalRaw := json.RawMessage(canonicalProfileJSON)
+		req.EngineConfig = &canonicalRaw
+		profileHash = parsedHash
 	}
 
 	updates := map[string]interface{}{}
@@ -225,9 +252,16 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.EngineMode != nil {
 		updates["engine_mode"] = *req.EngineMode
+		updates["current_revision_id"] = nil
 	}
 	if req.EngineConfig != nil {
 		updates["engine_config"] = string(*req.EngineConfig)
+		updates["current_revision_id"] = nil
+	}
+	if req.AssessmentConfig != nil {
+		updates["assessment_config"] = string(*req.AssessmentConfig)
+		updates["assessment_config_hash"] = models.HashAssessmentConfig(datatypes.JSON(*req.AssessmentConfig))
+		updates["current_revision_id"] = nil
 	}
 	if req.TargetScope != nil {
 		updates["target_scope"] = *req.TargetScope
@@ -255,6 +289,7 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.GovernanceMode != nil {
 		updates["governance_mode"] = *req.GovernanceMode
+		updates["current_revision_id"] = nil
 	}
 	if req.CampaignIcon != nil {
 		updates["campaign_icon"] = *req.CampaignIcon
@@ -264,12 +299,32 @@ func UpdateTaskType(c *gin.Context) {
 	}
 	if req.DomainFamily != nil {
 		updates["domain_family"] = *req.DomainFamily
+		updates["current_revision_id"] = nil
 	}
 	if req.DefenseDimensions != nil {
 		updates["defense_dimensions"] = string(*req.DefenseDimensions)
+		updates["current_revision_id"] = nil
+	}
+	if req.DomainLabel != nil {
+		updates["domain_label"] = *req.DomainLabel
+		updates["current_revision_id"] = nil
+	}
+	if req.TargetSemantics != nil {
+		updates["target_semantics"] = string(*req.TargetSemantics)
+		updates["current_revision_id"] = nil
+	}
+	if req.DisplaySemantics != nil {
+		updates["display_semantics"] = string(*req.DisplaySemantics)
+		updates["current_revision_id"] = nil
 	}
 	if req.Categories != nil {
 		updates["categories"] = string(*req.Categories)
+		updates["current_revision_id"] = nil
+	}
+
+	if req.UpdatedAt != nil && !taskType.UpdatedAt.Equal(*req.UpdatedAt) {
+		c.JSON(http.StatusConflict, gin.H{"error": "任务类型已被其他修改更新，请刷新后重试"})
+		return
 	}
 
 	targetIsCampaign := taskType.IsCampaign
@@ -286,8 +341,8 @@ func UpdateTaskType(c *gin.Context) {
 	}
 
 	if targetIsCampaign {
-		if targetGovernanceMode != models.GovernanceModeDefectTracking && targetGovernanceMode != models.GovernanceModeEntityAssessment {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的治理模式: 仅支持 defect_tracking 或 entity_assessment"})
+		if targetGovernanceMode != models.GovernanceModeFullLedger && targetGovernanceMode != models.GovernanceModeChangeFocus && targetGovernanceMode != models.GovernanceModeEntityAssessment {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的治理模式: 仅支持 full_ledger、change_focus 或 entity_assessment"})
 			return
 		}
 		if targetCampaignPath != "" {
@@ -306,6 +361,7 @@ func UpdateTaskType(c *gin.Context) {
 	}
 
 	models.DB.First(&taskType, id)
+	taskType.ScanProfileHash = profileHash
 
 	// 主动失效专项分析内存缓存
 	InvalidateCampaignCache(oldTaskType.CampaignPath, oldTaskType.Name, taskType.CampaignPath, taskType.Name)
@@ -380,15 +436,17 @@ func DeleteTaskType(c *gin.Context) {
 			return err
 		}
 
-		// 4. 清理缺陷指纹真值表与人机负样本规则
-		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.DefectFingerprintRecord{}).Error; err != nil {
-			return err
-		}
+		// 4. 清理人机负样本规则
 		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.RepoFeedbackRule{}).Error; err != nil {
 			return err
 		}
 
-		// 5. 删除 TaskType 自身
+		// 5. 清理不可变修订
+		if err := tx.Where("task_type_id = ?", taskType.ID).Delete(&models.TaskTypeRevision{}).Error; err != nil {
+			return err
+		}
+
+		// 6. 删除 TaskType 自身
 		if err := tx.Delete(&taskType).Error; err != nil {
 			return err
 		}
@@ -436,7 +494,6 @@ func GetTaskTypeFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"analysis_prompt":  readFile(taskType.AnalysisPromptFile()),
 		"synthesis_prompt": readFile(taskType.SynthesisPromptFile()),
-		"precondition":     readFile(taskType.PreconditionScript()),
 		"postprocess":      readFile(taskType.PostprocessScript()),
 	})
 }
@@ -466,12 +523,10 @@ func UpdateTaskTypeFile(c *gin.Context) {
 		filePath = taskType.AnalysisPromptFile()
 	case "synthesis_prompt":
 		filePath = taskType.SynthesisPromptFile()
-	case "precondition":
-		filePath = taskType.PreconditionScript()
 	case "postprocess":
 		filePath = taskType.PostprocessScript()
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type, must be: analysis_prompt, synthesis_prompt, precondition, or postprocess"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type, must be: analysis_prompt, synthesis_prompt, or postprocess"})
 		return
 	}
 
@@ -486,7 +541,7 @@ func UpdateTaskTypeFile(c *gin.Context) {
 	}
 
 	perm := os.FileMode(0644)
-	if fileType == "precondition" || fileType == "postprocess" {
+	if fileType == "postprocess" {
 		perm = 0755 // scripts need execute permission
 	}
 

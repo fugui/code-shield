@@ -3,12 +3,14 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"code-shield/models"
-	"code-shield/services/defects"
+	"code-shield/services/coverage"
+	"code-shield/services/defectlifecycle"
 	"code-shield/services/dispatcher"
 	"code-shield/services/engines"
 	"code-shield/services/engines/chunker"
@@ -101,13 +103,17 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 // ==============================================================================
 
 type (
-	ModelDispatcher     = dispatcher.ModelDispatcher
-	ModelResource       = dispatcher.ModelResource
-	ModelResourceStatus = dispatcher.ModelResourceStatus
-	ThrottleInfo        = dispatcher.ThrottleInfo
-	LLMSlotLease        = dispatcher.LLMSlotLease
-	TierRouter          = dispatcher.TierRouter
-	TierAcquisition     = dispatcher.TierAcquisition
+	ModelDispatcher           = dispatcher.ModelDispatcher
+	ModelResource             = dispatcher.ModelResource
+	ModelResourceStatus       = dispatcher.ModelResourceStatus
+	ThrottleInfo              = dispatcher.ThrottleInfo
+	LLMSlotLease              = dispatcher.LLMSlotLease
+	DispatcherMetricsSnapshot = dispatcher.DispatcherMetricsSnapshot
+	DispatcherDebugSnapshot   = dispatcher.DispatcherDebugSnapshot
+	PoolMetricsSnapshot       = dispatcher.PoolMetricsSnapshot
+	TierMetricsSnapshot       = dispatcher.TierMetricsSnapshot
+	TierRouter                = dispatcher.TierRouter
+	TierAcquisition           = dispatcher.TierAcquisition
 )
 
 // Dispatcher 为多 LLM 并发分配器的全局单例引用
@@ -129,9 +135,8 @@ func GetTierRouter() *TierRouter {
 // ==============================================================================
 
 const (
-	DefaultChunkMaxFiles    = engines.DefaultChunkMaxFiles
-	DefaultChunkDepth       = engines.DefaultChunkDepth
-	DefaultChunkConcurrency = engines.DefaultChunkConcurrency
+	DefaultChunkMaxFiles = engines.DefaultChunkMaxFiles
+	DefaultChunkDepth    = engines.DefaultChunkDepth
 )
 
 type (
@@ -149,41 +154,6 @@ type (
 	DebateTicket          = debate.DebateTicket
 	DebateTicketResult    = debate.DebateTicketResult
 )
-
-// TaskEngine 兼容既有任务上下文的门面接口
-type TaskEngine interface {
-	Run(ctx *taskContext) error
-}
-
-// SingleEngine 兼容旧版调用的单仓分析引擎包装
-type SingleEngine struct{}
-
-func (e *SingleEngine) Run(ctx *taskContext) error {
-	adapter := &engineAdapter{inner: engines.GetEngine("single")}
-	return adapter.Run(ctx)
-}
-
-// ChunkedEngine 兼容旧版调用的分片并发引擎包装
-type ChunkedEngine struct{}
-
-func (e *ChunkedEngine) Run(ctx *taskContext) error {
-	adapter := &engineAdapter{inner: engines.GetEngine("chunked")}
-	return adapter.Run(ctx)
-}
-
-// DebateEngine 兼容旧版调用的辩论引擎包装
-type DebateEngine struct {
-	Mode string
-}
-
-func (e *DebateEngine) Run(ctx *taskContext) error {
-	mode := e.Mode
-	if mode == "" {
-		mode = "debate_full"
-	}
-	adapter := &engineAdapter{inner: engines.GetEngine(mode)}
-	return adapter.Run(ctx)
-}
 
 // 兼容既有单元测试与调用方的辅助函数别名
 func scanAndChunk(codesPath string, cfg ChunkConfig, targetScope string) (map[string][]string, error) {
@@ -214,34 +184,49 @@ type engineAdapter struct {
 func (a *engineAdapter) Run(ctx *taskContext) error {
 	overallStartTime := time.Now()
 
-	engCtx := &engines.EngineContext{
-		Ctx:           ctx.Ctx,
-		ReportID:      ctx.Report.ID,
-		RepoID:        ctx.Repo.ID,
-		RepoName:      ctx.Repo.Name,
-		TaskTypeID:    ctx.TaskType.ID,
-		TaskTypeName:  ctx.TaskType.DisplayName,
-		CodesPath:     ctx.CodesPath,
-		ReportPath:    ctx.ReportPath,
-		JSONPath:      ctx.JsonPath,
-		EngineConfig:  json.RawMessage(ctx.TaskType.EngineConfig),
-		RunParams:     ctx.RunParams,
-		NegativeRules: GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
+	var engCtx *engines.EngineContext
+	chunkPolicyID := coverage.ChunkPolicyID(ctx.TaskType.Name, ctx.TaskType.EngineConfig)
+	ctx.ChunkPolicyID = chunkPolicyID
+	engCtx = &engines.EngineContext{
+		Ctx:                ctx.Ctx,
+		ReportID:           ctx.Report.ID,
+		RepoID:             ctx.Repo.ID,
+		RepoName:           ctx.Repo.Name,
+		TaskTypeID:         ctx.TaskType.ID,
+		TaskTypeName:       ctx.TaskType.DisplayName,
+		TaskTypeKey:        ctx.TaskType.Name,
+		EngineMode:         ctx.TaskType.EngineMode,
+		AssessmentConfig:   json.RawMessage(ctx.TaskType.AssessmentConfig),
+		TaskDir:            ctx.TaskType.TaskDir(),
+		AnalysisPromptPath: models.AppConfig.GetAbsPath(ctx.TaskType.AnalysisPromptFile()),
+		AllowedCategories:  ctx.TaskType.GetAllowedCategories(),
+		Taxonomy:           taxonomySnapshot(ctx.TaskType),
+		DomainFamily:       ctx.TaskType.GetDomainFamily(),
+		DefenseDimensions:  ctx.TaskType.GetDefenseDimensions(),
+		CodesPath:          ctx.CodesPath,
+		WorkDir:            ctx.CodesPath,
+		ReportPath:         ctx.ReportPath,
+		JSONPath:           ctx.JsonPath,
+		EngineConfig:       json.RawMessage(ctx.TaskType.EngineConfig),
+		ChunkPolicyID:      chunkPolicyID,
+		RunParams:          ctx.RunParams,
+		NegativeRules:      GetNegativeRulesForScan(ctx.Repo.ID, ctx.TaskType.ID),
+		CategoryAliasRecorder: func(usage models.CategoryAliasUsage) {
+			if models.DB == nil {
+				return
+			}
+			usage.TaskTypeID = ctx.TaskType.ID
+			usage.LastReportID = ctx.Report.ID
+			_ = governance.RecordCategoryAliasHit(models.DB, usage)
+		},
 		ProgressReport: func(total, processed, success int) {
 			runner.UpdateTaskProgress(ctx.Report.ID, total, processed, success, "")
 		},
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return runner.ExecuteAnalysis(ctx, fileList)
 		},
-		SynthesisExecutor: func(findings []models.AnalysisFinding, scannedFilesOpt ...[]string) error {
-			findings = CalibrateFindings(findings)
-			var scannedFiles []string
-			if len(scannedFilesOpt) > 0 {
-				scannedFiles = scannedFilesOpt[0]
-			}
-			findings, _ = DiffAndEnrichFindings(ctx.Repo.ID, ctx.Report.ID, ctx.TaskType.ID, scannedFiles, findings, ctx.CodesPath)
-			ctx.Findings = findings
-			return runner.ExecuteSynthesis(ctx, findings)
+		ChunkAnalysisExecutor: func(req engines.ChunkExecutionRequest) (engines.ChunkExecutionResult, error) {
+			return runner.ExecuteChunkAnalysis(ctx, req)
 		},
 	}
 
@@ -249,10 +234,7 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 
 	actualEngine := a.inner
 	if actualEngine == nil {
-		actualEngine = engines.GetEngine(ctx.TaskType.EngineMode)
-	}
-	if actualEngine == nil {
-		actualEngine = engines.GetEngine("single")
+		return fmt.Errorf("ENGINE_MODE_INVALID: engine mode %q is not registered", ctx.TaskType.EngineMode)
 	}
 
 	result, err := actualEngine.Run(engCtx)
@@ -260,7 +242,8 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 
 	if result != nil {
 		ctx.HasFailedChunks = result.HasFailedChunks
-		ctx.Findings = result.Findings
+		ctx.Coverage = engCtx.Coverage
+		ctx.Findings = CalibrateFindings(result.Findings)
 
 		successfulChunks := 0
 		failedChunks := 0
@@ -279,20 +262,23 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 		ctx.Summary.Analysis.SuccessChunks = successfulChunks
 		ctx.Summary.Analysis.FailedChunks = failedChunks
 		ctx.Summary.Analysis.TotalFindings = len(result.Findings)
+		ctx.Summary.Analysis.Attempts = result.AnalysisMetrics.Attempts
+		ctx.Summary.Analysis.Retries = result.AnalysisMetrics.Retries
+		ctx.Summary.Analysis.ContractRepairs = result.AnalysisMetrics.ContractRepairs
+		ctx.Summary.Analysis.ResourceFailovers = result.AnalysisMetrics.ResourceFailovers
+		ctx.Summary.Analysis.DriverFailovers = result.AnalysisMetrics.DriverFailovers
+		ctx.Summary.Analysis.SplitInvocations = result.AnalysisMetrics.SplitInvocations
+		ctx.Summary.Analysis.RecoveredChunks = result.AnalysisMetrics.ResumedChunks
+		ctx.Summary.Analysis.ArtifactComplete = result.AnalysisMetrics.ArtifactComplete
+		ctx.Summary.Analysis.ArtifactState = result.AnalysisMetrics.ArtifactState
+		ctx.Summary.Analysis.ArtifactQualityDegraded = result.AnalysisMetrics.ArtifactQualityDegraded
+		ctx.Summary.Analysis.UnresolvedIssueCount = result.AnalysisMetrics.UnresolvedIssueCount
+		ctx.Summary.Analysis.NormalizedIssueCount = result.AnalysisMetrics.NormalizedIssueCount
+		ctx.Summary.Analysis.SchemaRepairAttempts = result.AnalysisMetrics.SchemaRepairAttempts
+		ctx.Summary.Analysis.SchemaRepairSuccesses = result.AnalysisMetrics.SchemaRepairSuccesses
+		ctx.Summary.Analysis.CandidateQuarantineCount = result.AnalysisMetrics.CandidateQuarantineCount
 
-		convertedChunks := make([]ChunkDetails, len(result.SummaryChunks))
-		for i, sc := range result.SummaryChunks {
-			convertedChunks[i] = ChunkDetails{
-				ChunkName:       sc.ChunkName,
-				StartTime:       sc.StartTime,
-				EndTime:         sc.EndTime,
-				DurationSeconds: sc.DurationSeconds,
-				Attempts:        sc.Attempts,
-				Retries:         sc.Retries,
-				Status:          sc.Status,
-				ErrorMessage:    sc.ErrorMessage,
-			}
-		}
+		convertedChunks := runner.ConvertEngineChunkDetails(result.SummaryChunks)
 		ctx.Summary.Analysis.Chunks = convertedChunks
 
 		if failedChunks > 0 {
@@ -322,44 +308,44 @@ func (a *engineAdapter) Run(ctx *taskContext) error {
 			if result.Tier2Tokens > 0 {
 				updates["tier2_tokens"] = gorm.Expr("tier2_tokens + ?", result.Tier2Tokens)
 			}
-			models.DB.Model(&models.TaskReport{}).Where("id = ?", ctx.Report.ID).Updates(updates)
+			if _, updateErr := models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, updates); updateErr != nil {
+				log.Printf("[EngineAdapter] Warning: failed to persist token usage for report %d: %v", ctx.Report.ID, updateErr)
+			}
 		}
 	}
 
 	if err != nil {
 		runner.MarkFailed(ctx, err.Error())
+		return err
+	}
+
+	if models.DB != nil {
+		if _, persistErr := defectlifecycle.PersistScanFacts(defectlifecycle.ScanInput{
+			Report:   ctx.Report,
+			Repo:     ctx.Repo,
+			RepoRoot: ctx.CodesPath,
+			TaskType: ctx.TaskType,
+			Findings: ctx.Findings,
+			Coverage: ctx.Coverage,
+		}); persistErr != nil {
+			runner.MarkFailed(ctx, persistErr.Error())
+			return persistErr
+		}
+	}
+
+	if synthErr := runner.ExecuteSynthesis(ctx, ctx.Findings, ctx.Coverage); synthErr != nil {
+		runner.MarkFailed(ctx, synthErr.Error())
+		return synthErr
 	}
 
 	return err
 }
 
-var (
-	engineRegistryMu sync.RWMutex
-	legacyRegistry   = map[string]TaskEngine{}
-)
-
-// RegisterEngine 注册兼容版引擎实现
-func RegisterEngine(mode string, engine TaskEngine) {
-	engineRegistryMu.Lock()
-	defer engineRegistryMu.Unlock()
-	legacyRegistry[mode] = engine
-}
-
-// GetEngine 获取引擎实例，优先检查底层 engines 子包并包装适配
-func GetEngine(mode string) TaskEngine {
-	engineRegistryMu.RLock()
-	if e, ok := legacyRegistry[mode]; ok {
-		engineRegistryMu.RUnlock()
-		return e
+func taxonomySnapshot(taskType models.TaskType) models.CategoryTaxonomy {
+	if taxonomy := taskType.GetCategoryTaxonomy(); taxonomy != nil {
+		return *taxonomy
 	}
-	engineRegistryMu.RUnlock()
-
-	modern := engines.GetEngine(mode)
-	if modern != nil {
-		return &engineAdapter{inner: modern}
-	}
-
-	return &engineAdapter{inner: engines.GetEngine("single")}
+	return models.CategoryTaxonomy{}
 }
 
 // BuildSemanticBundles 构建语义感知分片，委托至 chunker
@@ -387,88 +373,57 @@ func ExtractHeaderOutline(codesPath string, files []string) string {
 // ==============================================================================
 
 type (
-	SourceAnchor    = defects.SourceAnchor
-	MigrationResult = defects.MigrationResult
+	SourceAnchor = defectlifecycle.SourceAnchor
 )
-
-// DiffAndEnrichFindings 执行跨任务缺陷增量比对与状态机打标，委托至 defects 子包
-func DiffAndEnrichFindings(repoID uint, taskReportID uint, taskTypeID uint, scannedFiles []string, findings []models.AnalysisFinding, repoRootOpt ...string) ([]models.AnalysisFinding, error) {
-	return defects.DiffAndEnrichFindings(repoID, taskReportID, taskTypeID, scannedFiles, findings, repoRootOpt...)
-}
 
 // ComputeCleanTokenHash 辅助计算代码段清洗后的哈希，委托至 defects 子包
 func ComputeCleanTokenHash(body string) string {
-	return defects.ComputeCleanTokenHash(body)
-}
-
-// CalculateDefectFingerprint 计算抗代码行号与上下文抖动的确定性源码强指纹 (L1 物理强指纹)，委托至 defects 子包
-func CalculateDefectFingerprint(repoID uint, taskTypeID uint, filePath string, triggerLine string, scopeSymbol string, category ...string) string {
-	return defects.CalculateDefectFingerprint(repoID, taskTypeID, filePath, triggerLine, scopeSymbol, category...)
-}
-
-// CalculateWeakScopeFingerprint 计算作用域弱指纹 (L2 弱指纹容错)，委托至 defects 子包
-func CalculateWeakScopeFingerprint(repoID uint, taskTypeID uint, filePath string, scopeSymbol string, category ...string) string {
-	return defects.CalculateWeakScopeFingerprint(repoID, taskTypeID, filePath, scopeSymbol, category...)
+	return defectlifecycle.ComputeCleanTokenHash(body)
 }
 
 // CalculateTokenJaccard 计算两串代码 Token 的 2-gram Jaccard 相似度，委托至 defects 子包
 func CalculateTokenJaccard(s1, s2 string) float64 {
-	return defects.CalculateTokenJaccard(s1, s2)
-}
-
-// NormalizeTriggerLine 对引发漏洞的核心关键单一语句进行 Token 级规范化，委托至 defects 子包
-func NormalizeTriggerLine(triggerLine string) string {
-	return defects.NormalizeTriggerLine(triggerLine)
-}
-
-// ExtractScopeSymbol 多语言 AST 与正则作用域符号提取器，委托至 defects 子包
-func ExtractScopeSymbol(filePath string, codeSnippet string) string {
-	return defects.ExtractScopeSymbol(filePath, codeSnippet)
-}
-
-// RunFingerprintMigration 执行存量指纹原地物理重算与平滑升级，委托至 defects 子包
-func RunFingerprintMigration(db *gorm.DB, repoRoot string, dryRun bool) (*MigrationResult, error) {
-	return defects.RunFingerprintMigration(db, repoRoot, dryRun)
+	return defectlifecycle.CalculateTokenJaccard(s1, s2)
 }
 
 // CleanSourceToken 对代码行进行 Token 级去噪清洗，委托至 defects 子包
 func CleanSourceToken(line string) string {
-	return defects.CleanSourceToken(line)
+	return defectlifecycle.CleanSourceToken(line)
 }
 
 // NormalizeScopeSymbol 规范化作用域符号，去除外层命名空间与 lambda 差异，委托至 defects 子包
 func NormalizeScopeSymbol(rawScope string) string {
-	return defects.NormalizeScopeSymbol(rawScope)
+	return defectlifecycle.NormalizeScopeSymbol(rawScope)
 }
 
 // LocateTriggerNearby 在 targetLine 前后指定窗口内滑动寻找最匹配 cleanTrigger 的物理行，委托至 defects 子包
 func LocateTriggerNearby(lines []string, cleanTrigger string, targetLine int, windowSize int) int {
-	return defects.LocateTriggerNearby(lines, cleanTrigger, targetLine, windowSize)
+	return defectlifecycle.LocateTriggerNearby(lines, cleanTrigger, targetLine, windowSize)
 }
 
 // LocateTriggerInLines 在整篇文件中模糊反查 cleanTrigger 所在真实行号，委托至 defects 子包
 func LocateTriggerInLines(lines []string, cleanTrigger string) int {
-	return defects.LocateTriggerInLines(lines, cleanTrigger)
+	return defectlifecycle.LocateTriggerInLines(lines, cleanTrigger)
 }
 
 // ExtractScopeAndBodyFromLines 从目标行向上逆向扫描提取物理函数作用域签名及函数体代码，委托至 defects 子包
 func ExtractScopeAndBodyFromLines(filePath string, lines []string, targetLine int) (string, string) {
-	return defects.ExtractScopeAndBodyFromLines(filePath, lines, targetLine)
+	return defectlifecycle.ExtractScopeAndBodyFromLines(filePath, lines, targetLine)
 }
 
 // ComputeFileSHA256 计算物理文件的 SHA-256 快照哈希，委托至 defects 子包
 func ComputeFileSHA256(fullPath string) (string, error) {
-	return defects.ComputeFileSHA256(fullPath)
+	return defectlifecycle.ComputeFileSHA256(fullPath)
 }
 
 // ParseLineNumberRange 解析 "10-20" 或 "15" 格式的行号，返回起始行与结束行，委托至 defects 子包
 func ParseLineNumberRange(rawLine string) (int, int) {
-	return defects.ParseLineNumberRange(rawLine)
+	return defectlifecycle.ParseLineNumberRange(rawLine)
 }
 
 // EnrichSourceAnchor 从磁盘物理源文件中提取确定性特征与物理锚点，委托至 defects 子包
 func EnrichSourceAnchor(repoRoot string, filePath string, rawLine string, rawTrigger string) (*SourceAnchor, error) {
-	return defects.EnrichSourceAnchor(repoRoot, filePath, rawLine, rawTrigger)
+	return defectlifecycle.EnrichSourceAnchor(repoRoot, filePath, rawLine, rawTrigger)
 }
 
 // ==============================================================================
@@ -487,9 +442,25 @@ func CalibrateSeverityDeterministically(category string, verdict string, codeSni
 	return governance.CalibrateSeverityDeterministically(category, verdict, codeSnippet)
 }
 
+// CalibrateSeverityWithTaxonomy 按任务受控分类策略确定性计算严重级别
+func CalibrateSeverityWithTaxonomy(
+	taxonomy models.CategoryTaxonomy,
+	categoryCode string,
+	category string,
+	verdict string,
+	codeSnippet string,
+) (string, string) {
+	return governance.CalibrateSeverityWithTaxonomy(taxonomy, categoryCode, category, verdict, codeSnippet)
+}
+
 // CalibrateFindings 批量校准缺陷列表的严重级别，委托至 governance 子包
 func CalibrateFindings(findings []models.AnalysisFinding) []models.AnalysisFinding {
 	return governance.CalibrateFindings(findings)
+}
+
+// CalibrateFindingsWithTaxonomy 批量按受控分类策略校准缺陷列表
+func CalibrateFindingsWithTaxonomy(taxonomy models.CategoryTaxonomy, findings []models.AnalysisFinding) []models.AnalysisFinding {
+	return governance.CalibrateFindingsWithTaxonomy(taxonomy, findings)
 }
 
 // SanitizeCategory 将 Category 规范化吸附至白名单，委托至 governance 子包
@@ -512,11 +483,6 @@ func ExtractFeedbackRuleViaNative(filePath, codeSnippet, defectTitle, userReason
 
 	inv := GetAIInvoker(backend)
 	return governance.ExtractFeedbackRule(inv, filePath, codeSnippet, defectTitle, userReason)
-}
-
-// MarkDefectFeedback 处理研发人员对缺陷的反馈（误报/不予修复/已确认），委托至 governance 子包
-func MarkDefectFeedback(repoID uint, taskTypeID uint, fingerprint string, feedbackStatus string, reason string, userID *uint) error {
-	return governance.MarkDefectFeedback(repoID, taskTypeID, fingerprint, feedbackStatus, reason, userID)
 }
 
 // GetNegativeRulesForScan 获取指定仓库和任务类型在扫描时应注入的负样本规则列表，委托至 governance 子包
@@ -636,11 +602,6 @@ func NotifyTaskResult(repo models.Repository, taskType models.TaskType, result T
 	runner.NotifyTaskResult(repo, taskType, result, specificRecipientEmail, reportID, reportPath)
 }
 
-// ResumeFailedChunks 失败分片断点续跑，委托至 runner 子包
-func ResumeFailedChunks(reportID uint) error {
-	return runner.ResumeFailedChunks(reportID)
-}
-
 // 门面清洗与辅助函数，保持单元测试透明兼容
 func cleanJSONFromAI(raw []byte) []byte {
 	return runner.CleanJSONFromAI(raw)
@@ -713,6 +674,16 @@ func StartWorkerPool(workers int) {
 	queue.StartWorkerPool(workers)
 }
 
+// ResizeWorkerPool 热更新任务 Worker 并发数，委托至 queue 子包
+func ResizeWorkerPool(workers int) {
+	queue.ResizeWorkerPool(workers)
+}
+
+// WorkerPoolSize 返回当前目标任务 Worker 数，委托至 queue 子包
+func WorkerPoolSize() int {
+	return queue.WorkerPoolSize()
+}
+
 // EnqueueTask adds a new task to the queue，委托至 queue 子包
 func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) {
 	queue.EnqueueTask(scheduleID, repoID, repoURL, taskTypeID, autoNotify, triggerType, runParams)
@@ -726,6 +697,11 @@ func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint
 // EnqueueResumeTask 将恢复任务放入队列排队执行，委托至 queue 子包
 func EnqueueResumeTask(report models.TaskReport) error {
 	return queue.EnqueueResumeTask(report)
+}
+
+// IsBundleResumeEngine 判断引擎模式是否支持 bundle checkpoint 复用
+func IsBundleResumeEngine(engineMode string) bool {
+	return runner.IsBundleResumeEngine(engineMode)
 }
 
 // UpdateTaskExecutionLog 更新任务执行日志状态，委托至 queue 子包

@@ -63,6 +63,14 @@ func TestCalibrateSeverityDeterministically(t *testing.T) {
 			expectedRule: "RULE_CONDITIONAL_MACRO_DOWNGRADE",
 		},
 		{
+			name:         "预期结果不完整断言",
+			category:     "断言有效性-预期结果不完整",
+			verdict:      models.DebateVerdictConfirmed,
+			codeSnippet:  "TEST(Calculator, Add) { EXPECT_EQ(Calculator::Add(1, 2), 3); }",
+			expectedSev:  "一般",
+			expectedRule: "RULE_INCOMPLETE_EXPECTED_RESULTS",
+		},
+		{
 			name:         "架构坏味道与防御性缺失",
 			category:     "架构规范-公共函数防御性校验缺失",
 			verdict:      models.DebateVerdictConfirmed,
@@ -108,5 +116,104 @@ func TestCalibrateFindings(t *testing.T) {
 	}
 	if calibrated[1].Severity != "严重" {
 		t.Errorf("Finding[1] expected 严重, got %s", calibrated[1].Severity)
+	}
+}
+
+func TestCalibrateSeverityWithTaxonomy(t *testing.T) {
+	taxonomy := models.CategoryTaxonomy{
+		SchemaVersion: 3,
+		Categories: []models.CategoryDefinition{
+			{Code: "FLOAT_BUSINESS_THRESHOLD", Label: "关键业务阈值误判", DefaultSeverity: "严重"},
+			{Code: "CJSON_PARSE_LEAK", Label: "cJSON 解析结果未释放", DefaultSeverity: "一般"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		code         string
+		category     string
+		verdict      string
+		expectedSev  string
+		expectedRule string
+	}{
+		{
+			name:         "governed code uses business severity",
+			code:         "FLOAT_BUSINESS_THRESHOLD",
+			category:     "anything",
+			verdict:      models.DebateVerdictConfirmed,
+			expectedSev:  "严重",
+			expectedRule: "RULE_TAXONOMY_FLOAT_BUSINESS_THRESHOLD",
+		},
+		{
+			name:         "governed label uses business severity",
+			code:         "",
+			category:     "cJSON 解析结果未释放",
+			verdict:      models.DebateVerdictConfirmed,
+			expectedSev:  "一般",
+			expectedRule: "RULE_TAXONOMY_CJSON_PARSE_LEAK",
+		},
+		{
+			name:         "conditional defect still downgrades",
+			code:         "FLOAT_BUSINESS_THRESHOLD",
+			category:     "关键业务阈值误判",
+			verdict:      models.DebateVerdictConditional,
+			expectedSev:  "一般",
+			expectedRule: "RULE_CONDITIONAL_MACRO_DOWNGRADE",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sev, rule := CalibrateSeverityWithTaxonomy(taxonomy, tt.code, tt.category, tt.verdict, "")
+			if sev != tt.expectedSev || rule != tt.expectedRule {
+				t.Fatalf("severity/rule = %q/%q, want %q/%q", sev, rule, tt.expectedSev, tt.expectedRule)
+			}
+		})
+	}
+}
+
+func TestCalibrateFindingsWithTaxonomy(t *testing.T) {
+	taxonomy := models.CategoryTaxonomy{
+		SchemaVersion: 3,
+		Categories: []models.CategoryDefinition{
+			{Code: "UNORDERED_CONTRACT_ORDER", Label: "跨系统契约顺序不稳定", DefaultSeverity: "严重"},
+		},
+	}
+	findings := []models.AnalysisFinding{
+		{CategoryCode: "UNORDERED_CONTRACT_ORDER", Category: "旧标签", CategoryDetail: "unknown"},
+		{Category: "CWE-787: Out-of-bounds Write"},
+	}
+
+	calibrated := CalibrateFindingsWithTaxonomy(taxonomy, findings)
+	if calibrated[0].Severity != "严重" || calibrated[0].CalibrationRule != "RULE_TAXONOMY_UNORDERED_CONTRACT_ORDER" {
+		t.Fatalf("governed finding = %q/%q", calibrated[0].Severity, calibrated[0].CalibrationRule)
+	}
+	if calibrated[1].Severity != "致命" || calibrated[1].CalibrationRule != "RULE_MEM_CORRUPTION_DEFAULT_REACHABLE" {
+		t.Fatalf("fallback finding = %q/%q", calibrated[1].Severity, calibrated[1].CalibrationRule)
+	}
+}
+
+func TestCalibrateFindingsSkipsValidAssessments(t *testing.T) {
+	findings := []models.AnalysisFinding{
+		{
+			Title:            "测试用例合格",
+			Severity:         "合格",
+			Category:         "无问题",
+			AssessmentStatus: "valid",
+		},
+		{
+			Title:            "非线程创建命中",
+			Severity:         "合格",
+			Category:         "无问题",
+			AssessmentStatus: "not_thread_creation",
+		},
+	}
+
+	calibrated := CalibrateFindings(findings)
+	if calibrated[0].Severity != "合格" {
+		t.Errorf("valid assessment severity expected 合格, got %s", calibrated[0].Severity)
+	}
+	if calibrated[1].Severity != "合格" {
+		t.Errorf("not_thread_creation severity expected 合格, got %s", calibrated[1].Severity)
 	}
 }

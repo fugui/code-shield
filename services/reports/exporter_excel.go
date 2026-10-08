@@ -347,6 +347,6 @@ func getGovModeChinese(mode string) string {
 	case models.GovernanceModeEntityAssessment:
 		return "全量实体评估模式"
 	default:
-		return "缺陷攻关治理模式"
+		return "全量台账治理模式"
 	}
 }

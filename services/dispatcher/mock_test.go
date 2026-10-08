@@ -11,6 +11,7 @@ import (
 type mockInvoker struct {
 	NameStr    string
 	InvokedCnt int32
+	LastModel  string
 }
 
 func (m *mockInvoker) Name() string {
@@ -19,6 +20,7 @@ func (m *mockInvoker) Name() string {
 
 func (m *mockInvoker) Invoke(req invoker.AIRequest) error {
 	atomic.AddInt32(&m.InvokedCnt, 1)
+	m.LastModel = req.ModelName
 	if req.OutputPath != "" {
 		if err := os.WriteFile(req.OutputPath, []byte(`{"findings": [], "summary": "mock CLI output"}`), 0644); err != nil {
 			return err

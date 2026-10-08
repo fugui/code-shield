@@ -1,41 +1,27 @@
 {
-  "name": "thread_create",
-  "display_name": "新建线程分析",
-  "description": "分析 C/C++ 代码中显式创建线程的合理性与生命周期管理方式",
-  "engine_mode": "chunked_fast",
-  "engine_config": {
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx"
-    ],
-    "content_keywords": [
-      "pthread_create",
-      "std::thread",
-      "std::jthread",
-      "std::async",
-      "QThread",
-      "omp parallel",
-      "boost::asio::thread_pool",
-      "CFThreadCreate"
-    ],
-    "exclude_paths": [
-      "thirdparts"
-    ]
+  "assessment_config": {
+    "version": 1,
+    "profile": "occurrencereview",
+    "schema": "code-shield.assessment-config.v1",
+    "domain": "thread_creation",
+    "target": {
+      "singular": "显式线程创建点",
+      "not_target_label": "非线程创建命中"
+    }
   },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
   "campaign_path": "thread",
-  "governance_mode": "defect_tracking",
-  "domain_family": "architecture_governance",
+  "categories": [
+    "无问题",
+    "必要性-频繁创建",
+    "必要性-未使用平台调度组",
+    "必要性-未使用平台定时器",
+    "生命周期-join遗漏",
+    "生命周期-未安全退出",
+    "异常安全-析构崩溃",
+    "数据安全-悬空引用",
+    "同步安全-数据竞争",
+    "其它"
+  ],
   "defense_dimensions": [
     {
       "dimension": "ScopeExemption",
@@ -50,18 +36,243 @@
       "description": "已封装自研统一 RAII 资源管理类自动执行 join/detach，无崩溃泄露风险"
     }
   ],
-
-  "categories": [
-    "无问题",
-    "必要性-频繁创建",
-    "必要性-未使用平台调度组",
-    "必要性-未使用平台定时器",
-    "生命周期-join遗漏",
-    "生命周期-未安全退出",
-    "异常安全-析构崩溃",
-    "数据安全-悬空引用",
-    "同步安全-数据竞争",
-    "其它"
-  ],
-  "is_active": true
+  "description": "分析 C/C++ 代码中显式创建线程的合理性与生命周期管理方式",
+  "display_name": "新建线程分析",
+  "display_semantics": {
+    "domain_label": "架构与设计规范治理",
+    "target_label": "显式线程创建点",
+    "not_target_label": "非线程创建命中"
+  },
+  "domain_family": "architecture_governance",
+  "domain_label": "架构与设计规范治理",
+  "engine_config": {
+    "scan_profile": {
+      "content_keywords": [
+        "pthread_create",
+        "std::thread",
+        "std::jthread",
+        "std::async",
+        "QThread",
+        "omp parallel",
+        "boost::asio::thread_pool",
+        "CFThreadCreate"
+      ],
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "include_extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx"
+      ],
+      "name": "occurrence_review",
+      "primary_unit": "keyword_occurrence",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "full_ledger",
+  "is_active": true,
+  "is_campaign": true,
+  "name": "thread_create",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "显式线程创建点",
+    "plural": "显式线程创建点",
+    "not_target_label": "非线程创建命中"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "THREAD_NO_ISSUE",
+        "label": "无问题",
+        "definition": "The reviewed thread-creation usage is safe and requires no change.",
+        "decision_rules": [
+          "frequency and lifecycle are appropriate",
+          "exit and ownership are handled",
+          "shared data is synchronized"
+        ],
+        "positive_hints": [
+          "no finding"
+        ],
+        "negative_hints": [
+          "specific risk category applies"
+        ],
+        "priority": 110,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_FREQUENT_CREATE",
+        "label": "必要性-频繁创建",
+        "definition": "Threads are created repeatedly for short work instead of reusing execution capacity.",
+        "decision_rules": [
+          "work is small or recurring",
+          "creation and teardown dominate cost",
+          "reuse mechanism is available"
+        ],
+        "positive_hints": [
+          "short-lived ad hoc task is acceptable"
+        ],
+        "negative_hints": [
+          "pool or timer has been evaluated"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_UNUSED_DISPATCH_GROUP",
+        "label": "必要性-未使用平台调度组",
+        "definition": "The platform dispatch or scheduling group is available but thread creation is used instead.",
+        "decision_rules": [
+          "platform provides dispatch or scheduler",
+          "created thread does not need isolation",
+          "same concurrency can be expressed natively"
+        ],
+        "positive_hints": [
+          "native mechanism cannot express the need"
+        ],
+        "negative_hints": [
+          "isolation requirement justifies a thread"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_UNUSED_TIMER",
+        "label": "必要性-未使用平台定时器",
+        "definition": "A platform timer or delayed task mechanism should replace a sleeping thread.",
+        "decision_rules": [
+          "thread sleeps to schedule work",
+          "platform timer supports the cadence",
+          "thread consumes resources while waiting"
+        ],
+        "positive_hints": [
+          "sleep models a dedicated service loop"
+        ],
+        "negative_hints": [
+          "timer is unavailable or unsuitable"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_MISSING_JOIN",
+        "label": "生命周期-join遗漏",
+        "definition": "A joinable thread is not waited for or detached before its handle and resources become ambiguous.",
+        "decision_rules": [
+          "thread is created joinable",
+          "no join or detach exists",
+          "lifetime or resource cleanup is unclear"
+        ],
+        "positive_hints": [
+          "join is deliberately coordinated"
+        ],
+        "negative_hints": [
+          "thread is safely detached"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_UNSAFE_EXIT",
+        "label": "生命周期-未安全退出",
+        "definition": "Thread or owner exit does not establish a safe stop and cleanup protocol.",
+        "decision_rules": [
+          "thread can be terminated while holding state",
+          "shutdown flag or notification is missing",
+          "resources may remain unreleased"
+        ],
+        "positive_hints": [
+          "stop signal and join are coordinated"
+        ],
+        "negative_hints": [
+          "process exit owns all cleanup safely"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_DESTRUCTOR_CRASH",
+        "label": "异常安全-析构崩溃",
+        "definition": "Owner destruction races with worker access or releases resources a thread still uses.",
+        "decision_rules": [
+          "destructor can run while thread executes",
+          "worker accesses member or resource",
+          "completion is not awaited"
+        ],
+        "positive_hints": [
+          "destruction waits for completion"
+        ],
+        "negative_hints": [
+          "worker is fully detached and independent"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_DANGLING_REFERENCE",
+        "label": "数据安全-悬空引用",
+        "definition": "Thread callback captures a stack, object, or resource reference that can outlive validity.",
+        "decision_rules": [
+          "callback captures local or member state",
+          "owner can leave scope or be destroyed",
+          "no lifetime guard exists"
+        ],
+        "positive_hints": [
+          "capture is owned or lifetime is guarded"
+        ],
+        "negative_hints": [
+          "callback copies needed values"
+        ],
+        "priority": 70,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_DATA_RACE",
+        "label": "同步安全-数据竞争",
+        "definition": "Worker code reads or writes shared state without synchronized access.",
+        "decision_rules": [
+          "state is shared across threads",
+          "at least one access writes",
+          "lock or atomic ordering is missing"
+        ],
+        "positive_hints": [
+          "synchronization covers all accesses"
+        ],
+        "negative_hints": [
+          "data is immutable or thread-local"
+        ],
+        "priority": 65,
+        "status": "active"
+      },
+      {
+        "code": "THREAD_OTHER",
+        "label": "其它",
+        "definition": "A credible thread-creation risk that does not fit a more specific controlled category.",
+        "decision_rules": [
+          "specific category does not apply",
+          "risk affects concurrency or lifecycle",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "specific category applies"
+        ],
+        "negative_hints": [
+          "non-thread concurrency risk"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "timeout": 60
 }

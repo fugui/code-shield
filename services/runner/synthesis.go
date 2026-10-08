@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,13 +13,14 @@ import (
 	"time"
 
 	"code-shield/models"
+	"code-shield/services/coverage"
 	"code-shield/services/dispatcher"
 	"code-shield/services/invoker"
-	"code-shield/services/reconciliation"
 )
 
-// ExecuteSynthesis 驱动大模型综合报告合成阶段（包含 R2R 对账关联与预算截断）
-func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) error {
+// ExecuteSynthesis 驱动大模型综合报告合成阶段。P0 阶段只处理本轮观测，
+// 不读取历史报告，也不执行跨轮生命周期裁决。
+func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding, coverageOpt ...*coverage.Coverage) error {
 	UpdateTaskStatus(ctx.Report.ID, models.StatusSynthesis)
 
 	safeRepoName := strings.ReplaceAll(ctx.Repo.Name, "/", "-")
@@ -31,112 +33,36 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 		log.Printf("[Synthesis] Warning: Failed to write raw findings: %v\n", err)
 	}
 
-	// 2. 动态发现同仓同任务基线报告 (用于 R2R 报告间系统化对账)
-	var baseReport models.TaskReport
-	var baseSynthesisBytes []byte
-	var hasBaseReport bool
+	scanCoverage := effectiveCoverage(ctx, coverageOpt)
+	fileManifestPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-file-manifest.json", ctx.Report.ID))
+	if manifestBytes, manifestErr := scanCoverage.MarshalPretty(); manifestErr == nil {
+		if writeErr := os.WriteFile(fileManifestPath, manifestBytes, 0644); writeErr != nil {
+			log.Printf("[Synthesis] Warning: failed to write file manifest: %v", writeErr)
+		}
+	}
+
+	// 2. 记录本轮扫描覆盖事实，仅用于报告与后续新 ledger，不参与跨轮裁决。
 	if models.DB != nil {
-		err := models.DB.Preload("Repo").Where("repo_id = ? AND task_type_id = ? AND id < ? AND status = ?",
-			ctx.Repo.ID, ctx.TaskType.ID, ctx.Report.ID, models.StatusSuccess).
-			Order("id desc").First(&baseReport).Error
-		if err == nil && baseReport.ID > 0 {
-			hasBaseReport = true
-			if baseReport.Repo.ID == 0 && ctx.Repo.ID > 0 {
-				baseReport.Repo = ctx.Repo
-			}
-			basePath := baseReport.GetSynthesisJSONPath()
-			if bBytes, bErr := os.ReadFile(basePath); bErr == nil {
-				baseSynthesisBytes = bBytes
-				log.Printf("[Synthesis] Found baseline report #%d at %s (size: %d bytes)\n", baseReport.ID, basePath, len(bBytes))
-			} else {
-				log.Printf("[Synthesis] Warning: Failed to read baseline synthesis file for report #%d at %s: %v\n", baseReport.ID, basePath, bErr)
-			}
-		}
+		coverageSummary := scanCoverage.Summary()
+		_, _ = models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
+			"coverage_complete":       coverageSummary.CoverageComplete,
+			"coverage_degraded":       coverageSummary.CoverageDegraded,
+			"coverage_not_applicable": coverageSummary.CoverageNotApplicable,
+		})
 	}
 
-	// 3. 执行纯函数报告间对账 (R2R Reconciliation)
-	repoUnchanged := false
-	if hasBaseReport && baseReport.HeadCommit != "" && ctx.Report.HeadCommit != "" {
-		repoUnchanged = (baseReport.HeadCommit == ctx.Report.HeadCommit)
-	}
-
-	reconReq := &reconciliation.ReconcileRequest{
-		RepoID:            ctx.Repo.ID,
-		TaskTypeID:        ctx.TaskType.ID,
-		TaskName:          ctx.TaskType.Name,
-		CurrentReportID:   ctx.Report.ID,
-		BaseReportID:      baseReport.ID,
-		CurrentFindings:   allFindings,
-		BaseSynthesisJSON: baseSynthesisBytes,
-		RepoRoot:          ctx.CodesPath,
-		BaseCommit:        baseReport.HeadCommit,
-		HeadCommit:        ctx.Report.HeadCommit,
-		RepoUnchanged:     repoUnchanged,
-		GovernanceMode:    ctx.TaskType.GovernanceMode,
-		AIInvoker:         GetAIInvoker(models.AppConfig.AI.Backend),
-	}
-
-	reconResult, reconErr := reconciliation.Reconcile(reconReq)
-	if reconErr != nil {
-		log.Printf("[Synthesis] Warning: Reconciliation failed, using raw findings: %v\n", reconErr)
-	}
-
-	// 4. 持久化完整问题台账 SSOT 与对账明细
+	// 3. 持久化本轮 findings 快照，供报告合成和后续新 ledger 使用。
 	synthesisInputPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-synthesis-%s.json", ctx.Report.ID, safeRepoName))
-	if reconResult != nil {
-		ledgerJSON, _ := json.MarshalIndent(reconResult.Ledger, "", "  ")
-		if err := os.WriteFile(synthesisInputPath, ledgerJSON, 0644); err != nil {
-			return fmt.Errorf("failed to write synthesis input: %w", err)
-		}
-
-		if hasBaseReport {
-			reconPath := filepath.Join(reportDir, fmt.Sprintf("recon-%d-vs-%d.json", ctx.Report.ID, baseReport.ID))
-			diffJSON, _ := json.MarshalIndent(reconResult.DiffPayload, "", "  ")
-			_ = os.WriteFile(reconPath, diffJSON, 0644)
-		}
-
-		// 持久化到 DB
-		if models.DB != nil && hasBaseReport {
-			_ = models.DB.Create(&reconResult.Reconciliation).Error
-			if reconResult.Reconciliation.ID > 0 && len(reconResult.Links) > 0 {
-				for i := range reconResult.Links {
-					reconResult.Links[i].ReconID = reconResult.Reconciliation.ID
-				}
-				_ = models.DB.Create(&reconResult.Links).Error
-			}
-			if len(reconResult.ResolvedByChange) > 0 {
-				for _, rf := range reconResult.ResolvedByChange {
-					_ = models.DB.Model(&models.DefectFingerprintRecord{}).
-						Where("repo_id = ? AND task_type_id = ? AND fingerprint = ?", ctx.Repo.ID, ctx.TaskType.ID, rf.Fingerprint).
-						Updates(map[string]interface{}{
-							"status":             models.DiffStatusResolved,
-							"resolved_at":        time.Now(),
-							"resolved_diff_hunk": ctx.Report.HeadCommit,
-						}).Error
-				}
-			}
-		}
-	} else {
-		findingsJSON, _ := json.MarshalIndent(allFindings, "", "  ")
-		if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
-			return fmt.Errorf("failed to write synthesis input: %w", err)
-		}
+	findingsJSON, err := json.MarshalIndent(allFindings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal current findings: %w", err)
+	}
+	if err := os.WriteFile(synthesisInputPath, findingsJSON, 0644); err != nil {
+		return fmt.Errorf("failed to write synthesis input: %w", err)
 	}
 
-	// 5. 提取供 AI 合成的活动条目集合
-	var activeItems []models.AnalysisFinding
-	if reconResult != nil && len(reconResult.Ledger.Items) > 0 {
-		for _, it := range reconResult.Ledger.Items {
-			f := it.Payload
-			f.DiffStatus = it.DiffStatus
-			if it.CoverageGap {
-				f.DiffStatus = "COVERAGE_GAP"
-			}
-			activeItems = append(activeItems, f)
-		}
-	} else {
-		activeItems = allFindings
-	}
+	// 4. 本轮报告合成输入就是本轮观测，不做活动/归档筛选。
+	activeItems := allFindings
 
 	// 将归并后的全量活动条目同步回任务上下文，确保后续后处理评分基于归并后总数
 	ctx.Findings = activeItems
@@ -198,17 +124,20 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n致命：%d，严重：%d，一般：%d，建议：%d\n```",
 		fatalCount, criticalCount, minorCount, suggestionCount)
 
-	if reconResult != nil && hasBaseReport {
-		if reconResult.Ledger.Meta.GovernanceMode == models.GovernanceModeChangeFocus {
-			suffixPrompt += fmt.Sprintf("\n\n【本次变更质量结论】：本次为变更增量卡点检视。涉及变动文件：%d 个，本次引入新缺陷：%d 条，顺带实质修复历史存量：%d 条。请在报告第一节清晰呈现变更质量结论！",
-				len(reconResult.Ledger.Meta.ChangedFiles), reconResult.Ledger.Meta.NewIntroducedCount, reconResult.Ledger.Meta.ResolvedHistoryCount)
-		} else {
-			suffixPrompt += fmt.Sprintf("\n\n【跨轮对账与增量治理概要】：相比上一轮基线（报告 ID: %d），本次对账结论如下：真正新增缺陷 %d 条，确认存量缺陷 %d 条，本轮未复现覆盖缺口 %d 条（非代码修复，仍需持续关注），跨组件模板族 %d 处。请在报告中为相应问题条目标注对账徽标（如 [NEW]、[EXISTED]、[COVERAGE_GAP] 等）并在跨轮治理结论中体现！",
-				baseReport.ID, reconResult.Reconciliation.NewCount, reconResult.Reconciliation.ExistedCount, reconResult.Reconciliation.VanishedCoverageGap, reconResult.Reconciliation.TemplateFamilyCount)
-		}
+	summaryFindingCount := len(activeItems) - tier4DetailedFindings
+	if summaryFindingCount < 0 {
+		summaryFindingCount = 0
 	}
+	summaryRowCount := summaryFindingCount
+	if summaryRowCount > tier4MaxSummaryRows {
+		summaryRowCount = tier4MaxSummaryRows
+	}
+	suffixPrompt += fmt.Sprintf("\n\n【Tier4 输出预算硬约束（优先级高于任务提示词中的完整清单要求）】：本次输入采用受限汇总契约。只可为 detailed_findings 中的前 %d 条输出完整分析小节；其余 %d 条不完整展开，其中前 %d 条以受限摘要形式包含在 summary_findings 中，不要生成逐条表格、逐条清单或重复代码片段。不要输出 JSON 代码围栏。Markdown 正文控制在 %d 字节以内，并保留精确统计行。",
+		tier4DetailedFindings, summaryFindingCount, summaryRowCount, tier4AIPromptOutputBytes)
 
-	// 7. 排序并执行 Top 60 截断保护 AI 上下文
+	// 7. 排序并生成确定性报告。  The model call below is optional polish only:
+	// the deterministic Markdown must always exist first so the task can be
+	// delivered even when the remote LLM is slow or unavailable.
 	severityWeight := map[string]int{
 		"致命": 4, "fatal": 4, "blocker": 4, "阻塞": 4, "blocking": 4,
 		"严重": 3, "critical": 3, "major_error": 3, "error": 3,
@@ -231,35 +160,30 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 		return sortedFindings[i].FilePath < sortedFindings[j].FilePath
 	})
 
-	const maxFullDetailThreshold = 25
-	const maxFindingsCap = 60
-	if len(sortedFindings) > maxFindingsCap {
-		log.Printf("[Synthesis] Active findings count %d exceeds cap %d. Truncating to top %d.\n",
-			len(sortedFindings), maxFindingsCap, maxFindingsCap)
-		sortedFindings = sortedFindings[:maxFindingsCap]
+	deterministicReport, renderErr := RenderTier4Report(ctx, sortedFindings, scanCoverage)
+	if renderErr != nil {
+		return fmt.Errorf("render deterministic tier4 report: %w", renderErr)
+	}
+	if err := writeTier4Report(ctx.ReportPath, deterministicReport); err != nil {
+		return fmt.Errorf("write deterministic tier4 report: %w", err)
 	}
 
-	var aiFindings []models.AnalysisFinding
-	if len(sortedFindings) <= maxFullDetailThreshold {
-		aiFindings = sortedFindings
-	} else {
-		log.Printf("[Synthesis] Findings count %d exceeds %d. Generating simplified payload for AI synthesis...\n", len(sortedFindings), maxFullDetailThreshold)
-		for i, f := range sortedFindings {
-			if i < maxFullDetailThreshold {
-				aiFindings = append(aiFindings, f)
-			} else {
-				f.CodeSnippet = ""
-				f.Detail = "详细内容请查阅随附的完整版 JSON 发现清单附件。"
-				f.Suggestion = "请查阅完整清单文件获取本项的具体修改建议。"
-				aiFindings = append(aiFindings, f)
-			}
-		}
-		suffixPrompt += fmt.Sprintf("\n\n此外，本次分析发现的问题总数较多（共 %d 处）。为了精炼报告，我们在输入的 JSON 中对排在第 %d 位以后的次要或低风险发现进行了简化。在生成『三、发现的问题』章节时，请仅对前 %d 个高风险问题进行详细罗列展示；对于其余的简化问题，请按照文件、分类或影响进行归聚归集，切勿逐个平铺列出。",
-			len(sortedFindings), maxFullDetailThreshold+1, maxFullDetailThreshold)
+	// 8. Serialize the bounded, structured AI payload.  Detailed findings are
+	// capped to ten and every remaining finding is reduced to identity fields.
+	aiFindingsJSON, inputErr := buildTier4AIInput(ctx, sortedFindings, scanCoverage)
+	if inputErr != nil {
+		return fmt.Errorf("build tier4 AI input: %w", inputErr)
 	}
-
-	// 8. 序列化简化后的 findings 为临时文件供 AI 输入
-	aiFindingsJSON, _ := json.MarshalIndent(aiFindings, "", "  ")
+	if len(aiFindingsJSON) > tier4MaxAIInputBytes {
+		log.Printf("[Synthesis] Tier4 AI input is %d bytes (limit %d); using deterministic report without AI polish for ReportID %d\n",
+			len(aiFindingsJSON), tier4MaxAIInputBytes, ctx.Report.ID)
+		ctx.Summary.Synthesis.Status = "skipped"
+		ctx.Summary.Synthesis.StartTime = time.Now()
+		ctx.Summary.Synthesis.EndTime = time.Now()
+		ctx.Summary.Synthesis.DurationSeconds = ctx.Summary.Synthesis.EndTime.Sub(ctx.Summary.Synthesis.StartTime).Seconds()
+		ctx.Summary.Synthesis.ErrorMessage = fmt.Sprintf("AI polish skipped: INPUT_LIMIT_EXCEEDED (%d bytes)", len(aiFindingsJSON))
+		return nil
+	}
 	synthesisAIInputPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-synthesis-%s-for-ai.json", ctx.Report.ID, safeRepoName))
 	if err := os.WriteFile(synthesisAIInputPath, aiFindingsJSON, 0644); err != nil {
 		return fmt.Errorf("failed to write AI synthesis input: %w", err)
@@ -267,56 +191,60 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding) er
 	defer os.Remove(synthesisAIInputPath)
 
 	synthStart := time.Now()
-	var lastErr error
-	maxRetries := 3
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		ctx.Summary.Synthesis.Attempts = attempt + 1
-		if attempt > 0 {
-			log.Printf("[Synthesis] executeSynthesis failed (attempt %d/%d) for ReportID %d, retrying in %ds: %v\n",
-				attempt, maxRetries, ctx.Report.ID, attempt*2, lastErr)
-			time.Sleep(time.Duration(attempt*2) * time.Second)
-
-			CleanSynthesisTempFiles(ctx.ReportPath)
-		}
-
-		err := ExecuteSynthesisOnce(ctx, synthesisAIInputPath, suffixPrompt)
-		if err == nil {
-			log.Printf("[Synthesis] Synthesis phase complete for ReportID %d\n", ctx.Report.ID)
-			ctx.Summary.Synthesis.Status = "success"
-			ctx.Summary.Synthesis.StartTime = synthStart
-			ctx.Summary.Synthesis.EndTime = time.Now()
-			ctx.Summary.Synthesis.DurationSeconds = ctx.Summary.Synthesis.EndTime.Sub(synthStart).Seconds()
-			return nil
-		}
-		lastErr = err
+	lastErr := ExecuteSynthesisOnce(ctx, synthesisAIInputPath, suffixPrompt)
+	if lastErr == nil {
+		log.Printf("[Synthesis] Synthesis phase complete for ReportID %d\n", ctx.Report.ID)
+		ctx.Summary.Synthesis.Status = "success"
+		ctx.Summary.Synthesis.StartTime = synthStart
+		ctx.Summary.Synthesis.EndTime = time.Now()
+		ctx.Summary.Synthesis.DurationSeconds = ctx.Summary.Synthesis.EndTime.Sub(synthStart).Seconds()
+		return nil
 	}
-
 	ctx.Summary.Synthesis.Status = "failed"
 	ctx.Summary.Synthesis.StartTime = synthStart
 	ctx.Summary.Synthesis.EndTime = time.Now()
 	ctx.Summary.Synthesis.DurationSeconds = ctx.Summary.Synthesis.EndTime.Sub(synthStart).Seconds()
 	ctx.Summary.Synthesis.ErrorMessage = lastErr.Error()
-	return fmt.Errorf("synthesis failed after %d retries: %w", maxRetries, lastErr)
+	// A model polish failure must not invalidate the complete deterministic
+	// report.  Regenerate it because ExecuteSynthesisOnce cleans the output
+	// path before each remote attempt.
+	if fallbackErr := writeTier4Report(ctx.ReportPath, deterministicReport); fallbackErr != nil {
+		return fmt.Errorf("restore deterministic tier4 report: %w", fallbackErr)
+	}
+	ctx.Summary.Synthesis.Status = "degraded"
+	ctx.Summary.Synthesis.ErrorMessage = fmt.Sprintf("AI polish failed; deterministic report used: %v", lastErr)
+	log.Printf("[Synthesis] Tier4 AI polish failed for ReportID %d; delivering deterministic report: %v\n", ctx.Report.ID, lastErr)
+	return nil
+}
+
+func effectiveCoverage(ctx *TaskContext, coverageOpt []*coverage.Coverage) *coverage.Coverage {
+	for _, item := range coverageOpt {
+		if item != nil {
+			return item
+		}
+	}
+	if ctx != nil && ctx.Coverage != nil {
+		return ctx.Coverage
+	}
+	return &coverage.Coverage{
+		PolicyVersion:   "v1",
+		CommitHash:      ctx.Report.HeadCommit,
+		ManifestMissing: true,
+	}
 }
 
 // ExecuteSynthesisOnce 单次执行报告合成大模型调用
 func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPrompt string) error {
-	router := dispatcher.GetTierRouter()
-	acq, err := router.AcquireTier(ctx.Ctx, "tier4_synthesis", "")
-	if err != nil {
-		return fmt.Errorf("failed to acquire tier4_synthesis compute resource: %w", err)
-	}
-	defer acq.Release()
-
-	backend := acq.Backend
-	modelName := acq.ModelName
-	if backend == "" {
-		backend = models.AppConfig.AI.Backend
-	}
-
 	tierCfg := models.AppConfig.GetTierConfig("tier4_synthesis")
-	if modelName == "" {
-		modelName = tierCfg.Model
+	stageParent := ctx.Ctx
+	if stageParent == nil {
+		stageParent = context.Background()
+	}
+	stageCtx := stageParent
+	if tierCfg.TimeoutSeconds > 0 {
+		stageCtxCancel, cancelStage := context.WithTimeout(stageParent, time.Duration(tierCfg.TimeoutSeconds)*time.Second)
+		defer cancelStage()
+		stageCtx = stageCtxCancel
 	}
 
 	promptMsg := "请基于以下 JSON 分析发现，生成综合 Markdown 报告"
@@ -325,37 +253,93 @@ func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPro
 	}
 
 	absPrompt := models.AppConfig.GetAbsPath(ctx.TaskType.SynthesisPromptFile())
-	aiInv := GetAIInvoker(backend)
-	log.Printf("[Synthesis] Invoking Synthesis via %s (Model: %s, ReportID: %d, Output: %s)\n",
-		aiInv.Name(), modelName, ctx.Report.ID, ctx.ReportPath)
-
-	timeoutMin := ctx.TaskType.Timeout
-	if tierCfg.TimeoutSeconds > 0 {
-		timeoutMin = (tierCfg.TimeoutSeconds + 59) / 60
+	workCtx := &invoker.LLMWorkContext{
+		ReportID: ctx.Report.ID,
+		RepoName: ctx.Repo.Name,
+		TaskType: ctx.TaskType.DisplayName,
+		Stage:    "Tier 4: 全仓态势汇总",
+		SubTask:  "聚合分片发现并生成 Markdown 诊断报告",
+		TierName: "tier4_synthesis",
 	}
 
-	req := invoker.AIRequest{
-		ParentContext:  ctx.Ctx,
-		WorkDir:        ctx.CodesPath,
-		PromptFile:     absPrompt,
-		PromptMsg:      promptMsg,
-		InputFiles:     []string{synthesisInputPath},
-		OutputPath:     ctx.ReportPath,
-		TimeoutMin:     timeoutMin,
-		ModelName:      tierCfg.Model,
-		ResponseFormat: "text",
-		WorkContext: &invoker.LLMWorkContext{
-			ReportID: ctx.Report.ID,
-			RepoName: ctx.Repo.Name,
-			TaskType: ctx.TaskType.DisplayName,
-			Stage:    "Tier 4: 全仓态势汇总",
-			SubTask:  "聚合分片发现并生成 Markdown 诊断报告",
+	timeoutMin := (tierCfg.TimeoutSeconds + 59) / 60
+	if timeoutMin <= 0 {
+		timeoutMin = ctx.TaskType.Timeout
+	}
+
+	baselineBytes := readSynthesisAuditBaseline(ctx.ReportPath)
+	baselineSignature, baselineKnown := synthesisBusinessSignature(baselineBytes)
+	audit := newSynthesisAuditMetrics(baselineBytes)
+	var lastCandidate dispatcher.TierCandidate
+	stats := &dispatcher.TierRecoveryStats{}
+	_, _, _, callErr := dispatcher.RunTierInvocationWithRecovery(
+		stageCtx,
+		"tier4_synthesis",
+		tierCfg.AttemptTimeoutSeconds,
+		stats,
+		func(callCtx context.Context, candidate dispatcher.TierCandidate, timeoutSeconds int, metrics *invoker.InvocationMetrics) (string, int64, error) {
+			CleanSynthesisTempFiles(ctx.ReportPath)
+			backend := candidate.Driver
+			if backend == "" {
+				backend = models.AppConfig.AI.Backend
+			}
+			modelName := candidate.Model
+			if modelName == "" {
+				modelName = tierCfg.Model
+			}
+			workCtx.ResourceID = candidate.ResourceID
+			lastCandidate = candidate
+			aiInv := GetAIInvoker(backend)
+			req := invoker.AIRequest{
+				ParentContext:           callCtx,
+				WorkDir:                 ctx.CodesPath,
+				PromptFile:              absPrompt,
+				PromptMsg:               promptMsg,
+				InputFiles:              []string{synthesisInputPath},
+				OutputPath:              ctx.ReportPath,
+				TimeoutMin:              (timeoutSeconds + 59) / 60,
+				AttemptTimeoutSeconds:   tierCfg.AttemptTimeoutSeconds,
+				FirstByteTimeoutSeconds: tierCfg.FirstByteTimeoutSeconds,
+				IdleTimeoutSeconds:      tierCfg.IdleTimeoutSeconds,
+				MaxOutputBytes:          tierCfg.MaxOutputBytes,
+				ModelName:               modelName,
+				ResponseFormat:          "text",
+				Temperature:             models.AppConfig.DeterministicTemperature(),
+				WorkContext:             workCtx,
+				Metrics:                 metrics,
+			}
+			invokeErr := aiInv.Invoke(req)
+			if invokeErr != nil {
+				addSynthesisInvocationAttempt(audit, "", 0, invokeErr)
+				return "", 0, invokeErr
+			}
+			attemptBytes, readErr := os.ReadFile(ctx.ReportPath)
+			if readErr != nil {
+				attemptErr := fmt.Errorf("read synthesis attempt output: %w", readErr)
+				addSynthesisInvocationAttempt(audit, "", 0, attemptErr)
+				return "", 0, attemptErr
+			}
+			attemptRaw := string(attemptBytes)
+			attemptTokens := int64((len(promptMsg) + len(attemptRaw)) / 4)
+			addSynthesisInvocationAttempt(audit, attemptRaw, attemptTokens, nil)
+			return attemptRaw, attemptTokens, nil
 		},
+	)
+	applySynthesisRecoveryStats(ctx, stats)
+	audit.Driver = lastCandidate.Driver
+	audit.ResourceID = lastCandidate.ResourceID
+	if callErr != nil {
+		if len(audit.RepairAttempts) == 0 {
+			addSynthesisInvocationAttempt(audit, "", 0, callErr)
+		}
+		addSynthesisAuditIssue(audit, "artifact", callErr.Error(), false)
+		audit.RepairDriftUnchecked = true
+		audit.SetFinalStatus("failed")
+		persistSynthesisRepairAudit(stageCtx, ctx.Report.ID, ctx.Report.RepoID, ctx.Report.TaskTypeID, audit)
+		return callErr
 	}
-
-	if err := aiInv.Invoke(req); err != nil {
-		return err
-	}
+	log.Printf("[Synthesis] Invoked Synthesis driver=%s resource=%s report=%d attempts=%d\n",
+		lastCandidate.Driver, lastCandidate.ResourceID, ctx.Report.ID, len(audit.RepairAttempts))
 
 	reportBytes, err := os.ReadFile(ctx.ReportPath)
 	if err != nil {
@@ -365,15 +349,47 @@ func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPro
 		return fmt.Errorf("failed to read report file: %w", err)
 	}
 	if len(bytes.TrimSpace(reportBytes)) == 0 {
-		return fmt.Errorf("generated report file is empty")
+		emptyErr := fmt.Errorf("generated report file is empty")
+		acceptLastSynthesisAttempt(audit, baselineSignature, baselineKnown, false, emptyErr)
+		addSynthesisAuditIssue(audit, "artifact", emptyErr.Error(), false)
+		audit.SetFinalStatus("failed")
+		persistSynthesisRepairAudit(stageCtx, ctx.Report.ID, ctx.Report.RepoID, ctx.Report.TaskTypeID, audit)
+		return emptyErr
+	}
+	if err := ValidateTier4AIReport(reportBytes, synthesisInputPath); err != nil {
+		validationErr := fmt.Errorf("validate tier4 AI report: %w", err)
+		acceptLastSynthesisAttempt(audit, baselineSignature, baselineKnown, false, validationErr)
+		addSynthesisAuditIssue(audit, "artifact", validationErr.Error(), false)
+		audit.SetFinalStatus("failed")
+		persistSynthesisRepairAudit(stageCtx, ctx.Report.ID, ctx.Report.RepoID, ctx.Report.TaskTypeID, audit)
+		return validationErr
 	}
 
+	acceptLastSynthesisAttempt(audit, baselineSignature, baselineKnown, true, nil)
 	cleanedReport := SanitizeMarkdownReport(reportBytes)
+	evaluateSynthesisAttemptDrift(audit, baselineSignature, baselineKnown, cleanedReport)
 	if !bytes.Equal(cleanedReport, reportBytes) {
+		audit.AddLocalRepair(cleanedReport, true, nil)
 		if writeErr := os.WriteFile(ctx.ReportPath, cleanedReport, 0644); writeErr != nil {
 			log.Printf("[Synthesis] Warning: failed to save sanitized markdown report: %v\n", writeErr)
 		}
 	}
 
+	audit.SetFinalStatus("success")
+	persistSynthesisRepairAudit(stageCtx, ctx.Report.ID, ctx.Report.RepoID, ctx.Report.TaskTypeID, audit)
 	return nil
+}
+
+func applySynthesisRecoveryStats(ctx *TaskContext, stats *dispatcher.TierRecoveryStats) {
+	if stats == nil {
+		return
+	}
+	ctx.Summary.Synthesis.Attempts = len(stats.ErrorClasses)
+	ctx.Summary.Synthesis.ResourceID = stats.LastResourceID
+	ctx.Summary.Synthesis.ResourceFailovers = stats.ResourceFailovers
+	ctx.Summary.Synthesis.DriverFailovers = stats.DriverFailovers
+	ctx.Summary.Synthesis.ResourceChain = stats.ResourceChain
+	ctx.Summary.Synthesis.ErrorClasses = stats.ErrorClasses
+	ctx.Summary.Synthesis.QueueWaitMS = stats.QueueWaitMS
+	ctx.Summary.Synthesis.AttemptDurationSeconds = stats.DurationSeconds
 }

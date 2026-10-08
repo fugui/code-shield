@@ -1,11 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { TaskDebateLog, TaskReportMeta } from '../../types/report';
+import { TaskDebateLog } from '../../types/report';
 import { copyToClipboardWithFallback } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
 import SuggestionMarkdown from './SuggestionMarkdown';
 
 interface ReportDebateTabProps {
-  meta?: TaskReportMeta;
   debateLogs: TaskDebateLog[] | null;
   loading: boolean;
 }
@@ -54,7 +53,6 @@ interface JudgeVerdictData {
 }
 
 export default function ReportDebateTab({
-  meta,
   debateLogs,
   loading,
 }: ReportDebateTabProps) {
@@ -219,9 +217,7 @@ export default function ReportDebateTab({
         <div className="report-debate-empty-icon">⚖️</div>
         <div className="report-debate-empty-title">当前任务暂无多智能体辩论轨迹</div>
         <div className="report-debate-empty-desc">
-          {meta?.engine_mode === 'single'
-            ? '该任务使用的是单仓全量扫描模式 (Single)，未启用多智能体对抗辩论流水线。'
-            : '本次扫描分片中未发现需要发起三方对抗博弈的候选疑点，或辩论轨迹已按生命周期策略归档。'}
+          本次扫描分片中未发现需要发起三方对抗博弈的候选疑点，或辩论轨迹已按生命周期策略归档。
         </div>
       </div>
     );

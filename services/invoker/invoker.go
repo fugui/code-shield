@@ -8,12 +8,14 @@ import (
 
 // LLMWorkContext 承载单次 LLM 调用的业务归属与当前微任务环节（用于算力看板透视）
 type LLMWorkContext struct {
-	ReportID uint   `json:"report_id"`
-	RepoName string `json:"repo_name"`
-	TaskType string `json:"task_type"`
-	Stage    string `json:"stage"`    // 执行环节/阶段，如 "Tier 1: 初筛猎手"、"Tier 2: 裁判终审"、"Tier 3: 全仓汇总"、"系统工具: JSON 语法修复"
-	SubTask  string `json:"sub_task"` // 当前微任务描述，如 "分片 2/5 (src/runtime/sys.go)"、"批次 1 (候选点 1~3 终审)"
-	Detail   string `json:"detail,omitempty"`
+	ReportID   uint   `json:"report_id"`
+	RepoName   string `json:"repo_name"`
+	TaskType   string `json:"task_type"`
+	Stage      string `json:"stage"`    // 执行环节/阶段，如 "Tier 1: 初筛猎手"、"Tier 2: 裁判终审"、"Tier 3: 全仓汇总"、"系统工具: JSON 语法修复"
+	SubTask    string `json:"sub_task"` // 当前微任务描述，如 "分片 2/5 (src/runtime/sys.go)"、"批次 1 (候选点 1~3 终审)"
+	Detail     string `json:"detail,omitempty"`
+	TierName   string `json:"tier_name,omitempty"`
+	ResourceID string `json:"resource_id,omitempty"`
 }
 
 type llmWorkContextKey struct{}
@@ -39,18 +41,46 @@ func LLMWorkContextFromContext(ctx context.Context) *LLMWorkContext {
 
 // AIRequest 封装一次 AI 调用所需的全部参数（与具体驱动后端无关）
 type AIRequest struct {
-	ParentContext  context.Context // 父 context，支持提前取消
-	WorkDir        string          // 执行目录（代码仓根目录）
-	PromptFile     string          // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
-	PromptMsg      string          // 用户提示消息
-	InputFiles     []string        // 需要分析的文件列表（相对路径），AI 自行读取
-	OutputPath     string          // AI 输出文档的目标路径
-	TimeoutMin     int             // 执行超时（分钟），0 表示默认 60 分钟
-	ModelName      string          // 指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
-	Temperature    *float64        // 可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
-	ResponseFormat string          // 请求期望输出格式："json"（强制 json_object 结构化模式）、"text"/"markdown" 或 ""
-	Env            []string        // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
-	WorkContext    *LLMWorkContext // 业务溯源与算力监控上下文
+	ParentContext           context.Context    // 父 context，支持提前取消
+	WorkDir                 string             // 执行目录（代码仓根目录）
+	PromptFile              string             // 系统提示词文件的绝对路径（可选，为空时仅使用 PromptMsg）
+	PromptMsg               string             // 用户提示消息
+	InputFiles              []string           // 需要分析的文件列表（相对路径），AI 自行读取
+	OutputPath              string             // AI 输出文档的目标路径
+	TimeoutMin              int                // 执行超时（分钟），0 表示默认 60 分钟
+	TimeoutSeconds          int                // 执行超时（秒），优先于 TimeoutMin
+	AttemptTimeoutSeconds   int                // 单次 Native HTTP attempt 超时（秒）
+	FirstByteTimeoutSeconds int                // 流式首包超时（秒）
+	IdleTimeoutSeconds      int                // 流式事件间空闲超时（秒）
+	MaxOutputBytes          int                // 流式输出硬上限（字节）
+	ModelName               string             // 指定的模型名，例如 "glm5.1" 或 "models/qwen3.5"
+	ResourceID              string             // optional pinned dispatcher resource ID
+	TierName                string             // 逻辑 Tier 配置键，用于算力池质量统计
+	Temperature             *float64           // 可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
+	ResponseFormat          string             // 请求期望输出格式："json"（强制 json_object 结构化模式）、"text"/"markdown" 或 ""
+	JSONSchema              *JSONSchemaRequest // optional native json_schema request; ignored by non-native drivers
+	Env                     []string           // 附加/覆盖环境变量（例如 XDG_DATA_HOME）
+	WorkContext             *LLMWorkContext    // 业务溯源与算力监控上下文
+	Observability           *CallObservability `json:"-"` // 只读诊断上下文，由调度包装层注入
+	Metrics                 *InvocationMetrics `json:"-"` // per-invocation recovery metrics, optional
+	StdinPayload            string             `json:"-"` // 可选 stdin 输入，用于避免大 Prompt 进入进程 argv
+}
+
+// InvocationMetrics carries caller-owned per-call recovery counters.
+type InvocationMetrics struct {
+	DriverAttempts          int   `json:"driver_attempts"`
+	DriverFailovers         int   `json:"driver_failovers"`
+	Continuations           int   `json:"continuations"`
+	ContractRepairs         int   `json:"contract_repairs"`
+	ResponseFormatFallbacks int   `json:"response_format_fallbacks"`
+	QueueWaitMs             int64 `json:"queue_wait_ms"`
+	DurationMs              int64 `json:"duration_ms"`
+}
+
+type JSONSchemaRequest struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict"`
+	Schema map[string]any `json:"schema"`
 }
 
 // AIInvoker 定义了底层 AI 驱动调用的统一接口。

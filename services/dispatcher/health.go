@@ -7,6 +7,100 @@ import (
 	"code-shield/models"
 )
 
+const (
+	resourceBreakerFailureThreshold = 5
+	resourceBreakerOpenDuration     = 90 * time.Second
+)
+
+// RecordResourceResult updates the rolling breaker state. A resource opening
+// does not imply candidate failover: stage recovery must explicitly opt in.
+func (d *ModelDispatcher) RecordResourceResult(res *ModelResource, err error) {
+	if d == nil || res == nil {
+		return
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := time.Now()
+	if err == nil {
+		res.Health = ResourceHealth{}
+		res.Health.LastSuccessAt = now
+		return
+	}
+
+	res.Health.ConsecutiveFailures++
+	res.Health.LastFailureAt = now
+	if res.Health.ConsecutiveFailures >= resourceBreakerFailureThreshold {
+		res.Health.OpenUntil = now.Add(resourceBreakerOpenDuration)
+		log.Printf("[Dispatcher] Resource [%s] breaker opened for %s after %d consecutive failures\n",
+			res.ResourceKey(), resourceBreakerOpenDuration, res.Health.ConsecutiveFailures)
+	}
+}
+
+func (h ResourceHealth) availableLocked(now time.Time) bool {
+	return h.OpenUntil.IsZero() || !now.Before(h.OpenUntil)
+}
+
+func (h ResourceHealth) snapshot(now time.Time) ResourceHealthSnapshot {
+	open := !h.availableLocked(now)
+	snapshot := ResourceHealthSnapshot{
+		Healthy:             !open,
+		BreakerOpen:         open,
+		ConsecutiveFailures: h.ConsecutiveFailures,
+	}
+	if !h.OpenUntil.IsZero() && now.Before(h.OpenUntil) {
+		openUntil := h.OpenUntil
+		snapshot.OpenUntil = &openUntil
+	}
+	if !h.LastFailureAt.IsZero() {
+		lastFailure := h.LastFailureAt
+		snapshot.LastFailureAt = &lastFailure
+	}
+	if !h.LastSuccessAt.IsZero() {
+		lastSuccess := h.LastSuccessAt
+		snapshot.LastSuccessAt = &lastSuccess
+	}
+	return snapshot
+}
+
+func (d *ModelDispatcher) resourceAvailableLocked(resourceID string, now time.Time) bool {
+	if resourceID == "" {
+		return true
+	}
+	for _, res := range d.resources {
+		if res.ResourceKey() == resourceID || res.ID == resourceID || res.Driver == resourceID {
+			return res.Health.availableLocked(now)
+		}
+	}
+	return true
+}
+
+// IsResourceAvailable reports whether a configured resource's breaker is open.
+func (d *ModelDispatcher) IsResourceAvailable(resourceID string) bool {
+	if d == nil || !d.enabled {
+		return true
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.resourceAvailableLocked(resourceID, time.Now())
+}
+
+// RecoveryResourceSnapshot exposes breaker state for routing and diagnostics.
+func (d *ModelDispatcher) ResourceHealth(resourceID string) (bool, bool) {
+	if d == nil || !d.enabled {
+		return true, false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, res := range d.resources {
+		if res.ResourceKey() == resourceID || res.ID == resourceID || res.Driver == resourceID {
+			now := time.Now()
+			return res.Health.availableLocked(now), !res.Health.availableLocked(now)
+		}
+	}
+	return true, false
+}
+
 // isInsideWorkHours 判定指定时刻是否处于工作时间窗口内
 func isInsideWorkHours(now time.Time, cfg models.WorkHoursThrottleConfig) bool {
 	if !cfg.Enabled {
@@ -223,10 +317,8 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 
 	var newResources []*ModelResource
 	for i, res := range llmCfg.Resources {
-		concurrent := res.Concurrent
-		if concurrent <= 0 {
-			concurrent = 5
-		}
+		resourceModel := res.ResourceModel()
+		concurrent := res.ResourceConcurrent()
 
 		key := computeResourceConfigKey(res)
 		var mr *ModelResource
@@ -235,7 +327,7 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 			mr.Index = i
 			mr.ID = res.ID
 			mr.Driver = res.Driver
-			mr.Model = res.Model
+			mr.Model = resourceModel
 			mr.Concurrent = concurrent
 			mr.Endpoints = res.Endpoints
 			mr.OpenCode, mr.Claude, mr.Codex, mr.Agy, mr.Native = "", "", "", "", ""
@@ -244,7 +336,7 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 				Index:      i,
 				ID:         res.ID,
 				Driver:     res.Driver,
-				Model:      res.Model,
+				Model:      resourceModel,
 				Concurrent: concurrent,
 				Endpoints:  res.Endpoints,
 				Active:     0,
@@ -253,28 +345,23 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 
 		switch res.Driver {
 		case "opencode":
-			mr.OpenCode = res.Model
+			mr.OpenCode = resourceModel
 		case "claude":
-			mr.Claude = res.Model
+			mr.Claude = resourceModel
 		case "codex":
-			mr.Codex = res.Model
+			mr.Codex = resourceModel
 		case "agy":
-			mr.Agy = res.Model
+			mr.Agy = resourceModel
 		case "native":
-			mr.Native = res.Model
-			if len(res.Endpoints) > 0 {
-				epConcurrent := 0
-				for _, ep := range res.Endpoints {
-					if ep.Concurrent > 0 {
-						epConcurrent += ep.Concurrent
-					}
-				}
-				if epConcurrent > 0 {
-					mr.Concurrent = epConcurrent
-				}
+			mr.Native = resourceModel
+			if mr.Native == "" {
+				mr.Native = res.ID
+			}
+			if mr.Native == "" {
+				mr.Native = "native"
 			}
 		default:
-			mr.Native = res.Model
+			mr.Native = resourceModel
 		}
 
 		newResources = append(newResources, mr)

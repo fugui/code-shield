@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { TaskFindingItem, GovernanceMode } from '../../types/report';
+import React, { useEffect, useState } from 'react';
+import { TaskFindingItem, GovernanceMode, ObservationProjection } from '../../types/report';
 import { getSeverityMeta, getRepoSourceUrl, copyToClipboardWithFallback, extractFirstLineNumber } from '../../utils/reportUtils';
+import { isAIFixURLValid, buildAIFixURL, getAIFixURL } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
 import DebateVerdictView from './DebateVerdictView';
 import SuggestionMarkdown from './SuggestionMarkdown';
@@ -8,6 +9,7 @@ import SuggestionMarkdown from './SuggestionMarkdown';
 interface FindingCardProps {
   finding: TaskFindingItem;
   governanceMode?: GovernanceMode;
+  reconciliation?: ObservationProjection;
   repoUrl?: string;
   branch?: string;
   onFeedbackSubmit?: () => void;
@@ -15,7 +17,8 @@ interface FindingCardProps {
 
 export default function FindingCard({
   finding,
-  governanceMode = 'defect_tracking',
+  governanceMode = 'full_ledger',
+  reconciliation,
   repoUrl,
   branch,
   onFeedbackSubmit,
@@ -28,10 +31,35 @@ export default function FindingCard({
   const [feedbackStatus, setFeedbackStatus] = useState('FALSE_POSITIVE');
   const [feedbackReason, setFeedbackReason] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [aiFixURL, setAIFixURL] = useState<string | null>(null);
 
   const isEntityMode = governanceMode === 'entity_assessment';
   const sevMeta = getSeverityMeta(finding.severity);
   const sourceUrl = getRepoSourceUrl(repoUrl, branch, finding.file_path, finding.line_number);
+  const defectId = finding.defect_id ?? reconciliation?.defect_id;
+  const verdictLabels: Record<string, { label: string; className: string }> = {
+    NEW: { label: '本轮新增', className: 'verdict-new' },
+    EXISTED: { label: '历史存量', className: 'verdict-existed' },
+    REOPENED: { label: '修复后复发', className: 'verdict-reopened' },
+    PROBABLE: { label: '疑似存量，待确认', className: 'verdict-probable' },
+    RESOLVED: { label: '本轮判定修复', className: 'verdict-resolved' },
+    COVERAGE_GAP: { label: '覆盖缺口，不判修复', className: 'verdict-coverage-gap' },
+  };
+  const matchTierLabels: Record<string, string> = {
+    STRONG: '强身份匹配',
+    STRUCT: '结构匹配',
+    BUCKET: '弱候选匹配',
+    ASSIGN: '全局指派',
+    AI: 'AI 仲裁',
+    AI_FALLBACK: 'AI 兜底裁决',
+    HUMAN: '人工确认',
+    UNCLAIMED: '未匹配',
+  };
+  const verdict = reconciliation ? verdictLabels[reconciliation.verdict] || null : null;
+  const matchTierLabel = reconciliation ? matchTierLabels[reconciliation.match_tier] || reconciliation.match_tier : '';
+  const confidenceLabel = reconciliation
+    ? (Math.round(reconciliation.confidence * 100) / 100).toFixed(2)
+    : '';
 
   const handleCopyLocation = async () => {
     const firstLine = extractFirstLineNumber(finding.line_number);
@@ -96,88 +124,51 @@ export default function FindingCard({
     }
   };
 
-  // 渲染增量状态徽标
-  const renderDiffStatusBadge = () => {
-    const status = finding.diff_status || finding.lifecycle_status;
-    if (!status) return null;
-    let bg = 'var(--color-bg-muted, #f1f5f9)';
-    let color = 'var(--color-text-secondary, #475569)';
-    let text = '存量';
-
-    switch (status) {
-      case 'NEW':
-        bg = 'rgba(239, 68, 68, 0.12)';
-        color = 'var(--color-danger, #dc2626)';
-        text = '本次新增 (NEW)';
-        break;
-      case 'EXISTED':
-        bg = 'rgba(100, 116, 139, 0.12)';
-        color = 'var(--color-text-secondary, #475569)';
-        text = '历史存量 (EXISTED)';
-        break;
-      case 'RESOLVED':
-        bg = 'rgba(34, 197, 94, 0.12)';
-        color = 'var(--color-success, #16a34a)';
-        text = '已修复 (RESOLVED)';
-        break;
-      case 'REOPENED':
-        bg = 'rgba(217, 119, 6, 0.12)';
-        color = 'var(--color-warning, #d97706)';
-        text = '复发激活 (REOPENED)';
-        break;
-      case 'GAP_FILLED':
-        bg = 'rgba(6, 182, 212, 0.12)';
-        color = '#0891b2';
-        text = '漏扫回补 (GAP_FILLED)';
-        break;
-      case 'REGRESSED':
-        bg = 'rgba(234, 88, 12, 0.12)';
-        color = '#ea580c';
-        text = '冷池复发 (REGRESSED)';
-        break;
-      case 'ARCHIVED':
-        bg = 'rgba(148, 163, 184, 0.15)';
-        color = 'var(--color-text-muted, #64748b)';
-        text = '冷寂归档 (ARCHIVED)';
-        break;
-      case 'NEW_IN_DIFF':
-        bg = 'rgba(220, 38, 38, 0.15)';
-        color = 'var(--color-danger, #dc2626)';
-        text = '变更引入 (NEW_IN_DIFF)';
-        break;
-      case 'RESOLVED_BY_CHANGE':
-        bg = 'rgba(16, 185, 129, 0.15)';
-        color = 'var(--color-success, #059669)';
-        text = '变更顺带修复 (RESOLVED_BY_CHANGE)';
-        break;
-      case 'HISTORICAL_BASELINE':
-        bg = 'rgba(148, 163, 184, 0.1)';
-        color = 'var(--color-text-muted, #64748b)';
-        text = '存量基线 (BASELINE)';
-        break;
-      default:
-        text = status;
-    }
-
-    return (
-      <span
-        style={{
-          fontSize: '0.75rem',
-          padding: '0.2rem 0.5rem',
-          borderRadius: '4px',
-          backgroundColor: bg,
-          color: color,
-          fontWeight: 600,
-          border: `1px solid ${color}40`,
-        }}
-        title={`缺陷生命周期状态: ${status}`}
-      >
-        {text}
-      </span>
-    );
-  };
-
   const hasDebateInfo = Boolean(finding.hunter_claim || finding.challenger_arg || finding.judge_verdict);
+  const assessmentIssues = finding.assessment_artifact?.issues || [];
+  const assessmentStatusLabels: Record<string, string> = {
+    valid: '评估合格',
+    invalid: '评估不合格',
+    issue: '存在风险',
+    not_thread_creation: '非目标命中',
+    needs_human: '需人工复核',
+  };
+  const assessmentStatusLabel = finding.assessment_status
+    ? assessmentStatusLabels[finding.assessment_status] || finding.assessment_status
+    : '';
+  const categoryNeedsReview = finding.category_status === 'REVIEW_REQUIRED' ||
+    finding.category === '未分类' || !finding.category;
+
+  useEffect(() => {
+    if (isEntityMode) {
+      return;
+    }
+    let active = true;
+    getAIFixURL()
+      .then((fixURL) => {
+        if (active) setAIFixURL(fixURL || '');
+      })
+      .catch(() => {
+        if (active) setAIFixURL('');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isEntityMode]);
+
+  const aiFixConfigValid = isAIFixURLValid(aiFixURL);
+  const canUseAIFix = Boolean(
+    !isEntityMode &&
+    defectId &&
+    aiFixConfigValid &&
+    (finding.status === 'open' || finding.status === 'analyzing')
+  );
+  const aiFixDisabledReason = !defectId
+    ? '尚未关联缺陷台账，暂不支持 AI 修复'
+    : !aiFixConfigValid
+      ? 'AI 修复配置无效'
+      : '当前缺陷状态不可修复';
 
   return (
     <div className="finding-card" id={`finding-${finding.id}`}>
@@ -201,82 +192,43 @@ export default function FindingCard({
             {finding.severity_display || sevMeta.label}
           </span>
 
-          {renderDiffStatusBadge()}
-
-          {finding.item_uid && (
-            <span
-              style={{
-                fontSize: '0.72rem',
-                padding: '0.15rem 0.4rem',
-                borderRadius: '4px',
-                background: 'var(--color-bg-muted, #f1f5f9)',
-                color: 'var(--color-text-muted, #64748b)',
-                border: '1px solid var(--color-border-primary, #e2e8f0)',
-                fontFamily: 'monospace',
-              }}
-              title={`对账条目唯一标识: ${finding.item_uid}`}
-            >
-              {finding.item_uid}
-            </span>
-          )}
-
-          {finding.family_id && (
-            <span
-              style={{
-                fontSize: '0.72rem',
-                padding: '0.15rem 0.45rem',
-                borderRadius: '4px',
-                background: 'rgba(99, 102, 241, 0.1)',
-                color: '#6366f1',
-                border: '1px solid rgba(99, 102, 241, 0.25)',
-                fontWeight: 600,
-              }}
-              title={`模板缺陷族标识: ${finding.family_id}`}
-            >
-              族: {finding.family_id.length > 18 ? `${finding.family_id.slice(0, 18)}...` : finding.family_id}
-            </span>
-          )}
-
-          {finding.multi_view_count && finding.multi_view_count > 1 ? (
-            <span
-              style={{
-                fontSize: '0.72rem',
-                padding: '0.15rem 0.4rem',
-                borderRadius: '4px',
-                background: 'rgba(168, 85, 247, 0.1)',
-                color: '#a855f7',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                fontWeight: 600,
-              }}
-              title={`同位置多视角重叠合并，共聚合 ${finding.multi_view_count} 处切片检出`}
-            >
-              多视角 ×{finding.multi_view_count}
-            </span>
-          ) : null}
-
-          {finding.rounds_seen && finding.rounds_seen > 1 ? (
-            <span
-              style={{
-                fontSize: '0.72rem',
-                padding: '0.15rem 0.4rem',
-                borderRadius: '4px',
-                background: 'var(--color-bg-muted, #f1f5f9)',
-                color: 'var(--color-text-secondary, #475569)',
-                border: '1px solid var(--color-border-primary, #e2e8f0)',
-              }}
-              title={`该缺陷在历史扫描中已累计检出 ${finding.rounds_seen} 轮`}
-            >
-              已见 {finding.rounds_seen} 轮
-            </span>
-          ) : null}
-
           <span style={{ fontWeight: 700, fontSize: '1.02rem', color: 'var(--color-text-primary, #0f172a)', lineHeight: 1.45 }}>
             {finding.title}
           </span>
 
-          {finding.category && (
+          {!isEntityMode && verdict && (
+            <span className={`reconciliation-badge ${verdict.className}`}>
+              {verdict.label}
+              <small>{matchTierLabel}{reconciliation?.defect_id ? ` · #${reconciliation.defect_id}` : ''} · {confidenceLabel}</small>
+            </span>
+          )}
+
+          {categoryNeedsReview && (
+            <span
+              style={{
+                fontSize: '0.78rem',
+                color: '#c2410c',
+                background: '#fff7ed',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '4px',
+                border: '1px solid #fed7aa',
+              }}
+            >
+              未分类 · 待人工复核
+            </span>
+          )}
+          {!categoryNeedsReview && finding.category && (
             <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary, #64748b)', background: 'var(--color-bg-muted, #f1f5f9)', padding: '0.2rem 0.6rem', borderRadius: '4px', border: '1px solid var(--color-border-primary, #e2e8f0)' }}>
-              {finding.category}
+              <span title={finding.category_code ? `短码: ${finding.category_code}` : undefined}>
+                {finding.category}
+              </span>
+              {finding.category_status && <small style={{ marginLeft: '0.3rem' }}>{finding.category_status}</small>}
+            </span>
+          )}
+
+          {assessmentStatusLabel && (
+            <span style={{ fontSize: '0.78rem', color: '#0369a1', background: '#e0f2fe', padding: '0.2rem 0.6rem', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+              {assessmentStatusLabel}
             </span>
           )}
         </div>
@@ -301,6 +253,21 @@ export default function FindingCard({
           >
             🛡️ 标记反馈
           </button>
+
+          {!isEntityMode && (
+            <a
+              className={`nav-btn no-print ${canUseAIFix ? '' : 'ai-fix-disabled'}`}
+              href={canUseAIFix && aiFixConfigValid && aiFixURL ? buildAIFixURL(aiFixURL, defectId!) : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-disabled={!canUseAIFix}
+              onClick={canUseAIFix ? undefined : (event) => event.preventDefault()}
+              title={canUseAIFix ? '使用 AI 修复该缺陷' : aiFixDisabledReason}
+              style={{ textDecoration: 'none', fontSize: '0.82rem', opacity: canUseAIFix ? 1 : 0.5, cursor: canUseAIFix ? 'pointer' : 'not-allowed' }}
+            >
+              🤖 AI修复
+            </a>
+          )}
         </div>
       </div>
 
@@ -352,6 +319,33 @@ export default function FindingCard({
       {finding.detail && (
         <div style={{ margin: '0.85rem 0' }}>
           <DebateVerdictView detail={finding.detail} title={finding.title} />
+        </div>
+      )}
+
+      {finding.classification_rationale && (
+        <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '0.85rem' }}>
+          <strong style={{ color: '#334155' }}>分类依据：</strong>
+          {finding.classification_rationale}
+          {finding.taxonomy_hash && (
+            <div style={{ marginTop: '0.25rem', color: '#64748b' }}>Taxonomy: {finding.taxonomy_hash}</div>
+          )}
+        </div>
+      )}
+
+      {assessmentIssues.length > 0 && (
+        <div style={{ margin: '0.85rem 0', background: 'var(--color-bg-muted, #f8fafc)', borderRadius: '8px', border: '1px solid var(--color-border-primary, #e2e8f0)', padding: '0.75rem 1rem' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.86rem', color: '#334155', marginBottom: '0.6rem' }}>
+            🧾 Primary Unit 结论清单
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+            {assessmentIssues.map((issue, index) => (
+              <div key={`${issue.category}-${index}`} style={{ fontSize: '0.84rem', color: '#475569', borderLeft: '3px solid #f59e0b', paddingLeft: '0.65rem' }}>
+                <div style={{ fontWeight: 600, color: '#0f172a' }}>{issue.severity} · {issue.category}</div>
+                <div>{issue.detail}</div>
+                {issue.suggestion && <div style={{ marginTop: '0.2rem' }}>建议：{issue.suggestion}</div>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

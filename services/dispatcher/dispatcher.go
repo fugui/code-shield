@@ -2,12 +2,17 @@ package dispatcher
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"sync"
 	"time"
 
 	"code-shield/models"
+)
+
+const (
+	maxRecentLeases = 50
 )
 
 // ModelResource 代表单台 LLM 服务器的模型资源以及并发追踪
@@ -24,6 +29,7 @@ type ModelResource struct {
 	Concurrent    int
 	Active        int // 当前正在运行的并发数
 	CurrentWeight int // 运行时平滑加权轮询 (SWRR) 动态权重
+	Health        ResourceHealth
 	Endpoints     []models.ResourceEndpointConfig
 }
 
@@ -61,26 +67,27 @@ func (r *ModelResource) ResourceKey() string {
 
 // computeResourceConfigKey 计算 ComputeResourceConfig 对应的业务标识键
 func computeResourceConfigKey(res models.ComputeResourceConfig) string {
+	resourceModel := res.ResourceModel()
 	if res.ID != "" {
 		return "id:" + res.ID
 	}
-	if res.Driver != "" || res.Model != "" {
-		return "driver:" + res.Driver + "/" + res.Model
+	if res.Driver != "" || resourceModel != "" {
+		return "driver:" + res.Driver + "/" + resourceModel
 	}
 	var openCode, claude, codex, agy, native string
 	switch res.Driver {
 	case "opencode":
-		openCode = res.Model
+		openCode = resourceModel
 	case "claude":
-		claude = res.Model
+		claude = resourceModel
 	case "codex":
-		codex = res.Model
+		codex = resourceModel
 	case "agy":
-		agy = res.Model
+		agy = resourceModel
 	case "native":
-		native = res.Model
+		native = resourceModel
 	default:
-		native = res.Model
+		native = resourceModel
 	}
 	return "models:" + openCode + "|" + claude + "|" + codex + "|" + agy + "|" + native
 }
@@ -110,7 +117,26 @@ type ModelResourceStatus struct {
 	Concurrent int                             `json:"concurrent"`
 	Active     int                             `json:"active"`
 	Limit      int                             `json:"limit"`
+	Health     ResourceHealthSnapshot          `json:"health"`
 	Endpoints  []models.ResourceEndpointConfig `json:"endpoints,omitempty"`
+}
+
+// ResourceHealth is dispatcher-owned rolling breaker state. Opening the breaker
+// maps to resource_unavailable and never authorizes candidate failover alone.
+type ResourceHealth struct {
+	ConsecutiveFailures int
+	OpenUntil           time.Time
+	LastFailureAt       time.Time
+	LastSuccessAt       time.Time
+}
+
+type ResourceHealthSnapshot struct {
+	Healthy             bool       `json:"healthy"`
+	BreakerOpen         bool       `json:"breaker_open"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	OpenUntil           *time.Time `json:"open_until,omitempty"`
+	LastFailureAt       *time.Time `json:"last_failure_at,omitempty"`
+	LastSuccessAt       *time.Time `json:"last_success_at,omitempty"`
 }
 
 // ModelDispatcher 负责协调跨不同物理/逻辑 LLM 服务器的 AI 并发
@@ -128,7 +154,12 @@ type ModelDispatcher struct {
 	lastEffectiveScale float64                        // 记录上一时刻生效的 scale
 	lastThrottleMode   string                         // 记录上一时刻模式
 	activeLeases       map[string]*LLMSlotLease
-	leaseSeq           uint64
+	recentLeases       []*LLMSlotLease
+	// skipSuccessfulLeases controls whether successful slot leases are omitted from
+	// the bounded in-memory completion history. Failed/canceled are always kept.
+	skipSuccessfulLeases bool
+	leaseSeq             uint64
+	metrics              *dispatcherMetrics
 }
 
 // GlobalDispatcher 为多 LLM 并发分配器的全局单例
@@ -161,6 +192,9 @@ func (d *ModelDispatcher) SetWorkHoursThrottle(cfg models.WorkHoursThrottleConfi
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.workHours = cfg
+	if d.cond != nil {
+		d.cond.Broadcast()
+	}
 }
 
 // calculateLimit 语义计算：使用 math.Ceil 保证非 0 限速下至少分配 1 个并发
@@ -182,51 +216,49 @@ func InitModelDispatcher() {
 	}
 
 	d := &ModelDispatcher{
-		manualScale:   1.0,
-		stopHeartbeat: make(chan struct{}),
-		activeLeases:  make(map[string]*LLMSlotLease),
-		workHours:     models.AppConfig.AI.WorkHoursThrottle,
+		manualScale:          1.0,
+		stopHeartbeat:        make(chan struct{}),
+		activeLeases:         make(map[string]*LLMSlotLease),
+		skipSuccessfulLeases: true,
+		workHours:            models.AppConfig.AI.WorkHoursThrottle,
 	}
+	d.metrics = newDispatcherMetrics()
 	d.cond = sync.NewCond(&d.mu)
 
 	if len(models.AppConfig.LLM.Resources) > 0 {
 		for i, res := range models.AppConfig.LLM.Resources {
-			concurrent := res.Concurrent
-			if concurrent <= 0 {
-				concurrent = 5
+			resourceModel := res.ResourceModel()
+			concurrent := res.ResourceConcurrent()
+			if res.Driver == "native" && len(res.Endpoints) == 0 {
+				continue
 			}
 			mr := &ModelResource{
 				Index:      i,
 				ID:         res.ID,
 				Driver:     res.Driver,
-				Model:      res.Model,
+				Model:      resourceModel,
 				Concurrent: concurrent,
 				Endpoints:  res.Endpoints,
 			}
 			switch res.Driver {
 			case "opencode":
-				mr.OpenCode = res.Model
+				mr.OpenCode = resourceModel
 			case "claude":
-				mr.Claude = res.Model
+				mr.Claude = resourceModel
 			case "codex":
-				mr.Codex = res.Model
+				mr.Codex = resourceModel
 			case "agy":
-				mr.Agy = res.Model
+				mr.Agy = resourceModel
 			case "native":
-				mr.Native = res.Model
-				if len(res.Endpoints) > 0 {
-					epConcurrent := 0
-					for _, ep := range res.Endpoints {
-						if ep.Concurrent > 0 {
-							epConcurrent += ep.Concurrent
-						}
-					}
-					if epConcurrent > 0 {
-						mr.Concurrent = epConcurrent
-					}
+				mr.Native = resourceModel
+				if mr.Native == "" {
+					mr.Native = res.ID
+				}
+				if mr.Native == "" {
+					mr.Native = "native"
 				}
 			default:
-				mr.Native = res.Model
+				mr.Native = resourceModel
 			}
 			d.resources = append(d.resources, mr)
 		}
@@ -247,39 +279,6 @@ func InitModelDispatcher() {
 			})
 		}
 
-		hasNativeResource := false
-		for _, r := range d.resources {
-			if r.Native != "" {
-				hasNativeResource = true
-				break
-			}
-		}
-
-		nativeCfg := models.AppConfig.AI.Native
-		if !hasNativeResource && (nativeCfg.BaseURL != "" || nativeCfg.Endpoint != "" || len(nativeCfg.Endpoints) > 0) {
-			nativeConcurrent := 0
-			if len(nativeCfg.Endpoints) > 0 {
-				for _, ep := range nativeCfg.Endpoints {
-					if ep.Concurrent > 0 {
-						nativeConcurrent += ep.Concurrent
-					} else {
-						nativeConcurrent += 20
-					}
-				}
-			}
-			if nativeConcurrent <= 0 {
-				nativeConcurrent = 20
-			}
-			defaultModel := nativeCfg.DefaultModel
-			if defaultModel == "" {
-				defaultModel = "glm-4-flash"
-			}
-			d.resources = append(d.resources, &ModelResource{
-				Index:      len(d.resources),
-				Native:     defaultModel,
-				Concurrent: nativeConcurrent,
-			})
-		}
 	}
 
 	if len(d.resources) > 0 {
@@ -340,11 +339,11 @@ func (d *ModelDispatcher) IsEnabled() bool {
 
 // Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位
 func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelResource, string, error) {
-	return d.AcquireWithPreference(ctx, backend, "")
+	return d.AcquireWithPreference(ctx, backend, "", "")
 }
 
 // AcquireWithPreference 动态请求支持指定后端类型的空闲 LLM 模型资源槽位。
-func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend string, preferredModel string) (*ModelResource, string, error) {
+func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, preferredModel, preferredResourceID string) (*ModelResource, string, error) {
 	if d == nil || !d.enabled {
 		return nil, "", nil
 	}
@@ -402,6 +401,28 @@ func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend str
 		bestLoadRatio := 999.0
 		minActive := 999999
 		hasSupportedServerInLoop := false
+
+		if preferredResourceID != "" {
+			foundPreferredResource := false
+			for _, res := range d.resources {
+				if res.ResourceKey() != preferredResourceID && res.ID != preferredResourceID && res.Driver != preferredResourceID {
+					continue
+				}
+				foundPreferredResource = true
+				if res.ModelName(backend) == "" {
+					continue
+				}
+				hasSupportedServerInLoop = true
+				limit := calculateLimit(res.Concurrent, scale)
+				if limit > 0 && res.Active < limit {
+					bestRes = res
+					break
+				}
+			}
+			if !foundPreferredResource {
+				return nil, "", fmt.Errorf("preferred resource %q is not configured", preferredResourceID)
+			}
+		}
 
 		if preferredModel != "" {
 			for _, res := range d.resources {
@@ -578,7 +599,7 @@ func (d *ModelDispatcher) PickBestCandidateResource(candidateIDs []string) (stri
 	}
 
 	if len(availList) == 1 {
-		return resolveResourceDriverAndModel(availList[0].res, candidateIDs)
+		return resolveSelectedResourceIdentity(availList[0].res, candidateIDs)
 	}
 
 	var selectedRes *ModelResource
@@ -595,10 +616,10 @@ func (d *ModelDispatcher) PickBestCandidateResource(candidateIDs []string) (stri
 
 	if selectedRes != nil {
 		selectedRes.CurrentWeight -= totalWeight
-		return resolveResourceDriverAndModel(selectedRes, candidateIDs)
+		return resolveSelectedResourceIdentity(selectedRes, candidateIDs)
 	}
 
-	return resolveResourceDriverAndModel(availList[0].res, candidateIDs)
+	return resolveSelectedResourceIdentity(availList[0].res, candidateIDs)
 }
 
 // resolveResourceDriverAndModel 解析资源的有效 driver 和 model 名称
@@ -618,6 +639,15 @@ func resolveResourceDriverAndModel(res *ModelResource, candidateIDs []string) (s
 		model = res.ModelName(driver)
 	}
 	return driver, model
+}
+
+func resolveSelectedResourceIdentity(res *ModelResource, candidateIDs []string) (string, string) {
+	identity := res.ID
+	if identity == "" {
+		identity = res.Driver
+	}
+	_, model := resolveResourceDriverAndModel(res, candidateIDs)
+	return identity, model
 }
 
 // GetScaleAndExpiration 获取当前的并发折扣比率与过期时间
@@ -654,11 +684,19 @@ func (d *ModelDispatcher) GetResourcesStatus() []ModelResourceStatus {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.getResourcesStatusLocked(time.Now())
+}
 
-	info := d.getEffectiveScaleInfoLocked(time.Now())
+func (d *ModelDispatcher) getResourcesStatusLocked(now time.Time) []ModelResourceStatus {
+	if !d.enabled {
+		return nil
+	}
+
+	info := d.getEffectiveScaleInfoLocked(now)
 	var list []ModelResourceStatus
 	for _, r := range d.resources {
 		limit := calculateLimit(r.Concurrent, info.EffectiveScale)
+		health := r.Health.snapshot(now)
 		list = append(list, ModelResourceStatus{
 			Index:      r.Index,
 			ID:         r.ID,
@@ -672,6 +710,7 @@ func (d *ModelDispatcher) GetResourcesStatus() []ModelResourceStatus {
 			Concurrent: r.Concurrent,
 			Active:     r.Active,
 			Limit:      limit,
+			Health:     health,
 			Endpoints:  r.Endpoints,
 		})
 	}

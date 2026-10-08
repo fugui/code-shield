@@ -60,10 +60,10 @@ interface CampaignAnalysisProps {
   title: string;
   description: string;
   taskTypeName: string;
-  governanceMode?: 'defect_tracking' | 'entity_assessment';
+  governanceMode?: 'full_ledger' | 'change_focus' | 'entity_assessment';
 }
 
-export default function CampaignAnalysis({ campaign, title, description, taskTypeName, governanceMode = 'defect_tracking' }: CampaignAnalysisProps) {
+export default function CampaignAnalysis({ campaign, title, description, taskTypeName, governanceMode = 'full_ledger' }: CampaignAnalysisProps) {
   const { showToast } = useToast();
   const isEntityMode = governanceMode === 'entity_assessment';
   
@@ -1095,6 +1095,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
         repoName={selectedRepoName}
         apiPrefix={`/api/analysis/${campaign}`}
         workspaceType={campaign}
+        governanceMode={governanceMode}
         onWorkflowSaved={() => {
           // Re-fetch active view metrics dynamically
           if (activeTab === 'repos') fetchReposData();

@@ -9,6 +9,8 @@ import ReportViewer from '../components/report/ReportViewer';
 import { TaskNavigationContext } from '../types/report';
 import { apiUrl } from '../config';
 
+const canViewReport = (status: string) => status === 'success' || status === 'degraded';
+
 function ReportsOverview() {
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -73,7 +75,7 @@ function ReportsOverview() {
     const params = new URLSearchParams({
       page: page.toString(),
       pageSize: pageSize.toString(),
-      status: 'success', // Only show successful reports
+      status: 'success,degraded', // Show complete and coverage-degraded reports
     });
     if (filterTeam) params.append('team_id', filterTeam);
     if (filterServiceGroup) params.append('service_group', filterServiceGroup);
@@ -206,7 +208,7 @@ function ReportsOverview() {
 
 
   const getOverviewText = (item: any) => {
-    if (item.status !== 'success') return '';
+    if (!canViewReport(item.status)) return '';
 
     if (item.metrics) {
       try {
@@ -356,14 +358,48 @@ function ReportsOverview() {
 
               <tr key={item.id || idx} className="code-interactive-row">
                 <td>
-                  {item.status === 'success' ? (
-                    <span 
-                      onClick={() => handleOpenReport(item.id)}
-                      style={{ color: 'var(--primary-color)', cursor: 'pointer', fontWeight: 600, fontFamily: 'monospace' }}
-                      title="点击查看详细报告"
-                    >
-                      #{item.id}
-                    </span>
+                  {canViewReport(item.status) ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span
+                        onClick={() => handleOpenReport(item.id)}
+                        style={{ color: 'var(--primary-color)', cursor: 'pointer', fontWeight: 600, fontFamily: 'monospace' }}
+                        title="点击查看详细报告"
+                      >
+                        #{item.id}
+                      </span>
+                      {item.status === 'degraded' && (
+                        <span
+                          style={{
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '4px',
+                            background: 'var(--color-warning-subtle, #fff7ed)',
+                            color: 'var(--color-warning, #d97706)',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="覆盖率降级：工作区不干净，或存在未完成分片/未扫描文件；报告结果可能不完整"
+                        >
+                          降级
+                        </span>
+                      )}
+                      {item.coverage_not_applicable && (
+                        <span
+                          style={{
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '4px',
+                            background: 'rgba(148, 163, 184, 0.15)',
+                            color: '#64748b',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="任务过滤器未命中计划扫描文件，覆盖率评估不适用"
+                        >
+                          无范围
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <span style={{ color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>#{item.id}</span>
                   )}
@@ -409,7 +445,7 @@ function ReportsOverview() {
                 </td>
 
                 <td style={{ verticalAlign: 'middle' }}>
-                  {item.status === 'success' ? (() => {
+                  {canViewReport(item.status) ? (() => {
                     const text = getOverviewText(item);
                     return (
                       <div style={{ color: 'var(--text-color)', fontSize: '0.825rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.4' }} title={text}>
@@ -435,7 +471,7 @@ function ReportsOverview() {
                 </td>
 
                 <td>
-                  {item.status === 'success' ? (
+                  {canViewReport(item.status) ? (
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, fontSize: '1rem', color: item.score >= 20 ? 'var(--color-danger)' : item.score >= 10 ? 'var(--color-warning)' : 'var(--color-success)' }}>
                         {item.score}
@@ -451,16 +487,18 @@ function ReportsOverview() {
                             <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                           </svg>
                         </button>
-                        <button 
-                          onClick={() => handleNotify(item.id)}
-                          className="code-icon-btn"
-                          style={{ border: 'none', color: 'var(--color-success)' }}
-                          title="手动发送报告通知给相关责任人"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="2" y="4" width="20" height="16" rx="2"></rect><polyline points="2,4 12,13 22,4"></polyline>
-                          </svg>
-                        </button>
+                        {(item.status === 'success' || item.status === 'degraded') && (
+                          <button
+                            onClick={() => handleNotify(item.id)}
+                            className="code-icon-btn"
+                            style={{ border: 'none', color: 'var(--color-success)' }}
+                            title="手动发送报告通知给相关责任人"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="2" y="4" width="20" height="16" rx="2"></rect><polyline points="2,4 12,13 22,4"></polyline>
+                            </svg>
+                          </button>
+                        )}
                         {item.total_chunks > 0 && (item.success_chunks ?? 0) !== item.total_chunks && (
                           <button
                             onClick={() => handleResume(item.id)}

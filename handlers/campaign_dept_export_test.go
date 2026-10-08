@@ -57,7 +57,7 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 		DisplayName:    "Coredump 风险分析",
 		CampaignPath:   "coredump",
 		IsCampaign:     true,
-		GovernanceMode: models.GovernanceModeDefectTracking,
+		GovernanceMode: models.GovernanceModeFullLedger,
 	}
 	assert.NoError(t, db.Create(&taskType).Error)
 
@@ -190,7 +190,7 @@ func TestExportDynamicCampaignDepartments(t *testing.T) {
 		DisplayName:    "Coredump 风险分析",
 		CampaignPath:   "coredump-export",
 		IsCampaign:     true,
-		GovernanceMode: models.GovernanceModeDefectTracking,
+		GovernanceMode: models.GovernanceModeFullLedger,
 	}
 	assert.NoError(t, db.Create(&taskType).Error)
 

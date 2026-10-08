@@ -64,8 +64,9 @@ func ExtractFeedbackRule(inv invoker.AIInvoker, filePath, codeSnippet, defectTit
 		TimeoutMin:     1,
 		ResponseFormat: "json",
 		WorkContext: &invoker.LLMWorkContext{
-			Stage:   "知识沉淀: 负样本特征提炼",
-			SubTask: fmt.Sprintf("提炼规则 (%s)", filePath),
+			Stage:    "知识沉淀: 负样本特征提炼",
+			SubTask:  fmt.Sprintf("提炼规则 (%s)", filePath),
+			TierName: "system_tool",
 		},
 	}
 
@@ -95,46 +96,28 @@ func ExtractFeedbackRule(inv invoker.AIInvoker, filePath, codeSnippet, defectTit
 	return &rule, nil
 }
 
-// MarkDefectFeedback 处理研发人员对缺陷的反馈（误报/不予修复/已确认）
-func MarkDefectFeedback(repoID uint, taskTypeID uint, fingerprint string, feedbackStatus string, reason string, userID *uint) error {
+// MarkFindingFeedback 将人工反馈保存为当前 finding 注释，并可提炼扫描抑制规则。
+func MarkFindingFeedback(finding *models.AnalysisFinding, feedbackStatus string, reason string, userID *uint) error {
 	if models.DB == nil {
 		return nil
 	}
+	if finding == nil || finding.ID == 0 {
+		return fmt.Errorf("finding is required")
+	}
 
 	now := time.Now()
-	var record models.DefectFingerprintRecord
-	err := models.DB.Where("repo_id = ? AND task_type_id = ? AND fingerprint = ?", repoID, taskTypeID, fingerprint).First(&record).Error
-	if err != nil {
-		return fmt.Errorf("defect fingerprint %s not found: %w", fingerprint, err)
-	}
-
-	updates := map[string]interface{}{
-		"feedback_status":  feedbackStatus,
-		"feedback_reason":  reason,
-		"feedback_user_id": userID,
-		"feedback_at":      &now,
-	}
-	if err := models.DB.Model(&record).Updates(updates).Error; err != nil {
-		return err
-	}
-
 	if feedbackStatus == "FALSE_POSITIVE" || feedbackStatus == "WONT_FIX" {
 		ruleScope := "FILE"
-		rulePattern := record.FilePath
-		ruleReason := fmt.Sprintf("[%s] %s (由指纹 %s 沉淀)", feedbackStatus, reason, fingerprint[:8])
-
-		var snippet, title string
-		var finding models.AnalysisFinding
-		if err := models.DB.Where("fingerprint = ?", fingerprint).First(&finding).Error; err == nil {
-			snippet = finding.CodeSnippet
-			title = finding.Title
-		}
+		rulePattern := finding.FilePath
+		ruleReason := fmt.Sprintf("[%s] %s (由 finding %d 沉淀)", feedbackStatus, reason, finding.ID)
+		snippet := finding.CodeSnippet
+		title := finding.Title
 		if title == "" {
-			title = record.Category
+			title = finding.Category
 		}
 
 		if rawInv, ok := invoker.GetRawInvoker("native"); ok && rawInv != nil {
-			if extracted, extErr := ExtractFeedbackRule(rawInv, record.FilePath, snippet, title, reason); extErr == nil && extracted != nil {
+			if extracted, extErr := ExtractFeedbackRule(rawInv, finding.FilePath, snippet, title, reason); extErr == nil && extracted != nil {
 				if extracted.ScopeType != "" {
 					ruleScope = extracted.ScopeType
 				}
@@ -142,14 +125,14 @@ func MarkDefectFeedback(repoID uint, taskTypeID uint, fingerprint string, feedba
 					rulePattern = extracted.Pattern
 				}
 				if extracted.Reason != "" {
-					ruleReason = fmt.Sprintf("[%s] %s (由指纹 %s 提炼)", feedbackStatus, extracted.Reason, fingerprint[:8])
+					ruleReason = fmt.Sprintf("[%s] %s (由 finding %d 提炼)", feedbackStatus, extracted.Reason, finding.ID)
 				}
 			}
 		}
 
 		rule := models.RepoFeedbackRule{
-			RepoID:     repoID,
-			TaskTypeID: taskTypeID,
+			RepoID:     finding.RepoID,
+			TaskTypeID: finding.TaskTypeID,
 			ScopeType:  ruleScope,
 			Pattern:    rulePattern,
 			RuleAction: "IGNORE",
@@ -160,11 +143,6 @@ func MarkDefectFeedback(repoID uint, taskTypeID uint, fingerprint string, feedba
 		}
 		_ = models.DB.Create(&rule).Error
 	}
-
-	models.DB.Model(&models.AnalysisFinding{}).Where("fingerprint = ?", fingerprint).Updates(map[string]interface{}{
-		"feedback":    fmt.Sprintf("[%s] %s", feedbackStatus, reason),
-		"feedback_at": &now,
-	})
 
 	return nil
 }

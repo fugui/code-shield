@@ -1,0 +1,62 @@
+server:
+  port: ":8080"
+
+llm:
+  default_resource: "native"
+  resources:
+    - id: "opencode-deepseek"
+      driver: "opencode"
+      model: "test-deepseek"
+      concurrent: 10
+      attempt_timeout_seconds: 300
+      first_byte_timeout_seconds: 30
+      idle_timeout_seconds: 60
+    - id: "opencode-glm"
+      driver: "opencode"
+      model: "test-glm"
+      concurrent: 10
+      attempt_timeout_seconds: 300
+      first_byte_timeout_seconds: 30
+      idle_timeout_seconds: 60
+    - id: "native"
+      driver: "native"
+      model: "test-native"
+      concurrent: 20
+      attempt_timeout_seconds: 300
+      first_byte_timeout_seconds: 60
+      idle_timeout_seconds: 60
+
+scanner:
+  debate:
+    enabled: true
+    fast_pass_enabled: true
+    max_candidates_per_chunk: 20
+    stage_timeout_seconds: 1800
+    backpressure_threshold: 30
+    backpressure_timeout_seconds: 120
+    tiers:
+      tier1_hunter:
+        resources: ["opencode-deepseek", "opencode-glm"]
+        timeout_seconds: 10800
+        attempt_timeout_seconds: 3600
+        idle_timeout_seconds: 600
+        timeout_recovery: "split"
+        max_split_depth: 8
+      tier2_challenger:
+        resources: ["native"]
+        timeout_seconds: 1800
+        first_byte_timeout_seconds: 180
+        idle_timeout_seconds: 300
+      tier3_judge:
+        resources: ["opencode-deepseek"]
+        timeout_seconds: 1800
+      tier4_synthesis:
+        resources: ["native"]
+        timeout_seconds: 1800
+
+notification:
+  webhook: "http://127.0.0.1/test-webhook"
+ai_fix:
+  fix_url: "https://example.invalid/shield-fix/fixdefect?id={defect_id}"
+  context_token: "test-token"
+  report_base_url: "https://example.invalid"

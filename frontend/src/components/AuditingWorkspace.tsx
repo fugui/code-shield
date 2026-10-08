@@ -4,8 +4,7 @@ import { Pagination, Drawer } from '@code/common';
 import { apiUrl } from '../config';
 import { useToast } from './Toast';
 import MemberSearchSelect from './MemberSearchSelect';
-import { sshToHttps } from '../utils/urlUtils';
-import { extractFirstLineNumber } from '../utils/reportUtils';
+import { buildAIFixURL, extractFirstLineNumber, getAIFixURL, getRepoSourceUrl, isAIFixURLValid } from '../utils/reportUtils';
 import DebateVerdictView from './report/DebateVerdictView';
 import SuggestionMarkdown from './report/SuggestionMarkdown';
 
@@ -21,6 +20,8 @@ export interface Finding {
   task_type_id?: number;
   repo_id?: number;
   task_report_id?: number;
+  repo_url?: string;
+  repo_branch?: string;
   title: string;
   file_path: string;
   line_number: string | number;
@@ -28,6 +29,11 @@ export interface Finding {
   severity: string;
   status: string;
   detail: string;
+  hunter_claim?: string;
+  challenger_arg?: string;
+  judge_verdict?: string;
+  trigger_line?: string;
+  scope_symbol?: string;
   code_snippet?: string;
   suggestion?: string;
   assignee_id?: number | null;
@@ -43,33 +49,6 @@ export interface Finding {
   updated_at?: string;
 }
 
-const getRepoSourceUrl = (
-  repoUrl: string | undefined,
-  branch: string | undefined,
-  filePath: string,
-  lineNumber?: string | number
-): string => {
-  if (!repoUrl) return '';
-
-  const webUrl = sshToHttps(repoUrl);
-  const targetBranch = branch ? branch.trim() : 'master';
-
-  const encodedFilePath = encodeURIComponent(filePath);
-  const encodedBranch = encodeURIComponent(targetBranch);
-
-  let fileUrl = `${webUrl}/files?ref=${encodedBranch}&filePath=${encodedFilePath}&isFile=true`;
-
-  if (lineNumber) {
-    const cleanLine = lineNumber.toString().replace(/\s+/g, '');
-    const firstLineMatch = cleanLine.match(/^([0-9]+)/);
-    if (firstLineMatch) {
-      fileUrl += `#L${firstLineMatch[1]}`;
-    }
-  }
-
-  return fileUrl;
-};
-
 interface AuditingWorkspaceProps {
   isOpen: boolean;
   onClose: () => void;
@@ -77,7 +56,7 @@ interface AuditingWorkspaceProps {
   repoName: string;
   apiPrefix: string; // e.g., "/api/analysis/float", "/api/analysis/coredump", "/api/analysis/ut"
   workspaceType: string;
-  governanceMode?: 'defect_tracking' | 'entity_assessment';
+  governanceMode?: 'full_ledger' | 'change_focus' | 'entity_assessment';
   onWorkflowSaved?: () => void;
 }
 
@@ -153,10 +132,20 @@ export default function AuditingWorkspace({
   const [wsStatus, setWsStatus] = useState('');
   const [wsCategory, setWsCategory] = useState('');
   const [wsKeyword, setWsKeyword] = useState('');
+  const [previousIsOpen, setPreviousIsOpen] = useState(isOpen);
+  if (previousIsOpen !== isOpen) {
+    setPreviousIsOpen(isOpen);
+    if (isOpen) {
+      setWsSeverity('');
+      setWsStatus('');
+      setWsCategory('');
+    }
+  }
   
   // Data States
   const [workspaceFindings, setWorkspaceFindings] = useState<Finding[]>([]);
   const [workspacePage, setWorkspacePage] = useState(1);
+  const [workspacePageSize, setWorkspacePageSize] = useState(10);
   const [workspaceTotal, setWorkspaceTotal] = useState(0);
   const [severityStats, setSeverityStats] = useState<Record<string, number>>({});
   const [statusStats, setStatusStats] = useState<Record<string, number>>({});
@@ -170,9 +159,11 @@ export default function AuditingWorkspace({
   const [workflowComment, setWorkflowComment] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [aiFixURL, setAIFixURL] = useState<string | null>(null);
+  const isAIFixMode = governanceMode !== 'entity_assessment' && workspaceType !== 'ut';
 
   // Resolved Task Report ID for synthesis JSON download
-  const [reportId, setReportId] = useState<number | null>(null);
+  const [, setReportId] = useState<number | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -192,6 +183,25 @@ export default function AuditingWorkspace({
       setWorkflowAssignee(currentUser.id);
     }
   }, [currentUser?.id, editingFinding, workflowAssignee]);
+
+  useEffect(() => {
+    if (!isOpen || !isAIFixMode) {
+      return;
+    }
+
+    let active = true;
+    getAIFixURL()
+      .then((fixURL) => {
+        if (active) setAIFixURL(fixURL || '');
+      })
+      .catch(() => {
+        if (active) setAIFixURL('');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen, isAIFixMode]);
 
   useEffect(() => {
     if (isOpen && repoId) {
@@ -237,21 +247,17 @@ export default function AuditingWorkspace({
   }, [categoriesList, workspaceFindings]);
 
   const handleDownloadJson = async () => {
-    let activeReportId = reportId;
-    if (!activeReportId && workspaceFindings.length > 0) {
-      const first = workspaceFindings.find(f => f.task_report_id);
-      if (first && first.task_report_id) {
-        activeReportId = first.task_report_id;
-      }
-    }
-
-    if (!activeReportId) {
-      showToast('未找到该工作区对应的任务报告，无法下载', 'info');
-      return;
-    }
-
     try {
-      const res = await fetch(apiUrl(`/api/tasks/${activeReportId}/report/export?format=json&scope=findings`));
+      const params = new URLSearchParams({
+        repo_id: repoId.toString(),
+        severity: wsSeverity,
+        status: wsStatus,
+        category: wsCategory,
+        keyword: wsKeyword,
+        format: 'json'
+      });
+
+      const res = await fetch(apiUrl(`${apiPrefix}/findings/export?${params.toString()}`));
       if (!res.ok) {
         showToast('无法获取问题记录 JSON 文件，请确认文件是否存在', 'error');
         return;
@@ -260,7 +266,7 @@ export default function AuditingWorkspace({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `report-${activeReportId}-findings.json`;
+      a.download = `synthesis_${workspaceType}_${repoName}_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('下载 JSON 文件成功', 'success');
@@ -311,12 +317,14 @@ export default function AuditingWorkspace({
     status: string,
     category: string,
     keyword: string,
+    pageSizeOverride?: number,
     targetFindingId?: number | null
   ) => {
+    const pageSize = pageSizeOverride ?? workspacePageSize;
     const params = new URLSearchParams({
       repo_id: rId.toString(),
       page: page.toString(),
-      pageSize: '10',
+      pageSize: pageSize.toString(),
       severity,
       status,
       category,
@@ -329,7 +337,7 @@ export default function AuditingWorkspace({
         if (data) {
           const list = data.findings || data.items || [];
           setWorkspaceFindings(list);
-          setWorkspaceTotal(data.total !== undefined ? data.total : (data.totalPages ? data.totalPages * 10 : list.length));
+          setWorkspaceTotal(data.total !== undefined ? data.total : (data.totalPages ? data.totalPages * pageSize : list.length));
           if (data.severityStats || data.severity_stats) setSeverityStats(data.severityStats || data.severity_stats || {});
           if (data.statusStats || data.status_stats) setStatusStats(data.statusStats || data.status_stats || {});
           if (data.categoryStats || data.category_stats) setCategoryStats(data.categoryStats || data.category_stats || {});
@@ -371,7 +379,7 @@ export default function AuditingWorkspace({
       if (!urlFindingId) {
         setEditingFinding(null);
       }
-      fetchWorkspaceFindings(repoId, 1, wsSeverity, wsStatus, wsCategory, wsKeyword, urlFindingId);
+      fetchWorkspaceFindings(repoId, 1, wsSeverity, wsStatus, wsCategory, wsKeyword, undefined, urlFindingId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchWorkspaceFindings 为组件内普通函数，加入依赖会导致每次渲染重复拉取
   }, [isOpen, repoId, wsSeverity, wsStatus, wsCategory, wsKeyword]);
@@ -525,6 +533,25 @@ export default function AuditingWorkspace({
   };
 
   const isEntityMode = governanceMode === 'entity_assessment' || workspaceType === 'ut';
+  const sourceUrl = editingFinding ? getRepoSourceUrl(
+    editingFinding.repo?.url ?? editingFinding.repo_url,
+    editingFinding.repo?.branch ?? editingFinding.repo_branch,
+    editingFinding.file_path,
+    editingFinding.line_number
+  ) : '';
+
+  const aiFixConfigValid = isAIFixURLValid(aiFixURL);
+  const canUseAIFix = Boolean(
+    isAIFixMode &&
+    editingFinding?.id &&
+    aiFixConfigValid &&
+    (editingFinding.status === 'open' || editingFinding.status === 'analyzing')
+  );
+  const aiFixDisabledReason = !editingFinding?.id
+    ? '尚未关联缺陷台账，暂不支持 AI 修复'
+    : !aiFixConfigValid
+      ? 'AI 修复配置无效'
+      : '当前缺陷状态不可修复';
 
   const displayRepoName = repoName || editingFinding?.repo?.name || (repoId ? `代码仓 #${repoId}` : '');
 
@@ -768,11 +795,16 @@ export default function AuditingWorkspace({
               <Pagination
                 totalItems={workspaceTotal}
                 page={workspacePage}
-                pageSize={10}
+                pageSize={workspacePageSize}
                 pageSizeOptions={[10, 20, 50]}
                 onPageChange={(p) => {
                   setWorkspacePage(p);
                   fetchWorkspaceFindings(repoId, p, wsSeverity, wsStatus, wsCategory, wsKeyword);
+                }}
+                onPageSizeChange={(size) => {
+                  setWorkspacePageSize(size);
+                  setWorkspacePage(1);
+                  fetchWorkspaceFindings(repoId, 1, wsSeverity, wsStatus, wsCategory, wsKeyword, size);
                 }}
               />
             </div>
@@ -788,31 +820,21 @@ export default function AuditingWorkspace({
                 <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', fontWeight: 700, color: '#ef4444', textAlign: 'left' }}>
                   ❌ {editingFinding.title || '未命名缺陷'}
                 </h3>
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  {editingFinding.repo?.url ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-block' }}>
+                    📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
+                  </div>
+
+                  {sourceUrl && (
                     <a
-                      href={getRepoSourceUrl(
-                        editingFinding.repo.url,
-                        editingFinding.repo.branch,
-                        editingFinding.file_path,
-                        editingFinding.line_number
-                      )}
+                      href={sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="workspace-location-link"
-                      title="点击跳转到代码仓查看源码"
+                      title="在代码仓中查看源码"
                     >
-                      📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: '4px', opacity: 0.8 }}>
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                        <polyline points="15 3 21 3 21 9"></polyline>
-                        <line x1="10" y1="14" x2="21" y2="3"></line>
-                      </svg>
+                      ↗ 源码
                     </a>
-                  ) : (
-                    <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-block' }}>
-                      📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}
-                    </div>
                   )}
 
                   <button
@@ -843,6 +865,35 @@ export default function AuditingWorkspace({
                       🔖 <strong>归属类别:</strong> {editingFinding.category}
                     </div>
                   )}
+
+                  {isAIFixMode && (
+                    <a
+                      className="workspace-ai-fix-btn"
+                      href={canUseAIFix && aiFixURL ? buildAIFixURL(aiFixURL, editingFinding.id) : undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-disabled={!canUseAIFix}
+                      onClick={canUseAIFix ? undefined : (event) => event.preventDefault()}
+                      title={canUseAIFix ? '使用 AI 修复该缺陷；不会改变当前流转状态' : aiFixDisabledReason}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        marginLeft: 'auto',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(37, 99, 235, 0.25)',
+                        background: canUseAIFix ? 'rgba(37, 99, 235, 0.05)' : 'var(--bg-color)',
+                        color: canUseAIFix ? '#2563eb' : '#94a3b8',
+                        fontSize: '0.8rem',
+                        textDecoration: 'none',
+                        cursor: canUseAIFix ? 'pointer' : 'not-allowed',
+                        opacity: canUseAIFix ? 1 : 0.55,
+                      }}
+                    >
+                      🤖 AI修复
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -851,7 +902,15 @@ export default function AuditingWorkspace({
                 <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', fontWeight: 600, textAlign: 'left', color: 'var(--text-color)' }}>
                   {workspaceType === 'ut' ? '评估详情描述' : '缺陷详情'}
                 </h4>
-                <DebateVerdictView detail={editingFinding.detail} title={editingFinding.title} />
+                <DebateVerdictView
+                  detail={editingFinding.detail}
+                  title={editingFinding.title}
+                  hunterClaim={editingFinding.hunter_claim}
+                  challengerArg={editingFinding.challenger_arg}
+                  judgeVerdict={editingFinding.judge_verdict}
+                  triggerLine={editingFinding.trigger_line}
+                  scopeSymbol={editingFinding.scope_symbol}
+                />
               </div>
 
               {/* Code Snippet */}
@@ -922,8 +981,7 @@ export default function AuditingWorkspace({
                         <option value="open">待处理 (Open)</option>
                         <option value="analyzing">问题分析 (Analyzing)</option>
                         <option value="resolved">已解决 (Resolved)</option>
-                        <option value="closed">已关闭 (Closed)</option>
-                        <option value="invalid">{workspaceType === 'ut' ? '无效问题 (Invalid)' : '忽略/误报 (Invalid)'}</option>
+                        <option value="closed">{workspaceType === 'ut' ? '已关闭 / 无效 (Closed)' : '已关闭 / 不修 / 误报 (Closed)'}</option>
                       </select>
                     </div>
                   </div>

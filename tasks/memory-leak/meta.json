@@ -1,28 +1,14 @@
 {
-  "name": "memory_leak",
-  "display_name": "内存泄漏检测",
-  "description": "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
-  "engine_mode": "debate_full",
-  "engine_config": {
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx"
-    ],
-    "exclude_paths": [
-      "thirdparts"
-    ]
-  },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "domain_family": "memory_crash",
+  "categories": [
+    "基础内存泄漏",
+    "资源泄漏",
+    "野指针与悬空指针",
+    "重复释放",
+    "异常安全",
+    "智能指针问题",
+    "RAII原则违反",
+    "其他常见问题"
+  ],
   "defense_dimensions": [
     {
       "dimension": "OwnershipTransfer",
@@ -37,16 +23,194 @@
       "description": "属于进程生命周期短程工具或静态全局单例，进程退出自动由 OS 清理"
     }
   ],
-
-  "categories": [
-    "基础内存泄漏",
-    "资源泄漏",
-    "野指针与悬空指针",
-    "重复释放",
-    "异常安全",
-    "智能指针问题",
-    "RAII原则违反",
-    "其他常见问题"
-  ],
-  "is_active": true
+  "description": "专项检测代码中的内存泄漏风险，包括未关闭资源、循环引用等",
+  "display_name": "内存泄漏检测",
+  "display_semantics": {
+    "domain_label": "内存与底层崩溃防御",
+    "target_label": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "domain_family": "memory_crash",
+  "domain_label": "内存与底层崩溃防御",
+  "engine_config": {
+    "scan_profile": {
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "include_extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx"
+      ],
+      "name": "full_review",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "is_active": true,
+  "name": "memory_leak",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "源码文件",
+    "plural": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "MEMLEAK_HEAP",
+        "label": "基础内存泄漏",
+        "definition": "Owned heap allocation loses its final reachable owner before deletion.",
+        "decision_rules": [
+          "allocation is created",
+          "success or failure path drops pointer",
+          "no single owner remains"
+        ],
+        "positive_hints": [
+          "all paths free or transfer memory"
+        ],
+        "negative_hints": [
+          "allocation failure aborts safely"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_RESOURCE",
+        "label": "资源泄漏",
+        "definition": "A file, socket, lock, handle, or other resource can remain open after use.",
+        "decision_rules": [
+          "resource is acquired",
+          "close is missing or not exception-safe",
+          "ownership is not delegated"
+        ],
+        "positive_hints": [
+          "RAII or explicit close covers paths"
+        ],
+        "negative_hints": [
+          "resource lifetime is intentionally managed"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_DANGLING",
+        "label": "野指针与悬空指针",
+        "definition": "A pointer or reference can outlive the object it names.",
+        "decision_rules": [
+          "owner releases object",
+          "alias remains reachable",
+          "no renewal or guard prevents use"
+        ],
+        "positive_hints": [
+          "alias is cleared or guarded"
+        ],
+        "negative_hints": [
+          "object remains valid through use"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_DOUBLE_FREE",
+        "label": "重复释放",
+        "definition": "The same owned allocation can be released twice.",
+        "decision_rules": [
+          "two release paths reach one owner",
+          "pointer is not cleared",
+          "ownership is copied rather than transferred"
+        ],
+        "positive_hints": [
+          "single owner releases memory"
+        ],
+        "negative_hints": [
+          "move or reset removes alias"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_EXCEPTION_SAFETY",
+        "label": "异常安全",
+        "definition": "A throwing or early-return path skips required cleanup.",
+        "decision_rules": [
+          "operation can throw or return early",
+          "cleanup follows the success-only code",
+          "invariant or resource state is broken"
+        ],
+        "positive_hints": [
+          "defer, RAII, or try/catch cleans up"
+        ],
+        "negative_hints": [
+          "no exceptional path exists"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_SMART_POINTER",
+        "label": "智能指针问题",
+        "definition": "Smart-pointer ownership, aliasing, or reset policy is incorrect.",
+        "decision_rules": [
+          "shared and unique ownership are mixed",
+          "raw pointer escapes the owner",
+          "cyclic or premature release is possible"
+        ],
+        "positive_hints": [
+          "ownership semantics are explicit"
+        ],
+        "negative_hints": [
+          "raw pointer is a non-owning view"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_RAII",
+        "label": "RAII原则违反",
+        "definition": "A deterministic cleanup object is missing or does not own its resource.",
+        "decision_rules": [
+          "manual acquisition and release are separated",
+          "scope exit can bypass cleanup",
+          "RAII wrapper is absent or wrong"
+        ],
+        "positive_hints": [
+          "scope-bound owner releases resource"
+        ],
+        "negative_hints": [
+          "cleanup requires explicit transaction boundary"
+        ],
+        "priority": 70,
+        "status": "active"
+      },
+      {
+        "code": "MEMLEAK_OTHER",
+        "label": "其他常见问题",
+        "definition": "A credible memory or lifecycle risk that does not fit a specific controlled category.",
+        "decision_rules": [
+          "specific category does not apply",
+          "ownership or lifetime can fail",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "specific category applies"
+        ],
+        "negative_hints": [
+          "style-only concern"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "timeout": 60
 }

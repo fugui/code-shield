@@ -1,9 +1,10 @@
 {
-  "name": "ut_quality",
-  "display_name": "单元测试代码质量审计",
-  "description": "针对单元测试的代码质量进行审计，识别代码坏味道、脆弱测试、资源泄漏、过度 Mock 及硬编码等工程质量问题",
-  "engine_mode": "debate_selective",
-  "domain_family": "test_engineering",
+  "categories": [
+    "健壮性与稳定性",
+    "资源与生命周期管理",
+    "代码坏味道与重构问题",
+    "其它缺陷"
+  ],
   "defense_dimensions": [
     {
       "key": "ContractIntegration",
@@ -16,33 +17,125 @@
       "description": "重复结构系参数化展开或覆盖不同边界场景，具备设计合理性"
     }
   ],
-  "engine_config": {
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx",
-      ".py",
-      ".java",
-      ".go"
-    ],
-    "exclude_paths": [
-      "thirdparts"
-    ]
+  "description": "针对单元测试的代码质量进行审计，识别代码坏味道、脆弱测试、资源泄漏、过度 Mock 及硬编码等工程质量问题",
+  "display_name": "单元测试代码质量审计",
+  "display_semantics": {
+    "domain_label": "测试工程与有效性",
+    "target_label": "源码文件",
+    "not_target_label": "非目标文件"
   },
-  "target_scope": "test",
+  "domain_family": "test_engineering",
+  "domain_label": "测试工程与有效性",
+  "engine_config": {
+    "scan_profile": {
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "include_extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx",
+        ".py",
+        ".java",
+        ".go"
+      ],
+      "name": "full_review",
+      "target_scope": "test",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "is_active": true,
+  "name": "ut_quality",
+  "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "categories": [
-    "健壮性与稳定性",
-    "资源与生命周期管理",
-    "代码坏味道与重构问题",
-    "其它缺陷"
-  ],
-  "is_active": true
+  "target_scope": "test",
+  "target_semantics": {
+    "singular": "源码文件",
+    "plural": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "UTQ_ROBUSTNESS",
+        "label": "健壮性与稳定性",
+        "definition": "A unit test is fragile or unstable under valid environment, timing, or input variation.",
+        "decision_rules": [
+          "test depends on time, order, network, or random behavior",
+          "valid variation breaks the test",
+          "flakes are likely"
+        ],
+        "positive_hints": [
+          "deterministic input or clock is used"
+        ],
+        "negative_hints": [
+          "variation is intentionally exercised"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "UTQ_RESOURCE_LIFECYCLE",
+        "label": "资源与生命周期管理",
+        "definition": "Unit-test fixtures, files, sockets, or mocks leak resources or retain unsafe lifetime.",
+        "decision_rules": [
+          "resource is created but not closed",
+          "fixture teardown is incomplete",
+          "asynchronous work can outlive test"
+        ],
+        "positive_hints": [
+          "scoped lifecycle closes resources"
+        ],
+        "negative_hints": [
+          "framework owns the fixture safely"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "UTQ_SMELL_REFACTOR",
+        "label": "代码坏味道与重构问题",
+        "definition": "Unit-test structure harms readability, reuse, or maintenance without adding coverage.",
+        "decision_rules": [
+          "copy-paste or excessive mock setup is repeated",
+          "hard-coded values obscure behavior",
+          "test intent is unclear"
+        ],
+        "positive_hints": [
+          "shared builder or parameterization improves clarity"
+        ],
+        "negative_hints": [
+          "duplication improves scenario readability"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "UTQ_OTHER",
+        "label": "其它缺陷",
+        "definition": "A credible unit-test quality risk that does not fit a more specific controlled category.",
+        "decision_rules": [
+          "specific category does not apply",
+          "test quality or reliability is harmed",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "specific category applies"
+        ],
+        "negative_hints": [
+          "style-only preference"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "timeout": 60
 }

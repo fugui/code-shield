@@ -6,6 +6,8 @@ interface DebateVerdictViewProps {
   hunterClaim?: string;
   challengerArg?: string;
   judgeVerdict?: string;
+  triggerLine?: string;
+  scopeSymbol?: string;
   className?: string;
 }
 
@@ -523,10 +525,73 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
   hunterClaim,
   challengerArg,
   judgeVerdict,
+  triggerLine,
+  scopeSymbol,
   className,
 }) => {
   const [showRaw, setShowRaw] = useState(false);
   const parsed = parseDebateContent(detail || judgeVerdict || '');
+  const challengerOverview = challengerArg ? (
+    <div>
+      <strong style={{ color: 'var(--color-primary, #3b82f6)', marginRight: '0.35rem' }}>
+        ⚖️ Challenger 对抗证据:
+      </strong>
+      <span style={{ color: 'var(--color-text-secondary, #94a3b8)', whiteSpace: 'pre-wrap' }}>
+        {renderInlineFormattedText(challengerArg)}
+      </span>
+    </div>
+  ) : null;
+  const hunterOverview = hunterClaim ? (
+    <div
+      style={{
+        padding: '0.75rem 1rem',
+        background: 'var(--color-bg-muted, rgba(255, 255, 255, 0.03))',
+        border: '1px solid var(--color-border-primary, #334155)',
+        borderLeft: '4px solid var(--color-danger, #ef4444)',
+        borderRadius: 'var(--radius-md, 8px)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.45rem',
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--color-danger, #ef4444)' }}>
+        🎯 问题概述 (Hunter 初筛)
+      </div>
+      <div style={{ fontSize: '0.86rem', lineHeight: 1.6, color: 'var(--color-text-primary, #f8fafc)', whiteSpace: 'pre-wrap' }}>
+        {renderInlineFormattedText(hunterClaim)}
+      </div>
+      {(triggerLine || scopeSymbol) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', fontSize: '0.76rem', color: 'var(--color-text-secondary, #94a3b8)' }}>
+          {triggerLine && (
+            <code
+              style={{
+                padding: '0.15rem 0.4rem',
+                background: 'var(--color-bg-surface, #1e293b)',
+                border: '1px solid var(--color-border-primary, #334155)',
+                borderRadius: '4px',
+                color: 'var(--color-primary, #3b82f6)',
+              }}
+            >
+              触发行：{triggerLine}
+            </code>
+          )}
+          {scopeSymbol && (
+            <code
+              style={{
+                padding: '0.15rem 0.4rem',
+                background: 'var(--color-bg-surface, #1e293b)',
+                border: '1px solid var(--color-border-primary, #334155)',
+                borderRadius: '4px',
+                color: 'var(--color-primary, #3b82f6)',
+              }}
+            >
+              作用域：{scopeSymbol}
+            </code>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   if (!detail && !judgeVerdict) {
     return null;
@@ -536,6 +601,7 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
   if (!parsed.isDebate || showRaw) {
     return (
       <div className={className} style={{ position: 'relative' }}>
+        {hunterOverview}
         <div
           style={{
             margin: 0,
@@ -552,6 +618,7 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
         >
           {renderInlineFormattedText(detail || judgeVerdict || '')}
         </div>
+        {challengerOverview}
         {parsed.isDebate && (
           <button
             type="button"
@@ -586,8 +653,10 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
         textAlign: 'left',
       }}
     >
+      {hunterOverview}
+
       {/* 1. 顶部初筛概述 (若存在且与标题不同) */}
-      {parsed.intro && parsed.intro !== title && (
+      {parsed.intro && parsed.intro !== title && !hunterClaim && (
         <div
           style={{
             fontSize: '0.85rem',
@@ -793,7 +862,7 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
       )}
 
       {/* 4. 原生三方对抗独立数据补充 (若存在单独字段) */}
-      {(hunterClaim || challengerArg) && (
+      {challengerArg && (
         <div
           style={{
             marginTop: '0.25rem',
@@ -807,26 +876,7 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
             gap: '0.45rem',
           }}
         >
-          {hunterClaim && (
-            <div>
-              <strong style={{ color: 'var(--color-danger, #ef4444)', marginRight: '0.35rem' }}>
-                🎯 初筛猎手主张:
-              </strong>
-              <span style={{ color: 'var(--color-text-secondary, #94a3b8)', whiteSpace: 'pre-wrap' }}>
-                {renderInlineFormattedText(hunterClaim)}
-              </span>
-            </div>
-          )}
-          {challengerArg && (
-            <div>
-              <strong style={{ color: 'var(--color-primary, #3b82f6)', marginRight: '0.35rem' }}>
-                ⚖️ 辩护对抗证据:
-              </strong>
-              <span style={{ color: 'var(--color-text-secondary, #94a3b8)', whiteSpace: 'pre-wrap' }}>
-                {renderInlineFormattedText(challengerArg)}
-              </span>
-            </div>
-          )}
+          {challengerOverview}
         </div>
       )}
     </div>

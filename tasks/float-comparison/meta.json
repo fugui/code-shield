@@ -1,33 +1,15 @@
 {
-  "id": 5,
-  "name": "float_comparison",
-  "display_name": "浮点数比较分析",
-  "description": "专项分析 Python、C/C++ 代码中由于浮点数（float、double 等）直接进行等值 (==)、不等 (!=) 或边界 (<=, >=) 比较导致的精度与逻辑缺陷风险",
-  "engine_mode": "chunked_fast",
-  "engine_config": {
-    "file_extensions": [
-      ".c",
-      ".cpp",
-      ".cc",
-      ".cxx",
-      ".h",
-      ".hpp",
-      ".hxx",
-      ".py"
-    ],
-    "exclude_paths": [
-      "thirdparts"
-    ]
-  },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
-  "notify_cc": [],
-  "timeout": 60,
-  "is_campaign": true,
+  "campaign_config": null,
+  "campaign_icon": "",
   "campaign_path": "float",
-  "governance_mode": "defect_tracking",
-  "domain_family": "numerical_determinism",
+  "categories": [
+    "关键业务阈值误判",
+    "循环与收敛控制误判",
+    "数据匹配与统计误判",
+    "展示与非关键指标比较",
+    "其它浮点比较风险"
+  ],
+  "created_at": "2026-07-24T09:11:10.537463+08:00",
   "defense_dimensions": [
     {
       "dimension": "DiscreteInteger",
@@ -42,17 +24,206 @@
       "description": "仅作为业务协议枚举状态或标志位标记，不参与浮点数值累加与除法运算"
     }
   ],
-
-  "categories": [
-    "浮点数比较缺陷-直接等值比较",
-    "浮点数比较缺陷-直接不等比较",
-    "浮点数比较缺陷-含有等号的边界比较",
-    "浮点数比较缺陷-循环控制条件",
-    "其它问题-其它浮点数隐患"
-  ],
-  "campaign_icon": "",
-  "campaign_config": null,
+  "description": "专项分析 Python、C/C++ 代码中浮点精度对业务阈值、循环收敛、数据匹配、统计和非关键指标比较造成的逻辑风险",
+  "display_name": "浮点数比较分析",
+  "display_semantics": {
+    "domain_label": "数值计算与确定性",
+    "target_label": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "domain_family": "numerical_determinism",
+  "domain_label": "数值计算与确定性",
+  "engine_config": {
+    "scan_profile": {
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "include_extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx",
+        ".py"
+      ],
+      "name": "full_review",
+      "target_scope": "business",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "full_ledger",
+  "id": 5,
   "is_active": true,
-  "created_at": "2026-07-24T09:11:10.537463+08:00",
+  "is_campaign": true,
+  "name": "float_comparison",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "源码文件",
+    "plural": "源码文件",
+    "not_target_label": "非目标文件"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "FLOAT_BUSINESS_THRESHOLD",
+        "label": "关键业务阈值误判",
+        "definition": "金额、费率、限额、库存、资格、风控或安全阈值因浮点精度被错误判断，导致业务分支偏离预期。",
+        "decision_rules": [
+          "比较对象是业务限制、资金、安全或资格条件",
+          "浮点运算、解析或累计会引入表示误差",
+          "没有整数化、Decimal 或领域容差保护"
+        ],
+        "positive_hints": [
+          "比较采用业务认可的精度策略"
+        ],
+        "negative_hints": [
+          "业务条件由整数或精确十进制表达"
+        ],
+        "default_severity": "严重",
+        "escalate_when": [
+          "可直接造成不可逆资金动作",
+          "可绕过安全控制或风控限制"
+        ],
+        "downgrade_when": [
+          "条件仅用于调试或人工复核"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "FLOAT_LOOP_CONTROL",
+        "label": "循环与收敛控制误判",
+        "definition": "循环终止、重试或收敛判断依赖浮点相等或边界比较，舍入误差可能导致长循环或提前退出。",
+        "decision_rules": [
+          "循环进度依赖浮点相等、阈值或收敛判断",
+          "累计或插值可能错过终止边界",
+          "缺少固定迭代上限、超时或收敛容差"
+        ],
+        "positive_hints": [
+          "循环使用有界迭代和收敛容差"
+        ],
+        "negative_hints": [
+          "迭代次数固定或另有超时防护"
+        ],
+        "default_severity": "严重",
+        "escalate_when": [
+          "默认路径可能长时间占用 CPU 或请求线程"
+        ],
+        "downgrade_when": [
+          "外层有固定迭代或超时防护",
+          "误差只影响近似结果的可接受精度"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "FLOAT_DATA_MATCHING",
+        "label": "数据匹配与统计误判",
+        "definition": "对账、匹配、去重、排序、聚合或状态同步中的浮点比较因精度误差产生数据漂移。",
+        "decision_rules": [
+          "浮点结果用于匹配、分组或状态同步",
+          "累计或换算会导致比较结果不稳定",
+          "没有规范化、排序键或容差策略"
+        ],
+        "positive_hints": [
+          "匹配使用领域精度容差或稳定键"
+        ],
+        "negative_hints": [
+          "值由整数或精确十进制表达"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "影响资金对账、幂等判断或持久化状态"
+        ],
+        "downgrade_when": [
+          "误差只影响统计展示且有人工复核"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "FLOAT_DISPLAY_METRIC",
+        "label": "展示与非关键指标比较",
+        "definition": "日志、报表、图表、相似度提示等非关键路径因浮点精度产生不稳定展示或提示。",
+        "decision_rules": [
+          "比较结果只影响展示、日志或提示",
+          "误差不会改变业务状态或自动化决策",
+          "结果以近似指标呈现即可"
+        ],
+        "positive_hints": [
+          "展示使用稳定格式化或取整"
+        ],
+        "negative_hints": [
+          "结果会触发自动决策"
+        ],
+        "default_severity": "建议",
+        "escalate_when": [
+          "结果被下游自动决策消费"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "FLOAT_OTHER_RISK",
+        "label": "其它浮点比较风险",
+        "definition": "已确认浮点精度、累计或特殊值会影响比较结果，但业务后果暂不能归入更具体分类。",
+        "decision_rules": [
+          "精度、累计或 NaN 行为不安全",
+          "具体业务后果分类不适用",
+          "比较证据具体可验证"
+        ],
+        "positive_hints": [
+          "具体业务后果分类适用"
+        ],
+        "negative_hints": [
+          "现有精度策略足以满足业务语义"
+        ],
+        "default_severity": "一般",
+        "escalate_when": [
+          "影响默认可达的业务状态或自动化决策"
+        ],
+        "downgrade_when": [
+          "只影响人工排查信息"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ],
+    "deprecated_aliases": [
+      {
+        "label": "浮点数比较缺陷-直接等值比较",
+        "target_code": "FLOAT_DATA_MATCHING",
+        "reason": "语法形态分类改为业务后果分类"
+      },
+      {
+        "label": "浮点数比较缺陷-直接不等比较",
+        "target_code": "FLOAT_DATA_MATCHING",
+        "reason": "语法形态分类改为业务后果分类"
+      },
+      {
+        "label": "浮点数比较缺陷-含有等号的边界比较",
+        "target_code": "FLOAT_BUSINESS_THRESHOLD",
+        "reason": "语法形态分类改为业务后果分类"
+      },
+      {
+        "label": "浮点数比较缺陷-循环控制条件",
+        "target_code": "FLOAT_LOOP_CONTROL",
+        "reason": "语法形态分类改为业务后果分类"
+      },
+      {
+        "label": "其它问题-其它浮点数隐患",
+        "target_code": "FLOAT_OTHER_RISK",
+        "reason": "语法形态分类改为业务后果分类"
+      }
+    ]
+  },
+  "timeout": 60,
   "updated_at": "2026-08-22T07:29:40.654047+08:00"
 }

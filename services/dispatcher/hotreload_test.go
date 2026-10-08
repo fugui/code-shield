@@ -51,10 +51,13 @@ func TestDispatcher_HotReload_InFlightRelease(t *testing.T) {
 	newCfg := models.LLMConfig{
 		Resources: []models.ComputeResourceConfig{
 			{
-				ID:         "opencode-deepseek",
-				Driver:     "opencode",
-				Model:      "deepseek-chat",
-				Concurrent: 10,
+				ID:     "opencode-deepseek",
+				Driver: "opencode",
+				Endpoints: []models.ResourceEndpointConfig{{
+					Name:       "default",
+					Model:      "deepseek-chat",
+					Concurrent: 10,
+				}},
 			},
 		},
 	}

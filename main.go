@@ -13,6 +13,7 @@ import (
 	"code-shield/handlers"
 	"code-shield/models"
 	"code-shield/services"
+	"code-shield/services/migration"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +51,10 @@ func main() {
 	// Initialize database
 	models.InitDB()
 
+	if err := migration.RunEngineConvergence(models.DB, "tasks"); err != nil {
+		log.Fatalf("engine convergence migration failed: %v", err)
+	}
+
 	// 初始化动态配置中心并完成 Seed-Once 检查与数据库 SSOT 加载
 	models.InitDynamicConfigs(models.AppConfig)
 
@@ -74,11 +79,11 @@ func main() {
 	// 初始化任务队列调度状态（从 DB 加载是否暂停/排空）
 	services.InitQueueState()
 
-	// Start worker pool with configured concurrency
-	services.StartWorkerPool(models.AppConfig.Server.WorkerCount)
-
 	// Recover tasks that were pending/running before the last shutdown
 	services.RecoverPendingTasks(*staleAction)
+
+	// Start worker pool only after stale tasks have been classified as resume/full replay
+	services.StartWorkerPool(models.AppConfig.Server.WorkerCount)
 
 	// Start cron jobs
 	cron_jobs.StartCronJobs()
@@ -123,6 +128,7 @@ func main() {
 				OnUserNotFound:  handlers.ProvisionShieldUser,
 				OnUserSynced:    handlers.SyncShieldUser,
 			}))
+			api.GET("/config/frontend", handlers.GetFrontendConfig)
 			{
 				api.GET("/me", handlers.GetMe)
 				api.GET("/me/findings", handlers.GetMyFindings)
@@ -155,8 +161,17 @@ func main() {
 				api.GET("/tasks/:id/report/diagnostics", handlers.GetReportDiagnosticsHandler)
 				api.GET("/tasks/:id/summary", handlers.GetReportDiagnosticsHandler) // 兼容历史别名
 				api.GET("/tasks/:id/report/aggregate", handlers.GetReportAggregateHandler)
-				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
 				api.GET("/tasks/:id/report/reconciliation", handlers.GetReportReconciliationHandler)
+				api.GET("/reports/:id/observations/:group_uid/candidates", handlers.GetObservationCandidatesHandler)
+				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
+				api.GET("/defects", handlers.ListDefectsHandler)
+				api.GET("/defects/:id", handlers.GetDefectDetailHandler)
+				api.PATCH("/defects/:id/assignment", handlers.UpdateDefectAssignmentHandler)
+				api.POST("/reports/:id/observations/:group_uid/confirm", handlers.ConfirmProbableHandler)
+				api.POST("/reports/:id/observations/:group_uid/bind", handlers.BindProbableHandler)
+				api.POST("/defects/:id/human-alias", handlers.CreateHumanAliasHandler)
+				api.POST("/defects/:id/merge", handlers.MergeDefectHandler)
+				api.POST("/defects/:id/split", handlers.SplitDefectHandler)
 				api.GET("/tasks/:id/debate-logs", handlers.GetTaskDebateLogsHandler) // 智能体对抗辩论轨迹
 
 				// 人机反馈与知识沉淀闭环路由
@@ -194,6 +209,11 @@ func main() {
 				api.DELETE("/schedules/:id", handlers.DeleteSchedule)
 				api.POST("/schedules/:id/trigger", handlers.TriggerSchedule)
 
+				// Category semantic governance observability
+				api.GET("/category-governance/alias-usage", handlers.GetCategoryAliasUsageHandler)
+				api.GET("/category-governance/regression/samples", handlers.GetCategoryRegressionSamplesHandler)
+				api.GET("/category-governance/confusion-matrices", handlers.GetCategoryConfusionMatricesHandler)
+
 				api.GET("/executions", handlers.GetExecutionLogs)
 				api.DELETE("/executions/completed", handlers.ClearCompletedExecutionLogs)
 				api.DELETE("/executions/batch", handlers.BatchDeletePendingExecutions)
@@ -215,6 +235,8 @@ func main() {
 					admin.PUT("/task-types/:id/files/:file_type", handlers.UpdateTaskTypeFile)
 					admin.POST("/task-types/:id/trigger-all", handlers.TriggerAllReposForTaskType)
 					admin.DELETE("/tasks/invalid-reports", handlers.ClearInvalidReports)
+					admin.POST("/category-governance/regression/samples/:id/reviews", handlers.ReviewCategoryRegressionSampleHandler)
+					admin.PATCH("/category-governance/regression/samples/:id/supersede", handlers.SupersedeCategoryRegressionSampleHandler)
 					admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
 					admin.PATCH("/config", handlers.UpdateConfig)
 					// 系统性能与堆栈诊断 (Admin Debug & PProf)
@@ -231,6 +253,13 @@ func main() {
 				superAdmin := api.Group("/")
 				superAdmin.Use(commonAuth.RequireAdmin(commonAuth.RoleSuperAdmin))
 				{
+					// LLM 算力槽位只读透视（Prompt/Console/Output，严格仅限 super_admin）
+					superAdmin.GET("/admin/debug/leases/recent", handlers.GetRecentLeases)
+					superAdmin.POST("/admin/debug/leases/recent-options", handlers.UpdateRecentLeaseOptions)
+					superAdmin.GET("/admin/debug/leases/:lease_id", handlers.GetLeaseDetail)
+					superAdmin.GET("/admin/debug/leases/:lease_id/prompt", handlers.GetLeasePrompt)
+					superAdmin.GET("/admin/debug/leases/:lease_id/console", handlers.GetLeaseConsole)
+
 					// 动态配置中心 API (Dynamic Config Center)
 					adminConfig := superAdmin.Group("/admin/config")
 					{
@@ -249,6 +278,11 @@ func main() {
 					superAdmin.POST("/config/ping-endpoint", handlers.PingEndpoint)
 					superAdmin.POST("/config/reset-to-seed", handlers.ResetCategoryConfig)
 				}
+			}
+
+			internal := r.Group("/api/internal/ai-fix/v1")
+			{
+				internal.GET("/defects/:defect_id/context", handlers.GetAIFixDefectContext)
 			}
 		},
 	})

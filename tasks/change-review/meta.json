@@ -1,39 +1,17 @@
 {
-  "id": 1,
-  "name": "change_review",
-  "display_name": "近期变更检视",
-  "description": "对代码仓库最近一周的提交变更 (最近一周 commit) 进行全面的 AI 审查，确保多线程安全、内存泄漏、第三方库引用符合标准",
-  "engine_mode": "debate_full",
-  "domain_family": "comprehensive_evolution",
-  "defense_dimensions": [
-    {
-      "key": "RegressionGuarded",
-      "name": "回归防护充分",
-      "description": "变更已有充分的伴随测试或上下游防护，不构成实际回归隐患"
-    },
-    {
-      "key": "IntentionalContractChange",
-      "name": "有意接口契约演进",
-      "description": "变更属于版本演进契约变更，调用方已同步适配，非兼容性破坏"
+  "assessment_config": {
+    "version": 1,
+    "profile": "changereview",
+    "schema": "code-shield.assessment-config.v1",
+    "domain": "change_regression",
+    "target": {
+      "singular": "变更 hunk",
+      "not_target_label": "非本次变更相关"
     }
-  ],
-  "engine_config": {
-    "since_days": 7,
-    "exclude_paths": [
-      "thirdparts"
-    ]
   },
-  "target_scope": "business",
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 20,
-  "notify_cc": [],
-  "timeout": 60,
-  "debate_enabled": true,
-  "tier_fast_backend": "",
-  "tier_reasoning_backend": "",
-  "is_campaign": false,
+  "campaign_config": null,
+  "campaign_icon": "",
   "campaign_path": "",
-  "governance_mode": "change_focus",
   "categories": [
     "内存与并发安全-资源泄漏",
     "内存与并发安全-数据竞争",
@@ -49,9 +27,305 @@
     "质量控制-重复代码",
     "其它问题-其它变更风险"
   ],
-  "campaign_icon": "",
-  "campaign_config": null,
-  "is_active": true,
   "created_at": "2026-07-24T09:11:10.525346+08:00",
+  "debate_enabled": true,
+  "defense_dimensions": [
+    {
+      "key": "RegressionGuarded",
+      "name": "回归防护充分",
+      "description": "变更已有充分的伴随测试或上下游防护，不构成实际回归隐患"
+    },
+    {
+      "key": "IntentionalContractChange",
+      "name": "有意接口契约演进",
+      "description": "变更属于版本演进契约变更，调用方已同步适配，非兼容性破坏"
+    }
+  ],
+  "description": "对代码仓库最近一周的提交变更 (最近一周 commit) 进行全面的 AI 审查，确保多线程安全、内存泄漏、第三方库引用符合标准",
+  "display_name": "近期变更检视",
+  "display_semantics": {
+    "domain_label": "综合演进与深度检视",
+    "target_label": "变更 hunk",
+    "not_target_label": "非本次变更相关"
+  },
+  "domain_family": "comprehensive_evolution",
+  "domain_label": "综合演进与深度检视",
+  "engine_config": {
+    "scan_profile": {
+      "base_policy": {
+        "since_days": 7,
+        "strategy": "since_days"
+      },
+      "context_policy": "changed_files",
+      "exclude_paths": [
+        "thirdparts"
+      ],
+      "languages": [
+        "cpp",
+        "python",
+        "java"
+      ],
+      "name": "change_review",
+      "scope_policy": "changed_hunks",
+      "version": 1
+    }
+  },
+  "engine_mode": "debate_full",
+  "governance_mode": "change_focus",
+  "id": 1,
+  "is_active": true,
+  "is_campaign": false,
+  "name": "change_review",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 20,
+  "target_scope": "business",
+  "target_semantics": {
+    "singular": "变更 hunk",
+    "plural": "变更 hunk",
+    "not_target_label": "非本次变更相关"
+  },
+  "taxonomy": {
+    "schema_version": 3,
+    "categories": [
+      {
+        "code": "CHANGE_MEM_LEAK",
+        "label": "内存与并发安全-资源泄漏",
+        "definition": "A changed hunk creates or prolongs unreachable ownership of memory or another resource without a release path.",
+        "decision_rules": [
+          "owned allocation or resource is introduced",
+          "release is absent from all reachable paths",
+          "changed code controls ownership"
+        ],
+        "positive_hints": [
+          "new allocation"
+        ],
+        "negative_hints": [
+          "error path releases or transfers ownership"
+        ],
+        "priority": 100,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_MEM_RACE",
+        "label": "内存与并发安全-数据竞争",
+        "definition": "A changed hunk introduces unsynchronized shared mutable state or removes an existing happens-before edge.",
+        "decision_rules": [
+          "shared state is read and written across threads",
+          "changed code affects synchronization",
+          "no reliable ordering exists"
+        ],
+        "positive_hints": [
+          "lock added around shared access"
+        ],
+        "negative_hints": [
+          "state is thread-local or immutable"
+        ],
+        "priority": 95,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_MEM_LIFECYCLE",
+        "label": "内存与并发安全-生命周期错误",
+        "definition": "A changed hunk invalidates object lifetime, ownership, or callback safety.",
+        "decision_rules": [
+          "object can be used after release or destruction",
+          "callback or captured reference may outlive owner",
+          "changed code controls lifetime"
+        ],
+        "positive_hints": [
+          "lifetime guard keeps object valid"
+        ],
+        "negative_hints": [
+          "ownership transfer is explicit"
+        ],
+        "priority": 90,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_LOGIC_FLAW",
+        "label": "变更正确性-逻辑漏洞",
+        "definition": "A changed hunk implements behavior that does not satisfy its stated requirement.",
+        "decision_rules": [
+          "input-to-output path contradicts the requirement",
+          "condition or assignment is wrong",
+          "failure handling violates the contract"
+        ],
+        "positive_hints": [
+          "expected behavior matches caller contract"
+        ],
+        "negative_hints": [
+          "behavior change is explicitly specified"
+        ],
+        "priority": 85,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_BOUNDARY",
+        "label": "变更正确性-边界防御",
+        "definition": "A changed hunk mishandles an empty, minimum, maximum, error, or overflow boundary.",
+        "decision_rules": [
+          "input can reach the boundary",
+          "boundary check is absent or wrong",
+          "result is incorrect near the boundary"
+        ],
+        "positive_hints": [
+          "bounds are checked for all path shapes"
+        ],
+        "negative_hints": [
+          "range excludes boundary cases"
+        ],
+        "priority": 80,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_REGRESSION",
+        "label": "变更正确性-回归风险",
+        "definition": "A changed hunk reopens or preserves a previously fixed defect without adequate protection.",
+        "decision_rules": [
+          "removed guard, assertion, or test correlated with a known failure",
+          "old behavior can recur",
+          "no compensating control exists"
+        ],
+        "positive_hints": [
+          "removed code is obsolete by design"
+        ],
+        "negative_hints": [
+          "equivalent protection remains"
+        ],
+        "priority": 75,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_LOG_MISSING",
+        "label": "可观测性-关键分支日志缺失",
+        "definition": "A changed hunk omits logging from a critical failure or decision branch needed for operations.",
+        "decision_rules": [
+          "failure or security-relevant branch is changed",
+          "no log or audit trace exists",
+          "loss prevents diagnosis"
+        ],
+        "positive_hints": [
+          "log covers the meaningful failure context"
+        ],
+        "negative_hints": [
+          "pure success path needs no log"
+        ],
+        "priority": 70,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_SENSITIVE_LOG",
+        "label": "可观测性-敏感日志暴露",
+        "definition": "A changed hunk exposes credentials, tokens, private data, or secrets through logs.",
+        "decision_rules": [
+          "log payload contains sensitive material",
+          "exposure crosses a trust boundary",
+          "redaction is absent"
+        ],
+        "positive_hints": [
+          "sensitive field is redacted"
+        ],
+        "negative_hints": [
+          "value is a non-secret identifier"
+        ],
+        "priority": 65,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_API_BREAK",
+        "label": "接口兼容性-破坏性变更",
+        "definition": "A changed hunk breaks a published interface contract without a compatible migration.",
+        "decision_rules": [
+          "public interface changes incompatibly",
+          "existing callers can fail to compile or behave differently",
+          "no versioned migration exists"
+        ],
+        "positive_hints": [
+          "interface evolution is versioned"
+        ],
+        "negative_hints": [
+          "callers are updated atomically"
+        ],
+        "priority": 60,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_API_MISMATCH",
+        "label": "接口兼容性-上下游参数失配",
+        "definition": "A changed hunk sends or accepts interface parameters that mismatch the upstream or downstream contract.",
+        "decision_rules": [
+          "name, type, unit, range, or nullability differs",
+          "serialization does not match schema",
+          "caller and callee disagree"
+        ],
+        "positive_hints": [
+          "contract fields match schema"
+        ],
+        "negative_hints": [
+          "mapping layer handles the difference"
+        ],
+        "priority": 55,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_COMPLEXITY",
+        "label": "质量控制-增量复杂度过高",
+        "definition": "A changed hunk adds disproportionate branching, nesting, or coupling relative to its behavior.",
+        "decision_rules": [
+          "new nesting or branch count is materially higher",
+          "hard-to-test paths are introduced",
+          "simpler structure is available"
+        ],
+        "positive_hints": [
+          "complexity is justified by domain rules"
+        ],
+        "negative_hints": [
+          "behavior is extracted cleanly"
+        ],
+        "priority": 50,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_DUPLICATION",
+        "label": "质量控制-重复代码",
+        "definition": "A changed hunk duplicates existing logic instead of sharing a single implementation.",
+        "decision_rules": [
+          "substantially identical logic already exists",
+          "changes require synchronized updates",
+          "shared abstraction is safe"
+        ],
+        "positive_hints": [
+          "superficial similarity is coincidental"
+        ],
+        "negative_hints": [
+          "shared abstraction would couple unrelated rules"
+        ],
+        "priority": 45,
+        "status": "active"
+      },
+      {
+        "code": "CHANGE_OTHER",
+        "label": "其它问题-其它变更风险",
+        "definition": "A credible change-related risk that does not fit a more specific controlled category.",
+        "decision_rules": [
+          "risk is caused or enabled by the change",
+          "specific category does not apply",
+          "evidence is concrete"
+        ],
+        "positive_hints": [
+          "specific category applies"
+        ],
+        "negative_hints": [
+          "style-only observation"
+        ],
+        "priority": 10,
+        "status": "active"
+      }
+    ]
+  },
+  "tier_fast_backend": "",
+  "tier_reasoning_backend": "",
+  "timeout": 60,
   "updated_at": "2026-08-31T17:23:25.464957+08:00"
 }

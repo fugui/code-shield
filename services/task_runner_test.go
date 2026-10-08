@@ -14,7 +14,9 @@ import (
 
 	"code-common/backend/testdb"
 	"code-shield/models"
+	"code-shield/services/engines/profile"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -33,6 +35,30 @@ func mustMigrate(t *testing.T, db *gorm.DB, models ...interface{}) {
 	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
 	}
+}
+
+func testExecutionSnapshot(t *testing.T, engineMode string) ([]byte, []byte) {
+	t.Helper()
+	scanProfile := profile.ScanProfile{Version: 1, Name: profile.NameFullReview}
+	scanProfileHash := profile.Hash(scanProfile)
+	scanProfileRaw, err := json.Marshal(scanProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotRaw, err := json.Marshal(map[string]any{
+		"engine_mode":            engineMode,
+		"scan_profile":           json.RawMessage(scanProfileRaw),
+		"scan_profile_hash":      scanProfileHash,
+		"prompt_content":         "test prompt",
+		"prompt_content_hash":    "prompt-hash",
+		"assessment_config":      json.RawMessage(`{}`),
+		"assessment_config_hash": "assessment-hash",
+		"categories":             []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scanProfileRaw, snapshotRaw
 }
 
 func TestFixUnescapedQuotes(t *testing.T) {
@@ -96,166 +122,6 @@ func (m *MockAIInvoker) Invoke(req AIRequest) error {
 	return nil
 }
 
-func TestChunkedEngineErrorAggregation(t *testing.T) {
-	// 1. Initialize isolated DB
-	testDB := setupTestDB(t)
-	if testDB == nil {
-		return
-	}
-	models.DB = testDB
-	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
-
-	// 2. Register mock AI invoker
-	mockInvoker := &MockAIInvoker{FailInvoke: true}
-	RegisterAIInvoker("mock_error_backend", mockInvoker)
-
-	// 3. Setup mock repository and git structure
-	tempDir, err := os.MkdirTemp("", "test-chunk-repo-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	exec.Command("git", "-C", tempDir, "init").Run()
-	os.WriteFile(filepath.Join(tempDir, "file1.go"), []byte("package main"), 0644)
-	exec.Command("git", "-C", tempDir, "config", "user.name", "test").Run()
-	exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.com").Run()
-	exec.Command("git", "-C", tempDir, "add", ".").Run()
-	exec.Command("git", "-C", tempDir, "commit", "-m", "init").Run()
-
-	// 4. Setup mock models in DB
-	ts := time.Now().Format("150405.000000")
-	dept := models.Department{Name: "test-dept-err-agg-" + ts}
-	if err := testDB.Create(&dept).Error; err != nil {
-		t.Fatalf("failed to create department: %v", err)
-	}
-	defer testDB.Delete(&models.Department{}, dept.ID)
-
-	user := models.User{Username: "test-user-err-agg-" + ts, Email: "test-err-agg-" + ts + "@test.com"}
-	if err := testDB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-	defer testDB.Delete(&models.User{}, user.ID)
-
-	taskType := models.TaskType{
-		Name:        "code_review_error_agg_" + ts,
-		DisplayName: "代码检视",
-		EngineMode:  "chunked",
-	}
-	if err := testDB.Create(&taskType).Error; err != nil {
-		t.Fatalf("failed to create task type: %v", err)
-	}
-	defer testDB.Delete(&models.TaskType{}, taskType.ID)
-
-	repo := models.Repository{
-		DepartmentID: dept.ID,
-		OwnerID:      user.ID,
-		Name:         "test-repo-error-agg-" + ts,
-		URL:          "https://github.com/test/test-repo-error-agg",
-	}
-	if err := testDB.Create(&repo).Error; err != nil {
-		t.Fatalf("failed to create repo: %v", err)
-	}
-	defer testDB.Delete(&models.Repository{}, repo.ID)
-
-	report := models.TaskReport{
-		RepoID:     repo.ID,
-		TaskTypeID: taskType.ID,
-		Status:     "running",
-	}
-	if err := models.DB.Create(&report).Error; err != nil {
-		t.Fatalf("failed to create report: %v", err)
-	}
-	defer testDB.Delete(&models.TaskReport{}, report.ID)
-
-	// 5. Setup context
-	reportPath := filepath.Join(tempDir, "report.md")
-	backend := "mock_error_backend"
-	oldTier1 := models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter
-	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: backend}
-	defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
-
-	ctx := &taskContext{
-		Ctx:        context.Background(),
-		Report:     report,
-		TaskType:   taskType,
-		Repo:       repo,
-		CodesPath:  tempDir,
-		ReportPath: reportPath,
-		JsonPath:   filepath.Join(tempDir, "report.json"),
-		RunParams:  models.RunParams{},
-	}
-
-	// 6. Run chunked engine
-	engine := &ChunkedEngine{}
-	runErr := engine.Run(ctx)
-	if runErr == nil {
-		t.Fatal("expected error from ChunkedEngine.Run, got nil")
-	}
-
-	if !strings.Contains(runErr.Error(), "simulated invoke error") {
-		t.Errorf("expected error message to contain 'simulated invoke error', got: %v", runErr)
-	}
-
-	// 7. Verify reportPath + ".output.txt" is created and contains the error
-	outputPath := reportPath + ".output.txt"
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-		t.Fatal("expected output.txt to be created, but it does not exist")
-	}
-
-	content, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatalf("failed to read output.txt: %v", err)
-	}
-
-	if !strings.Contains(string(content), "[Code-Shield Error] AI execution failed:") {
-		t.Errorf("expected output.txt to contain the error prefix, got: %s", string(content))
-	}
-	if !strings.Contains(string(content), "simulated invoke error") {
-		t.Errorf("expected output.txt to contain the error message, got: %s", string(content))
-	}
-
-	// 8. Verify report.json (ChunkExecutionReport) is created and contains correct failure metrics
-	if _, err := os.Stat(ctx.JsonPath); os.IsNotExist(err) {
-		t.Fatal("expected report.json to be created, but it does not exist")
-	}
-
-	reportBytes, err := os.ReadFile(ctx.JsonPath)
-	if err != nil {
-		t.Fatalf("failed to read report.json: %v", err)
-	}
-
-	var execReport TaskSummaryReport
-	if err := json.Unmarshal(reportBytes, &execReport); err != nil {
-		t.Fatalf("failed to unmarshal report.json: %v", err)
-	}
-
-	if execReport.Analysis.TotalChunks != 1 {
-		t.Errorf("expected 1 total chunk, got %d", execReport.Analysis.TotalChunks)
-	}
-	if execReport.Analysis.FailedChunks != 1 {
-		t.Errorf("expected 1 failed chunk, got %d", execReport.Analysis.FailedChunks)
-	}
-	if execReport.Analysis.SuccessChunks != 0 {
-		t.Errorf("expected 0 successful chunks, got %d", execReport.Analysis.SuccessChunks)
-	}
-	if len(execReport.Analysis.Chunks) != 1 {
-		t.Fatalf("expected 1 chunk detail entry, got %d", len(execReport.Analysis.Chunks))
-	}
-	if execReport.Analysis.Chunks[0].Status != "failed" {
-		t.Errorf("expected chunk status to be 'failed', got: %s", execReport.Analysis.Chunks[0].Status)
-	}
-	if execReport.Analysis.Chunks[0].Attempts != 4 { // 1 initial + 3 retries = 4
-		t.Errorf("expected 4 attempts, got %d", execReport.Analysis.Chunks[0].Attempts)
-	}
-	if execReport.Analysis.Chunks[0].Retries != 0 { // 初始执行失败，恢复轮数应为 0
-		t.Errorf("expected 0 retries (recovery sessions), got %d", execReport.Analysis.Chunks[0].Retries)
-	}
-	if !strings.Contains(execReport.Analysis.Chunks[0].ErrorMessage, "simulated invoke error") {
-		t.Errorf("expected chunk error message to contain 'simulated invoke error', got: %s", execReport.Analysis.Chunks[0].ErrorMessage)
-	}
-}
-
 func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 	// 1. Initialize DB
 	testDB := setupTestDB(t)
@@ -263,7 +129,7 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 		return
 	}
 	models.DB = testDB
-	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{})
+	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{})
 
 	// 2. Setup mock models in DB
 	ts := time.Now().Format("150405.000000")
@@ -300,10 +166,17 @@ func TestTaskRunnerEarlyFailureLogging(t *testing.T) {
 	}
 	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
+	scanProfileRaw, snapshotRaw := testExecutionSnapshot(t, "single")
 	report := models.TaskReport{
-		RepoID:     repo.ID,
-		TaskTypeID: taskType.ID,
-		Status:     "running",
+		RepoID:                 repo.ID,
+		TaskTypeID:             taskType.ID,
+		Status:                 "running",
+		EngineMode:             "single",
+		ScanProfile:            datatypes.JSON(scanProfileRaw),
+		ScanProfileHash:        profile.Hash(profile.ScanProfile{Version: 1, Name: profile.NameFullReview}),
+		PromptContentHash:      "prompt-hash",
+		ExecutionSnapshot:      datatypes.JSON(snapshotRaw),
+		ExecutionSnapshotState: "complete",
 	}
 	if err := models.DB.Create(&report).Error; err != nil {
 		t.Fatalf("failed to create report: %v", err)
@@ -422,170 +295,6 @@ func TestPrepareOutputPaths(t *testing.T) {
 	})
 }
 
-func TestResumeFailedChunksCumulative(t *testing.T) {
-	// 1. Initialize DB
-	testDB := setupTestDB(t)
-	if testDB == nil {
-		return
-	}
-	models.DB = testDB
-	mustMigrate(t, models.DB, &models.Department{}, &models.User{}, &models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.TaskExecutionLog{}, &models.ScheduleConfig{}, &models.AnalysisFinding{})
-
-	// 2. Register mock success AI invoker
-	mockInvoker := &MockAIInvoker{FailInvoke: false}
-	RegisterAIInvoker("mock_success_backend", mockInvoker)
-
-	// 3. Setup mock repository and git structure
-	tempDir, err := os.MkdirTemp("", "test-resume-repo-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	repoCodesPath := filepath.Join(tempDir, "git-source")
-	os.MkdirAll(repoCodesPath, 0755)
-
-	exec.Command("git", "-C", repoCodesPath, "init").Run()
-	os.WriteFile(filepath.Join(repoCodesPath, "file1.go"), []byte("package main"), 0644)
-	exec.Command("git", "-C", repoCodesPath, "config", "user.name", "test").Run()
-	exec.Command("git", "-C", repoCodesPath, "config", "user.email", "test@test.com").Run()
-	exec.Command("git", "-C", repoCodesPath, "add", ".").Run()
-	exec.Command("git", "-C", repoCodesPath, "commit", "-m", "init").Run()
-
-	// 4. Setup mock models in DB
-	ts := time.Now().Format("150405.000000")
-	dept := models.Department{Name: "test-dept-resume-" + ts}
-	if err := models.DB.Create(&dept).Error; err != nil {
-		t.Fatalf("failed to create department: %v", err)
-	}
-	defer models.DB.Delete(&models.Department{}, dept.ID)
-
-	user := models.User{Username: "test-user-resume-" + ts, Email: "test-resume-" + ts + "@test.com"}
-	if err := models.DB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-	defer models.DB.Delete(&models.User{}, user.ID)
-
-	repo := models.Repository{
-		DepartmentID: dept.ID,
-		OwnerID:      user.ID,
-		Name:         "test-resume-repo-" + ts,
-		URL:          repoCodesPath,
-	}
-	if err := models.DB.Create(&repo).Error; err != nil {
-		t.Fatalf("failed to create repo: %v", err)
-	}
-	defer models.DB.Delete(&models.Repository{}, repo.ID)
-
-	oldDefaultBackend := models.AppConfig.AI.Backend
-	models.AppConfig.AI.Backend = "mock_success_backend"
-	defer func() { models.AppConfig.AI.Backend = oldDefaultBackend }()
-
-	taskType := models.TaskType{
-		Name:        "code_review_resume_" + ts,
-		DisplayName: "代码检视",
-		EngineMode:  "chunked",
-	}
-	if err := models.DB.Create(&taskType).Error; err != nil {
-		t.Fatalf("failed to create task type: %v", err)
-	}
-	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
-
-	// Storage config
-	models.AppConfig.Storage.Root = tempDir
-
-	report := models.TaskReport{
-		RepoID:     repo.ID,
-		TaskTypeID: taskType.ID,
-		Status:     "failed",
-	}
-	if err := models.DB.Create(&report).Error; err != nil {
-		t.Fatalf("failed to create report: %v", err)
-	}
-	defer models.DB.Delete(&models.TaskReport{}, report.ID)
-
-	// Mock the JSON report path and content
-	reportsDir := filepath.Join(tempDir, "reports", taskType.Name, time.Now().Format("2006-01-02"))
-	os.MkdirAll(reportsDir, 0755)
-
-	safeRepoName := strings.ReplaceAll(repo.Name, "/", "-")
-	reportPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-report-%s.md", report.ID, safeRepoName))
-	jsonPath := filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-%s.json", report.ID, safeRepoName))
-
-	// Update DB to have these paths
-	models.DB.Model(&report).Updates(map[string]interface{}{
-		"report_path": reportPath,
-	})
-
-	// Pre-create the summary JSON containing a failed chunk with 4 attempts and 0 retries
-	initialReport := TaskSummaryReport{
-		TaskID:   report.ID,
-		RepoName: repo.Name,
-		TaskType: taskType.Name,
-		Analysis: AnalysisSummary{
-			TotalChunks:  1,
-			FailedChunks: 1,
-			Chunks: []ChunkDetails{
-				{
-					ChunkName: "root",
-					Files:     []string{"file1.go"},
-					Status:    "failed",
-					Attempts:  4,
-					Retries:   0,
-				},
-			},
-		},
-	}
-	reportData, _ := json.MarshalIndent(initialReport, "", "  ")
-	os.WriteFile(jsonPath, reportData, 0644)
-
-	// Also make sure we have a TaskExecutionLog
-	execLog := models.TaskExecutionLog{
-		TaskReportID: &report.ID,
-		Status:       "failed",
-	}
-	if err := models.DB.Create(&execLog).Error; err != nil {
-		t.Fatalf("failed to create execution log: %v", err)
-	}
-	defer models.DB.Delete(&models.TaskExecutionLog{}, execLog.ID)
-
-	// 5. Run ResumeFailedChunks
-	err = ResumeFailedChunks(report.ID)
-	if err != nil {
-		t.Fatalf("ResumeFailedChunks failed: %v", err)
-	}
-
-	// 6. Verify that summary.json was updated with accumulated values
-	updatedReportBytes, err := os.ReadFile(jsonPath)
-	if err != nil {
-		t.Fatalf("failed to read updated report.json: %v", err)
-	}
-
-	var updatedReport TaskSummaryReport
-	if err := json.Unmarshal(updatedReportBytes, &updatedReport); err != nil {
-		t.Fatalf("failed to unmarshal updated report.json: %v", err)
-	}
-
-	if len(updatedReport.Analysis.Chunks) != 1 {
-		t.Fatalf("expected 1 chunk detail, got %d", len(updatedReport.Analysis.Chunks))
-	}
-
-	chunk := updatedReport.Analysis.Chunks[0]
-	if chunk.Status != "success" {
-		t.Errorf("expected chunk status to be success, got: %s", chunk.Status)
-	}
-
-	// 4 previous attempts + 1 current successful attempt = 5
-	if chunk.Attempts != 5 {
-		t.Errorf("expected cumulative attempts to be 5, got %d", chunk.Attempts)
-	}
-
-	// 0 previous retries + 1 current recovery run = 1
-	if chunk.Retries != 1 {
-		t.Errorf("expected cumulative retries to be 1, got %d", chunk.Retries)
-	}
-}
-
 type MockSynthesisAIInvoker struct {
 	AnalysisCount  int
 	SynthesisCount int
@@ -692,10 +401,17 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 		defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
+		scanProfileRaw, snapshotRaw := testExecutionSnapshot(t, "single")
 		report := models.TaskReport{
-			RepoID:     repo.ID,
-			TaskTypeID: taskType.ID,
-			Status:     "running",
+			RepoID:                 repo.ID,
+			TaskTypeID:             taskType.ID,
+			Status:                 "running",
+			EngineMode:             "single",
+			ScanProfile:            datatypes.JSON(scanProfileRaw),
+			ScanProfileHash:        profile.Hash(profile.ScanProfile{Version: 1, Name: profile.NameFullReview}),
+			PromptContentHash:      "prompt-hash",
+			ExecutionSnapshot:      datatypes.JSON(snapshotRaw),
+			ExecutionSnapshotState: "complete",
 		}
 		if err := models.DB.Create(&report).Error; err != nil {
 			t.Fatalf("failed to create report: %v", err)
@@ -710,9 +426,9 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: mockBackend}
 		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
 
-		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
-		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
-		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
+		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis
+		models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis = oldTier3 }()
 
 		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
 		if err != nil {
@@ -749,10 +465,17 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 		defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
+		scanProfileRaw, snapshotRaw := testExecutionSnapshot(t, "single")
 		report := models.TaskReport{
-			RepoID:     repo.ID,
-			TaskTypeID: taskType.ID,
-			Status:     "running",
+			RepoID:                 repo.ID,
+			TaskTypeID:             taskType.ID,
+			Status:                 "running",
+			EngineMode:             "single",
+			ScanProfile:            datatypes.JSON(scanProfileRaw),
+			ScanProfileHash:        profile.Hash(profile.ScanProfile{Version: 1, Name: profile.NameFullReview}),
+			PromptContentHash:      "prompt-hash",
+			ExecutionSnapshot:      datatypes.JSON(snapshotRaw),
+			ExecutionSnapshotState: "complete",
 		}
 		if err := models.DB.Create(&report).Error; err != nil {
 			t.Fatalf("failed to create report: %v", err)
@@ -767,9 +490,9 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: mockBackend}
 		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
 
-		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
-		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
-		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
+		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis
+		models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis = oldTier3 }()
 
 		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
 		if err == nil {
@@ -808,10 +531,17 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		}
 		defer models.DB.Delete(&models.TaskType{}, taskType.ID)
 
+		scanProfileRaw, snapshotRaw := testExecutionSnapshot(t, "single")
 		report := models.TaskReport{
-			RepoID:     repo.ID,
-			TaskTypeID: taskType.ID,
-			Status:     "running",
+			RepoID:                 repo.ID,
+			TaskTypeID:             taskType.ID,
+			Status:                 "running",
+			EngineMode:             "single",
+			ScanProfile:            datatypes.JSON(scanProfileRaw),
+			ScanProfileHash:        profile.Hash(profile.ScanProfile{Version: 1, Name: profile.NameFullReview}),
+			PromptContentHash:      "prompt-hash",
+			ExecutionSnapshot:      datatypes.JSON(snapshotRaw),
+			ExecutionSnapshotState: "complete",
 		}
 		if err := models.DB.Create(&report).Error; err != nil {
 			t.Fatalf("failed to create report: %v", err)
@@ -826,9 +556,9 @@ func TestSynthesisFailureAndRetries(t *testing.T) {
 		models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{Resource: mockBackend}
 		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = oldTier1 }()
 
-		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis
-		models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = models.TierBindingConfig{Resource: mockBackend}
-		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier3Synthesis = oldTier3 }()
+		oldTier3 := models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis
+		models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis = models.TierBindingConfig{Resource: mockBackend}
+		defer func() { models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis = oldTier3 }()
 
 		err := RunTaskSync(report.ID, repo.URL, taskType.ID, false, models.RunParams{})
 		if err == nil {
@@ -1120,6 +850,7 @@ func TestCampaignHooks(t *testing.T) {
 		&models.TaskType{},
 		&models.User{},
 		&models.CampaignFinding{},
+		&models.ScanScopeEntry{},
 	)
 
 	// 注册并配置 Mock AI Backend
@@ -1155,7 +886,7 @@ func TestCampaignHooks(t *testing.T) {
 		Name:           "cjson_scan_" + uniqueSuffix,
 		DisplayName:    "cJSON内存泄露",
 		IsCampaign:     true,
-		GovernanceMode: models.GovernanceModeDefectTracking,
+		GovernanceMode: models.GovernanceModeFullLedger,
 	}
 	models.DB.Create(&taskType)
 	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
@@ -1312,8 +1043,12 @@ func TestCampaignHooks(t *testing.T) {
 	}
 	models.DB.Create(&findingObsolete)
 
-	report3 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
+	report3 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success", CoverageState: "COMPLETE", WorktreeClean: true}
 	models.DB.Create(&report3)
+	models.DB.Create(&models.ScanScopeEntry{
+		ReportID: report3.ID, RepoID: repo.ID, TaskTypeID: taskType.ID,
+		NormPath: "src/main.c", Outcome: "SCANNED",
+	})
 	ctx3 := &taskContext{
 		Repo:     repo,
 		Report:   report3,
@@ -1775,7 +1510,7 @@ func TestHandleGenericCampaignHook_LongTitle(t *testing.T) {
 		Name:           "coredump_scan_" + uniqueSuffix,
 		DisplayName:    "Coredump风险",
 		IsCampaign:     true,
-		GovernanceMode: models.GovernanceModeDefectTracking,
+		GovernanceMode: models.GovernanceModeFullLedger,
 	}
 	models.DB.Create(&taskType)
 	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
@@ -1869,7 +1604,7 @@ func TestHandleGenericCampaignHook_PartialFailureTolerance(t *testing.T) {
 		Name:           "tolerance_scan_" + uniqueSuffix,
 		DisplayName:    "容错测试专项",
 		IsCampaign:     true,
-		GovernanceMode: models.GovernanceModeDefectTracking,
+		GovernanceMode: models.GovernanceModeFullLedger,
 	}
 	models.DB.Create(&taskType)
 	defer models.DB.Delete(&models.TaskType{}, taskType.ID)

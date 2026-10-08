@@ -201,6 +201,66 @@
   color: var(--color-text-secondary, #64748b);
 }
 
+/* LLM 租约视图切换 */
+.code-debug-tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+  width: fit-content;
+}
+
+.code-debug-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.code-debug-tab:hover {
+  color: var(--color-text-primary, #0f172a);
+  background: var(--color-bg-muted, #f1f5f9);
+}
+
+.code-debug-tab:focus-visible {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.code-debug-tab--active {
+  color: var(--primary-color, #2563eb);
+  background: rgba(37, 99, 235, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+.code-debug-tab__count {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-bg-muted, #f1f5f9);
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.code-debug-tab--active .code-debug-tab__count {
+  background: rgba(37, 99, 235, 0.16);
+  color: var(--primary-color, #2563eb);
+}
+
 /* 算力服务器网格 */
 .code-debug-resources-grid {
   display: grid;
@@ -293,3 +353,154 @@
   background: var(--color-bg-hover, rgba(241, 245, 249, 0.5));
 }
 
+.code-debug-lease-detail-button {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-primary, #cbd5e1);
+  background: var(--color-bg-surface, #fff);
+  color: var(--color-text-primary, #0f172a);
+  cursor: pointer;
+}
+
+.code-debug-lease-detail-button:hover {
+  border-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
+}
+
+.code-debug-lease-panel {
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 10px;
+  padding: 1rem;
+  background: var(--color-bg-muted, #f8fafc);
+}
+
+.code-debug-lease-panel h4 {
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
+}
+
+.code-debug-lease-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.7rem;
+  font-size: 0.82rem;
+}
+
+.code-debug-lease-meta span {
+  color: var(--color-text-secondary, #64748b);
+  margin-right: 0.35rem;
+}
+
+.code-debug-lease-label {
+  margin: 0.7rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.code-debug-lease-label--with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.code-debug-copy-button {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-primary, #cbd5e1);
+  border-radius: 999px;
+  background: var(--color-bg-surface, #ffffff);
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.code-debug-copy-button:hover:not(:disabled) {
+  border-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
+}
+
+.code-debug-copy-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.code-debug-copy-button--copied {
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+
+.code-debug-lease-warning {
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.code-debug-lease-empty {
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: var(--color-bg-surface, #fff);
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.82rem;
+}
+
+.code-debug-console {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code-debug-console--error {
+  color: #fecaca;
+}
+
+.code-debug-console--stream {
+  min-height: 220px;
+  max-height: 340px;
+}
+
+.code-debug-console-line {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+}
+
+.code-debug-console-line + .code-debug-console-line {
+  margin-top: 0.25rem;
+}
+
+.code-debug-console-time,
+.code-debug-console-stream {
+  flex-shrink: 0;
+  opacity: 0.62;
+}
+
+.code-debug-console-line--stderr .code-debug-console-message,
+.code-debug-console-line--error .code-debug-console-message {
+  color: #fca5a5;
+}
+
+.code-debug-console-line--assistant .code-debug-console-message {
+  color: #bae6fd;
+}
+
+.code-debug-console-line--system .code-debug-console-message,
+.code-debug-console-line--debug .code-debug-console-message {
+  color: #94a3b8;
+}

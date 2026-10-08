@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -9,14 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
+	"code-shield/services/coverage"
 	"code-shield/services/engines"
 )
 
 // ScanAndChunk 扫描 git 仓库中的文件并按目录深度及语义同名投影分组
 func ScanAndChunk(codesPath string, cfg engines.ChunkConfig, targetScope string) (map[string][]string, error) {
-	bundles, err := BuildSemanticBundles(codesPath, cfg, targetScope, nil)
+	bundles, _, err := BuildSemanticBundlesWithPlan(codesPath, cfg, targetScope, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -28,63 +31,19 @@ func ScanAndChunk(codesPath string, cfg engines.ChunkConfig, targetScope string)
 	return chunks, nil
 }
 
-// GetFilteredFiles 提取并过滤满足配置条件的源文件列表
-func GetFilteredFiles(codesPath string, cfg engines.ChunkConfig, targetScope string) ([]string, error) {
-	var files []string
-
-	// 1. 若配置了 SinceDays，仅提取最近 N 天提交发生变动的文件
-	if cfg.SinceDays > 0 {
-		sinceArg := fmt.Sprintf("--since=%d days ago", cfg.SinceDays)
-		cmd := exec.Command("git", "-C", codesPath, "log", sinceArg, "--name-only", "--pretty=format:")
-		if out, err := cmd.Output(); err == nil {
-			rawLines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			seen := make(map[string]bool)
-			for _, line := range rawLines {
-				trimmed := strings.TrimSpace(line)
-				if trimmed != "" && !seen[trimmed] {
-					seen[trimmed] = true
-					if _, statErr := os.Stat(filepath.Join(codesPath, trimmed)); statErr == nil {
-						files = append(files, filepath.ToSlash(trimmed))
-					}
-				}
-			}
-			log.Printf("[IncrementalChunk] Found %d changed files in the last %d days", len(files), cfg.SinceDays)
-		}
-	} else if cfg.DiffBase != "" {
-		// 2. 若配置了 DiffBase，提取与基线分支/commit 发生 diff 的文件
-		cmd := exec.Command("git", "-C", codesPath, "diff", "--name-only", cfg.DiffBase)
-		if out, err := cmd.Output(); err == nil {
-			rawLines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			for _, line := range rawLines {
-				trimmed := strings.TrimSpace(line)
-				if trimmed != "" {
-					if _, statErr := os.Stat(filepath.Join(codesPath, trimmed)); statErr == nil {
-						files = append(files, filepath.ToSlash(trimmed))
-					}
-				}
-			}
-			log.Printf("[IncrementalChunk] Found %d diff files against base %s", len(files), cfg.DiffBase)
-		}
+// PlanFiles builds a complete planned-file fact set. It intentionally lists the
+// whole repository even in incremental mode so skipped files remain observable.
+func PlanFiles(codesPath string, cfg engines.ChunkConfig, targetScope string) (coverage.ScanPlan, error) {
+	files, err := listRepositoryFiles(codesPath)
+	if err != nil {
+		return coverage.ScanPlan{}, err
 	}
-
-	// 3. 默认全量模式：提取全仓 git ls-files
-	if len(files) == 0 && cfg.SinceDays == 0 && cfg.DiffBase == "" {
-		cmd := exec.Command("git", "-C", codesPath, "ls-files")
-		output, err := cmd.Output()
+	incremental := cfg.SinceDays > 0 || cfg.DiffBase != ""
+	changedFiles := make(map[string]bool)
+	if incremental {
+		changedFiles, err = changedPaths(codesPath, cfg)
 		if err != nil {
-			// 降级为物理文件遍历 (兼容非 git 仓库或单测 Mock 环境)
-			_ = filepath.Walk(codesPath, func(path string, info os.FileInfo, err error) error {
-				if err != nil || info.IsDir() {
-					return nil
-				}
-				rel, relErr := filepath.Rel(codesPath, path)
-				if relErr == nil {
-					files = append(files, filepath.ToSlash(rel))
-				}
-				return nil
-			})
-		} else {
-			files = strings.Split(strings.TrimSpace(string(output)), "\n")
+			return coverage.ScanPlan{}, err
 		}
 	}
 
@@ -99,7 +58,12 @@ func GetFilteredFiles(codesPath string, cfg engines.ChunkConfig, targetScope str
 			taskExtensions[strings.ToLower(ext)] = true
 		}
 	}
-	var filtered []string
+	plan := coverage.ScanPlan{
+		Selected:         make([]coverage.PlannedFile, 0),
+		Excluded:         make([]coverage.PlannedFile, 0),
+		UnchangedSkipped: make([]coverage.PlannedFile, 0),
+		Unknown:          make([]coverage.PlannedFile, 0),
+	}
 
 	for _, file := range files {
 		if file == "" {
@@ -108,20 +72,24 @@ func GetFilteredFiles(codesPath string, cfg engines.ChunkConfig, targetScope str
 
 		// 过滤非源码文件（任务级白名单优先于全局白名单）
 		if !IsSourceFile(file, taskExtensions) {
+			plan.Excluded = append(plan.Excluded, excludedFile(file, coverage.ReasonNotSourceFile))
 			continue
 		}
 
 		// 根据 TargetScope 过滤文件
 		isTest := IsTestFile(file)
 		if targetScope == "business" && isTest {
+			plan.Excluded = append(plan.Excluded, excludedFile(file, coverage.ReasonTargetScope))
 			continue
 		}
 		if targetScope == "test" && !isTest {
+			plan.Excluded = append(plan.Excluded, excludedFile(file, coverage.ReasonTargetScope))
 			continue
 		}
 
 		// 过滤自动生成的文件（如 Qt pyuic、protobuf 等）
 		if IsGeneratedFile(codesPath, file) {
+			plan.Excluded = append(plan.Excluded, excludedFile(file, coverage.ReasonGeneratedFile))
 			continue
 		}
 
@@ -137,6 +105,7 @@ func GetFilteredFiles(codesPath string, cfg engines.ChunkConfig, targetScope str
 				}
 			}
 			if excluded {
+				plan.Excluded = append(plan.Excluded, excludedFile(file, coverage.ReasonExcludePath))
 				continue
 			}
 		}
@@ -146,20 +115,142 @@ func GetFilteredFiles(codesPath string, cfg engines.ChunkConfig, targetScope str
 			matched, err := FileContainsKeywords(filepath.Join(codesPath, file), cfg.ContentKeywords)
 			if err != nil {
 				log.Printf("[Engine] Failed to check file content for %s: %v\n", file, err)
+				plan.Unknown = append(plan.Unknown, excludedFile(file, coverage.ReasonContentFilterError))
 				continue
 			}
 			if !matched {
+				plan.Excluded = append(plan.Excluded, excludedFile(file, coverage.ReasonContentKeyword))
 				continue
 			}
 		}
 
-		filtered = append(filtered, file)
+		planned := coverage.PlannedFile{Path: file, DiffTouched: changedFiles[file]}
+		if incremental && !changedFiles[file] {
+			plan.UnchangedSkipped = append(plan.UnchangedSkipped, planned)
+			continue
+		}
+		plan.Selected = append(plan.Selected, planned)
 	}
 
-	// 确定性稳定排序：按路径字典序排序，保证多次扫描切块边界绝对稳定
-	sort.Strings(filtered)
+	plan.Selected = sortPlannedFiles(plan.Selected)
+	plan.Excluded = sortPlannedFiles(plan.Excluded)
+	plan.UnchangedSkipped = sortPlannedFiles(plan.UnchangedSkipped)
+	plan.Unknown = sortPlannedFiles(plan.Unknown)
+	if cfg.DiffBase != "" {
+		for i := range plan.Selected {
+			plan.Selected[i].HunkRanges = diffHunkRanges(codesPath, cfg.DiffBase, plan.Selected[i].Path)
+		}
+	}
 
-	return filtered, nil
+	return plan, nil
+}
+
+func GetFilteredFiles(codesPath string, cfg engines.ChunkConfig, targetScope string) ([]string, error) {
+	plan, err := PlanFiles(codesPath, cfg, targetScope)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0, len(plan.Selected))
+	for _, planned := range plan.Selected {
+		files = append(files, planned.Path)
+	}
+	return files, nil
+}
+
+func listRepositoryFiles(codesPath string) ([]string, error) {
+	cmd := exec.Command("git", "-C", codesPath, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	output, err := cmd.Output()
+	if err == nil {
+		rawFiles := bytes.Split(output, []byte{0})
+		files := make([]string, 0, len(rawFiles))
+		for _, file := range rawFiles {
+			path := filepath.ToSlash(filepath.Clean(string(file)))
+			if path != "" && path != "." {
+				files = append(files, path)
+			}
+		}
+		return files, nil
+	}
+
+	var files []string
+	_ = filepath.Walk(codesPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info.IsDir() {
+			return nil
+		}
+		if rel, relErr := filepath.Rel(codesPath, path); relErr == nil {
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return files, nil
+}
+
+func changedPaths(codesPath string, cfg engines.ChunkConfig) (map[string]bool, error) {
+	var cmd *exec.Cmd
+	if cfg.SinceDays > 0 {
+		cmd = exec.Command("git", "-C", codesPath, "log", fmt.Sprintf("--since=%d days ago", cfg.SinceDays), "--name-only", "--pretty=format:")
+	} else {
+		cmd = exec.Command("git", "-C", codesPath, "diff", "--name-only", cfg.DiffBase)
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("resolve incremental files: %w", err)
+	}
+	changed := make(map[string]bool)
+	for _, raw := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		path := filepath.ToSlash(strings.TrimSpace(raw))
+		if path != "" {
+			if _, err := os.Stat(filepath.Join(codesPath, path)); err == nil {
+				changed[path] = true
+			}
+		}
+	}
+	log.Printf("[IncrementalChunk] Found %d changed files", len(changed))
+	return changed, nil
+}
+
+func diffHunkRanges(codesPath, diffBase, path string) []string {
+	cmd := exec.Command("git", "-C", codesPath, "diff", "--unified=0", "--no-ext-diff", diffBase, "--", path)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	ranges := make([]string, 0)
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(line, "@@") {
+			continue
+		}
+		parts := strings.Split(line, "+")
+		if len(parts) < 2 {
+			continue
+		}
+		spec := strings.Split(strings.TrimSpace(parts[1]), ",")
+		start := strings.TrimPrefix(spec[0], "+")
+		length := "1"
+		if len(spec) > 1 {
+			length = spec[1]
+		}
+		if length == "0" {
+			continue
+		}
+		end := start
+		if startNumber, err := strconv.Atoi(start); err == nil {
+			if number, err := strconv.Atoi(length); err == nil && number > 1 {
+				end = strconv.Itoa(startNumber + number - 1)
+			}
+		}
+		ranges = append(ranges, start+"-"+end)
+	}
+	return ranges
+}
+
+func excludedFile(path, reason string) coverage.PlannedFile {
+	return coverage.PlannedFile{Path: path, Reason: reason}
+}
+
+func sortPlannedFiles(items []coverage.PlannedFile) []coverage.PlannedFile {
+	sort.Slice(items, func(i, j int) bool { return items[i].Path < items[j].Path })
+	return items
 }
 
 // FileContainsKeywords 检测文件内容是否包含任意给定的关键字（高效流式读取）

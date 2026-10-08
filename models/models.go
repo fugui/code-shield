@@ -2,7 +2,10 @@ package models
 
 import (
 	commonModels "code-common/backend/models"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +14,7 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type User = commonModels.User
@@ -26,20 +30,19 @@ const (
 
 // ── GovernanceMode 枚举常量 ──
 const (
-	GovernanceModeDefectTracking   = "defect_tracking"   // 缺陷攻关模式 (存量向后兼容)
 	GovernanceModeEntityAssessment = "entity_assessment" // 全量实体评估模式
 	GovernanceModeFullLedger       = "full_ledger"       // 全量基线台账模式
 	GovernanceModeChangeFocus      = "change_focus"      // 变更增量焦点模式
 )
 
-// ResolveGovernanceMode 运行时解构治理模式，保障旧枚举与空配置安全向后兼容
+// ResolveGovernanceMode returns the normalized governance mode.
 func ResolveGovernanceMode(raw string) string {
 	switch raw {
 	case GovernanceModeChangeFocus:
 		return GovernanceModeChangeFocus
 	case GovernanceModeEntityAssessment:
 		return GovernanceModeEntityAssessment
-	case GovernanceModeFullLedger, GovernanceModeDefectTracking, "":
+	case GovernanceModeFullLedger, "":
 		return GovernanceModeFullLedger
 	default:
 		return GovernanceModeFullLedger
@@ -63,6 +66,17 @@ type Repository struct {
 	LastCommitHash string         `json:"last_commit_hash"`
 	ReportCount    int64          `gorm:"-" json:"report_count"`
 	CreatedAt      time.Time      `json:"created_at"`
+}
+
+// BeforeSave prevents blank repository URLs from entering the persistent queue.
+// URL is nullable in historical schemas, so both NULL and whitespace-only values
+// must be rejected before GORM issues the write.
+func (r *Repository) BeforeSave(tx *gorm.DB) error {
+	r.URL = strings.TrimSpace(r.URL)
+	if r.URL == "" {
+		return fmt.Errorf("repository %q has an empty URL", r.Name)
+	}
+	return nil
 }
 
 // RunParams 定义任务执行时的运行时动态过滤参数。
@@ -105,6 +119,20 @@ func (d *DefenseDimension) GetDisplayName() string {
 		return d.Dimension
 	}
 	return d.Key
+}
+
+// TargetSemantics describes the object evaluated by an assessment profile.
+type TargetSemantics struct {
+	Singular       string `json:"singular,omitempty"`
+	Plural         string `json:"plural,omitempty"`
+	NotTargetLabel string `json:"not_target_label,omitempty"`
+}
+
+// DisplaySemantics describes user-facing labels for assessment outcomes.
+type DisplaySemantics struct {
+	DomainLabel    string `json:"domain_label,omitempty"`
+	TargetLabel    string `json:"target_label,omitempty"`
+	NotTargetLabel string `json:"not_target_label,omitempty"`
 }
 
 // DomainFamilyInfo 描述领域族群的元信息与推荐模式
@@ -194,34 +222,186 @@ type RunParams struct {
 
 // TaskType 任务类型定义（管理员可配置）
 type TaskType struct {
-	ID              uint           `gorm:"primaryKey" json:"id"`
-	Name            string         `gorm:"uniqueIndex;not null" json:"name"`       // 唯一标识: "code_review", "memory_leak"
-	DisplayName     string         `gorm:"not null" json:"display_name"`           // 中文名: "代码检视"
-	Description     string         `json:"description"`                            // 任务说明
-	EngineMode      string         `gorm:"default:single" json:"engine_mode"`      // 执行引擎模式: single, chunked
-	EngineConfig    datatypes.JSON `json:"engine_config"`                          // 引擎配置 {"max_files": 50, "depth": 2}
-	TargetScope     string         `gorm:"default:'business'" json:"target_scope"` // 处理范围: all (全部), business (仅业务), test (仅测试)
-	NotifyTemplate  string         `json:"notify_template"`                        // 邮件主题模板
-	NotifyThreshold int            `gorm:"default:0" json:"notify_threshold"`      // score >= 此值才通知
-	NotifyCc        datatypes.JSON `json:"notify_cc"`                              // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
-	Timeout         int            `gorm:"default:30" json:"timeout"`              // AI 执行超时（分钟）
+	ID                   uint           `gorm:"primaryKey" json:"id"`
+	Name                 string         `gorm:"uniqueIndex;not null" json:"name"`     // 唯一标识: "code_review", "memory_leak"
+	DisplayName          string         `gorm:"not null" json:"display_name"`         // 中文名: "代码检视"
+	Description          string         `json:"description"`                          // 任务说明
+	EngineMode           string         `gorm:"default:single" json:"engine_mode"`    // 执行引擎模式: single, chunked
+	EngineConfig         datatypes.JSON `json:"engine_config"`                        // 引擎配置 {"max_files": 50, "depth": 2}
+	ScanProfileHash      string         `gorm:"-" json:"scan_profile_hash,omitempty"` // Derived canonical profile hash; never persisted.
+	AssessmentConfig     datatypes.JSON `json:"assessment_config"`
+	AssessmentConfigHash string         `gorm:"size:72;not null;default:''" json:"assessment_config_hash"`
+	TargetScope          string         `gorm:"default:'business'" json:"target_scope"` // 处理范围: all (全部), business (仅业务), test (仅测试)
+	NotifyTemplate       string         `json:"notify_template"`                        // 邮件主题模板
+	NotifyThreshold      int            `gorm:"default:0" json:"notify_threshold"`      // score >= 此值才通知
+	NotifyCc             datatypes.JSON `json:"notify_cc"`                              // 通知抄送邮箱列表 ["a@x.com","b@x.com"]
+	Timeout              int            `gorm:"default:30" json:"timeout"`              // AI 执行超时（分钟）
 
 	// ── 智能体协同与异构调度扩展 (阶段二) ──
 	DebateEnabled     bool           `gorm:"default:true" json:"debate_enabled"`                             // 是否启用三方对抗辩论流
 	DomainFamily      string         `gorm:"size:50;default:'comprehensive_evolution'" json:"domain_family"` // 所属领域族群
 	DefenseDimensions datatypes.JSON `gorm:"type:jsonb" json:"defense_dimensions"`                           // 专属自定义抗辩维度列表
 
-	// ── 专项分析元数据扩展 ──
-	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`                   // 是否启用为专项分析
-	CampaignPath   string         `gorm:"size:100;default:''" json:"campaign_path"`                 // 路由别名 (空则默认同 Name)
-	GovernanceMode string         `gorm:"size:50;default:'defect_tracking'" json:"governance_mode"` // defect_tracking / entity_assessment
-	CampaignIcon   string         `gorm:"type:text" json:"campaign_icon"`                           // SVG 图标路径或图标类名
-	CampaignConfig datatypes.JSON `json:"campaign_config"`                                          // 高级配置，结构定义见 CampaignConfigSchema
-	Categories     datatypes.JSON `gorm:"type:jsonb" json:"categories"`                             // 受控标准分类白名单 (SSOT)
+	// ── 标准化领域与展示语义（Phase 5）──
+	DomainLabel      string         `gorm:"size:100;not null;default:''" json:"domain_label"`
+	TargetSemantics  datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"target_semantics"`
+	DisplaySemantics datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"display_semantics"`
 
-	IsActive  bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// ── 专项分析元数据扩展 ──
+	IsCampaign     bool           `gorm:"default:false;index" json:"is_campaign"`   // 是否启用为专项分析
+	CampaignPath   string         `gorm:"size:100;default:''" json:"campaign_path"` // 路由别名 (空则默认同 Name)
+	GovernanceMode string         `gorm:"size:50;default:'full_ledger'" json:"governance_mode"`
+	CampaignIcon   string         `gorm:"type:text" json:"campaign_icon"` // SVG 图标路径或图标类名
+	CampaignConfig datatypes.JSON `json:"campaign_config"`                // 高级配置，结构定义见 CampaignConfigSchema
+	Categories     datatypes.JSON `gorm:"type:jsonb" json:"categories"`   // 受控标准分类白名单 (SSOT)
+	Taxonomy       datatypes.JSON `gorm:"type:jsonb" json:"taxonomy"`
+
+	TaxonomySchemaVersion int    `gorm:"not null;default:0" json:"taxonomy_schema_version"`
+	TaxonomyHash          string `gorm:"size:72;not null;default:''" json:"taxonomy_hash"`
+
+	IsActive          bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	CurrentRevisionID *uint     `gorm:"index" json:"current_revision_id"`
+}
+
+type TaskTypeRevision struct {
+	ID         uint   `gorm:"primaryKey" json:"id"`
+	TaskTypeID uint   `gorm:"not null;uniqueIndex:uq_task_type_revision_aggregate,priority:1" json:"task_type_id"`
+	Revision   int    `gorm:"not null" json:"revision"`
+	EngineMode string `gorm:"size:40;not null;default:''" json:"engine_mode"`
+
+	EngineConfig     datatypes.JSON `json:"engine_config"`
+	EngineConfigHash string         `gorm:"size:72;not null;default:''" json:"engine_config_hash"`
+
+	AssessmentConfig     datatypes.JSON `json:"assessment_config"`
+	AssessmentConfigHash string         `gorm:"size:72;not null;default:''" json:"assessment_config_hash"`
+
+	PromptContent     string `gorm:"type:text" json:"prompt_content"`
+	PromptContentHash string `gorm:"size:72;not null;default:''" json:"prompt_content_hash"`
+
+	Categories         datatypes.JSON `gorm:"type:jsonb" json:"categories"`
+	CategorySchemaHash string         `gorm:"size:72;not null;default:''" json:"category_schema_hash"`
+
+	Taxonomy              datatypes.JSON `gorm:"type:jsonb" json:"taxonomy"`
+	TaxonomySchemaVersion int            `gorm:"not null;default:0" json:"taxonomy_schema_version"`
+	TaxonomyHash          string         `gorm:"size:72;not null;default:''" json:"taxonomy_hash"`
+
+	DomainFamily      string         `gorm:"size:50;not null;default:''" json:"domain_family"`
+	DefenseDimensions datatypes.JSON `gorm:"type:jsonb" json:"defense_dimensions"`
+	GovernanceMode    string         `gorm:"size:50;not null;default:''" json:"governance_mode"`
+
+	DomainLabel      string         `gorm:"size:100;not null;default:''" json:"domain_label"`
+	TargetSemantics  datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"target_semantics"`
+	DisplaySemantics datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"display_semantics"`
+
+	PostprocessContent string `gorm:"type:text" json:"postprocess_content"`
+	PostprocessHash    string `gorm:"size:72;not null;default:''" json:"postprocess_hash"`
+
+	AggregateHash string    `gorm:"size:72;not null;uniqueIndex:uq_task_type_revision_aggregate,priority:2" json:"aggregate_hash"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+const AssessmentConfigSchemaV1 = "code-shield.assessment-config.v1"
+
+func HashAssessmentConfig(raw datatypes.JSON) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		sum := sha256.Sum256(raw)
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	normalized, err := json.Marshal(value)
+	if err != nil {
+		sum := sha256.Sum256(raw)
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(normalized)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+type AssessmentConfigEnvelope struct {
+	Version int    `json:"version"`
+	Profile string `json:"profile"`
+	Schema  string `json:"schema"`
+	Domain  string `json:"domain"`
+}
+
+func ParseAssessmentConfig(raw datatypes.JSON) (AssessmentConfigEnvelope, error) {
+	envelope := AssessmentConfigEnvelope{}
+	if len(raw) == 0 {
+		return envelope, nil
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return AssessmentConfigEnvelope{}, fmt.Errorf("invalid assessment_config: %w", err)
+	}
+	if envelope.Version == 0 && envelope.Profile == "" && envelope.Schema == "" && envelope.Domain == "" {
+		return envelope, nil
+	}
+	if envelope.Version != 1 {
+		return AssessmentConfigEnvelope{}, fmt.Errorf("assessment_config.version must be 1")
+	}
+	if envelope.Profile == "" {
+		return AssessmentConfigEnvelope{}, fmt.Errorf("assessment_config.profile is required")
+	}
+	if envelope.Schema != AssessmentConfigSchemaV1 {
+		return AssessmentConfigEnvelope{}, fmt.Errorf("assessment_config.schema must be %q", AssessmentConfigSchemaV1)
+	}
+	if envelope.Domain == "" {
+		return AssessmentConfigEnvelope{}, fmt.Errorf("assessment_config.domain is required")
+	}
+	return envelope, nil
+}
+
+type ExecutionContextSnapshot struct {
+	EngineMode            string           `json:"engine_mode"`
+	ScanProfile           json.RawMessage  `json:"scan_profile"`
+	ScanProfileHash       string           `json:"scan_profile_hash"`
+	AssessmentConfig      json.RawMessage  `json:"assessment_config"`
+	AssessmentConfigHash  string           `json:"assessment_config_hash"`
+	PromptContent         string           `json:"prompt_content"`
+	PromptContentHash     string           `json:"prompt_content_hash"`
+	Categories            []string         `json:"categories"`
+	CategorySchemaHash    string           `json:"category_schema_hash"`
+	Taxonomy              CategoryTaxonomy `json:"taxonomy,omitempty"`
+	TaxonomySchemaVersion int              `json:"taxonomy_schema_version"`
+	TaxonomyHash          string           `json:"taxonomy_hash"`
+	DomainFamily          string           `json:"domain_family"`
+	DomainLabel           string           `json:"domain_label"`
+	DefenseDimensions     json.RawMessage  `json:"defense_dimensions"`
+	TargetSemantics       json.RawMessage  `json:"target_semantics,omitempty"`
+	DisplaySemantics      json.RawMessage  `json:"display_semantics,omitempty"`
+	GovernanceMode        string           `json:"governance_mode"`
+	PostprocessContent    string           `json:"postprocess_content,omitempty"`
+	PostprocessHash       string           `json:"postprocess_hash,omitempty"`
+	TaskTypeRevisionID    string           `json:"task_type_revision_id,omitempty"`
+	EngineConfig          json.RawMessage  `json:"engine_config,omitempty"`
+	EngineConfigHash      string           `json:"engine_config_hash,omitempty"`
+}
+
+func (snapshot ExecutionContextSnapshot) GetDefenseDimensions() []DefenseDimension {
+	if len(snapshot.DefenseDimensions) == 0 {
+		return nil
+	}
+	var dimensions []DefenseDimension
+	if err := json.Unmarshal(snapshot.DefenseDimensions, &dimensions); err != nil {
+		return nil
+	}
+	return dimensions
+}
+
+func (snapshot ExecutionContextSnapshot) GetTargetSemantics() TargetSemantics {
+	var semantics TargetSemantics
+	_ = json.Unmarshal(snapshot.TargetSemantics, &semantics)
+	return semantics
+}
+
+func (snapshot ExecutionContextSnapshot) GetDisplaySemantics() DisplaySemantics {
+	var semantics DisplaySemantics
+	_ = json.Unmarshal(snapshot.DisplaySemantics, &semantics)
+	return semantics
 }
 
 // GetDomainFamily 获取有效的领域族群，缺省安全回退
@@ -230,6 +410,33 @@ func (t *TaskType) GetDomainFamily() string {
 		return t.DomainFamily
 	}
 	return DomainFamilyComprehensive
+}
+
+func (t *TaskType) GetDomainLabel() string {
+	if t.DomainLabel != "" {
+		return t.DomainLabel
+	}
+	for _, family := range GetAllDomainFamilies() {
+		if family.Key == t.GetDomainFamily() {
+			return family.Name
+		}
+	}
+	return "通用代码评估"
+}
+
+func (t *TaskType) GetTargetSemantics() TargetSemantics {
+	var semantics TargetSemantics
+	_ = json.Unmarshal(t.TargetSemantics, &semantics)
+	return semantics
+}
+
+func (t *TaskType) GetDisplaySemantics() DisplaySemantics {
+	var semantics DisplaySemantics
+	_ = json.Unmarshal(t.DisplaySemantics, &semantics)
+	if semantics.DomainLabel == "" {
+		semantics.DomainLabel = t.GetDomainLabel()
+	}
+	return semantics
 }
 
 // GetDefenseDimensions 解析任务专有抗辩维度列表
@@ -246,6 +453,13 @@ func (t *TaskType) GetDefenseDimensions() []DefenseDimension {
 
 // GetAllowedCategories 返回该任务类型配置的标准受控分类白名单
 func (t *TaskType) GetAllowedCategories() []string {
+	if taxonomy := t.GetCategoryTaxonomy(); taxonomy != nil {
+		labels := make([]string, 0, len(taxonomy.Categories))
+		for _, category := range taxonomy.Categories {
+			labels = append(labels, category.Label)
+		}
+		return labels
+	}
 	if len(t.Categories) == 0 {
 		return nil
 	}
@@ -254,6 +468,51 @@ func (t *TaskType) GetAllowedCategories() []string {
 		return cats
 	}
 	return nil
+}
+
+// GetCategoryTaxonomy parses the controlled category snapshot for this task
+// type. Legacy string-array tasks intentionally return nil.
+func (t *TaskType) GetCategoryTaxonomy() *CategoryTaxonomy {
+	if len(t.Taxonomy) == 0 {
+		return nil
+	}
+	var taxonomy CategoryTaxonomy
+	if err := json.Unmarshal(t.Taxonomy, &taxonomy); err != nil {
+		return nil
+	}
+	return &taxonomy
+}
+
+type CategoryAlias struct {
+	Label string `json:"label"`
+}
+
+type CategoryDefinition struct {
+	Code            string          `json:"code"`
+	Label           string          `json:"label"`
+	Definition      string          `json:"definition,omitempty"`
+	DecisionRules   []string        `json:"decision_rules,omitempty"`
+	PositiveHints   []string        `json:"positive_hints,omitempty"`
+	NegativeHints   []string        `json:"negative_hints,omitempty"`
+	DefaultSeverity string          `json:"default_severity,omitempty"`
+	EscalateWhen    []string        `json:"escalate_when,omitempty"`
+	DowngradeWhen   []string        `json:"downgrade_when,omitempty"`
+	Priority        int             `json:"priority,omitempty"`
+	Status          string          `json:"status"`
+	Aliases         []CategoryAlias `json:"aliases,omitempty"`
+}
+
+type DeprecatedAlias struct {
+	Label      string `json:"label"`
+	TargetCode string `json:"target_code"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type CategoryTaxonomy struct {
+	SchemaVersion     int                  `json:"schema_version"`
+	Hash              string               `json:"hash,omitempty"`
+	Categories        []CategoryDefinition `json:"categories"`
+	DeprecatedAliases []DeprecatedAlias    `json:"deprecated_aliases,omitempty"`
 }
 
 // CampaignConfigSchema 高级专项配置 Schema
@@ -269,22 +528,163 @@ func (t *TaskType) BeforeCreate(tx *gorm.DB) error { return t.validate() }
 func (t *TaskType) BeforeUpdate(tx *gorm.DB) error { return t.validate() }
 
 func (t *TaskType) validate() error {
+	t.AssessmentConfigHash = HashAssessmentConfig(t.AssessmentConfig)
+	if _, err := ParseAssessmentConfig(t.AssessmentConfig); err != nil {
+		return err
+	}
+	if len(t.Taxonomy) > 0 {
+		taxonomy := t.GetCategoryTaxonomy()
+		if taxonomy == nil {
+			return fmt.Errorf("invalid taxonomy JSON")
+		}
+		if err := taxonomy.validate(); err != nil {
+			return fmt.Errorf("invalid taxonomy: %w", err)
+		}
+		if t.TaxonomySchemaVersion != 0 && t.TaxonomySchemaVersion != taxonomy.SchemaVersion {
+			return fmt.Errorf("taxonomy schema_version %d does not match taxonomy %d", t.TaxonomySchemaVersion, taxonomy.SchemaVersion)
+		}
+		t.TaxonomySchemaVersion = taxonomy.SchemaVersion
+		t.TaxonomyHash = HashCategoryTaxonomy(taxonomy)
+	}
 	if t.IsCampaign {
 		if t.GovernanceMode == "" {
-			t.GovernanceMode = GovernanceModeDefectTracking
+			t.GovernanceMode = GovernanceModeFullLedger
 		}
 		switch t.GovernanceMode {
-		case GovernanceModeDefectTracking, GovernanceModeEntityAssessment, GovernanceModeFullLedger, GovernanceModeChangeFocus:
+		case GovernanceModeEntityAssessment, GovernanceModeFullLedger, GovernanceModeChangeFocus:
 			// valid
 		default:
-			return fmt.Errorf("invalid governance_mode: %q, must be one of: %q, %q, %q, %q",
-				t.GovernanceMode, GovernanceModeDefectTracking, GovernanceModeEntityAssessment, GovernanceModeFullLedger, GovernanceModeChangeFocus)
+			return fmt.Errorf("invalid governance_mode: %q, must be one of: %q, %q, %q",
+				t.GovernanceMode, GovernanceModeEntityAssessment, GovernanceModeFullLedger, GovernanceModeChangeFocus)
 		}
 		if len(t.CampaignConfig) > 0 {
 			var cfg CampaignConfigSchema
 			if err := json.Unmarshal(t.CampaignConfig, &cfg); err != nil {
 				return fmt.Errorf("invalid campaign_config JSON: %w", err)
 			}
+		}
+	}
+	return nil
+}
+
+func HashCategoryTaxonomy(taxonomy *CategoryTaxonomy) string {
+	if taxonomy == nil {
+		return ""
+	}
+	canonical := *taxonomy
+	canonical.Hash = ""
+	normalized, err := json.Marshal(canonical)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(normalized)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func (t *CategoryTaxonomy) validate() error {
+	codes := make(map[string]struct{}, len(t.Categories))
+	labels := make(map[string]struct{}, len(t.Categories))
+	deprecatedAliasLabels := make(map[string]struct{}, len(t.DeprecatedAliases))
+	inlineAliasLabels := make(map[string]struct{}, len(t.Categories))
+	if t.SchemaVersion < 1 || t.SchemaVersion > 3 {
+		return fmt.Errorf("unsupported taxonomy schema_version %d", t.SchemaVersion)
+	}
+	for _, category := range t.Categories {
+		code := strings.TrimSpace(category.Code)
+		label := strings.TrimSpace(category.Label)
+		if code == "" || label == "" {
+			return fmt.Errorf("category code and label are required")
+		}
+		if _, exists := codes[code]; exists {
+			return fmt.Errorf("duplicate category code %q", code)
+		}
+		if _, exists := labels[label]; exists {
+			return fmt.Errorf("duplicate category label %q", label)
+		}
+		codes[code] = struct{}{}
+		labels[label] = struct{}{}
+
+		if category.DefaultSeverity != "" {
+			switch category.DefaultSeverity {
+			case "致命", "严重", "一般", "建议":
+			default:
+				return fmt.Errorf("category %q default_severity %q is invalid", code, category.DefaultSeverity)
+			}
+		}
+		for _, group := range [][]string{category.EscalateWhen, category.DowngradeWhen} {
+			for _, reason := range group {
+				if strings.TrimSpace(reason) == "" {
+					return fmt.Errorf("category %q severity policy contains an empty reason", code)
+				}
+			}
+		}
+
+		if t.SchemaVersion < 3 {
+			continue
+		}
+		if strings.TrimSpace(category.Definition) == "" {
+			return fmt.Errorf("category %q definition is required for taxonomy v3", code)
+		}
+		if len(category.DecisionRules) == 0 {
+			return fmt.Errorf("category %q decision_rules are required for taxonomy v3", code)
+		}
+		for index, rule := range category.DecisionRules {
+			if strings.TrimSpace(rule) == "" {
+				return fmt.Errorf("category %q decision_rules[%d] is empty", code, index)
+			}
+		}
+		if len(category.PositiveHints) == 0 || len(category.NegativeHints) == 0 {
+			return fmt.Errorf("category %q positive and negative hints are required for taxonomy v3", code)
+		}
+		for _, hint := range append(append([]string(nil), category.PositiveHints...), category.NegativeHints...) {
+			if strings.TrimSpace(hint) == "" {
+				return fmt.Errorf("category %q hints cannot contain empty entries", code)
+			}
+		}
+		if category.Priority == 0 {
+			return fmt.Errorf("category %q priority is required for taxonomy v3", code)
+		}
+		switch strings.TrimSpace(category.Status) {
+		case "active", "deprecated", "superseded":
+		default:
+			return fmt.Errorf("category %q status %q is invalid for taxonomy v3", code, category.Status)
+		}
+	}
+	for _, alias := range t.DeprecatedAliases {
+		if strings.TrimSpace(alias.Label) == "" || strings.TrimSpace(alias.TargetCode) == "" {
+			return fmt.Errorf("deprecated alias label and target_code are required")
+		}
+		if _, exists := codes[alias.TargetCode]; !exists {
+			return fmt.Errorf("deprecated alias target_code %q is unknown", alias.TargetCode)
+		}
+		aliasKey := strings.ToLower(strings.TrimSpace(alias.Label))
+		if _, exists := deprecatedAliasLabels[aliasKey]; exists {
+			return fmt.Errorf("duplicate deprecated alias label %q", alias.Label)
+		}
+		if _, exists := labels[aliasKey]; exists {
+			return fmt.Errorf("deprecated alias label %q conflicts with a category label", alias.Label)
+		}
+		if _, exists := inlineAliasLabels[aliasKey]; exists {
+			return fmt.Errorf("deprecated alias label %q conflicts with an inline alias", alias.Label)
+		}
+		deprecatedAliasLabels[aliasKey] = struct{}{}
+	}
+	for _, category := range t.Categories {
+		for _, alias := range category.Aliases {
+			if strings.TrimSpace(alias.Label) == "" {
+				return fmt.Errorf("category %q inline alias label is empty", category.Code)
+			}
+			aliasKey := strings.ToLower(strings.TrimSpace(alias.Label))
+			if _, exists := labels[aliasKey]; exists {
+				return fmt.Errorf("category %q inline alias label %q conflicts with a category label", category.Code, alias.Label)
+			}
+			if _, exists := deprecatedAliasLabels[aliasKey]; exists {
+				return fmt.Errorf("category %q inline alias label %q conflicts with a deprecated alias", category.Code, alias.Label)
+			}
+			if _, exists := inlineAliasLabels[aliasKey]; exists {
+				return fmt.Errorf("duplicate inline alias label %q", alias.Label)
+			}
+			inlineAliasLabels[aliasKey] = struct{}{}
 		}
 	}
 	return nil
@@ -305,11 +705,6 @@ func (t *TaskType) SynthesisPromptFile() string {
 	return filepath.Join(t.TaskDir(), "synthesis_prompt.md")
 }
 
-// PreconditionScript 前置检查脚本路径（约定固定）
-func (t *TaskType) PreconditionScript() string {
-	return filepath.Join(t.TaskDir(), "precondition")
-}
-
 // PostprocessScript 后置结果解析脚本路径（约定固定）
 func (t *TaskType) PostprocessScript() string {
 	return filepath.Join(t.TaskDir(), "postprocess")
@@ -317,31 +712,72 @@ func (t *TaskType) PostprocessScript() string {
 
 // TaskReport 通用任务报告
 type TaskReport struct {
-	ID              uint           `gorm:"primaryKey" json:"id"`
-	RepoID          uint           `gorm:"index" json:"repo_id"`
-	Repo            Repository     `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskTypeID      uint           `gorm:"index:idx_task_reports_type_status_created,priority:1;index" json:"task_type_id"`
-	TaskType        TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	ParentID        uint           `gorm:"default:0;index" json:"parent_id"` // 0 if it is a parent or independent task
-	ChunkName       string         `gorm:"default:''" json:"chunk_name"`     // Name of the directory or file group
-	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`
-	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`
-	SuccessChunks   int            `gorm:"default:0" json:"success_chunks"`
-	Status          string         `gorm:"default:pending;index:idx_task_reports_type_status_created,priority:2;index" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
-	CloneStatus     string         `gorm:"default:pending" json:"clone_status"`
-	AISummary       string         `json:"ai_summary"`
-	ReportPath      string         `json:"report_path"`
-	Score           int            `gorm:"default:0" json:"score"`
-	Metrics         datatypes.JSON `json:"metrics"` // {"blocking":0,"critical":3,...}
-	BaseCommit      string         `json:"base_commit"`
-	HeadCommit      string         `json:"head_commit"`
+	ID               uint           `gorm:"primaryKey" json:"id"`
+	RepoID           uint           `gorm:"index" json:"repo_id"`
+	Repo             Repository     `gorm:"foreignKey:RepoID" json:"repo"`
+	TaskTypeID       uint           `gorm:"index:idx_task_reports_type_status_created,priority:1;index" json:"task_type_id"`
+	TaskType         TaskType       `gorm:"foreignKey:TaskTypeID" json:"task_type"`
+	ParentID         uint           `gorm:"default:0;index" json:"parent_id"` // 0 if it is a parent or independent task
+	ChunkName        string         `gorm:"default:''" json:"chunk_name"`     // Name of the directory or file group
+	TotalChunks      int            `gorm:"default:0" json:"total_chunks"`
+	ProcessedChunks  int            `gorm:"default:0" json:"processed_chunks"`
+	SuccessChunks    int            `gorm:"default:0" json:"success_chunks"`
+	Status           string         `gorm:"default:pending;index:idx_task_reports_type_status_created,priority:2;index" json:"status"` // pending, queued, cloning, pre_processing, analyzing, post_processing, success, failed, skipped
+	CloneStatus      string         `gorm:"default:pending" json:"clone_status"`
+	AISummary        string         `json:"ai_summary"`
+	ReportPath       string         `json:"report_path"`
+	Score            int            `gorm:"default:0" json:"score"`
+	Metrics          datatypes.JSON `json:"metrics"` // {"blocking":0,"critical":3,...}
+	BaseCommit       string         `json:"base_commit"`
+	HeadCommit       string         `json:"head_commit"`
+	ChangeCutoffAt   *time.Time     `json:"change_cutoff_at"`
+	BaseCommitTime   *time.Time     `json:"base_commit_time"`
+	DiffManifestHash string         `gorm:"size:72" json:"diff_manifest_hash"`
 
-	// ── 增量追踪与 Token 消耗统计 (阶段二/三) ──
-	NewDefectsCount      int   `gorm:"default:0" json:"new_defects_count"`      // 本次新增缺陷数
-	ExistedDefectsCount  int   `gorm:"default:0" json:"existed_defects_count"`  // 历史存量缺陷数
-	ResolvedDefectsCount int   `gorm:"default:0" json:"resolved_defects_count"` // 本次已修复缺陷数
-	Tier1Tokens          int64 `gorm:"default:0" json:"tier1_tokens"`           // Tier 1 快模型 Token 开销
-	Tier2Tokens          int64 `gorm:"default:0" json:"tier2_tokens"`           // Tier 2 强推理模型 Token 开销
+	// ── 报告执行快照（ADR-010）──
+	EngineMode       string         `gorm:"size:40;not null;default:''" json:"engine_mode"`
+	ScanProfile      datatypes.JSON `json:"scan_profile"`
+	ScanProfileHash  string         `gorm:"size:72;not null;default:''" json:"scan_profile_hash"`
+	PromptVersion    string         `gorm:"size:64;not null;default:''" json:"prompt_version"`
+	EngineConfigHash string         `gorm:"size:72;not null;default:''" json:"engine_config_hash"`
+	PlannerVersion   string         `gorm:"size:40;not null;default:''" json:"planner_version"`
+
+	// ── 专项评估插件执行快照（Phase 1）──
+	AssessmentConfig         datatypes.JSON `json:"assessment_config"`
+	AssessmentConfigHash     string         `gorm:"size:72;not null;default:''" json:"assessment_config_hash"`
+	PromptContent            string         `gorm:"type:text" json:"prompt_content"`
+	PromptContentHash        string         `gorm:"size:72;not null;default:''" json:"prompt_content_hash"`
+	Categories               datatypes.JSON `gorm:"type:jsonb" json:"categories"`
+	CategorySchemaHash       string         `gorm:"size:72;not null;default:''" json:"category_schema_hash"`
+	TaxonomySchemaVersion    int            `gorm:"not null;default:0" json:"taxonomy_schema_version"`
+	TaxonomyHash             string         `gorm:"size:72;not null;default:''" json:"taxonomy_hash"`
+	DomainFamily             string         `gorm:"size:50;not null;default:''" json:"domain_family"`
+	DefenseDimensions        datatypes.JSON `gorm:"type:jsonb" json:"defense_dimensions"`
+	GovernanceMode           string         `gorm:"size:50;not null;default:''" json:"governance_mode"`
+	DomainLabel              string         `gorm:"size:100;not null;default:''" json:"domain_label"`
+	TargetSemantics          datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"target_semantics"`
+	DisplaySemantics         datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"display_semantics"`
+	PostprocessContent       string         `gorm:"type:text" json:"postprocess_content"`
+	PostprocessHash          string         `gorm:"size:72;not null;default:''" json:"postprocess_hash"`
+	TaskTypeRevisionID       *uint          `gorm:"index" json:"task_type_revision_id"`
+	ExecutionSnapshot        datatypes.JSON `json:"execution_snapshot"`
+	ExecutionSnapshotVersion int            `gorm:"not null;default:0" json:"execution_snapshot_version"`
+	ExecutionSnapshotState   string         `gorm:"size:32;not null;default:''" json:"execution_snapshot_state"`
+
+	// ── 扫描覆盖守卫与生命周期基线资格 ──
+	CoverageComplete       bool       `gorm:"default:false" json:"coverage_complete"`
+	CoverageDegraded       bool       `gorm:"default:false" json:"coverage_degraded"`
+	CoverageNotApplicable  bool       `gorm:"default:false" json:"coverage_not_applicable"`
+	CoverageState          string     `gorm:"size:24;not null;default:'UNKNOWN'" json:"coverage_state"`
+	ScopeHash              string     `gorm:"size:64;not null;default:''" json:"scope_hash"`
+	WorktreeClean          bool       `gorm:"not null;default:false" json:"worktree_clean"`
+	AlgorithmVersion       string     `gorm:"size:32;not null;default:''" json:"algorithm_version"`
+	LedgerCommittedAt      *time.Time `json:"ledger_committed_at"`
+	LedgerAlgorithmVersion string     `gorm:"size:32;not null;default:''" json:"ledger_algorithm_version"`
+
+	// ── Token 消耗统计 ──
+	Tier1Tokens int64 `gorm:"default:0" json:"tier1_tokens"`
+	Tier2Tokens int64 `gorm:"default:0" json:"tier2_tokens"`
 
 	CreatedAt time.Time `gorm:"index:idx_task_reports_type_status_created,priority:3;index" json:"created_at"`
 }
@@ -472,34 +908,215 @@ func (r *TaskReport) GetExecutionLogPath() string {
 
 // AnalysisFinding 记录 AI 分析阶段输出的结构化问题
 type AnalysisFinding struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	TaskReportID uint       `gorm:"index" json:"task_report_id"`    // 关联到 TaskReport
-	TaskTypeID   uint       `gorm:"index" json:"task_type_id"`      // 哪个任务类型触发的
-	RepoID       uint       `gorm:"index" json:"repo_id"`           // 来自哪个代码仓
-	Severity     string     `gorm:"not null;index" json:"severity"` // 严重程度（致命/严重/一般/建议）
-	Category     string     `gorm:"index" json:"category"`          // 问题分类（multithreading, memory_leak, library...）
-	FilePath     string     `json:"file_path"`                      // 问题所在文件
-	LineNumber   string     `json:"line_number"`                    // 行号（支持范围如 "100-125" 或多行 "41,42"）
-	CodeSnippet  string     `gorm:"type:text" json:"code_snippet"`  // 问题发生处的原始代码片段
-	Title        string     `gorm:"not null" json:"title"`          // 问题标题
-	Detail       string     `gorm:"type:text" json:"detail"`        // 详细描述
-	Suggestion   string     `gorm:"type:text" json:"suggestion"`    // 修复建议
-	AssigneeID   *uint      `json:"assignee_id"`                    // 处理人 ID
-	Assignee     *User      `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
-	Feedback     string     `gorm:"type:text" json:"feedback"` // 用户反馈内容
-	FeedbackAt   *time.Time `json:"feedback_at"`               // 反馈时间
-
-	// ── 智能体辩论与增量记忆扩展 (阶段二/三) ──
-	Fingerprint     string `gorm:"size:64;index" json:"fingerprint"`               // 64位缺陷指纹 SHA-256
-	DiffStatus      string `gorm:"size:32;default:'NEW';index" json:"diff_status"` // NEW / EXISTED / RESOLVED / REOPENED
-	TriggerLine     string `gorm:"type:text" json:"trigger_line"`                  // 核心触发行（抗漂移指纹计算基准）
-	ScopeSymbol     string `gorm:"size:256" json:"scope_symbol"`                   // AST 作用域符号（函数名/类名签名）
-	HunterClaim     string `gorm:"type:text" json:"hunter_claim"`                  // 猎手初筛主张
-	ChallengerArg   string `gorm:"type:text" json:"challenger_arg"`                // 辩护人抗辩意见
-	JudgeVerdict    string `gorm:"type:text" json:"judge_verdict"`                 // 终审法官裁决
-	CalibrationRule string `gorm:"size:128" json:"calibration_rule"`               // 命中的严重度校准规则
+	ID                      uint   `gorm:"primaryKey" json:"id"`
+	TaskReportID            uint   `gorm:"index" json:"task_report_id"`                                                         // 关联到 TaskReport
+	TaskTypeID              uint   `gorm:"index;index:idx_analysis_findings_type_category_code,priority:1" json:"task_type_id"` // 哪个任务类型触发的
+	RepoID                  uint   `gorm:"index" json:"repo_id"`                                                                // 来自哪个代码仓
+	PrimaryUnitID           string `gorm:"size:512;not null;default:'';index" json:"primary_unit_id,omitempty"`
+	Severity                string `gorm:"not null;index" json:"severity"` // 严重程度（致命/严重/一般/建议）
+	Category                string `gorm:"index" json:"category"`          // 问题分类（multithreading, memory_leak, library...）
+	CategoryDetail          string `gorm:"type:text" json:"category_detail,omitempty"`
+	CategoryCode            string `gorm:"size:128;not null;default:'';index:idx_analysis_findings_type_category_code,priority:2" json:"category_code"`
+	CategorySource          string `gorm:"size:32;not null;default:''" json:"category_source"`
+	CategoryStatus          string `gorm:"size:32;not null;default:''" json:"category_status"`
+	ClassificationRationale string `gorm:"type:text" json:"classification_rationale,omitempty"`
+	TaxonomyHash            string `gorm:"size:72;not null;default:''" json:"taxonomy_hash"`
+	FilePath                string `json:"file_path"`                     // 问题所在文件
+	LineNumber              string `json:"line_number"`                   // 行号（支持范围如 "100-125" 或多行 "41,42"）
+	CodeSnippet             string `gorm:"type:text" json:"code_snippet"` // 问题发生处的原始代码片段
+	Title                   string `gorm:"not null" json:"title"`         // 问题标题
+	Detail                  string `gorm:"type:text" json:"detail"`       // 详细描述
+	Suggestion              string `gorm:"type:text" json:"suggestion"`   // 修复建议
+	// ── 智能体辩论与物理定位证据 ──
+	TriggerLine           string         `gorm:"type:text" json:"trigger_line"`
+	ScopeSymbol           string         `gorm:"size:256" json:"scope_symbol"`
+	HunterClaim           string         `gorm:"type:text" json:"hunter_claim"`
+	ChallengerArg         string         `gorm:"type:text" json:"challenger_arg"`
+	JudgeVerdict          string         `gorm:"type:text" json:"judge_verdict"`
+	CalibrationRule       string         `gorm:"size:128" json:"calibration_rule"`
+	TaxonomyGoverned      bool           `gorm:"default:false" json:"taxonomy_governed"`
+	ReviewRequired        bool           `gorm:"default:false" json:"review_required"`
+	ObservationGroupUID   string         `gorm:"size:64;not null;default:'';index:idx_analysis_findings_report_group" json:"observation_group_uid"`
+	AnchorConfidence      string         `gorm:"size:16;not null;default:'LOW'" json:"anchor_confidence"`
+	AssessmentStatus      string         `gorm:"size:32;not null;default:''" json:"assessment_status,omitempty"`
+	AssessmentOutcome     string         `gorm:"size:32;not null;default:'';index" json:"assessment_outcome,omitempty"`
+	AssessmentArtifact    datatypes.JSON `json:"assessment_artifact,omitempty"`
+	ArtifactSchemaID      string         `gorm:"size:128;not null;default:''" json:"artifact_schema_id,omitempty"`
+	ArtifactSchemaHash    string         `gorm:"size:72;not null;default:''" json:"artifact_schema_hash,omitempty"`
+	ArtifactRepairMetrics datatypes.JSON `json:"artifact_repair_metrics,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type ScanScopeEntry struct {
+	ID            uint           `gorm:"primaryKey" json:"id"`
+	ReportID      uint           `gorm:"not null;uniqueIndex:uq_scan_scope_report_path" json:"report_id"`
+	RepoID        uint           `gorm:"not null;index:idx_scan_scope_repo_task_path" json:"repo_id"`
+	TaskTypeID    uint           `gorm:"not null;index:idx_scan_scope_repo_task_path" json:"task_type_id"`
+	NormPath      string         `gorm:"size:512;not null;uniqueIndex:uq_scan_scope_report_path" json:"norm_path"`
+	BlobHash      string         `gorm:"size:64;not null;default:''" json:"blob_hash"`
+	Outcome       string         `gorm:"size:32;not null;index:idx_scan_scope_report_outcome" json:"outcome"`
+	ChunkName     string         `gorm:"size:256;not null;default:''" json:"chunk_name"`
+	ChunkUID      string         `gorm:"size:64;not null;default:'';index" json:"chunk_uid"`
+	PrimaryUnitID string         `gorm:"size:512;not null;default:''" json:"primary_unit_id"`
+	Stage         string         `gorm:"size:32;not null;default:''" json:"stage"`
+	ErrorClass    string         `gorm:"size:32;not null;default:''" json:"error_class"`
+	FailReason    string         `gorm:"type:text;not null;default:''" json:"fail_reason"`
+	DiffTouched   bool           `gorm:"not null;default:false" json:"diff_touched"`
+	HunkRanges    datatypes.JSON `gorm:"not null;default:'[]'" json:"hunk_ranges"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+}
+
+type ArtifactRepairAudit struct {
+	ID                     uint           `gorm:"primaryKey" json:"id"`
+	ReportID               uint           `gorm:"not null;index:idx_artifact_repair_audits_report_bundle,priority:1" json:"report_id"`
+	RepoID                 uint           `gorm:"not null;index" json:"repo_id"`
+	TaskTypeID             uint           `gorm:"not null;index" json:"task_type_id"`
+	BundleID               string         `gorm:"size:256;not null;default:'';index:idx_artifact_repair_audits_report_bundle,priority:2" json:"bundle_id"`
+	Driver                 string         `gorm:"size:64;not null;default:''" json:"driver"`
+	ResourceID             string         `gorm:"size:128;not null;default:''" json:"resource_id"`
+	ResponseFormatMode     string         `gorm:"size:32;not null;default:''" json:"response_format_mode"`
+	SchemaID               string         `gorm:"size:128;not null;default:''" json:"schema_id"`
+	SchemaHash             string         `gorm:"size:72;not null;default:''" json:"schema_hash"`
+	OriginalArtifactHash   string         `gorm:"size:72;not null;default:''" json:"original_artifact_hash"`
+	FinalStatus            string         `gorm:"size:32;not null;default:'failed'" json:"final_status"`
+	RepairTokens           int64          `gorm:"not null;default:0" json:"repair_tokens"`
+	LocalRepairs           int            `gorm:"not null;default:0" json:"local_repairs"`
+	SyntaxRepairs          int            `gorm:"not null;default:0" json:"syntax_repairs"`
+	LLMRepairs             int            `gorm:"not null;default:0" json:"llm_repairs"`
+	LLMRepairAttempts      int            `gorm:"not null;default:0" json:"llm_repair_attempts"`
+	LLMRepairSuccesses     int            `gorm:"not null;default:0" json:"llm_repair_successes"`
+	RepairDrifted          bool           `gorm:"not null;default:false" json:"repair_drifted"`
+	RepairDriftUnchecked   bool           `gorm:"not null;default:false" json:"repair_drift_unchecked"`
+	RepairDriftUnitRef     string         `gorm:"size:128;not null;default:''" json:"repair_drift_unit_ref"`
+	BaselineSignatureKnown bool           `gorm:"not null;default:false" json:"baseline_signature_known"`
+	RepairedSignatureKnown bool           `gorm:"not null;default:false" json:"repaired_signature_known"`
+	BaselineSignatureHash  string         `gorm:"size:72;not null;default:''" json:"baseline_signature_hash"`
+	RepairedSignatureHash  string         `gorm:"size:72;not null;default:''" json:"repaired_signature_hash"`
+	UnverifiedRepair       bool           `gorm:"not null;default:false" json:"unverified_repair"`
+	RepairOutcome          string         `gorm:"size:48;not null;default:''" json:"repair_outcome"`
+	SchemaRepairIssues     datatypes.JSON `json:"schema_repair_issues,omitempty"`
+	RepairAttempts         datatypes.JSON `json:"repair_attempts,omitempty"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
+}
+
+type TaskChunkExecution struct {
+	ID            uint           `gorm:"primaryKey" json:"id"`
+	ReportID      uint           `gorm:"not null;index;uniqueIndex:uq_task_chunk_executions_attempt" json:"report_id"`
+	RepoID        uint           `gorm:"not null;index" json:"repo_id"`
+	TaskTypeID    uint           `gorm:"not null;index" json:"task_type_id"`
+	ChunkUID      string         `gorm:"size:64;not null;uniqueIndex:uq_task_chunk_executions_attempt;index" json:"chunk_uid"`
+	ChunkName     string         `gorm:"size:256;not null;default:''" json:"chunk_name"`
+	PrimaryUnitID string         `gorm:"size:512;not null;default:''" json:"primary_unit_id"`
+	FilePath      string         `gorm:"size:512;not null;default:''" json:"file_path"`
+	Stage         string         `gorm:"size:32;not null;default:'';uniqueIndex:uq_task_chunk_executions_attempt" json:"stage"`
+	Attempt       int            `gorm:"not null;default:1;uniqueIndex:uq_task_chunk_executions_attempt" json:"attempt"`
+	AttemptKind   string         `gorm:"size:32;not null;default:'invocation'" json:"attempt_kind"`
+	IsFinal       bool           `gorm:"not null;default:false;index" json:"is_final"`
+	Status        string         `gorm:"size:24;not null;default:'running'" json:"status"`
+	ErrorClass    string         `gorm:"size:32;not null;default:'none'" json:"error_class"`
+	ErrorMessage  string         `gorm:"type:text;not null;default:''" json:"error_message"`
+	Driver        string         `gorm:"size:64;not null;default:''" json:"driver"`
+	Backend       string         `gorm:"size:64;not null;default:''" json:"backend"`
+	ResourceID    string         `gorm:"size:128;not null;default:''" json:"resource_id"`
+	ModelName     string         `gorm:"size:255;not null;default:''" json:"model_name"`
+	SessionID     string         `gorm:"size:128;not null;default:''" json:"session_id"`
+	PromptHash    string         `gorm:"size:72;not null;default:''" json:"prompt_hash"`
+	ArtifactHash  string         `gorm:"size:72;not null;default:''" json:"artifact_hash"`
+	ArtifactPath  string         `gorm:"size:512;not null;default:''" json:"artifact_path"`
+	QueueWaitMs   int64          `gorm:"not null;default:0" json:"queue_wait_ms"`
+	DurationMs    int64          `gorm:"not null;default:0" json:"duration_ms"`
+	TokenUsage    datatypes.JSON `gorm:"not null;default:'{}'" json:"token_usage"`
+	StartedAt     time.Time      `json:"started_at"`
+	FinishedAt    *time.Time     `json:"finished_at"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+}
+
+type Defect struct {
+	ID                   uint           `gorm:"primaryKey" json:"id"`
+	RepoID               uint           `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"repo_id"`
+	TaskTypeID           uint           `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"task_type_id"`
+	Status               string         `gorm:"size:32;not null;default:'ACTIVE'" json:"status"`
+	StatusReason         string         `gorm:"type:text;not null;default:''" json:"status_reason"`
+	CanonicalFingerprint string         `gorm:"size:64;not null;uniqueIndex:uq_defects_current_identity" json:"canonical_fingerprint"`
+	IdentityKind         string         `gorm:"size:16;not null" json:"identity_kind"`
+	NormPath             string         `gorm:"size:512;not null" json:"norm_path"`
+	ScopeKey             string         `gorm:"size:64;not null" json:"scope_key"`
+	SymbolPath           string         `gorm:"size:512;not null;default:''" json:"symbol_path"`
+	StmtShape            string         `gorm:"size:64;not null" json:"stmt_shape"`
+	CleanToken           string         `gorm:"type:text;not null;default:''" json:"clean_token"`
+	PrevShape            string         `gorm:"size:64;not null;default:''" json:"prev_shape"`
+	NextShape            string         `gorm:"size:64;not null;default:''" json:"next_shape"`
+	OccurrenceIndex      int            `gorm:"not null;default:0" json:"occurrence_index"`
+	DefectClassMajor     string         `gorm:"size:64;not null" json:"defect_class_major"`
+	Severity             string         `gorm:"size:32;not null;default:''" json:"severity"`
+	LineStart            *int           `json:"line_start"`
+	LineEnd              *int           `json:"line_end"`
+	BlobHash             string         `gorm:"size:64;not null;default:''" json:"blob_hash"`
+	ScopeBodyHash        string         `gorm:"size:64;not null;default:''" json:"scope_body_hash"`
+	FirstReportID        uint           `gorm:"not null" json:"first_report_id"`
+	LastSeenReportID     uint           `gorm:"not null" json:"last_seen_report_id"`
+	LastMatchedReportID  uint           `gorm:"not null;default:0" json:"last_matched_report_id"`
+	MissedCount          int            `gorm:"not null;default:0" json:"missed_count"`
+	DormantRounds        int            `gorm:"not null;default:0" json:"dormant_rounds"`
+	HumanLocked          bool           `gorm:"not null;default:false" json:"human_locked"`
+	HumanDecision        string         `gorm:"size:32;not null;default:''" json:"human_decision"`
+	AssigneeID           *uint          `gorm:"index" json:"assignee_id"`
+	AssignedAt           *time.Time     `json:"assigned_at"`
+	ResolvedReportID     *uint          `json:"resolved_report_id"`
+	ResolvedCommit       string         `gorm:"size:64;not null;default:''" json:"resolved_commit"`
+	MergedIntoID         *uint          `gorm:"index" json:"merged_into_id"`
+	RowVersion           int            `gorm:"not null;default:1" json:"row_version"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
+	DeletedAt            gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+}
+
+type DefectAlias struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	DefectID      uint      `gorm:"not null;index" json:"defect_id"`
+	RepoID        uint      `gorm:"not null;index:idx_alias_lookup" json:"repo_id"`
+	TaskTypeID    uint      `gorm:"not null" json:"task_type_id"`
+	AliasType     string    `gorm:"size:16;not null;index:idx_alias_lookup" json:"alias_type"`
+	AliasValue    string    `gorm:"size:512;not null;index:idx_alias_lookup" json:"alias_value"`
+	AliasClass    string    `gorm:"size:16;not null" json:"alias_class"`
+	FirstReportID uint      `gorm:"not null" json:"first_report_id"`
+	LastReportID  uint      `gorm:"not null" json:"last_report_id"`
+	HitCount      int       `gorm:"not null;default:1" json:"hit_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type DefectObservation struct {
+	ID                  uint           `gorm:"primaryKey" json:"id"`
+	ReportID            uint           `gorm:"not null;uniqueIndex:uq_defect_observation_group" json:"report_id"`
+	RepoID              uint           `gorm:"not null" json:"repo_id"`
+	TaskTypeID          uint           `gorm:"not null" json:"task_type_id"`
+	ObservationGroupUID string         `gorm:"size:64;not null;uniqueIndex:uq_defect_observation_group" json:"observation_group_uid"`
+	DefectID            *uint          `gorm:"index" json:"defect_id"`
+	Verdict             string         `gorm:"size:32;not null" json:"verdict"`
+	MatchTier           string         `gorm:"size:24;not null" json:"match_tier"`
+	Confidence          float64        `gorm:"type:numeric(5,4);not null;default:0" json:"confidence"`
+	ScoreDetail         datatypes.JSON `gorm:"not null;default:'{}'" json:"score_detail"`
+	Reason              string         `gorm:"type:text;not null;default:''" json:"reason"`
+	CreatedAt           time.Time      `json:"created_at"`
+}
+
+type DefectEvent struct {
+	ID         uint           `gorm:"primaryKey" json:"id"`
+	DefectID   uint           `gorm:"not null;index:idx_defect_events_defect" json:"defect_id"`
+	ReportID   *uint          `gorm:"index" json:"report_id"`
+	EventType  string         `gorm:"size:32;not null" json:"event_type"`
+	FromStatus string         `gorm:"size:32;not null;default:''" json:"from_status"`
+	ToStatus   string         `gorm:"size:32;not null;default:''" json:"to_status"`
+	ActorType  string         `gorm:"size:16;not null;default:'SYSTEM'" json:"actor_type"`
+	ActorID    *uint          `json:"actor_id"`
+	Reason     string         `gorm:"type:text;not null;default:''" json:"reason"`
+	Evidence   datatypes.JSON `gorm:"not null;default:'{}'" json:"evidence"`
+	CreatedAt  time.Time      `gorm:"index:idx_defect_events_defect" json:"created_at"`
 }
 
 const (
@@ -513,9 +1130,83 @@ const (
 	StatusPostProcessing = "post_processing"
 	StatusMerging        = "merging"
 	StatusSuccess        = "success"
+	StatusDegraded       = "degraded"
 	StatusFailed         = "failed"
 	StatusSkipped        = "skipped"
 )
+
+// TerminalTaskStatuses returns task states that must not be recovered or re-run by startup cleanup.
+func TerminalTaskStatuses() []string {
+	return []string{StatusSuccess, StatusDegraded, StatusFailed, StatusSkipped}
+}
+
+// BusyTaskReportStatuses returns states that represent work already in progress.
+func BusyTaskReportStatuses() []string {
+	return []string{
+		StatusRunning,
+		StatusCloning,
+		StatusPreProcessing,
+		StatusAnalyzing,
+		StatusSynthesis,
+		StatusPostProcessing,
+		StatusMerging,
+	}
+}
+
+func IsTerminalTaskStatus(status string) bool {
+	for _, terminalStatus := range TerminalTaskStatuses() {
+		if status == terminalStatus {
+			return true
+		}
+	}
+	return false
+}
+
+func IsBusyTaskReportStatus(status string) bool {
+	for _, busyStatus := range BusyTaskReportStatuses() {
+		if status == busyStatus {
+			return true
+		}
+	}
+	return false
+}
+
+// ErrTaskReportImmutable marks an update rejected because the report has reached a terminal state.
+var ErrTaskReportImmutable = errors.New("task report is immutable after terminal state")
+
+// UpdateActiveTaskReport applies updates only while a task report still represents a scan instance.
+// Once it reaches a terminal state it becomes an immutable historical report.
+func UpdateActiveTaskReport(db *gorm.DB, reportID uint, updates map[string]interface{}) (int64, error) {
+	if db == nil {
+		return 0, ErrTaskReportImmutable
+	}
+	if reportID == 0 || len(updates) == 0 {
+		return 0, nil
+	}
+
+	var affected int64
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var current struct {
+			Status string
+		}
+		if err := tx.Model(&TaskReport{}).Select("status").
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", reportID).
+			Take(&current).Error; err != nil {
+			return err
+		}
+		if IsTerminalTaskStatus(current.Status) {
+			return ErrTaskReportImmutable
+		}
+
+		result := tx.Model(&TaskReport{}).
+			Where("id = ? AND status NOT IN ?", reportID, TerminalTaskStatuses()).
+			Updates(updates)
+		affected = result.RowsAffected
+		return result.Error
+	})
+	return affected, err
+}
 
 // KeyIssue 核心问题追踪
 type KeyIssue struct {
@@ -630,9 +1321,9 @@ func GetStatusPriority(status string) int {
 // CampaignFinding 统一专项分析缺陷与实体评估记录模型（替代原 7 张独立分表）
 type CampaignFinding struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`
-	TaskTypeID   uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index:idx_camp_finding_repo_status,priority:2;index;not null" json:"task_type_id"`
+	TaskTypeID   uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:1;index:idx_camp_finding_repo_status,priority:2;index:idx_camp_finding_task_status_repo_severity,priority:1;index;not null" json:"task_type_id"`
 	TaskType     TaskType   `gorm:"foreignKey:TaskTypeID" json:"task_type"`
-	RepoID       uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index:idx_camp_finding_repo_status,priority:1;index;not null" json:"repo_id"`
+	RepoID       uint       `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:2;index:idx_camp_finding_repo_status,priority:1;index:idx_camp_finding_task_status_repo_severity,priority:3;index;not null" json:"repo_id"`
 	Repo         Repository `gorm:"foreignKey:RepoID" json:"repo"`
 	TaskReportID uint       `gorm:"index" json:"task_report_id"`
 
@@ -641,13 +1332,13 @@ type CampaignFinding struct {
 	LineNumber  string `gorm:"size:255" json:"line_number"`
 	Title       string `gorm:"uniqueIndex:idx_camp_finding_uniq,priority:4;size:500;not null" json:"title"` // 普通专项存缺陷标题，UT存测试用例名称
 	Detail      string `gorm:"type:text" json:"detail"`
-	Severity    string `gorm:"size:100;not null;index" json:"severity"` // 致命/严重/一般/建议/合格
+	Severity    string `gorm:"size:100;not null;index:idx_camp_finding_task_status_repo_severity,priority:4" json:"severity"` // 致命/严重/一般/建议/合格
 	Category    string `gorm:"size:255;index" json:"category"`
 	CodeSnippet string `gorm:"type:text" json:"code_snippet"`
 	Suggestion  string `gorm:"type:text" json:"suggestion"`
 
 	// 治理状态与审计跟踪
-	Status     string         `gorm:"default:'open';size:50;index:idx_camp_finding_repo_status,priority:3;index" json:"status"` // open, analyzing, resolved, closed, invalid
+	Status     string         `gorm:"default:'open';size:50;index:idx_camp_finding_repo_status,priority:3;index:idx_camp_finding_task_status_repo_severity,priority:2;index" json:"status"` // open, analyzing, resolved, closed, invalid
 	AssigneeID *uint          `json:"assignee_id"`
 	Assignee   *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
 	StatusLog  datatypes.JSON `json:"status_log"` // [{"status":"open","time":"...","user":"xxx","reason":"..."}]
@@ -656,67 +1347,12 @@ type CampaignFinding struct {
 	UpdatedAt  time.Time      `json:"updated_at"`
 }
 
-// ── 增量比对状态常量 (DiffStatus) ──
-const (
-	DiffStatusNew             = "NEW"              // 本次新增
-	DiffStatusExisted         = "EXISTED"          // 历史存量
-	DiffStatusActive          = "ACTIVE"           // 存活中
-	DiffStatusResolved        = "RESOLVED"         // 本次已修复
-	DiffStatusReopened        = "REOPENED"         // 历史缺陷复发
-	DiffStatusVerifiedPending = "VERIFIED_PENDING" // 严重漏洞修复待确认 (缓冲观察期)
-)
-
 // ── 智能体辩论结论常量 (DebateVerdict) ──
 const (
 	DebateVerdictConfirmed   = "CONFIRMED"   // 确认存在
 	DebateVerdictRejected    = "REJECTED"    // 判定误报
 	DebateVerdictConditional = "CONDITIONAL" // 条件触发
 )
-
-// DefectFingerprintRecord 缺陷指纹持久化记录表 (SSOT 唯一真值中心)
-type DefectFingerprintRecord struct {
-	ID          uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	RepoID      uint   `gorm:"uniqueIndex:idx_repo_task_fp,priority:1;index;not null" json:"repo_id"`
-	TaskTypeID  uint   `gorm:"uniqueIndex:idx_repo_task_fp,priority:2;index;not null" json:"task_type_id"`
-	Fingerprint string `gorm:"uniqueIndex:idx_repo_task_fp,priority:3;size:64;not null" json:"fingerprint"` // SHA-256
-	FilePath    string `gorm:"size:512;not null" json:"file_path"`
-	ScopeSymbol string `gorm:"size:256" json:"scope_symbol"` // 函数/类/方法签名
-	Category    string `gorm:"size:255" json:"category"`
-	Severity    string `gorm:"size:64" json:"severity"`                      // 严重等级 (CRITICAL, HIGH, etc.)
-	Status      string `gorm:"size:32;default:'ACTIVE';index" json:"status"` // ACTIVE, RESOLVED, VERIFIED_PENDING
-
-	// ── 物理版本与物理锚点字段 ──
-	TriggerLine      string `gorm:"type:text" json:"trigger_line"`     // 物理单行代码 Token
-	LineStart        int    `gorm:"index" json:"line_start"`           // 物理起始行号
-	LineEnd          int    `json:"line_end"`                          // 物理结束行号
-	FileHashSnapshot string `gorm:"size:64" json:"file_hash_snapshot"` // 检出时该物理文件的 SHA-256
-	ScopeBodyHash    string `gorm:"size:64" json:"scope_body_hash"`    // 所在函数代码块 Hash (用于细粒度物理守卫)
-
-	// ── 平滑生命周期与抗抖动追踪 ──
-	MissedCount int `gorm:"default:0" json:"missed_count"` // 物理代码已修改时的连续未命中计数器
-
-	// ── 人工反馈状态
-	FeedbackStatus string     `gorm:"size:32;default:'UNREVIEWED';index" json:"feedback_status"` // UNREVIEWED, FALSE_POSITIVE, WONT_FIX, CONFIRMED
-	FeedbackReason string     `gorm:"type:text" json:"feedback_reason"`
-	FeedbackUserID *uint      `json:"feedback_user_id"`
-	FeedbackUser   *User      `gorm:"foreignKey:FeedbackUserID" json:"feedback_user,omitempty"`
-	FeedbackAt     *time.Time `json:"feedback_at"`
-
-	// ── 严肃修复审计与证据链字段 (Resolution Audit & Proof of Fix) ──
-	ResolvedCommitHash string     `gorm:"size:64;index" json:"resolved_commit_hash"` // 修复该缺陷的 Git Commit ID
-	ResolvedAuthor     string     `gorm:"size:128" json:"resolved_author"`           // 修复人提交者姓名与邮箱
-	ResolvedDiffHunk   string     `gorm:"type:text" json:"resolved_diff_hunk"`       // 修复前后的真实 Git Diff 对比块
-	FixPattern         string     `gorm:"size:64" json:"fix_pattern"`                // FIX_GUARD, FIX_DELETE, FIX_REFACTOR, FIX_SUSPICIOUS
-	ResolvedAt         *time.Time `json:"resolved_at"`                               // 确认修复时间戳
-
-	FirstTaskID uint           `json:"first_task_id"` // 引入该缺陷的任务 ID
-	LastTaskID  uint           `json:"last_task_id"`  // 最近检出该缺陷的任务 ID
-	FirstSeenAt time.Time      `json:"first_seen_at"`
-	LastSeenAt  time.Time      `json:"last_seen_at"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-}
 
 // TaskDebateLog 智能体三方对抗辩论轨迹表 (支持 TTL 自动清理与合规审计)
 type TaskDebateLog struct {
@@ -750,74 +1386,72 @@ type RepoFeedbackRule struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
-// ScanReconciliation 报告对报告对账会话记录 (R2R Reconciliation Session)
-type ScanReconciliation struct {
-	ID         uint `gorm:"primaryKey;autoIncrement" json:"id"`
-	RepoID     uint `gorm:"index;not null" json:"repo_id"`
-	TaskTypeID uint `gorm:"index;not null" json:"task_type_id"`
-
-	// 两份报告工件路径（跨磁盘可复现）
-	BaseReportID         uint   `gorm:"index" json:"base_report_id"`
-	CurrentReportID      uint   `gorm:"index" json:"current_report_id"`
-	BaseSynthesisPath    string `gorm:"size:512" json:"base_synthesis_path"`
-	CurrentSynthesisPath string `gorm:"size:512" json:"current_synthesis_path"`
-
-	// 代码变更证据（修复判定输入）
-	BaseCommit    string `gorm:"size:64" json:"base_commit"`
-	HeadCommit    string `gorm:"size:64" json:"head_commit"`
-	RepoUnchanged bool   `json:"repo_unchanged"` // true ⇒ 永不产生 RESOLVED_FROM_VANISHED
-
-	// 汇总统计
-	NewCount             int `json:"new_count"`
-	ExistedCount         int `json:"existed_count"`
-	VanishedCoverageGap  int `json:"vanished_coverage_gap"`
-	VanishedFixCandidate int `json:"vanished_fix_candidate"`
-	MultiViewMerged      int `json:"multi_view_merged"`
-	SplitCount           int `json:"split_count"`
-	TemplateFamilyCount  int `json:"template_family_count"`
-
-	// 膨胀治理与归档统计 (Phase 3.5)
-	ActiveWorkingCount   int `json:"active_working_count"`   // 当前活动工作集条目数 (items[])
-	DormantArchivedCount int `json:"dormant_archived_count"` // 连续未复现退火休眠数 (archived_items[])
-	ObsoleteDeletedCount int `json:"obsolete_deleted_count"` // 物理文件已删除清理数
-
-	// 任务模式与变更焦点 (Phase 3.7)
-	GovernanceMode        string `gorm:"size:32;default:'full_ledger';index" json:"governance_mode"` // full_ledger (全量基线台账) / change_focus (变更增量焦点)
-	ResolvedByChangeCount int    `json:"resolved_by_change_count"`                                   // 变更焦点模式下顺带核销历史缺陷数
-
-	Status    string    `gorm:"size:32;default:'pending';index" json:"status"` // pending / confirmed / archived
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+// CategoryAliasUsage records resolver alias hits. It is deliberately outside
+// CategoryTaxonomy so audit volume can never alter a frozen taxonomy hash.
+type CategoryAliasUsage struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	TaskTypeID   uint      `gorm:"index" json:"task_type_id"`
+	TaxonomyHash string    `gorm:"size:72;not null;default:'';index:idx_category_alias_usage,priority:1" json:"taxonomy_hash"`
+	AliasKind    string    `gorm:"size:16;not null;default:'';index:idx_category_alias_usage,priority:2" json:"alias_kind"`
+	AliasLabel   string    `gorm:"size:256;not null;default:'';index:idx_category_alias_usage,priority:3" json:"alias_label"`
+	TargetCode   string    `gorm:"size:128;not null;default:''" json:"target_code"`
+	HitCount     int64     `gorm:"not null;default:0" json:"hit_count"`
+	LastReportID uint      `json:"last_report_id"`
+	FirstSeenAt  time.Time `json:"first_seen_at"`
+	LastSeenAt   time.Time `gorm:"index" json:"last_seen_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// ReconciliationLink 报告间对账链接（B↔A 或 A 侧 VANISHED，含置信与拓扑关系）
-type ReconciliationLink struct {
-	ID      uint `gorm:"primaryKey;autoIncrement" json:"id"`
-	ReconID uint `gorm:"index;not null" json:"recon_id"`
+// CategoryRegressionSample stores the persisted trend view of semantic
+// regression samples. The JSONL corpus remains the source-controlled seed.
+type CategoryRegressionSample struct {
+	ID                uint           `gorm:"primaryKey" json:"id"`
+	SampleKey         string         `gorm:"size:128;not null;uniqueIndex" json:"sample_key"`
+	TaskType          string         `gorm:"size:128;not null;default:'';index" json:"task_type"`
+	PairKey           string         `gorm:"size:128;not null;default:'';index" json:"pair_key"`
+	CandidateFacts    datatypes.JSON `gorm:"type:jsonb" json:"candidate_facts"`
+	ExpectedCode      string         `gorm:"size:128;not null;default:''" json:"expected_code"`
+	ActualCode        string         `gorm:"size:128;not null;default:''" json:"actual_code"`
+	Outcome           string         `gorm:"size:32;not null;default:'';index" json:"outcome"`
+	Status            string         `gorm:"size:32;not null;default:'ACTIVE';index" json:"status"`
+	TaxonomyHash      string         `gorm:"size:72;not null;default:'';index" json:"taxonomy_hash"`
+	PromptHash        string         `gorm:"size:72;not null;default:'';index" json:"prompt_hash"`
+	ModelBackend      string         `gorm:"size:128;not null;default:''" json:"model_backend"`
+	FailureCount      int            `gorm:"not null;default:0" json:"failure_count"`
+	LastFailureReason string         `gorm:"type:text" json:"last_failure_reason"`
+	LastRunAt         *time.Time     `gorm:"index" json:"last_run_at"`
+	SupersededBy      string         `gorm:"size:128;not null;default:''" json:"superseded_by"`
+	SupersededReason  string         `gorm:"type:text" json:"superseded_reason"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
 
-	// 稳定物理身份绑定（长哈希用于机器索引，item_uid 用于人类可读引用）
-	BaseFP         string `gorm:"size:64;index" json:"base_fp"`          // A 侧 L1 强指纹
-	CurrentFP      string `gorm:"size:64;index" json:"current_fp"`       // B 侧 L1 强指纹
-	BaseItemUID    string `gorm:"size:64;index" json:"base_item_uid"`    // A 条目稳定业务编号（如 F19371-12f5a8b9）
-	CurrentItemUID string `gorm:"size:64;index" json:"current_item_uid"` // B 条目稳定业务编号（如 F19375-bcf6103a）
-	BaseScope      string `gorm:"size:256" json:"base_scope"`
-	CurrScope      string `gorm:"size:256" json:"curr_scope"`
+// CategoryRegressionReview supports one initial reviewer and second review for
+// high-conflict or Judge override cases. DISPUTED records enter taxonomy review.
+type CategoryRegressionReview struct {
+	ID            uint                     `gorm:"primaryKey" json:"id"`
+	SampleID      uint                     `gorm:"index:idx_category_regression_review_sample_stage,priority:1" json:"sample_id"`
+	Sample        CategoryRegressionSample `gorm:"foreignKey:SampleID" json:"sample"`
+	Stage         string                   `gorm:"size:16;not null;default:'';index:idx_category_regression_review_sample_stage,priority:2" json:"stage"`
+	Reviewer      string                   `gorm:"size:128;not null;default:'';index" json:"reviewer"`
+	Outcome       string                   `gorm:"size:32;not null;default:''" json:"outcome"`
+	JudgeOverride bool                     `gorm:"not null;default:false" json:"judge_override"`
+	DisputeReason string                   `gorm:"type:text" json:"dispute_reason"`
+	CreatedAt     time.Time                `json:"created_at"`
+	UpdatedAt     time.Time                `json:"updated_at"`
+}
 
-	MatchedTier int     `gorm:"default:0" json:"matched_tier"` // R1..R6 = 1..6; 0 = 无匹配
-	Confidence  float64 `gorm:"default:0" json:"confidence"`   // 0~1
-	// Relation 严格收敛为纯粹的两端拓扑对账关系，条目自身生命周期由 lifecycle_status 承载
-	Relation string `gorm:"size:32;index" json:"relation"` // SAME / SAME_MULTI_VIEW / PROBABLE / SPLIT_FROM / MERGED_INTO / TEMPLATE / VANISHED / NEW
-
-	// 模板族 (TEMPLATE 关系时)
-	TemplateFamilyID string `gorm:"size:40;index" json:"template_family_id"`
-
-	// 严重度跨轮跟踪与冲突仲裁
-	SeverityRange  string `gorm:"size:64" json:"severity_range"`        // 跨轮严重度极值区间 JSON，如 "[\"建议\",\"致命\"]"
-	SeverityTriage bool   `gorm:"default:false" json:"severity_triage"` // true 表示跨轮严重度冲突需人工介入仲裁
-
-	Reason      string     `gorm:"type:text" json:"reason"` // 匹配依据或 LLM 仲裁摘要
-	Confirmed   bool       `gorm:"default:false" json:"confirmed"`
-	ConfirmedBy *uint      `json:"confirmed_by"`
-	ConfirmedAt *time.Time `json:"confirmed_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+// CategoryConfusionMatrix is a monthly (or arbitrary period) trend snapshot.
+type CategoryConfusionMatrix struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	TaxonomyHash string         `gorm:"size:72;not null;default:'';index" json:"taxonomy_hash"`
+	PromptHash   string         `gorm:"size:72;not null;default:'';index" json:"prompt_hash"`
+	ModelBackend string         `gorm:"size:128;not null;default:'';index" json:"model_backend"`
+	PeriodStart  time.Time      `gorm:"not null;index" json:"period_start"`
+	PeriodEnd    time.Time      `gorm:"not null;index" json:"period_end"`
+	Matrix       datatypes.JSON `gorm:"type:jsonb" json:"matrix"`
+	SampleCount  int            `gorm:"not null;default:0" json:"sample_count"`
+	ErrorCount   int            `gorm:"not null;default:0" json:"error_count"`
+	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 }

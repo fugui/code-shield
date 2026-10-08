@@ -5,16 +5,37 @@ import (
 	"strings"
 
 	"code-shield/models"
+	"code-shield/services/engines/assessment"
+	assessmentprofiles "code-shield/services/engines/assessment/profiles"
 )
 
 // CalibrateSeverityDeterministically 依据确定性规则决策树计算严重级别，剥夺大模型自由裁量权
 func CalibrateSeverityDeterministically(category string, verdict string, codeSnippet string) (string, string) {
+	return CalibrateSeverityWithTaxonomy(models.CategoryTaxonomy{}, "", category, verdict, codeSnippet)
+}
+
+// CalibrateSeverityWithTaxonomy prioritizes a governed category's business severity policy.
+func CalibrateSeverityWithTaxonomy(
+	taxonomy models.CategoryTaxonomy,
+	categoryCode string,
+	category string,
+	verdict string,
+	codeSnippet string,
+) (string, string) {
 	// 1. 条件性缺陷（如必须开启非默认宏方可触发）一律降级为 "一般"
 	if verdict == models.DebateVerdictConditional || strings.EqualFold(verdict, "CONDITIONAL") {
 		return "一般", "RULE_CONDITIONAL_MACRO_DOWNGRADE"
 	}
 
 	catLower := strings.ToLower(category)
+
+	if severity, rule, ok := taxonomySeverity(taxonomy, categoryCode, category); ok {
+		return severity, rule
+	}
+
+	if strings.Contains(catLower, "预期结果不完整") {
+		return "一般", "RULE_INCOMPLETE_EXPECTED_RESULTS"
+	}
 
 	// 2. 判断是否受非默认宏隔离保护
 	hasMacroGuard := checkMacroIsolationGuard(codeSnippet)
@@ -44,14 +65,54 @@ func CalibrateSeverityDeterministically(category string, verdict string, codeSni
 	return "建议", "RULE_ARCH_STYLE_SUGGESTION"
 }
 
+func taxonomySeverity(taxonomy models.CategoryTaxonomy, categoryCode string, category string) (string, string, bool) {
+	if len(taxonomy.Categories) == 0 {
+		return "", "", false
+	}
+	codeKey := strings.ToLower(strings.TrimSpace(categoryCode))
+	labelKey := strings.ToLower(strings.TrimSpace(category))
+	for _, definition := range taxonomy.Categories {
+		if definition.DefaultSeverity == "" {
+			continue
+		}
+		if (codeKey != "" && strings.EqualFold(definition.Code, codeKey)) ||
+			(labelKey != "" && strings.EqualFold(definition.Label, labelKey)) {
+			return definition.DefaultSeverity, "RULE_TAXONOMY_" + definition.Code, true
+		}
+	}
+	return "", "", false
+}
+
 // CalibrateFindings 批量校准 findings 列表的严重程度
 func CalibrateFindings(findings []models.AnalysisFinding) []models.AnalysisFinding {
+	return CalibrateFindingsWithTaxonomy(models.CategoryTaxonomy{}, findings)
+}
+
+// CalibrateFindingsWithTaxonomy 批量按受控分类业务级别校准 findings
+func CalibrateFindingsWithTaxonomy(taxonomy models.CategoryTaxonomy, findings []models.AnalysisFinding) []models.AnalysisFinding {
 	for i := range findings {
+		outcome := assessment.AssessmentOutcome(findings[i].AssessmentOutcome)
+		if outcome == "" {
+			mappedOutcome, ok := assessmentprofiles.OutcomeForStatus(findings[i].AssessmentStatus)
+			if ok {
+				outcome = mappedOutcome
+			}
+		}
+		if outcome != "" &&
+			(outcome == assessment.OutcomePass || outcome == assessment.OutcomeNotTarget) {
+			continue
+		}
 		verdict := findings[i].JudgeVerdict
 		if verdict == "" {
 			verdict = models.DebateVerdictConfirmed
 		}
-		sev, rule := CalibrateSeverityDeterministically(findings[i].Category, verdict, findings[i].CodeSnippet)
+		sev, rule := CalibrateSeverityWithTaxonomy(
+			taxonomy,
+			findings[i].CategoryCode,
+			findings[i].Category,
+			verdict,
+			findings[i].CodeSnippet,
+		)
 		findings[i].Severity = sev
 		findings[i].CalibrationRule = rule
 	}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -36,7 +37,7 @@ func TestRepairJSON_WithNative(t *testing.T) {
 
 	models.AppConfig.AI.ToolBackends.RepairJSON = "native"
 	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		BaseURL:        server.URL,
+		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 10,
 	}
@@ -101,7 +102,7 @@ func TestExtractFeedbackRuleViaNative(t *testing.T) {
 
 	models.AppConfig.AI.ToolBackends.FeedbackExtraction = "native"
 	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		BaseURL:        server.URL,
+		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 10,
 	}
@@ -120,29 +121,18 @@ func TestExtractFeedbackRuleViaNative(t *testing.T) {
 
 func TestExecuteSynthesisOnce_Tier3Native(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"choices": []map[string]interface{}{
-				{
-					"message": map[string]string{
-						"role":    "assistant",
-						"content": "# Code-Shield 安全扫描报告\n\n## 综述\n本次分析未发现阻断性高危漏洞。",
-					},
-				},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"# Code-Shield 安全扫描报告\n\n## 综述\n本次分析未发现阻断性高危漏洞。"}}],"usage":{"total_tokens":32}}`)
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Tiers.Tier3Synthesis.Backend = "native"
+	models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis.Resource = "native"
 	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		BaseURL:        server.URL,
+		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 10,
 	}

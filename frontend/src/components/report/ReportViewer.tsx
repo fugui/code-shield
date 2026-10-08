@@ -21,7 +21,7 @@ export interface ReportViewerProps {
   onResume?: (taskId: number) => void;
 }
 
-export type ReportTab = 'summary' | 'findings' | 'diagnostics' | 'debate' | 'reconciliation';
+export type ReportTab = 'summary' | 'findings' | 'reconciliation' | 'diagnostics' | 'debate';
 
 export default function ReportViewer({
   taskId,
@@ -33,8 +33,10 @@ export default function ReportViewer({
 }: ReportViewerProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab');
-  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate' || rawTab === 'reconciliation')
+  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate')
     ? (rawTab as ReportTab)
+    : rawTab === 'reconciliation'
+      ? rawTab as ReportTab
     : undefined;
 
   const [activeTab, setActiveTab] = useState<ReportTab>(urlTab || 'summary');
@@ -55,6 +57,7 @@ export default function ReportViewer({
     loadDebateLogs,
     reconciliation,
     loadingReconciliation,
+    reconciliationError,
     loadReconciliation,
     resetState,
   } = useTaskReport();
@@ -68,20 +71,20 @@ export default function ReportViewer({
       const currentTab = urlTab || 'summary';
       setActiveTab(currentTab);
       loadSummary(taskId);
-      if (currentTab === 'findings') {
+      if (currentTab === 'findings' || currentTab === 'reconciliation') {
         loadFindings(taskId);
+        loadReconciliation(taskId);
       } else if (currentTab === 'diagnostics') {
         loadDiagnostics(taskId);
       } else if (currentTab === 'debate') {
         loadDebateLogs(taskId);
-      } else if (currentTab === 'reconciliation') {
-        loadReconciliation(taskId);
       }
     }
-  }, [taskId, open, resetState, loadSummary, loadFindings, loadDiagnostics, loadDebateLogs, loadReconciliation, urlTab]);
+  }, [taskId, open, resetState, loadSummary, loadFindings, loadReconciliation, loadDiagnostics, loadDebateLogs, urlTab]);
 
   // 当 summary 加载完成后，如果是辩论引擎且未加载辩论日志，预先检测/加载辩论日志数量
   const isDebateEngine = summary?.meta?.engine_mode === 'debate_full' || summary?.meta?.engine_mode === 'debate_selective';
+  const isLedgerMode = Boolean(summary?.meta?.governance_mode && summary.meta.governance_mode !== 'entity_assessment');
   useEffect(() => {
     if (open && taskId && isDebateEngine && !debateLogs && !loadingDebateLogs) {
       loadDebateLogs(taskId);
@@ -113,12 +116,14 @@ export default function ReportViewer({
 
     if (tab === 'findings' && !findingsPage) {
       loadFindings(taskId);
+      loadReconciliation(taskId);
+    } else if (tab === 'reconciliation') {
+      if (!findingsPage) loadFindings(taskId);
+      loadReconciliation(taskId);
     } else if (tab === 'diagnostics' && !diagnostics) {
       loadDiagnostics(taskId);
     } else if (tab === 'debate' && !debateLogs) {
       loadDebateLogs(taskId);
-    } else if (tab === 'reconciliation' && !reconciliation) {
-      loadReconciliation(taskId);
     }
   };
 
@@ -126,6 +131,12 @@ export default function ReportViewer({
     if (taskId) {
       loadFindings(taskId, filters.page || 1, filters);
     }
+  };
+
+  const refreshGovernance = () => {
+    if (!taskId) return;
+    loadReconciliation(taskId);
+    loadFindings(taskId, findingsPage?.page || 1);
   };
 
   const handleExport = (format: string, scope?: string) => {
@@ -141,12 +152,7 @@ export default function ReportViewer({
   };
 
   const meta = summary?.meta;
-  const totalFindingsCount = summary?.metrics?.total_findings ?? findingsPage?.total ?? 0;
   const showDebateTab = isDebateEngine || (debateLogs && debateLogs.length > 0);
-  const showReconTab = Boolean(
-    reconciliation ||
-    (meta && (meta.new_defects_count !== undefined || meta.existed_defects_count !== undefined || meta.baseline_report_id || meta.governance_mode === 'full_ledger' || meta.governance_mode === 'change_focus'))
-  );
 
   const content = (
     <div className="report-viewer-container">
@@ -177,27 +183,7 @@ export default function ReportViewer({
           onClick={() => handleTabClick('findings')}
         >
           <span>📋 详细问题清单</span>
-          {totalFindingsCount > 0 && (
-            <span className="tab-badge cs-tab-badge">
-              {totalFindingsCount}
-            </span>
-          )}
         </div>
-
-        {/* 跨轮对账与增量治理 TAB */}
-        {showReconTab && (
-          <div
-            className={`report-tab-item cs-report-tab-item ${activeTab === 'reconciliation' ? 'active' : ''}`}
-            onClick={() => handleTabClick('reconciliation')}
-          >
-            <span>🔄 跨轮对账与治理</span>
-            {reconciliation?.matched_count ? (
-              <span className="tab-badge cs-tab-badge">
-                {reconciliation.matched_count}
-              </span>
-            ) : null}
-          </div>
-        )}
 
         <div
           className={`report-tab-item cs-report-tab-item ${activeTab === 'diagnostics' ? 'active' : ''}`}
@@ -225,6 +211,18 @@ export default function ReportViewer({
             )}
           </div>
         )}
+
+        {isLedgerMode && (
+          <div
+            className={`report-tab-item cs-report-tab-item ${activeTab === 'reconciliation' ? 'active' : ''}`}
+            onClick={() => handleTabClick('reconciliation')}
+          >
+            <span>🔄 跨轮对账</span>
+            {(reconciliation?.stats?.PROBABLE || 0) > 0 && (
+              <span className="tab-badge cs-tab-badge danger">{reconciliation?.stats?.PROBABLE}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 内容主体 (充沛页边距 + 浅灰底色衬托) */}
@@ -237,6 +235,7 @@ export default function ReportViewer({
             <ReportFindingsTab
               meta={meta}
               findingsPage={findingsPage}
+              reconciliation={reconciliation}
               loading={loadingFindings}
               onFilterChange={handleFindingsFilter}
             />
@@ -245,7 +244,11 @@ export default function ReportViewer({
             <ReportReconciliationTab
               meta={meta}
               reconciliation={reconciliation}
+              findingsPage={findingsPage}
               loading={loadingReconciliation}
+              error={reconciliationError}
+              onRefresh={refreshGovernance}
+              readonly={mode === 'readonly'}
             />
           )}
           {activeTab === 'diagnostics' && (
@@ -258,7 +261,6 @@ export default function ReportViewer({
           )}
           {activeTab === 'debate' && (
             <ReportDebateTab
-              meta={meta}
               debateLogs={debateLogs}
               loading={loadingDebateLogs}
             />

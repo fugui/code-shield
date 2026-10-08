@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../components/Toast';
-import { EmptyState } from '@code/common';
+import { Drawer, EmptyState } from '@code/common';
 import './SystemDebug.css';
 
 interface SystemInfo {
@@ -102,8 +102,125 @@ interface LLMSlotLease {
   stage: string;
   sub_task: string;
   detail?: string;
+  tier_name?: string;
+  queue_started_at?: string;
+  queue_wait_seconds?: number;
   start_time: string;
   duration_seconds: number;
+  status?: string;
+  error_class?: string;
+  end_time?: string;
+  error_message?: string;
+  diagnostics?: CLIDiagnostics;
+}
+
+interface InputFileRef {
+  path: string;
+  declared_by?: string;
+}
+
+interface PromptDetail {
+  system_prompt?: string;
+  user_prompt?: string;
+  rendered_prompt?: string;
+  input_files?: InputFileRef[];
+  truncations?: string[];
+}
+
+interface ConsoleEvent {
+  seq: number;
+  time: string;
+  level: string;
+  stream: string;
+  message: string;
+  truncated: boolean;
+}
+
+interface ConsoleStatus {
+  available?: boolean;
+  closed?: boolean;
+  total_events?: number;
+  oldest_seq?: number;
+  last_seq?: number;
+  dropped_events?: number;
+  has_more?: boolean;
+}
+
+interface OutputDetail {
+  output_path?: string;
+  stdout_path?: string;
+  debug_log_path?: string;
+  status?: string;
+  exists?: boolean;
+  size_bytes?: number;
+  modified_at?: string;
+  stale?: boolean;
+  preview?: string;
+  truncated?: boolean;
+  path_read?: string;
+  error?: string;
+}
+
+interface TokenUsage {
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  output_tokens?: number;
+  reasoning_output_tokens?: number;
+  total_tokens?: number;
+  source?: string;
+}
+
+interface CLIDiagnostics {
+  lease_id?: string;
+  driver?: string;
+  cli?: string;
+  session_id?: string;
+  exit_code?: number | null;
+  termination_reason?: string;
+  error_class?: string;
+  stderr_tail?: string;
+  stderr_tail_truncated?: boolean;
+  stderr_tail_bytes?: number;
+  token_usage?: TokenUsage;
+}
+
+interface LeaseDetail {
+  lease_id: string;
+  server_id?: string;
+  driver?: string;
+  model?: string;
+  report_id?: number;
+  repo_name?: string;
+  task_type?: string;
+  stage?: string;
+  sub_task?: string;
+  start_time?: string;
+  end_time?: string;
+  duration_seconds?: number;
+  status?: string;
+  error_class?: string;
+  error_message?: string;
+  diagnostics?: CLIDiagnostics;
+  prompt_available?: boolean;
+  output?: OutputDetail;
+  console?: ConsoleStatus;
+  observability?: {
+    degraded?: boolean;
+    degraded_reason?: string;
+  };
+}
+
+interface ConsoleResponse {
+  status?: string;
+  console: {
+    next_seq: number;
+    last_seq: number;
+    has_more: boolean;
+    oldest_seq: number;
+    dropped_events: number;
+    closed: boolean;
+    events: ConsoleEvent[];
+  };
 }
 
 interface DailyStatsInfo {
@@ -115,6 +232,63 @@ interface DailyStatsInfo {
   today_new_defects: number;
 }
 
+interface MetricSnapshot {
+  assigned: number;
+  completed: number;
+  succeeded: number;
+  failed: number;
+  canceled: number;
+  timeout: number;
+  avg_execution_seconds: number;
+  avg_success_execution_seconds: number;
+  p95_execution_seconds: number;
+  last_completed_at?: string;
+  last_error?: string;
+  last_error_at?: string;
+}
+
+interface PoolMetricsSnapshot {
+  pool_key: string;
+  display_name: string;
+  resource_id?: string;
+  driver?: string;
+  model?: string;
+  running: number;
+  limit: number;
+  raw_concurrent: number;
+  metrics: MetricSnapshot;
+}
+
+interface TierPoolMetricsSnapshot {
+  pool_key: string;
+  metrics: MetricSnapshot;
+}
+
+interface TierMetricsSnapshot {
+  tier_name: string;
+  level: number;
+  role: string;
+  running: number;
+  dispatched: number;
+  slot_assigned: number;
+  passthrough: number;
+  acquire_failed: number;
+  acquire_canceled: number;
+  acquire_timeout: number;
+  avg_queue_seconds: number;
+  p95_queue_seconds: number;
+  metrics: MetricSnapshot;
+  by_pool?: TierPoolMetricsSnapshot[];
+}
+
+interface DispatcherMetricsSnapshot {
+  scope: string;
+  since: string;
+  generated_at: string;
+  pools: PoolMetricsSnapshot[];
+  tiers: TierMetricsSnapshot[];
+}
+
 interface DebugOverviewData {
   system: SystemInfo;
   memory: MemoryInfo;
@@ -124,7 +298,10 @@ interface DebugOverviewData {
     total_active_slots: number;
     total_limit_slots: number;
     total_raw_slots: number;
+    metrics?: DispatcherMetricsSnapshot;
     active_leases?: LLMSlotLease[];
+    recent_leases?: LLMSlotLease[];
+    record_successful_leases?: boolean;
   };
   active_leases?: LLMSlotLease[];
   workers: WorkerPoolInfo;
@@ -141,6 +318,20 @@ export default function SystemDebug() {
   const [gcTriggering, setGcTriggering] = useState(false);
   const [resettingSlots, setResettingSlots] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [selectedLease, setSelectedLease] = useState<LLMSlotLease | null>(null);
+  const [leaseTab, setLeaseTab] = useState<'active' | 'recent'>('active');
+  const [recordSuccessfulLeases, setRecordSuccessfulLeases] = useState(false);
+  const [savingLeaseHistoryOption, setSavingLeaseHistoryOption] = useState(false);
+  const [leaseDetail, setLeaseDetail] = useState<LeaseDetail | null>(null);
+  const [promptDetail, setPromptDetail] = useState<PromptDetail | null>(null);
+  const [consoleEvents, setConsoleEvents] = useState<ConsoleEvent[]>([]);
+  const [consoleStatus, setConsoleStatus] = useState<ConsoleStatus | null>(null);
+  const [leaseLoading, setLeaseLoading] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const consoleAfterSeqRef = useRef(0);
+  const consoleContainerRef = useRef<HTMLDivElement | null>(null);
+  const copyFeedbackTimerRef = useRef<number | null>(null);
 
   const fetchOverview = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -149,6 +340,9 @@ export default function SystemDebug() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (typeof json?.dispatcher?.record_successful_leases === 'boolean') {
+          setRecordSuccessfulLeases(json.dispatcher.record_successful_leases);
+        }
         setLastUpdated(new Date());
       } else {
         if (!isSilent) showToast('获取系统诊断数据失败: ' + res.statusText, 'error');
@@ -160,9 +354,40 @@ export default function SystemDebug() {
     }
   }, [showToast]);
 
+  const updateRecordSuccessfulLeases = useCallback(async (enabled: boolean) => {
+    const previous = recordSuccessfulLeases;
+    setRecordSuccessfulLeases(enabled);
+    setSavingLeaseHistoryOption(true);
+    try {
+      const res = await fetch('/api/admin/debug/leases/recent-options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_successful_leases: enabled }),
+      });
+      if (!res.ok) {
+        throw new Error(res.statusText || '更新完成历史记录策略失败');
+      }
+      showToast(enabled ? '已开启成功任务记录，仅影响之后完成的任务' : '已关闭成功任务记录，当前清单保持不变', 'success');
+    } catch (err: any) {
+      setRecordSuccessfulLeases(previous);
+      showToast(err?.message || '更新完成历史记录策略失败', 'error');
+    } finally {
+      setSavingLeaseHistoryOption(false);
+    }
+  }, [recordSuccessfulLeases, showToast]);
+
   useEffect(() => {
     fetchOverview();
   }, [fetchOverview]);
+
+  useEffect(() => {
+    fetch('/api/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((user) => {
+        setIsSuperAdmin(Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+      })
+      .catch(() => setIsSuperAdmin(false));
+  }, []);
 
   // 自动刷新定时器
   useEffect(() => {
@@ -237,6 +462,150 @@ export default function SystemDebug() {
     return `${mins} 分 ${remSecs} 秒`;
   };
 
+  const formatMetricSeconds = (seconds?: number) => {
+    if (!seconds || seconds <= 0) return '-';
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    return formatDuration(Math.round(seconds));
+  };
+
+  const successRate = (metrics?: MetricSnapshot) => {
+    if (!metrics) return null;
+    const denominator = metrics.succeeded + metrics.failed;
+    if (denominator <= 0) return null;
+    return metrics.succeeded / denominator;
+  };
+
+  const rateColor = (rate: number | null) => {
+    if (rate === null) return 'var(--color-text-secondary, #64748b)';
+    if (rate < 0.9) return 'var(--color-danger, #ef4444)';
+    if (rate < 0.98) return 'var(--color-warning, #f59e0b)';
+    return 'var(--color-success, #10b981)';
+  };
+
+  const primaryPool = (tier: TierMetricsSnapshot) => {
+    const top = [...(tier.by_pool || [])].sort((a, b) => b.metrics.assigned - a.metrics.assigned)[0];
+    return top?.pool_key || '-';
+  };
+
+  const fetchConsoleIncrement = useCallback(async (leaseId: string) => {
+    try {
+      const res = await fetch(`/api/admin/debug/leases/${encodeURIComponent(leaseId)}/console?after_seq=${consoleAfterSeqRef.current}&limit=200`);
+      if (!res.ok) return;
+      const json: ConsoleResponse = await res.json();
+      setConsoleStatus(json.console);
+      if (json.console.events?.length) {
+        consoleAfterSeqRef.current = json.console.next_seq;
+        setConsoleEvents((old) => [...old, ...json.console.events].slice(-2000));
+      }
+    } catch {
+      // Console polling is diagnostic-only; do not disturb the overview page.
+    }
+  }, []);
+
+  const openLeaseDetails = useCallback(async (lease: LLMSlotLease) => {
+    setSelectedLease(lease);
+    setCopiedField(null);
+    setLeaseDetail(null);
+    setPromptDetail(null);
+    setConsoleEvents([]);
+    setConsoleStatus(null);
+    consoleAfterSeqRef.current = 0;
+    setLeaseLoading(true);
+    try {
+      const encodedId = encodeURIComponent(lease.lease_id);
+      const [detailRes, promptRes] = await Promise.all([
+        fetch(`/api/admin/debug/leases/${encodedId}`),
+        fetch(`/api/admin/debug/leases/${encodedId}/prompt`),
+      ]);
+      if (detailRes.ok) {
+        const detail: LeaseDetail = await detailRes.json();
+        setLeaseDetail(detail);
+      }
+      if (promptRes.ok) {
+        setPromptDetail(await promptRes.json());
+      }
+      await fetchConsoleIncrement(lease.lease_id);
+    } catch (err: any) {
+      showToast('读取算力槽位诊断信息失败: ' + err.message, 'error');
+    } finally {
+      setLeaseLoading(false);
+    }
+  }, [fetchConsoleIncrement, showToast]);
+
+  useEffect(() => {
+    if (!selectedLease || selectedLease.status !== 'running') return;
+    const timer = setInterval(() => {
+      fetchConsoleIncrement(selectedLease.lease_id);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [selectedLease, fetchConsoleIncrement]);
+
+  // Completed leases are fetched once, but a ConsoleRing can contain up to 500
+  // events while the API returns 200 per page. Drain any remaining pages even
+  // after the lease has finished.
+  useEffect(() => {
+    if (!selectedLease || !consoleStatus?.has_more) return;
+    const timer = window.setTimeout(() => {
+      fetchConsoleIncrement(selectedLease.lease_id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedLease, consoleStatus, fetchConsoleIncrement]);
+
+  useEffect(() => {
+    if (consoleContainerRef.current && consoleEvents.length > 0) {
+      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
+    }
+  }, [consoleEvents]);
+
+  useEffect(() => () => {
+    if (copyFeedbackTimerRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimerRef.current);
+    }
+  }, []);
+
+  const copyLargeText = async (text: string, field: string) => {
+    if (!text) return;
+
+    const markCopied = () => {
+      setCopiedField(field);
+      if (copyFeedbackTimerRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+      copyFeedbackTimerRef.current = window.setTimeout(() => setCopiedField(null), 2000);
+      showToast('已复制到剪贴板', 'success');
+    };
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API is unavailable');
+      }
+      await navigator.clipboard.writeText(text);
+      markCopied();
+    } catch {
+      // Non-secure origins may not expose the async clipboard API, so keep a
+      // read-only fallback for selecting and copying diagnostic text.
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        try {
+          document.body.appendChild(textarea);
+          textarea.select();
+          if (!document.execCommand('copy')) {
+            throw new Error('Clipboard fallback failed');
+          }
+          markCopied();
+        } finally {
+          document.body.removeChild(textarea);
+        }
+      } catch {
+        showToast('复制失败，请手动选择内容复制', 'error');
+      }
+    }
+  };
+
   // 计算 Worker 占用比例
   const workerActive = data?.workers?.active_workers || 0;
   const workerTotal = data?.workers?.worker_count || 5;
@@ -249,7 +618,8 @@ export default function SystemDebug() {
 
   // 获取当前正在运行的 LLM 算力槽位租约列表
   const activeLeases: LLMSlotLease[] = data?.dispatcher?.active_leases || data?.active_leases || [];
-
+  // 获取最近完成的 LLM 算力槽位历史（进程内存环形快照，重启后清空）
+  const recentLeases: LLMSlotLease[] = data?.dispatcher?.recent_leases || [];
   return (
     <div className="code-debug-container">
       {/* 顶部状态与工具栏 */}
@@ -387,7 +757,7 @@ export default function SystemDebug() {
           <div className="code-debug-card__top">
             <span className="code-debug-card__title">今日扫描任务吞吐</span>
             <span className="code-debug-card__badge code-debug-card__badge--success">
-              共 {data?.daily_stats?.today_total || 0} 批次
+              共 {data?.daily_stats?.today_total || 0} 任务记录
             </span>
           </div>
           <div className="code-debug-card__value">
@@ -399,7 +769,10 @@ export default function SystemDebug() {
             )}
           </div>
           <div className="code-debug-card__subtext">
-            <span>检出缺陷: <strong>{data?.daily_stats?.today_new_defects || 0}</strong> 个 · 今日 Token: {((data?.daily_stats?.today_tier1_tokens || 0) + (data?.daily_stats?.today_tier2_tokens || 0)).toLocaleString()}</span>
+            <span>
+              新增缺陷: <strong>{data?.daily_stats?.today_new_defects || 0}</strong> 个
+              · 今日 Token: {((data?.daily_stats?.today_tier1_tokens || 0) + (data?.daily_stats?.today_tier2_tokens || 0)).toLocaleString()}
+            </span>
           </div>
         </div>
 
@@ -552,8 +925,202 @@ export default function SystemDebug() {
         )}
       </div>
 
+      {/* 版块 2: 算力池与 Tier 调用质量统计 */}
+      {data?.dispatcher?.metrics && (
+        <div className="code-debug-section">
+          <div className="code-debug-section__header">
+            <div className="code-debug-section__title-group">
+              <h3 className="code-debug-section__title">
+                算力池与 Tier 调用质量统计
+              </h3>
+              <span style={{
+                fontSize: '0.75rem',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: '#059669',
+                fontWeight: 600
+              }}>
+                进程生命周期
+              </span>
+            </div>
+            <span className="code-debug-section__desc">
+              统计口径为单次模型调用 / 槽位租约；服务重启后清零，取消不计入成功率
+            </span>
+          </div>
+
+          <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.95rem' }}>算力池调用质量</h4>
+          {data.dispatcher.metrics.pools.length === 0 ? (
+            <EmptyState
+              title="暂无算力池统计"
+              description="当前没有已纳管算力池或调用尚未产生统计。"
+            />
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="code-debug-table">
+                <thead>
+                  <tr>
+                    <th>算力池</th>
+                    <th>驱动 / 模型</th>
+                    <th>运行 / 上限</th>
+                    <th>已分配</th>
+                    <th>已完成</th>
+                    <th>成功 / 失败</th>
+                    <th>取消 / 超时</th>
+                    <th>成功率</th>
+                    <th>成功平均</th>
+                    <th>P95</th>
+                    <th>最近错误</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.dispatcher.metrics.pools.map((pool) => {
+                    const rate = successRate(pool.metrics);
+                    return (
+                      <tr key={pool.pool_key}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{pool.display_name || pool.pool_key}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary, #64748b)', fontFamily: 'monospace' }}>
+                            {pool.pool_key}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{pool.driver || '-'}</div>
+                          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--color-text-secondary, #64748b)' }}>
+                            {pool.model || '-'}
+                          </div>
+                        </td>
+                        <td>{pool.running} / {pool.limit || '-'}</td>
+                        <td>{pool.metrics.assigned.toLocaleString()}</td>
+                        <td>{pool.metrics.completed.toLocaleString()}</td>
+                        <td>
+                          <span style={{ color: 'var(--color-success, #10b981)' }}>{pool.metrics.succeeded.toLocaleString()}</span>
+                          <span style={{ color: 'var(--color-text-secondary, #64748b)' }}> / </span>
+                          <span style={{ color: pool.metrics.failed > 0 ? 'var(--color-danger, #ef4444)' : 'inherit' }}>
+                            {pool.metrics.failed.toLocaleString()}
+                          </span>
+                        </td>
+                        <td>{pool.metrics.canceled.toLocaleString()} / {pool.metrics.timeout.toLocaleString()}</td>
+                        <td style={{ fontWeight: 700, color: rateColor(rate) }}>
+                          {rate === null ? '-' : `${(rate * 100).toFixed(1)}%`}
+                        </td>
+                        <td>{formatMetricSeconds(pool.metrics.avg_success_execution_seconds)}</td>
+                        <td>{formatMetricSeconds(pool.metrics.p95_execution_seconds)}</td>
+                        <td>
+                          <span title={pool.metrics.last_error || ''} style={{ display: 'inline-block', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {pool.metrics.last_error || '-'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <h4 style={{ margin: '1.5rem 0 0.75rem', fontSize: '0.95rem' }}>Tier 调用质量</h4>
+          {data.dispatcher.metrics.tiers.length === 0 ? (
+            <EmptyState
+              title="暂无 Tier 统计"
+              description="模型调用发生后会自动按显式 Tier 标识聚合。"
+            />
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="code-debug-table">
+                <thead>
+                  <tr>
+                    <th>Tier / 角色</th>
+                    <th>派发</th>
+                    <th>获得槽位</th>
+                    <th>Passthrough</th>
+                    <th>运行中</th>
+                    <th>完成</th>
+                    <th>成功 / 失败</th>
+                    <th>取消 / 超时</th>
+                    <th>成功率</th>
+                    <th>平均排队</th>
+                    <th>P95 执行</th>
+                    <th>主要算力池</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.dispatcher.metrics.tiers.map((tier) => {
+                    const rate = successRate(tier.metrics);
+                    return (
+                      <tr key={tier.tier_name}>
+                        <td>
+                          <div style={{ fontWeight: 700 }}>
+                            {tier.level > 0 ? `Tier ${tier.level}` : 'System'}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                            {tier.role} · {tier.tier_name}
+                          </div>
+                        </td>
+                        <td>{tier.dispatched.toLocaleString()}</td>
+                        <td>{tier.slot_assigned.toLocaleString()}</td>
+                        <td>{tier.passthrough.toLocaleString()}</td>
+                        <td>{tier.running.toLocaleString()}</td>
+                        <td>{tier.metrics.completed.toLocaleString()}</td>
+                        <td>
+                          <span style={{ color: 'var(--color-success, #10b981)' }}>{tier.metrics.succeeded.toLocaleString()}</span>
+                          <span style={{ color: 'var(--color-text-secondary, #64748b)' }}> / </span>
+                          <span style={{ color: tier.metrics.failed > 0 ? 'var(--color-danger, #ef4444)' : 'inherit' }}>
+                            {tier.metrics.failed.toLocaleString()}
+                          </span>
+                        </td>
+                        <td>{tier.metrics.canceled.toLocaleString()} / {tier.metrics.timeout.toLocaleString()}</td>
+                        <td style={{ fontWeight: 700, color: rateColor(rate) }}>
+                          {rate === null ? '-' : `${(rate * 100).toFixed(1)}%`}
+                        </td>
+                        <td>{formatMetricSeconds(tier.avg_queue_seconds)}</td>
+                        <td>{formatMetricSeconds(tier.metrics.p95_execution_seconds)}</td>
+                        <td>
+                          <span title={primaryPool(tier)} style={{ display: 'inline-block', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                            {primaryPool(tier)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* LLM 算力租约 TAB：实时看板与完成历史快速切换 */}
+      <div className="code-debug-tab-nav" role="tablist" aria-label="LLM 算力租约视图">
+        <button
+          type="button"
+          role="tab"
+          id="llm-lease-active-tab"
+          aria-selected={leaseTab === 'active'}
+          aria-controls="llm-lease-active-panel"
+          className={`code-debug-tab${leaseTab === 'active' ? ' code-debug-tab--active' : ''}`}
+          onClick={() => setLeaseTab('active')}
+        >
+          实时看板
+          <span className="code-debug-tab__count">{activeLeases.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="llm-lease-recent-tab"
+          aria-selected={leaseTab === 'recent'}
+          aria-controls="llm-lease-recent-panel"
+          className={`code-debug-tab${leaseTab === 'recent' ? ' code-debug-tab--active' : ''}`}
+          onClick={() => setLeaseTab('recent')}
+        >
+          完成历史
+          <span className="code-debug-tab__count">{recentLeases.length}</span>
+        </button>
+      </div>
+
       {/* 版块 2: LLM 算力池实时看板 (Live LLM Compute Pool Leases) */}
-      <div className="code-debug-section">
+      {leaseTab === 'active' && (
+      <div id="llm-lease-active-panel" role="tabpanel" aria-labelledby="llm-lease-active-tab" className="code-debug-section">
         <div className="code-debug-section__header">
           <div className="code-debug-section__title-group">
             <h3 className="code-debug-section__title">
@@ -592,6 +1159,7 @@ export default function SystemDebug() {
                   <th style={{ width: '150px' }}>执行环节 / 阶段</th>
                   <th>当前微任务内容</th>
                   <th style={{ width: '130px' }}>已工作持续时长</th>
+                  {isSuperAdmin && <th style={{ width: '100px' }}>诊断</th>}
                 </tr>
               </thead>
               <tbody>
@@ -712,6 +1280,17 @@ export default function SystemDebug() {
                           )}
                         </div>
                       </td>
+                      {isSuperAdmin && (
+                        <td>
+                          <button
+                            className="code-debug-lease-detail-button"
+                            onClick={() => openLeaseDetails(lease)}
+                            title="只读查看 Prompt、Console 和业务输出文件"
+                          >
+                            详情
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -720,6 +1299,415 @@ export default function SystemDebug() {
           </div>
         )}
       </div>
+
+      )}
+
+      {/* 版块 3: LLM 算力槽位完成历史 (Recent Completed Leases) */}
+      {leaseTab === 'recent' && (
+      <div id="llm-lease-recent-panel" role="tabpanel" aria-labelledby="llm-lease-recent-tab" className="code-debug-section">
+        <div className="code-debug-section__header">
+          <div className="code-debug-section__title-group">
+            <h3 className="code-debug-section__title">
+              LLM 算力槽位完成历史
+            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <span style={{
+                fontSize: '0.75rem',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: '#059669',
+                fontWeight: 600
+              }}>
+                {recentLeases.length} / 50 条
+              </span>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.82rem',
+                color: 'var(--color-text-secondary, #64748b)',
+                cursor: isSuperAdmin ? 'pointer' : 'not-allowed'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={recordSuccessfulLeases}
+                  disabled={!isSuperAdmin || savingLeaseHistoryOption}
+                  onChange={(event) => updateRecordSuccessfulLeases(event.target.checked)}
+                />
+                记录成功任务
+              </label>
+            </div>
+          </div>
+          <span className="code-debug-section__desc">
+            失败、取消与超时始终记录；成功任务可按需记录。历史仅保存在后端进程内存中，服务重启后清空
+          </span>
+        </div>
+
+        {recentLeases.length === 0 ? (
+          <div style={{ padding: '2rem 1rem' }}>
+            <EmptyState
+              title="暂无最近完成的算力槽位记录"
+              description="任务完成后会自动进入最近 50 条的内存历史；重启服务后按设计清空。"
+            />
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="code-debug-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '220px' }}>算力节点与模型</th>
+                  <th style={{ width: '180px' }}>所属任务 / 仓库</th>
+                  <th style={{ width: '150px' }}>执行环节 / 阶段</th>
+                  <th>微任务内容</th>
+                  <th style={{ width: '100px' }}>状态</th>
+                  <th style={{ width: '130px' }}>耗时</th>
+                  <th style={{ width: '110px' }}>完成时间</th>
+                  {isSuperAdmin && <th style={{ width: '100px' }}>诊断</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {recentLeases.map((lease) => {
+                  const driverName = lease.driver || 'custom';
+                  const success = lease.status === 'succeeded';
+                  const failed = lease.status === 'failed';
+                  const canceled = lease.status === 'canceled';
+                  const statusColor = success ? '#059669' : failed ? '#ef4444' : canceled ? '#f59e0b' : '#64748b';
+
+                  return (
+                    <tr key={lease.lease_id}>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              background: driverName === 'native' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(37, 99, 235, 0.15)',
+                              color: driverName === 'native' ? '#a855f7' : '#2563eb'
+                            }}>
+                              {driverName}
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                              {lease.server_id || `Server #${lease.server_index}`}
+                            </span>
+                          </div>
+                          <span style={{
+                            fontFamily: 'monospace',
+                            fontSize: '0.78rem',
+                            color: 'var(--color-text-secondary, #64748b)'
+                          }}>
+                            {lease.model || '-'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        {lease.repo_name ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <strong style={{ fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                              {lease.repo_name}
+                            </strong>
+                            {lease.task_type && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                                {lease.task_type}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                            系统后台任务
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontWeight: 600,
+                          background: 'var(--color-bg-muted, #f1f5f9)',
+                          color: 'var(--color-text-primary, #0f172a)'
+                        }}>
+                          {lease.stage || '推理执行'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                          {lease.sub_task || lease.detail || '-'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 700, fontSize: '0.8rem', color: statusColor }}>
+                          {success ? '成功' : failed ? '失败' : canceled ? '取消' : (lease.status || '-')}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.85rem' }}>
+                          {formatDuration(lease.duration_seconds)}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                          {lease.end_time ? new Date(lease.end_time).toLocaleTimeString() : '-'}
+                        </span>
+                      </td>
+                      {isSuperAdmin && (
+                        <td>
+                          <button
+                            className="code-debug-lease-detail-button"
+                            onClick={() => openLeaseDetails(lease)}
+                            title="只读查看 Console 和业务输出文件"
+                          >
+                            详情
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      )}
+
+      {selectedLease && (
+        <Drawer
+          open
+          onClose={() => setSelectedLease(null)}
+          title="算力槽位只读诊断"
+          subtitle={`${selectedLease.server_id || `Server #${selectedLease.server_index}`} · ${selectedLease.model || '-'} · ${formatDuration(selectedLease.duration_seconds)}`}
+          width="lg"
+          footer="只读诊断视图 · 不提供交互式终端 · 不触发任何任务动作"
+        >
+              {leaseLoading ? (
+                <div className="code-debug-lease-empty">正在加载诊断数据...</div>
+              ) : (
+                <>
+                  <section className="code-debug-lease-panel">
+                    <h4>概览</h4>
+                    <div className="code-debug-lease-meta">
+                      <div><span>状态</span><strong>{leaseDetail?.status || selectedLease.status || 'running'}</strong></div>
+                      <div><span>错误分类</span><strong>{leaseDetail?.error_class || selectedLease.error_class || '-'}</strong></div>
+                      <div><span>阶段</span><strong>{selectedLease.stage || '-'}</strong></div>
+                      <div><span>微任务</span><strong>{selectedLease.sub_task || selectedLease.detail || '-'}</strong></div>
+                      <div><span>Observability</span><strong>{leaseDetail?.observability?.degraded ? '降级' : '正常'}</strong></div>
+                    </div>
+                    {leaseDetail?.error_message && (
+                      <>
+                        <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                          <span>错误信息</span>
+                          <button
+                            type="button"
+                            className={`code-debug-copy-button${copiedField === 'error_message' ? ' code-debug-copy-button--copied' : ''}`}
+                            onClick={() => copyLargeText(leaseDetail.error_message || '', 'error_message')}
+                          >
+                            {copiedField === 'error_message' ? '已复制' : '复制'}
+                          </button>
+                        </div>
+                        <pre className="code-debug-console code-debug-console--error">{leaseDetail.error_message}</pre>
+                      </>
+                    )}
+                    {leaseDetail?.diagnostics && (
+                      <>
+                        <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                          <span>CLI 诊断</span>
+                          <button
+                            type="button"
+                            className={`code-debug-copy-button${copiedField === 'cli_diagnostics' ? ' code-debug-copy-button--copied' : ''}`}
+                            onClick={() => copyLargeText(JSON.stringify(leaseDetail.diagnostics, null, 2), 'cli_diagnostics')}
+                          >
+                            {copiedField === 'cli_diagnostics' ? '已复制' : '复制'}
+                          </button>
+                        </div>
+                        <div className="code-debug-lease-meta">
+                          <div><span>终止原因</span><strong>{leaseDetail.diagnostics.termination_reason || '-'}</strong></div>
+                          <div><span>Exit Code</span><strong>{leaseDetail.diagnostics.exit_code ?? '-'}</strong></div>
+                          <div><span>Session</span><strong>{leaseDetail.diagnostics.session_id || '-'}</strong></div>
+                          <div><span>Tokens</span><strong>{leaseDetail.diagnostics.token_usage?.total_tokens ?? '-'}</strong></div>
+                        </div>
+                        {leaseDetail.diagnostics.stderr_tail && (
+                          <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                            <span>
+                              Stderr Tail
+                              {leaseDetail.diagnostics.stderr_tail_truncated ? '（已截断）' : ''}
+                            </span>
+                            <button
+                              type="button"
+                              className={`code-debug-copy-button${copiedField === 'stderr_tail' ? ' code-debug-copy-button--copied' : ''}`}
+                              onClick={() => copyLargeText(leaseDetail.diagnostics?.stderr_tail || '', 'stderr_tail')}
+                            >
+                              {copiedField === 'stderr_tail' ? '已复制' : '复制'}
+                            </button>
+                          </div>
+                        )}
+                        {leaseDetail.diagnostics.stderr_tail && (
+                          <pre className="code-debug-console">{leaseDetail.diagnostics.stderr_tail}</pre>
+                        )}
+                      </>
+                    )}
+                  </section>
+
+                  <section className="code-debug-lease-panel">
+                    <h4>Prompt</h4>
+                    {promptDetail ? (
+                      <>
+                        {promptDetail.system_prompt && (
+                          <>
+                            <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                              <span>System Prompt</span>
+                              <button
+                                type="button"
+                                className={`code-debug-copy-button${copiedField === 'system_prompt' ? ' code-debug-copy-button--copied' : ''}`}
+                                onClick={() => copyLargeText(promptDetail.system_prompt || '', 'system_prompt')}
+                              >
+                                {copiedField === 'system_prompt' ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                            <pre className="code-debug-console">{promptDetail.system_prompt}</pre>
+                          </>
+                        )}
+                        {promptDetail.user_prompt && (
+                          <>
+                            <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                              <span>User Prompt</span>
+                              <button
+                                type="button"
+                                className={`code-debug-copy-button${copiedField === 'user_prompt' ? ' code-debug-copy-button--copied' : ''}`}
+                                onClick={() => copyLargeText(promptDetail.user_prompt || '', 'user_prompt')}
+                              >
+                                {copiedField === 'user_prompt' ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                            <pre className="code-debug-console">{promptDetail.user_prompt}</pre>
+                          </>
+                        )}
+                        {promptDetail.rendered_prompt && (
+                          <>
+                            <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                              <span>Rendered Prompt</span>
+                              <button
+                                type="button"
+                                className={`code-debug-copy-button${copiedField === 'rendered_prompt' ? ' code-debug-copy-button--copied' : ''}`}
+                                onClick={() => copyLargeText(promptDetail.rendered_prompt || '', 'rendered_prompt')}
+                              >
+                                {copiedField === 'rendered_prompt' ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                            <pre className="code-debug-console">{promptDetail.rendered_prompt}</pre>
+                          </>
+                        )}
+                        <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                          <span>输入文件声明（只读路径，不读取内容）</span>
+                          <button
+                            type="button"
+                            className={`code-debug-copy-button${copiedField === 'input_files' ? ' code-debug-copy-button--copied' : ''}`}
+                            onClick={() => copyLargeText(
+                              promptDetail.input_files?.length
+                                ? promptDetail.input_files.map((file) => file.path).join('\n')
+                                : '(none)',
+                              'input_files'
+                            )}
+                          >
+                            {copiedField === 'input_files' ? '已复制' : '复制'}
+                          </button>
+                        </div>
+                        <pre className="code-debug-console">
+                          {promptDetail.input_files?.length
+                            ? promptDetail.input_files.map((file) => file.path).join('\n')
+                            : '(none)'}
+                        </pre>
+                        {promptDetail.truncations?.length ? (
+                          <div className="code-debug-lease-warning">Prompt 已截断：{promptDetail.truncations.join('；')}</div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="code-debug-lease-empty">Prompt 明细不可用（调用已结束或上下文不可用）。</div>
+                    )}
+                  </section>
+
+                  <section className="code-debug-lease-panel">
+                    <h4>Console</h4>
+                    <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                      <span>
+                        {consoleStatus?.dropped_events ? `日志已丢弃 ${consoleStatus.dropped_events} 条 · ` : ''}
+                        {consoleStatus?.closed ? '已结束' : '实时跟随中'}
+                      </span>
+                      <button
+                        type="button"
+                        className={`code-debug-copy-button${copiedField === 'console' ? ' code-debug-copy-button--copied' : ''}`}
+                        disabled={!consoleEvents.length}
+                        onClick={() => copyLargeText(
+                          consoleEvents.map((event) => `${event.time} [${event.stream}] ${event.message}`).join('\n'),
+                          'console'
+                        )}
+                      >
+                        {copiedField === 'console' ? '已复制' : '复制'}
+                      </button>
+                    </div>
+                    <div ref={consoleContainerRef} className="code-debug-console code-debug-console--stream">
+                      {consoleEvents.length ? consoleEvents.map((event) => (
+                        <div key={event.seq} className={`code-debug-console-line code-debug-console-line--${event.level}`}>
+                          <span className="code-debug-console-time">{new Date(event.time).toLocaleTimeString()}</span>
+                          <span className="code-debug-console-stream">{event.stream}</span>
+                          <span className="code-debug-console-message">{event.message}</span>
+                        </div>
+                      )) : (
+                        <div className="code-debug-lease-empty">暂无 Console 事件。</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="code-debug-lease-panel">
+                    <h4>业务输出文件</h4>
+                    {leaseDetail?.output ? (
+                      <>
+                        <div className="code-debug-lease-meta">
+                          <div><span>文件存在</span><strong>{leaseDetail.output.exists ? 'yes' : 'no'}</strong></div>
+                          <div><span>大小</span><strong>{leaseDetail.output.size_bytes ?? 0} bytes</strong></div>
+                          <div><span>更新时间</span><strong>{leaseDetail.output.modified_at ? new Date(leaseDetail.output.modified_at).toLocaleString() : '-'}</strong></div>
+                          <div><span>本次写入</span><strong>{leaseDetail.output.stale ? 'no' : 'yes'}</strong></div>
+                        </div>
+                        {leaseDetail.output.path_read && (
+                          <div className="code-debug-lease-label">
+                            <span>实际读取路径</span>
+                          </div>
+                        )}
+                        {leaseDetail.output.path_read && (
+                          <pre className="code-debug-console">{leaseDetail.output.path_read}</pre>
+                        )}
+                        {leaseDetail.output.stale && (
+                          <div className="code-debug-lease-warning">这是本次调用开始前的陈旧输出文件。</div>
+                        )}
+                        {leaseDetail.output.preview ? (
+                          <>
+                            <div className="code-debug-lease-label code-debug-lease-label--with-action">
+                              <span>业务输出预览</span>
+                              <button
+                                type="button"
+                                className={`code-debug-copy-button${copiedField === 'output_preview' ? ' code-debug-copy-button--copied' : ''}`}
+                                onClick={() => copyLargeText(leaseDetail.output?.preview || '', 'output_preview')}
+                              >
+                                {copiedField === 'output_preview' ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                            <pre className="code-debug-console">{leaseDetail.output.preview}</pre>
+                          </>
+                        ) : (
+                          <div className="code-debug-lease-empty">暂无可预览的业务输出文件。</div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="code-debug-lease-empty">暂无业务输出文件上下文。</div>
+                    )}
+                  </section>
+                </>
+              )}
+        </Drawer>
+      )}
     </div>
   );
 }

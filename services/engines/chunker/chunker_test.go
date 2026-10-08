@@ -2,9 +2,12 @@ package chunker
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"code-shield/services/coverage"
 	"code-shield/services/engines"
 )
 
@@ -21,9 +24,8 @@ func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "CMakeLists.txt"), []byte("set(FMT_USE_GRISU 0)\nadd_definitions(-DFMT_HEADER_ONLY=1)"), 0644)
 
 	cfg := engines.ChunkConfig{
-		MaxFiles:    10,
-		Depth:       1,
-		Concurrency: 2,
+		MaxFiles: 10,
+		Depth:    1,
 	}
 
 	bundles, err := BuildSemanticBundles(tmpDir, cfg, "all", []string{"rule-test"})
@@ -59,6 +61,154 @@ func TestSemanticChunker_CrossDirectoryProjection(t *testing.T) {
 	}
 }
 
+func TestPlanFilesRecordsExclusionReasons(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"src/keep.cpp":        "int keep() { return 0; }",
+		"src/keyword.cpp":     "needle",
+		"src/skip.cpp":        "int skip() { return 0; }",
+		"src/example_test.go": "func TestExample() {}",
+		"docs/readme.txt":     "readme",
+	}
+	for path, content := range files {
+		fullPath := filepath.Join(tmpDir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unreadable := filepath.Join(tmpDir, "src", "unreadable.cpp")
+	if err := os.Symlink(filepath.Join("missing-target"), unreadable); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := PlanFiles(tmpDir, engines.ChunkConfig{
+		ExcludePaths:    []string{"skip"},
+		ContentKeywords: []string{"needle"},
+	}, "business")
+	if err != nil {
+		t.Fatalf("PlanFiles failed: %v", err)
+	}
+	if len(plan.Selected) != 1 || plan.Selected[0].Path != "src/keyword.cpp" {
+		t.Fatalf("unexpected selected files: %+v", plan.Selected)
+	}
+	reasons := map[string]string{}
+	for _, item := range plan.Excluded {
+		reasons[item.Path] = item.Reason
+	}
+	expected := map[string]string{
+		"src/skip.cpp":        coverage.ReasonExcludePath,
+		"src/example_test.go": coverage.ReasonTargetScope,
+		"docs/readme.txt":     coverage.ReasonNotSourceFile,
+	}
+	for path, reason := range expected {
+		if reasons[path] != reason {
+			t.Fatalf("expected %s=%s, got %+v", path, reason, reasons)
+		}
+	}
+	if len(plan.UnchangedSkipped) != 0 {
+		t.Fatalf("non-incremental scan should not skip files: %+v", plan.UnchangedSkipped)
+	}
+	if len(plan.Unknown) != 1 || plan.Unknown[0].Path != "src/unreadable.cpp" || plan.Unknown[0].Reason != coverage.ReasonContentFilterError {
+		t.Fatalf("content read failure must be unknown, got %+v", plan.Unknown)
+	}
+}
+
+func TestListRepositoryFilesPreservesUnicodePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	relativePath := "docs/【swp】支持.md"
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(tmpDir, relativePath)), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, relativePath), []byte("readme"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+		{"add", "--", relativePath},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", tmpDir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	files, err := listRepositoryFiles(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.ToSlash(relativePath)
+	for _, file := range files {
+		if file == expected {
+			return
+		}
+	}
+	t.Fatalf("expected %q in %q", expected, files)
+}
+
+func TestPlanFilesRecordsIncrementalSkipsAndDiffTouch(t *testing.T) {
+	tmpDir := t.TempDir()
+	git := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := git("init"); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "base.cpp"), []byte("int base() { return 0; }"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "changed.cpp"), []byte("int changed() { return 0; }"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := git("add", "base.cpp", "changed.cpp"); err != nil {
+		t.Fatalf("git add: %v %s", err, out)
+	}
+	if out, err := git("-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "initial"); err != nil {
+		t.Fatalf("git commit: %v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "changed.cpp"), []byte("int changed() { return 1; }"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "unchanged.cpp"), []byte("int unchanged() { return 0; }"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := PlanFiles(tmpDir, engines.ChunkConfig{DiffBase: "HEAD"}, "all")
+	if err != nil {
+		t.Fatalf("PlanFiles failed: %v", err)
+	}
+	selected := map[string]coverage.PlannedFile{}
+	for _, item := range plan.Selected {
+		selected[item.Path] = item
+	}
+	changed, ok := selected["changed.cpp"]
+	if !ok || !changed.DiffTouched {
+		t.Fatalf("expected changed.cpp to be selected and diff-touched: %+v", plan.Selected)
+	}
+	if _, ok := selected["unchanged.cpp"]; ok {
+		t.Fatalf("unchanged.cpp should not be selected: %+v", plan.Selected)
+	}
+	unchangedSkipped := map[string]coverage.PlannedFile{}
+	for _, item := range plan.UnchangedSkipped {
+		unchangedSkipped[item.Path] = item
+	}
+	if _, ok := unchangedSkipped["unchanged.cpp"]; !ok || unchangedSkipped["unchanged.cpp"].DiffTouched {
+		t.Fatalf("unexpected unchanged skipped files: %+v", plan.UnchangedSkipped)
+	}
+}
+
 func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -73,9 +223,8 @@ func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
 
 	// 传入 MaxFiles: 0，测试自动生效默认值 8
 	cfg := engines.ChunkConfig{
-		MaxFiles:    0,
-		Depth:       1,
-		Concurrency: 2,
+		MaxFiles: 0,
+		Depth:    1,
 	}
 
 	bundles, err := BuildSemanticBundles(tmpDir, cfg, "all", nil)
@@ -96,6 +245,50 @@ func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
 	}
 	if len(bundles[2].AllFiles) != 2 {
 		t.Errorf("Expected bundle 2 to have 2 files, got %d", len(bundles[2].AllFiles))
+	}
+}
+
+func TestSplitSemanticBundleInHalfKeepsHeaderPairs(t *testing.T) {
+	bundle := SemanticBundle{
+		Name:         "src",
+		AllFiles:     []string{"src/a.cc", "include/a.h", "src/b.cc", "include/b.h"},
+		MacroContext: map[string]string{"USE_X": "1"},
+	}
+
+	halves := SplitSemanticBundleInHalf(bundle)
+	if len(halves) != 2 {
+		t.Fatalf("expected 2 halves, got %d", len(halves))
+	}
+	if got := append(append([]string{}, halves[0].PrimaryFiles...), halves[0].HeaderFiles...); len(got) != 2 {
+		t.Fatalf("expected first half to contain two files, got %v", got)
+	}
+	if got := append(append([]string{}, halves[1].PrimaryFiles...), halves[1].HeaderFiles...); len(got) != 2 {
+		t.Fatalf("expected second half to contain two files, got %v", got)
+	}
+	if !reflect.DeepEqual(halves[0].PrimaryFiles, []string{"src/a.cc"}) ||
+		!reflect.DeepEqual(halves[0].HeaderFiles, []string{"include/a.h"}) {
+		t.Fatalf("header pair was not preserved: %+v", halves[0])
+	}
+}
+
+func TestSplitSemanticBundleInHalfDoesNotCreateEmptyHalf(t *testing.T) {
+	bundle := SemanticBundle{
+		Name:     "src",
+		AllFiles: []string{"src/a.cc", "src/b.cc", "include/a.h"},
+	}
+
+	halves := SplitSemanticBundleInHalf(bundle)
+	if len(halves) != 2 {
+		t.Fatalf("expected 2 halves, got %d", len(halves))
+	}
+	for i, half := range halves {
+		if len(half.AllFiles) == 0 {
+			t.Fatalf("half %d is empty", i+1)
+		}
+	}
+	total := len(halves[0].AllFiles) + len(halves[1].AllFiles)
+	if total != len(bundle.AllFiles) {
+		t.Fatalf("expected %d files across halves, got %d", len(bundle.AllFiles), total)
 	}
 }
 
