@@ -931,6 +931,8 @@ type DynamicCampaignDeptSummary struct {
 	PassCount      int     `json:"pass_count"`
 	PassRate       float64 `json:"pass_rate"`
 	FixRate        float64 `json:"fix_rate"`
+	Blocking       int     `json:"blocking"`
+	Critical       int     `json:"critical"`
 }
 
 // GetDynamicCampaignDepartments 部门维度专项指标汇总
@@ -967,6 +969,12 @@ func GetDynamicCampaignDepartments(c *gin.Context) {
 			cmp = summaries[i].TotalIssues < summaries[j].TotalIssues
 		case "open_issues":
 			cmp = summaries[i].OpenIssues < summaries[j].OpenIssues
+		case "blocking":
+			cmp = summaries[i].Blocking < summaries[j].Blocking
+		case "critical":
+			cmp = summaries[i].Critical < summaries[j].Critical
+		case "pass_count":
+			cmp = summaries[i].PassCount < summaries[j].PassCount
 		case "pass_rate":
 			cmp = summaries[i].PassRate < summaries[j].PassRate
 		case "fix_rate":
@@ -1019,6 +1027,8 @@ func FetchCampaignDeptSummaries(tt *models.TaskType) ([]DynamicCampaignDeptSumma
 		metric.OpenIssues += repo.OpenIssues
 		metric.ResolvedIssues += repo.ResolvedIssues
 		metric.PassCount += repo.PassCount
+		metric.Blocking += repo.Blocking
+		metric.Critical += repo.Critical
 	}
 
 	var summaries []DynamicCampaignDeptSummary
@@ -1048,6 +1058,8 @@ func FetchCampaignDeptSummaries(tt *models.TaskType) ([]DynamicCampaignDeptSumma
 			PassCount:      metric.PassCount,
 			PassRate:       passRate,
 			FixRate:        fixRate,
+			Blocking:       metric.Blocking,
+			Critical:       metric.Critical,
 		})
 	}
 	return summaries, nil
