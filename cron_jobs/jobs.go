@@ -8,6 +8,7 @@ import (
 
 	"code-shield/models"
 	"code-shield/services"
+	"code-shield/services/defectlifecycle"
 	"code-shield/services/governance"
 
 	"github.com/robfig/cron/v3"
@@ -37,6 +38,13 @@ func StartCronJobs() {
 		log.Println("[Cron] Registered daily temp artifact disk GC cron (03:30 AM).")
 	}
 
+	_, err = globalCron.AddFunc("0 4 * * *", RunLedgerRetentionGCJob)
+	if err != nil {
+		log.Printf("[Cron] Failed to register ledger retention GC cron job: %v\n", err)
+	} else {
+		log.Println("[Cron] Registered daily ledger retention GC cron (04:00 AM).")
+	}
+
 	_, err = globalCron.AddFunc("30 4 * * *", RunCategoryRegressionTrendJob)
 	if err != nil {
 		log.Printf("[Cron] Failed to register category semantic regression cron job: %v\n", err)
@@ -52,6 +60,41 @@ func StartCronJobs() {
 	}
 
 	SyncSchedules()
+}
+
+// RunLedgerRetentionGCJob 每日凌晨执行缺陷台账与快照生命周期 TTL 归档清理
+func RunLedgerRetentionGCJob() {
+	if models.DB == nil {
+		return
+	}
+	retentionDays := models.AppConfig.Retention.LedgerRetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	maxRetainedScans := models.AppConfig.Retention.MaxRetainedScansPerRepo
+	if maxRetainedScans <= 0 {
+		maxRetainedScans = 10
+	}
+
+	log.Println("[GC] Starting ledger retention and snapshot cleanup...")
+	cleanedReports, err := defectlifecycle.PurgeExpiredScanSnapshots(models.DB, retentionDays, maxRetainedScans)
+	if err != nil {
+		log.Printf("[GC] Scan snapshot cleanup failed: %v", err)
+		return
+	}
+
+	// 清理超过 24 小时的未关联孤儿 Manifest 临时文件
+	cleanedOrphans := defectlifecycle.PurgeOrphanManifestTempFiles(
+		models.AppConfig.Retention.ScopeManifestDir, 24*time.Hour)
+	if cleanedOrphans > 0 {
+		log.Printf("[GC] Cleaned %d orphaned manifest temp files.", cleanedOrphans)
+	}
+
+	// 针对 PostgreSQL 执行非阻塞式 VACUUM ANALYZE，促使引擎及时回收 Dead Tuples 并刷新统计信息
+	if models.DB.Dialector.Name() == "postgres" {
+		_ = models.DB.Exec("VACUUM (ANALYZE) scan_scope_entries, defect_observations, analysis_findings;").Error
+	}
+	log.Printf("[GC] Ledger retention cleanup completed. Pruned snapshots for %d expired reports.", cleanedReports)
 }
 
 func RunCategoryRegressionTrendJob() {

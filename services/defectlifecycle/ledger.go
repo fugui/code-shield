@@ -85,6 +85,7 @@ type LedgerInput struct {
 	Observations     []ObservationGroup
 	Decisions        []ObservationDecision
 	Scope            []models.ScanScopeEntry
+	Evaluator        ScopeCoverageEvaluator
 	Coverage         *coverage.Coverage
 	CoverageState    string
 	AlgorithmVersion string
@@ -170,7 +171,11 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 			defectID, exists := newDefectByFingerprint[fingerprint]
 			if !exists {
 				var err error
-				createdDefect, err := createDefect(tx, input, identity, now)
+				var finding *models.AnalysisFinding
+				if group != nil {
+					finding = &group.Representative
+				}
+				createdDefect, err := createDefect(tx, input, identity, finding, now)
 				if err != nil {
 					return nil, err
 				}
@@ -288,12 +293,21 @@ func validateLatestLedgerReport(tx *gorm.DB, report models.TaskReport) error {
 		return fmt.Errorf("resolve latest ledger report: %w", err)
 	}
 	if report.ID < latest.ID {
-		return fmt.Errorf("report %d is not the latest committed ledger report", report.ID)
+		return fmt.Errorf("%w: report %d is not the latest committed ledger report (latest is %d)", ErrSupersededReport, report.ID, latest.ID)
 	}
 	return nil
 }
 
 func rollbackReportLedger(tx *gorm.DB, report models.TaskReport) error {
+	retentionDays := models.AppConfig.Retention.LedgerRetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	if report.LedgerCommittedAt != nil &&
+		time.Since(*report.LedgerCommittedAt) > time.Duration(retentionDays)*24*time.Hour {
+		return fmt.Errorf("report %d is outside the snapshot retention window (%d days); rollback rejected", report.ID, retentionDays)
+	}
+
 	var observations []models.DefectObservation
 	if err := tx.Where("report_id = ?", report.ID).Find(&observations).Error; err != nil {
 		return fmt.Errorf("load observations for retry: %w", err)
@@ -445,11 +459,14 @@ func passObservationCovered(input LedgerInput, identity Identity) bool {
 	if input.CoverageState != CoverageComplete && input.CoverageState != CoverageNotApplicable {
 		return false
 	}
+	if input.Evaluator != nil {
+		return input.Evaluator.IsCovered(identity.NormPath)
+	}
 	scope := scopeEntryByPath(input.Scope, identity.NormPath)
 	return scope != nil && scope.Outcome == ScopeScanned
 }
 
-func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, now time.Time) (models.Defect, error) {
+func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *models.AnalysisFinding, now time.Time) (models.Defect, error) {
 	fingerprint, fingerprintKind := canonicalIdentity(identity)
 	if tx.Dialector.Name() == "postgres" {
 		lockKey := fmt.Sprintf("%d:%d", input.Repo.ID, input.TaskType.ID)
@@ -480,6 +497,13 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, now time.Ti
 		ScopeBodyHash: identity.ScopeBodyHash,
 		FirstReportID: input.Report.ID, LastSeenReportID: input.Report.ID,
 		LastMatchedReportID: input.Report.ID, RowVersion: 1,
+	}
+	if finding != nil {
+		defect.Title = finding.Title
+		defect.Category = finding.Category
+		defect.CodeSnippet = finding.CodeSnippet
+		defect.Suggestion = finding.Suggestion
+		defect.DetailSummary = finding.Detail
 	}
 	if scope != nil {
 		defect.BlobHash = scope.BlobHash
@@ -577,6 +601,15 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 	if scope != nil {
 		updates["blob_hash"] = scope.BlobHash
 	}
+	if defect.Title == "" {
+		if group := findObservationGroup(input.Observations, observation.ObservationGroupUID); group != nil {
+			updates["title"] = group.Representative.Title
+			updates["category"] = group.Representative.Category
+			updates["code_snippet"] = group.Representative.CodeSnippet
+			updates["suggestion"] = group.Representative.Suggestion
+			updates["detail_summary"] = group.Representative.Detail
+		}
+	}
 	if status != defect.Status {
 		updates["status"] = status
 		updates["status_reason"] = observation.Reason
@@ -638,8 +671,13 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 		default:
 			continue
 		}
-		scope := scopeEntryByPath(input.Scope, defect.NormPath)
-		covered := scope != nil && scope.Outcome == ScopeScanned
+		covered := false
+		if input.Evaluator != nil {
+			covered = input.Evaluator.IsCovered(defect.NormPath)
+		} else {
+			scope := scopeEntryByPath(input.Scope, defect.NormPath)
+			covered = scope != nil && scope.Outcome == ScopeScanned
+		}
 		status := defect.Status
 		missed := defect.MissedCount
 		dormant := defect.DormantRounds

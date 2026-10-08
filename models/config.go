@@ -590,6 +590,32 @@ type NotificationConfig struct {
 	Webhook string `yaml:"webhook" json:"webhook"`
 }
 
+// RetentionConfig 台账快照生命周期与稀疏存储配置（08号设计 §6.1）
+type RetentionConfig struct {
+	// 缺陷台账历史快照保留天数（默认 30 天）
+	LedgerRetentionDays int `yaml:"ledger_retention_days" json:"ledger_retention_days"`
+	// 同一代码仓保留的最新完整扫描快照数（默认 10 轮，防止低频扫描仓基线丢失）
+	MaxRetainedScansPerRepo int `yaml:"max_retained_scans_per_repo" json:"max_retained_scans_per_repo"`
+	// 覆盖明细是否启用稀疏存储（默认 true，推荐开启）
+	EnableSparseScope bool `yaml:"enable_sparse_scope" json:"enable_sparse_scope"`
+	// 覆盖清单全量压缩产物存储目录（为空时跟随 report artifacts）
+	ScopeManifestDir string `yaml:"scope_manifest_dir" json:"scope_manifest_dir"`
+}
+
+// NormalizeRetentionDefaults 填充保留策略默认值
+func (c *RetentionConfig) NormalizeRetentionDefaults() {
+	if c.LedgerRetentionDays <= 0 {
+		c.LedgerRetentionDays = 30
+	}
+	if c.MaxRetainedScansPerRepo <= 0 {
+		c.MaxRetainedScansPerRepo = 10
+	}
+	if !c.EnableSparseScope {
+		// 若 YAML 中未显式设置，默认开启稀疏存储
+		c.EnableSparseScope = true
+	}
+}
+
 // AIFixConfig contains the cross-system integration with Shield-Fix.
 type AIFixConfig struct {
 	FixURL        string `yaml:"fix_url" json:"-"`
@@ -767,6 +793,7 @@ type Config struct {
 	Lifecycle    LifecyclePolicyConfig  `yaml:"lifecycle" json:"lifecycle"`
 	Notification NotificationConfig     `yaml:"notification" json:"notification"`
 	AIFix        AIFixConfig            `yaml:"ai_fix" json:"-"`
+	Retention    RetentionConfig        `yaml:"retention" json:"retention"`
 
 	// 兼容旧版 config.yaml 的 AI 块与影子镜像
 	AI struct {
@@ -1442,6 +1469,8 @@ func LoadConfig(filename string) error {
 			cfg.Auth.OAuth2.RedirectURL = strings.TrimRight(cfg.Server.ExternalURL, "/") + "/api/oauth2/callback"
 		}
 	}
+
+	cfg.Retention.NormalizeRetentionDefaults()
 
 	if err := cfg.AIFix.Validate(); err != nil {
 		return fmt.Errorf("invalid ai_fix config: %w", err)

@@ -598,6 +598,13 @@ func campaignFindings(db *gorm.DB, defects []models.Defect) ([]CampaignFinding, 
 				item.Suggestion = finding.Suggestion
 			}
 		}
+		if item.Title == "" && defect.Title != "" {
+			item.Title = defect.Title
+			item.Detail = defect.DetailSummary
+			item.Category = defect.Category
+			item.CodeSnippet = defect.CodeSnippet
+			item.Suggestion = defect.Suggestion
+		}
 		for _, event := range eventsByDefect[defect.ID] {
 			if event.EventType != EventTypeStatusChanged && event.EventType != "HUMAN_DECISION" {
 				continue

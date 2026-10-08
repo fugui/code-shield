@@ -1,14 +1,20 @@
 package defectlifecycle
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"code-shield/models"
 	"code-shield/services/coverage"
 
 	"code-common/backend/testdb"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestPersistScanFactsStoresRawFindingsAndScope(t *testing.T) {
@@ -252,5 +258,65 @@ func TestPersistScanFactsCommitsLedgerLifecycle(t *testing.T) {
 	}
 	if item.Title != finding.Title || item.FilePath != "src/a.cpp" || len(item.StatusLog) == 0 {
 		t.Fatalf("expected finding payload and events without duplication: %+v", item)
+	}
+}
+
+func TestIsVersionConflict(t *testing.T) {
+	if !isVersionConflict(ErrDefectVersionConflict) {
+		t.Errorf("expected ErrDefectVersionConflict to be recognized")
+	}
+	if !isVersionConflict(fmt.Errorf("defect 10 changed during ledger commit")) {
+		t.Errorf("expected changed during ledger commit to be recognized")
+	}
+	if !isVersionConflict(fmt.Errorf("defect 12 changed while withholding lifecycle advancement")) {
+		t.Errorf("expected changed while withholding lifecycle advancement to be recognized")
+	}
+	if isVersionConflict(fmt.Errorf("connection refused")) {
+		t.Errorf("connection refused should not be considered version conflict")
+	}
+	if isVersionConflict(nil) {
+		t.Errorf("nil should not be considered version conflict")
+	}
+}
+
+func TestValidateLatestLedgerReport(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.TaskReport{}); err != nil {
+		t.Fatalf("migrate task_reports: %v", err)
+	}
+	now := time.Now()
+	// 插入一个较新的已结算报告 ID=20
+	r20 := models.TaskReport{
+		ID:                20,
+		RepoID:            1,
+		TaskTypeID:        1,
+		LedgerCommittedAt: &now,
+	}
+	if err := db.Create(&r20).Error; err != nil {
+		t.Fatalf("create r20: %v", err)
+	}
+
+	// 老报告 ID=10 尝试结算 -> 应返回 ErrSupersededReport
+	oldReport := models.TaskReport{
+		ID:         10,
+		RepoID:     1,
+		TaskTypeID: 1,
+	}
+	err = validateLatestLedgerReport(db, oldReport)
+	if !errors.Is(err, ErrSupersededReport) {
+		t.Errorf("expected ErrSupersededReport, got %v", err)
+	}
+
+	// 新报告 ID=25 尝试结算 -> 校验应通过 (nil)
+	newReport := models.TaskReport{
+		ID:         25,
+		RepoID:     1,
+		TaskTypeID: 1,
+	}
+	if err := validateLatestLedgerReport(db, newReport); err != nil {
+		t.Errorf("expected nil for newer report, got %v", err)
 	}
 }

@@ -108,7 +108,7 @@ func mutateProbable(db *gorm.DB, reportID uint, groupUID string, input Governanc
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			defect, createErr := createDefect(tx, LedgerInput{
 				Report: report, Repo: repo, TaskType: taskType, Scope: scopeEntries, CommittedAt: now,
-			}, group.Identity, now)
+			}, group.Identity, &group.Representative, now)
 			if createErr != nil {
 				return createErr
 			}
@@ -356,7 +356,7 @@ func SplitDefect(db *gorm.DB, defectID, reportID uint, groupUID string, input Go
 		if err := tx.Where("report_id = ?", reportID).Find(&scopeEntries).Error; err != nil {
 			return fmt.Errorf("load scope: %w", err)
 		}
-		defect, err := createDefect(tx, LedgerInput{Report: report, Repo: repo, TaskType: taskType, Scope: scopeEntries, CommittedAt: now}, group.Identity, now)
+		defect, err := createDefect(tx, LedgerInput{Report: report, Repo: repo, TaskType: taskType, Scope: scopeEntries, CommittedAt: now}, group.Identity, &group.Representative, now)
 		if err != nil {
 			return err
 		}
