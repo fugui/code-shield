@@ -636,12 +636,7 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 		}
 		sort.Slice(candidateIDs, func(left, right int) bool { return candidateIDs[left] < candidateIDs[right] })
 
-		var assignments map[int]uint
-		if len(qualified) <= width && len(candidateIDs) <= width {
-			assignments = exactAssignment(qualified, candidateIDs, obsEdges)
-		} else {
-			assignments = greedyAssignment(observations, qualified, obsEdges)
-		}
+		assignments := greedyAssignment(observations, qualified, obsEdges)
 		for observationIndex, defectID := range assignments {
 			best := obsEdges[observationIndex][defectID]
 			decision := &decisions[observationIndex]
@@ -661,70 +656,6 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 			}
 		}
 	}
-}
-
-func exactAssignment(observationIndexes []int, candidateIDs []uint, obsEdges map[int]map[uint]scoredCandidate) map[int]uint {
-	memo := make(map[int]float64)
-	bitFor := make(map[uint]int, len(candidateIDs))
-	for index, defectID := range candidateIDs {
-		bitFor[defectID] = 1 << index
-	}
-	var solve func(pos, mask int) float64
-	solve = func(pos, mask int) float64 {
-		if pos == len(observationIndexes) {
-			return 0
-		}
-		key := pos<<32 | mask
-		if cached, ok := memo[key]; ok {
-			return cached
-		}
-		best := solve(pos+1, mask)
-		for _, defectID := range candidateIDs {
-			bit := bitFor[defectID]
-			if mask&bit != 0 {
-				continue
-			}
-			edge, ok := obsEdges[observationIndexes[pos]][defectID]
-			if !ok {
-				continue
-			}
-			score := edge.score + solve(pos+1, mask|bit)
-			if score > best {
-				best = score
-			}
-		}
-		memo[key] = best
-		return best
-	}
-
-	assignments := make(map[int]uint)
-	expected := solve(0, 0)
-	mask := 0
-	for pos, observationIndex := range observationIndexes {
-		remaining := solve(pos+1, mask)
-		if remaining+0.000001 >= expected {
-			expected = remaining
-			continue
-		}
-		for _, defectID := range candidateIDs {
-			bit := bitFor[defectID]
-			if mask&bit != 0 {
-				continue
-			}
-			edge, ok := obsEdges[observationIndex][defectID]
-			if !ok {
-				continue
-			}
-			next := solve(pos+1, mask|bit)
-			if edge.score+next+0.000001 >= expected {
-				assignments[observationIndex] = defectID
-				expected = next
-				mask |= bit
-				break
-			}
-		}
-	}
-	return assignments
 }
 
 func greedyAssignment(observations []ObservationGroup, observationIndexes []int, obsEdges map[int]map[uint]scoredCandidate) map[int]uint {

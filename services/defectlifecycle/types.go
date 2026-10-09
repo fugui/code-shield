@@ -31,18 +31,19 @@ const (
 )
 
 type ScanInput struct {
-	DB               *gorm.DB
-	Report           models.TaskReport
-	Repo             models.Repository
-	RepoRoot         string
-	TaskType         models.TaskType
-	Findings         []models.AnalysisFinding
-	Coverage         *coverage.Coverage
-	CoverageState    string
-	Exclusions       []string
-	AlgorithmVersion string
-	Arbitrator       ArbitrationProvider
-	RenameTargets    map[string]string
+	DB                 *gorm.DB
+	Report             models.TaskReport
+	Repo               models.Repository
+	RepoRoot           string
+	TaskType           models.TaskType
+	Findings           []models.AnalysisFinding
+	Coverage           *coverage.Coverage
+	CoverageState      string
+	Exclusions         []string
+	AlgorithmVersion   string
+	Arbitrator         ArbitrationProvider
+	RenameTargets      map[string]string
+	StabilizedFindings []StabilizedFindingDTO
 }
 
 type ScanFactsResult struct {

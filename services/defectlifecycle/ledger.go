@@ -504,6 +504,27 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 		defect.CodeSnippet = finding.CodeSnippet
 		defect.Suggestion = finding.Suggestion
 		defect.DetailSummary = finding.Detail
+		if finding.ScopeSymbol != "" {
+			defect.ScopeSymbol = NormalizeScopeSymbol(finding.ScopeSymbol)
+		}
+		if finding.TargetSymbol != "" {
+			defect.TargetEntity = finding.TargetSymbol
+		}
+	}
+	if defect.ScopeSymbol == "" && identity.SymbolPath != "" {
+		defect.ScopeSymbol = NormalizeScopeSymbol(identity.SymbolPath)
+	}
+	if defect.TargetEntity == "" && identity.DefectClassMajor != "" {
+		defect.TargetEntity, _ = ExtractPhysicalTargetEntity(defect.CodeSnippet, "", identity.DefectClassMajor)
+	}
+	if defect.StmtAnchorHash == "" && defect.CleanToken != "" {
+		defect.StmtAnchorHash = ComputeStmtAnchorHash(defect.CleanToken)
+	}
+	if defect.CoreSlotKey == "" && defect.NormPath != "" && defect.DefectClassMajor != "" {
+		defect.CoreSlotKey = ComputeCoreSlotKey(defect.NormPath, defect.ScopeSymbol, defect.DefectClassMajor, defect.TargetEntity)
+	}
+	if defect.SlotKey == "" && defect.CoreSlotKey != "" {
+		defect.SlotKey = ComputePreciseSlotKey(defect.CoreSlotKey, defect.StmtAnchorHash)
 	}
 	if scope != nil {
 		defect.BlobHash = scope.BlobHash
@@ -609,6 +630,29 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 			updates["suggestion"] = group.Representative.Suggestion
 			updates["detail_summary"] = group.Representative.Detail
 		}
+	}
+	// 双轨懒加载自愈：命中旧指纹时现场回填两级槽位
+	if defect.SlotKey == "" || defect.CoreSlotKey == "" {
+		scopeSymbol := defect.ScopeSymbol
+		if scopeSymbol == "" && identity.SymbolPath != "" {
+			scopeSymbol = NormalizeScopeSymbol(identity.SymbolPath)
+		}
+		targetEntity := defect.TargetEntity
+		if targetEntity == "" {
+			targetEntity, _ = ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
+		}
+		stmtHash := defect.StmtAnchorHash
+		if stmtHash == "" && identity.CleanToken != "" {
+			stmtHash = ComputeStmtAnchorHash(identity.CleanToken)
+		}
+		coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
+		preciseSlot := ComputePreciseSlotKey(coreSlot, stmtHash)
+
+		updates["scope_symbol"] = scopeSymbol
+		updates["target_entity"] = targetEntity
+		updates["stmt_anchor_hash"] = stmtHash
+		updates["core_slot_key"] = coreSlot
+		updates["slot_key"] = preciseSlot
 	}
 	if status != defect.Status {
 		updates["status"] = status
@@ -798,6 +842,21 @@ func upsertDefectAliases(tx *gorm.DB, input LedgerInput, defectID uint, identity
 		{AliasRoot, identity.RootFamily, AliasBucket},
 		{AliasResource, identity.ResourceIdentity, AliasBucket},
 		{AliasChain, identity.ValidationChain, AliasBucket},
+	}
+	// 记录两级槽位自愈别名
+	if identity.NormPath != "" && identity.DefectClassMajor != "" {
+		targetEntity, _ := ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
+		stmtHash := ComputeStmtAnchorHash(identity.CleanToken)
+		scopeSymbol := NormalizeScopeSymbol(identity.SymbolPath)
+		coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
+		slotKey := ComputePreciseSlotKey(coreSlot, stmtHash)
+		if slotKey != "" {
+			values = append(values, struct {
+				aliasType string
+				value     string
+				class     string
+			}{"SLOT_HEALED", slotKey, AliasStrong})
+		}
 	}
 	if input.RenameTargets != nil {
 		if target, ok := input.RenameTargets[identity.NormPath]; ok && target != "" {
