@@ -939,6 +939,7 @@ type AnalysisFinding struct {
 	// ── 智能体辩论与物理定位证据 ──
 	TriggerLine           string         `gorm:"type:text" json:"trigger_line"`
 	ScopeSymbol           string         `gorm:"size:256" json:"scope_symbol"`
+	TargetSymbol          string         `gorm:"size:128;default:''" json:"target_symbol,omitempty"`
 	HunterClaim           string         `gorm:"type:text" json:"hunter_claim"`
 	ChallengerArg         string         `gorm:"type:text" json:"challenger_arg"`
 	JudgeVerdict          string         `gorm:"type:text" json:"judge_verdict"`
@@ -1053,6 +1054,12 @@ type Defect struct {
 	CanonicalFingerprint string `gorm:"size:64;not null;uniqueIndex:uq_defects_current_identity" json:"canonical_fingerprint"`
 	IdentityKind         string `gorm:"size:16;not null" json:"identity_kind"`
 	NormPath             string `gorm:"size:512;not null" json:"norm_path"`
+	ScopeSymbol          string `gorm:"size:256;not null;default:''" json:"scope_symbol"`                            // 归一化函数符号
+	TargetEntity         string `gorm:"size:128;not null;default:''" json:"target_entity"`                           // 核心变量或合成受体
+	StmtAnchorHash       string `gorm:"size:32;not null;default:''" json:"stmt_anchor_hash"`                         // 核心语句静止哈希
+	Confidence           string `gorm:"size:16;not null;default:'HIGH'" json:"confidence"`                           // 定桩置信度 HIGH/MEDIUM/LOW
+	CoreSlotKey          string `gorm:"size:64;not null;default:'';index:idx_defect_core_slot" json:"core_slot_key"` // 一级主槽位哈希 (单实例秒配)
+	SlotKey              string `gorm:"size:64;not null;default:''" json:"slot_key"`                                 // 二级精准槽位哈希 (含 StmtAnchorHash)
 	ScopeKey             string `gorm:"size:64;not null" json:"scope_key"`
 	SymbolPath           string `gorm:"size:512;not null;default:''" json:"symbol_path"`
 	StmtShape            string `gorm:"size:64;not null" json:"stmt_shape"`
@@ -1471,4 +1478,44 @@ type CategoryConfusionMatrix struct {
 	SampleCount  int            `gorm:"not null;default:0" json:"sample_count"`
 	ErrorCount   int            `gorm:"not null;default:0" json:"error_count"`
 	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
+}
+
+// MigrateDefectSlotSchema 适配 PostgreSQL 生产环境与 SQLite 单测环境的槽位 Schema 迁移
+func MigrateDefectSlotSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&Defect{}, &DefectAlias{}); err != nil {
+		return err
+	}
+	if db.Dialector.Name() == "postgres" {
+		// PostgreSQL 生产环境局部唯一索引与加速索引
+		if err := db.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_defect_active_slot_idx
+			ON defects (repo_id, task_type_id, slot_key)
+			WHERE status = 'ACTIVE' AND slot_key != '';
+		`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_defect_core_slot_key
+			ON defects (repo_id, task_type_id, core_slot_key)
+			WHERE status = 'ACTIVE' AND core_slot_key != '';
+		`).Error; err != nil {
+			return err
+		}
+		return db.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_defect_slot_key
+			ON defects (repo_id, task_type_id, slot_key)
+			WHERE status = 'ACTIVE';
+		`).Error
+	}
+
+	// SQLite 单测环境普通检索索引 (并发由事务锁保证)
+	_ = db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_defect_core_slot_sqlite
+		ON defects (repo_id, task_type_id, core_slot_key, status);
+	`)
+	_ = db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_defect_slot_lookup_sqlite
+		ON defects (repo_id, task_type_id, slot_key, status);
+	`)
+	return nil
 }

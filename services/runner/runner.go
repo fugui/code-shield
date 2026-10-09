@@ -298,16 +298,23 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	}
 
 	if models.DB != nil {
+		stabilizer := defectlifecycle.NewIngestionStabilizer()
+		stabilizedDTOs, _ := stabilizer.Stabilize(defectlifecycle.StabilizeFindingsInput{
+			RepoRoot: ctx.CodesPath,
+			Findings: ctx.Findings,
+		})
+
 		_, persistErr := defectlifecycle.PersistScanFacts(defectlifecycle.ScanInput{
-			DB:            models.DB,
-			Report:        ctx.Report,
-			Repo:          ctx.Repo,
-			RepoRoot:      ctx.CodesPath,
-			TaskType:      ctx.TaskType,
-			Findings:      ctx.Findings,
-			Coverage:      ctx.Coverage,
-			RenameTargets: defectlifecycle.BuildRenameTargets(ctx.CodesPath),
-			Arbitrator:    defectlifecycle.NewRuntimeArbitrator(ctx.Report.ID, ctx.Repo.Name, ctx.TaskType.DisplayName),
+			DB:                 models.DB,
+			Report:             ctx.Report,
+			Repo:               ctx.Repo,
+			RepoRoot:           ctx.CodesPath,
+			TaskType:           ctx.TaskType,
+			Findings:           ctx.Findings,
+			StabilizedFindings: stabilizedDTOs,
+			Coverage:           ctx.Coverage,
+			RenameTargets:      defectlifecycle.BuildRenameTargets(ctx.CodesPath),
+			Arbitrator:         defectlifecycle.NewRuntimeArbitrator(ctx.Report.ID, ctx.Repo.Name, ctx.TaskType.DisplayName),
 		})
 		if persistErr != nil {
 			MarkFailed(ctx, persistErr.Error())

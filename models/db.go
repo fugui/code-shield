@@ -62,6 +62,9 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
+	if err := MigrateDefectSlotSchema(DB); err != nil {
+		log.Printf("[DB] MigrateDefectSlotSchema notice: %v", err)
+	}
 	if err := DB.Exec("UPDATE analysis_findings SET category_status = 'LEGACY' WHERE category_status = ''").Error; err != nil {
 		log.Fatalf("failed to mark legacy category status: %v", err)
 	}
