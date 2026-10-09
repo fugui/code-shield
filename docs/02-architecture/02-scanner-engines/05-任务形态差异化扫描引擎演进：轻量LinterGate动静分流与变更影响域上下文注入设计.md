@@ -1,7 +1,7 @@
 # 任务形态差异化扫描引擎演进：务实漏斗分流与受控变更因果注入设计
 
-> **文档状态**：`Draft (架构团队评审修订完善版)` · 工业级高准确度与 SLA 护栏演进规范 · 拟提交 RFC 评审转入 `Accepted`  
-> **设计范围**：单测质量漏斗分级（Tier 0 静态截断 / Fast Pass 防作弊放行 / Tier 1 原生 Thin LLM 单轮复核与弹性熔断）、多语言雷达注册工厂（C++/Go/Java/Python）、受控变更因果切片（Top-3 多维加权排序与外层保护摘要）、语义契约与编译器职责解耦、多智能体信息对称装配、跨来源统一缺陷指纹契约、工程演进路径（启发式到 Tree-sitter）  
+> **文档状态**：`Accepted (架构团队评审通过与修订定稿版)` · 工业级高准确度与 SLA 护栏演进规范 · 正式转入落地实施  
+> **设计范围**：单测质量漏斗分级（Tier 0 静态截断含微空桩 / Fast Pass 防作弊放行 / Tier 1 原生 Thin LLM 单轮复核与弹性熔断自愈 / 异步补偿台账）、多语言雷达注册工厂（C++/Go/Java/Python）、受控变更因果切片（Top-3 务实加权排序与防吞错外层保护摘要）、语义契约与编译器职责解耦、多智能体信息对称装配、跨来源统一缺陷指纹契约、工程演进路径（启发式到 AST 作用域底座）  
 > **关联文档**：
 * [01-下一代AI扫描引擎与多Agent对抗辩论设计](01-下一代AI扫描引擎与多Agent对抗辩论设计.md)
 * [02-原生LLM轻量执行引擎与动静分离混合调用设计](02-原生LLM轻量执行引擎与动静分离混合调用设计.md)
@@ -29,18 +29,18 @@ flowchart LR
 
 **核心务实演进方案**：
 1. **单测质量审查：三阶梯队收敛漏斗（Tiered Funnel）**
-   * **Tier 0 极速确诊（物理空桩）**：仅对 100% 确定事实（如纯空函数 `{}`）实施毫秒级静态拦截；
-   * **Fast Pass（极速放行 + 防作弊护栏）**：显式包含标准 `ASSERT/EXPECT`、`EXPECT_CALL` 的合规单测直接通过；针对形式化防守单测引入局部恒真检测，排除作弊后**静默放行 80%+ 规范用例，不消耗任何 LLM 算力**；
-   * **Tier 1 轻量单轮复核（Thin LLM Gate + 弹性熔断）**：针对“未检测到显式断言、可疑恒真参数、存在未知 Helper”的争议用例，调用基于 HTTP REST 的 **原生 Thin LLM 引擎** 执行 1~2 秒单轮语义复核，设置 3.5s 超时与连续失败自动熔断放行机制，杜绝静态误杀且坚决不阻塞 CI；**绝不拉起昂贵的 3-Agent 对抗辩论**；
+   * **Tier 0 极速确诊（物理空桩与微空桩）**：对 100% 确定事实（如纯空函数 `{}`、仅含局部变量声明或无被测调用的微空桩）实施毫秒级静态拦截；
+   * **Fast Pass（极速放行 + 防作弊护栏）**：显式包含标准 `ASSERT/EXPECT`、`EXPECT_CALL` 的合规单测直接通过（包含 Table-Driven Tests 嵌套闭包断言识别）；针对形式化防守单测引入局部恒真检测，排除作弊后**静默放行 80%+ 规范用例，不消耗任何 LLM 算力**；
+   * **Tier 1 轻量单轮复核（Thin LLM Gate + 弹性熔断与自愈）**：针对“未检测到显式断言、可疑恒真参数、存在未知 Helper”的争议用例，调用基于 HTTP REST 的 **原生 Thin LLM 引擎** 执行 1~2 秒单轮语义复核。设置 3.5s 超时、三态熔断自愈（Closed/Open/Half-Open）以及**异步补偿对账机制（Compensating Sweep）**，既杜绝静态误杀、坚决不阻塞 CI，又防止高负载下作弊用例永久逃逸；**绝不拉起昂贵的 3-Agent 对抗辩论**；
    * **Tier 2 对抗辩论退避**：多智能体辩论仅保留给明确指定的深层架构/内存扫描任务，单测审查默认不进入 Tier 2。
 2. **变更检视：受控因果切片与多维加权（Controlled Causal Impact Slices）**
    * **职责明确分工**：语法错误、参数类型/个数不匹配完全由**编译器与 CI 构建步骤确定性拦截**；大模型专攻编译器无法感知的**隐式语义契约破坏**（如未捕获的新增错误码、状态机时序破坏、资源未释放）；
-   * **Top-3 多维加权排序与检索熔断**：通过打分模型 $Score = W_{\text{module}} + W_{\text{type}} + W_{\text{complexity}} - W_{\text{test}}$ 精准锁定最典型的 3 处业务调用，设置 3 秒全局检索超时熔断保护；
-   * **物理上下文受控与外层保护摘要**：提取调用点前后 **10~15 行紧凑调用块**（体积严格控制在 2KB 内）的同时，静态提取外层 `try-catch` / `error return` / `RAII` 保护特征摘要，为反驳提供事实护栏，坚决不突破 Prompt 32KB 硬截断上限，彻底杜绝下游陈旧缺陷误归因与断章取义误报；
+   * **Top-3 务实加权排序与检索熔断**：通过高置信度打分模型 $Score = W_{\text{module}} \cdot S_{\text{module}} + W_{\text{call\_exact}} \cdot S_{\text{call\_exact}} + W_{\text{branch}} \cdot S_{\text{branch}} - W_{\text{test}} \cdot S_{\text{test}}$ 精准锁定最典型的 3 处业务调用，避免在缺乏 AST 阶段宣称不可行的纯文本类型推导，并设置 3 秒全局检索超时熔断保护；
+   * **物理上下文受控与外层保护摘要（防断章取义与防吞错）**：提取调用点前后 **10~15 行紧凑调用块**（体积严格控制在 2KB 内）的同时，静态提取外层 `try-catch`（含恶性空 catch/吞异常识别）、`error return`、`RAII` 保护特征摘要，为反驳提供事实护栏，坚决不突破 Prompt 32KB 硬截断上限，彻底杜绝下游陈旧缺陷误归因与断章取义误报；
    * **废弃“专属推演 Agent”**：所有因果切片统一注入主分片对局，严格守住 CI 3~5 分钟 SLA。
 3. **跨来源统一缺陷指纹（SSOT Alignment）**：Tier 0 静态截断、Tier 1 Thin LLM 与主对抗辩论全量采用标准统一哈希算法，确保跨轮次增量对账完全稳定。
 4. **多语言插件化雷达工厂（Language Radar Factory）**：建立 C++、Go、Java、Python 独立的雷达解析实现，避免单一大正则杂糅各语言语法。
-5. **静态基建稳步演进**：短期以多语言插件式启发式模式识别提取高置信度线索，中期平滑引入 Tree-sitter 构筑多语言 AST 作用域底座。
+5. **静态基建稳步演进（解耦能力倒挂）**：短期以多语言插件式启发式模式识别提取高置信度线索，中期优先引入轻量 AST 作用域底座（Tree-sitter）精准支持外层结构摘要与嵌套函数解析，彻底摆脱复杂嵌套正则的脆弱性。
 
 ---
 
@@ -161,28 +161,31 @@ flowchart TD
     end
 
     subgraph S2 [阶段二: 三阶梯队漏斗与防作弊收敛]
-        C -->|1. 纯空函数体 {}| D[Tier 0 极速确诊: DEFECT<br/>毫秒级, 0 Token]
-        C -->|2. 标准断言且排除局部作弊| E[Fast Pass 直通放行: PASS<br/>静默放行 80%~85% 规范用例]
+        C -->|1. 纯空体 {} 或微空桩 (仅声明/仅日志)| D[Tier 0 极速确诊: DEFECT<br/>毫秒级, 0 Token]
+        C -->|2. 标准断言/嵌套闭包断言且无作弊| E[Fast Pass 直通放行: PASS<br/>静默放行 80%~85% 规范用例]
         C -->|3. 恒真作弊 / 无断言 / 疑似Helper| F[Tier 1 提取事实线索 FactHints]
     end
 
-    subgraph S3 [阶段三: 原生 Thin LLM 单轮复核与弹性熔断]
+    subgraph S3 [阶段三: 原生 Thin LLM 单轮复核与弹性熔断自愈]
         F --> G[调用 NativeInvoker HTTP REST API<br/>单轮单提示词极速判别 1~2s]
         G --> H{调用是否正常 (超时 <= 3.5s)?}
         H -->|正常响应| I{是否具备有效验证语义?}
         I -->|是: 确认存在 Helper/隐式校验| J[复核判定: PASS 消除误杀]
         I -->|否: 确认为作弊桩/无效单测| K[复核判定: DEFECT 准确定罪]
-        H -->|超时/连续失败触发熔断| L[Circuit Breaker 降级: DEGRADED_PASS<br/>记录审计日志, 坚决不卡 CI]
+        H -->|超时/连续失败| L{熔断器状态机<br/>Closed -> Open -> Half-Open}
+        L -->|触发熔断降级| M1[降级状态: DEGRADED_PASS<br/>记录审计日志, 坚决不卡 CI]
+        L -->|冷却期满探活成功| G
     end
 
-    subgraph S4 [阶段四: 契约归并与台账落库]
-        D --> M[Artifact Merger 统一归并]
-        J --> M
-        K --> M
-        L --> M
-        M --> N[生成跨来源统一缺陷指纹 Fingerprint]
-        N --> O[输出标准 AssessmentsArtifactSchemaV2]
-        O --> P[进入统一缺陷台账 SSOT 与跨轮增量对账]
+    subgraph S4 [阶段四: 契约归并、台账落库与异步补偿]
+        D --> N[Artifact Merger 统一归并]
+        J --> N
+        K --> N
+        M1 --> N
+        N --> O[生成跨来源统一缺陷指纹 Fingerprint]
+        O --> P[输出标准 AssessmentsArtifactSchemaV2]
+        P --> Q[进入统一缺陷台账 SSOT]
+        Q -->|DEGRADED_PASS 置为 PENDING_VERIFY| R[低峰期异步补偿对账 Compensating Sweep<br/>杜绝高危逃逸, 闭环最终一致性]
     end
 ```
 
@@ -201,15 +204,15 @@ import "code-shield/services/coverage"
 type TriageDecision string
 
 const (
-    DecisionTier0Defect   TriageDecision = "TIER0_DEFECT"    // 100% 物理空桩，静态直接结案
-    DecisionFastPass      TriageDecision = "FAST_PASS"       // 标准规范单测，静态直接放行
-    DecisionNeedVerify    TriageDecision = "NEED_VERIFY"     // 存在疑点/恒真作弊，进入 Tier 1 单轮复核
-    DecisionDegradedPass  TriageDecision = "DEGRADED_PASS"   // Thin LLM 超时或熔断兜底放行（带审计标记）
+    DecisionTier0Defect   TriageDecision = "TIER0_DEFECT"    // 100% 物理空桩/微空桩（仅声明/仅日志），静态直接结案定罪
+    DecisionFastPass      TriageDecision = "FAST_PASS"       // 标准规范单测（含表格驱动嵌套闭包），静态直接放行
+    DecisionNeedVerify    TriageDecision = "NEED_VERIFY"     // 存在疑点/恒真作弊/未知Helper，进入 Tier 1 单轮复核
+    DecisionDegradedPass  TriageDecision = "DEGRADED_PASS"   // Thin LLM 超时或熔断降级放行（台账置为 PENDING_VERIFY 待补偿补扫）
 )
 
 // StructuralFactHint 结构化事实线索
 type StructuralFactHint struct {
-    Category    string `json:"category"`     // 如 "POTENTIAL_HELPER", "TAUTOLOGY_LITERAL", "TAUTOLOGY_LOCAL_VAR", "NO_ASSERTION"
+    Category    string `json:"category"`     // 如 "POTENTIAL_HELPER", "TAUTOLOGY_LITERAL", "TAUTOLOGY_LOCAL_VAR", "NO_ASSERTION", "CLOSURE_ASSERTION"
     Description string `json:"description"`  // 事实描述
     LineNumber  int    `json:"line_number"`   // 关键代码行
     Snippet     string `json:"snippet"`       // 局部代码片段
@@ -268,6 +271,8 @@ import (
 var (
     // 通用严格匹配纯空大括号函数体（C++/Go/Java）
     pureEmptyBodyPattern = regexp.MustCompile(`^\{\s*(?://[^\n]*\s*|/\*.*?\*/\s*)*\}$`)
+    // 匹配仅含基本变量声明赋值或日志输出而无任何被测调用或断言的微空桩 (Micro Stub)
+    microStubPattern     = regexp.MustCompile(`^\{\s*(?:(?:bool|int|auto|var|string|float|double)\s+[a-zA-Z0-9_]+\s*(?:=\s*[^;]+)?;\s*|(?:LOG|cout|fmt\.Print|print|logger|std::cout)\b[^;]*;\s*)*\}$`)
 
     // C++ 特征
     cppStdAssertPattern   = regexp.MustCompile(`(?i)\b(?:ASSERT_|EXPECT_|assert\(|assertThat)`)
@@ -279,6 +284,8 @@ var (
     // Python 特征 (涵盖 pytest, unittest, mock)
     // 严格匹配 Python 物理/语法空桩（pass, ..., 纯注释或纯 docstring）
     pureEmptyPythonPattern = regexp.MustCompile(`^(?:\s*(?:#[^\n]*|"""[\s\S]*?"""|'''[\s\S]*?'''|pass|\.\.\.)\s*)*$`)
+    // Python 仅含简单赋值或 print 日志的微空桩
+    microStubPythonPattern = regexp.MustCompile(`^(?:\s*(?:[a-zA-Z0-9_]+\s*=\s*[^#\n]+|print\([^)]*\)|logging\.[a-zA-Z0-9_]+\([^)]*\)|pass|\.\.\.)\s*)*$`)
     // pytest 与 unittest 标准断言及异常上下文管理器
     pyStdAssertPattern     = regexp.MustCompile(`(?m)(?:^\s*assert\b|self\.assert[A-Za-z0-9_]*\s*\(|pytest\.raises\s*\(|pytest\.warns\s*\()`)
     // unittest.mock 断言
@@ -293,9 +300,11 @@ var (
     pyMockTypoPattern      = regexp.MustCompile(`\b[a-zA-Z0-9_]+\.asser[a-zA-Z0-9_]*\(`)
 
     // Go 特征
-    goAssertPattern  = regexp.MustCompile(`\b(?:t\.(?:Error|Fatal|Fail)|assert\.|require\.)`)
-    goTautology      = regexp.MustCompile(`assert\.(?:True|False)\s*\(\s*t\s*,\s*(?:true|false)\s*\)`)
-    goHelperPattern  = regexp.MustCompile(`\b(?:testVerify|check|validate|assert)[A-Za-z0-9_]*\s*\(`)
+    goAssertPattern        = regexp.MustCompile(`\b(?:t\.(?:Error|Fatal|Fail)|assert\.|require\.)`)
+    // Go 表格驱动测试 (Table-Driven Tests) 与子测试闭包特征
+    goTableClosurePattern  = regexp.MustCompile(`\bt\.Run\s*\([^,]+,\s*func\s*\([^)]*\)\s*\{[\s\S]*?\b(?:assert\.|require\.|t\.(?:Error|Fatal|Fail))`)
+    goTautology            = regexp.MustCompile(`assert\.(?:True|False)\s*\(\s*t\s*,\s*(?:true|false)\s*\)`)
+    goHelperPattern        = regexp.MustCompile(`\b(?:testVerify|check|validate|assert)[A-Za-z0-9_]*\s*\(`)
 )
 
 // CppLinterRadar C++ 特化雷达
@@ -315,9 +324,12 @@ func (r CppLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) as
     body := extractFunctionBody(content)
     trimmed := strings.TrimSpace(body)
 
-    // 1. Tier 0：纯物理空桩（静态极速结案）
+    // 1. Tier 0：纯物理空桩与微空桩（静态极速结案）
     if pureEmptyBodyPattern.MatchString(trimmed) {
-        return buildTier0Result(unit)
+        return buildTier0Result(unit, "UT_EMPTY_STUB", "测试用例函数体内为空，未包含任何被测逻辑或断言")
+    }
+    if microStubPattern.MatchString(trimmed) {
+        return buildTier0Result(unit, "UT_MICRO_STUB", "测试函数仅包含局部变量声明或日志输出，未调用被测对象且无断言")
     }
 
     var hints []assessment.StructuralFactHint
@@ -382,9 +394,12 @@ func (r PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit)
     body := extractFunctionBody(content)
     trimmed := strings.TrimSpace(body)
 
-    // 1. Tier 0：纯语法空桩（pass, ..., 纯 docstring）
+    // 1. Tier 0：纯语法空桩（pass, ..., 纯 docstring）与微空桩
     if pureEmptyPythonPattern.MatchString(trimmed) {
-        return buildTier0Result(unit)
+        return buildTier0Result(unit, "UT_EMPTY_STUB", "Python 测试用例体内为空或仅含 pass/docstring，未执行任何有效测试")
+    }
+    if microStubPythonPattern.MatchString(trimmed) {
+        return buildTier0Result(unit, "UT_MICRO_STUB", "Python 测试函数仅含无被测调用的变量赋值或打印语句，属于无效微空桩")
     }
 
     var hints []assessment.StructuralFactHint
@@ -439,7 +454,7 @@ func (r PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit)
     }
 }
 
-// GoLinterRadar Go 特化雷达 (支持 testing.T 与 testify)
+// GoLinterRadar Go 特化雷达 (支持 testing.T 与 testify，涵盖表格驱动测试)
 type GoLinterRadar struct{}
 
 func (r GoLinterRadar) CanHandle(fp string) bool {
@@ -455,9 +470,12 @@ func (r GoLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) ass
     body := extractFunctionBody(content)
     trimmed := strings.TrimSpace(body)
 
-    // 1. Tier 0：纯空代码块
+    // 1. Tier 0：纯空代码块与微空桩
     if pureEmptyBodyPattern.MatchString(trimmed) {
-        return buildTier0Result(unit)
+        return buildTier0Result(unit, "UT_EMPTY_STUB", "Go 测试函数体内为空，未包含任何被测逻辑或断言")
+    }
+    if microStubPattern.MatchString(trimmed) {
+        return buildTier0Result(unit, "UT_MICRO_STUB", "Go 测试函数仅包含局部变量声明或无意义打印，属于无效微空桩")
     }
 
     var hints []assessment.StructuralFactHint
@@ -469,13 +487,15 @@ func (r GoLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) ass
     }
 
     hasStdAssert := goAssertPattern.MatchString(body)
+    hasTableClosureAssert := goTableClosurePattern.MatchString(body)
     hasHelper := goHelperPattern.MatchString(body)
 
-    if hasStdAssert && len(hints) == 0 {
+    // 2. Fast Pass 放行：顶层显式断言 或 表格驱动测试闭包内包含有效断言
+    if (hasStdAssert || hasTableClosureAssert) && len(hints) == 0 {
         return assessment.RadarResult{Decision: assessment.DecisionFastPass}
     }
 
-    if !hasStdAssert {
+    if !hasStdAssert && !hasTableClosureAssert {
         if hasHelper {
             hints = append(hints, assessment.StructuralFactHint{
                 Category:    "POTENTIAL_HELPER_VERIFICATION",
@@ -495,23 +515,29 @@ func (r GoLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) ass
     }
 }
 
-func buildTier0Result(unit coverage.PlanUnit) assessment.RadarResult {
+func buildTier0Result(unit coverage.PlanUnit, ruleID string, summary string) assessment.RadarResult {
+    if ruleID == "" {
+        ruleID = "UT_EMPTY_STUB"
+    }
+    if summary == "" {
+        summary = "测试用例函数体内为空，未包含任何被测逻辑或断言"
+    }
     return assessment.RadarResult{
         Decision: assessment.DecisionTier0Defect,
         EarlyAssessment: &assessment.UnitAssessment{
             UnitRef:       unit.ID,
             PrimaryUnitID: unit.ID,
             Outcome:       assessment.OutcomeDefect,
-            Summary:       "测试用例函数体内为空，未包含任何被测逻辑或断言",
-            Reason:        "检测到完全无实现的空测试桩函数，未能对被测对象实施有效验证",
+            Summary:       summary,
+            Reason:        "检测到完全无实现的空测试桩或无业务验证的伪桩函数，未能对被测对象实施有效验证",
             Issues: []assessment.AssessmentIssue{
                 {
                     Category: "断言有效性-空测试",
                     Severity: "MAJOR",
-                    Detail:   "测试函数体内无任何可执行语句，属于无效测试桩",
+                    Detail:   summary,
                     Evidence: map[string]any{
                         "source":     "static_radar",
-                        "rule_id":    "UT_EMPTY_STUB",
+                        "rule_id":    ruleID,
                         "start_line": unit.StartLine,
                         "end_line":   unit.EndLine,
                     },
@@ -524,14 +550,21 @@ func buildTier0Result(unit coverage.PlanUnit) assessment.RadarResult {
 
 ---
 
-### 3.4 Tier 1 原生 Thin LLM 单轮极速复核与弹性熔断机制
+### 3.4 Tier 1 原生 Thin LLM 单轮极速复核与弹性熔断自愈机制
 
-针对进入 `DecisionNeedVerify` 的单测（仅占全量 15%~20%），系统直接通过 [`services/invoker/native.go`](file:///home/fugui/codes/code-shield/services/invoker/native.go) 的 `NativeInvoker` 发起 HTTP/2 单轮轻量调用，并实施**强隔离弹性熔断**。
+针对进入 `DecisionNeedVerify` 的单测（仅占全量 15%~20%），系统直接通过 [`services/invoker/native.go`](file:///home/fugui/codes/code-shield/services/invoker/native.go) 的 `NativeInvoker` 发起 HTTP/2 单轮轻量调用，并实施**强隔离弹性熔断与异步最终一致性补偿**。
 
-#### 1. 弹性熔断与超时护栏（Circuit Breaker）
+#### 1. 弹性熔断三态生命周期与超时护栏（Circuit Breaker Lifecycle）
 * **硬超时限制**：单次 Thin LLM 请求设置 **3.5 秒严格超时**，最多允许重试 1 次。
-* **连续故障熔断策略**：若 Thin LLM 连续遭遇 3 次超时或 HTTP 5xx 错误，触发熔断器（Circuit Open）。
-* **降级准则**：触发熔断后，当前批次及后续单测自动降级为 `DecisionDegradedPass`，写入审计日志并在报告中标注 `[DEGRADED_UNVERIFIED]`，**绝对不允许卡死或拖垮 CI 门禁流水线**。
+* **熔断开启条件（Circuit Open）**：若 Thin LLM 连续遭遇 3 次超时或 HTTP 5xx 错误，触发熔断器转入 Open 状态，进入 **60 秒冷却期（Cooling Period）**。
+* **门禁即时降级准则**：在 Open 状态下，当前批次及后续争议单测自动降级为 `DecisionDegradedPass`，在流水线日志中标注 `[DEGRADED_UNVERIFIED]` 并正常放行，**绝对不允许卡死或拖垮 CI 门禁流水线**。
+* **Half-Open 自愈探活（Self-Healing Probe）**：冷却期满后，熔断器自动转入 **Half-Open（半开）状态**，允许接入下一个争议单测作为探活请求：
+  * 若探活请求正常响应，连续失败计数归零，熔断器自愈恢复为 **Closed（闭合正常状态）**；
+  * 若探活请求仍遭遇超时或网络错误，重新刷新 60 秒冷却期并退回 **Open 状态**。
+* **异步追溯补偿对账机制（Compensating Sweep）**：
+  * 所有被标记为 `DecisionDegradedPass` 的单测，在统一缺陷台账 SSOT 中置为 `PENDING_VERIFY` 挂起状态；
+  * 门禁侧虽然放行，但后台调度任务在低峰期或网络恢复后自动拉起异步补偿复核；
+  * 若补偿扫出恶意作弊空桩，系统将通过统一缺陷治理管道自动补记缺陷台账并向 PR 提交人推送对账工单，**彻底化解网络抖动期作弊逃逸的合规风险，实现质量安全最终一致性**。
 
 #### 2. 复核专用极简提示词设计（1~2 秒结案）
 ```markdown
@@ -584,7 +617,7 @@ flowchart TD
         D --> E[提取变更核心符号 (Qualified Symbol)]
         E --> F[轻量倒排索引/Git Grep 检索<br/>设置 3 秒全局超时熔断]
         F -->|检索超时或符号为高频词 Init/Get| G[降级回退: 仅保留同模块强相关调用或单文件检视]
-        F -->|正常命中文档| H[多维加权打分模型计算 Top-3<br/>Score = W_module + W_type + W_complexity - W_test]
+        F -->|正常命中文档| H[多维加权打分模型计算 Top-3<br/>Score = W_module + W_call_exact + W_branch - W_test]
         H --> I[切片提取: 截取调用点及前后 10~15 行局部块<br/>+ 静态提取外层 try-catch/error return 保护特征]
     end
 
@@ -604,16 +637,18 @@ flowchart TD
 * **全局检索超时熔断（3 秒硬护栏）**：针对超大型 monorepo，若全局符号搜索超过 3 秒，立即触发熔断，自动退避为“仅检索变更文件所在同级目录”，若仍超时则跳过下游注入退回单文件检视，**绝对保证 CI 门禁耗时可控**。
 
 #### 2. 多维加权打分模型 (Multi-Dimensional Ranking Heuristic)
-当一个核心变更符号（如 `OrderService::Process`）在下游存在多个调用方时，系统通过以下启发式公式评估各调用现场的语义代表性：
+当一个核心变更符号（如 `OrderService::Process`）在下游存在多个调用方时，系统通过以下启发式公式评估各调用现场的语义代表性（**在纯 Grep 阶段务实避免依赖不存在的纯文本类型推导，以高置信度结构特征优先**）：
 
-$$\text{Score}(S) = W_{\text{module}} \cdot S_{\text{module}} + W_{\text{type}} \cdot S_{\text{type}} + W_{\text{complexity}} \cdot S_{\text{complexity}} - W_{\text{test}} \cdot S_{\text{test}}$$
+$$\text{Score}(S) = W_{\text{module}} \cdot S_{\text{module}} + W_{\text{call\_exact}} \cdot S_{\text{call\_exact}} + W_{\text{branch}} \cdot S_{\text{branch}} - W_{\text{test}} \cdot S_{\text{test}}$$
 
 | 评估维度 | 权重 | 判定条件与得分逻辑 | 架构意图 |
 | :--- | :---: | :--- | :--- |
 | **同模块亲和度 ($S_{\text{module}}$)** | **+40** | 调用方与变更符号处于同一模块或子系统目录下为 1，否则为 0。 | 优先审查紧密协同的核心业务下游。 |
-| **类型吻合度 ($S_{\text{type}}$)** | **+30** | 调用的入参表达式类型与变更接口精确匹配。 | 排除重载函数或同名不同参的符号歧义。 |
-| **控制流复杂度 ($S_{\text{complexity}}$)** | **+20** | 调用点前后 10 行内包含 `if/switch/for` 控制流分支。 | 优先审查有逻辑分支的复杂现场，其遗漏异常处理的概率最高。 |
-| **测试用例降噪 ($S_{\text{test}}$)** | **-50** | 调用方位于 `*_test.cpp` 或 `tests/` 目录下。 | **坚决抑制单测自身调用**，单测审查由漏斗负责，变更检视专攻业务生产代码。 |
+| **调用精确度 ($S_{\text{call\_exact}}$)** | **+30** | 调用现场包含完整命名空间或明确接收者变量（如 `service->Process` / `pkg.Process`），而非裸函数同名调用。 | 排除局部同名变量或泛型宏带来的伪匹配，确保符号消歧置信度。 |
+| **控制流复杂度 ($S_{\text{branch}}$)** | **+20** | 调用点前后 10 行内包含 `if/switch/for/try` 等控制流分支。 | 优先审查有逻辑分支的复杂现场，其遗漏异常处理的概率最高。 |
+| **测试用例降噪 ($S_{\text{test}}$)** | **-50** | 调用方位于 `*_test.*` 或 `tests/` 目录下。 | **坚决抑制单测自身调用**，单测审查由漏斗负责，变更检视专攻业务生产代码。 |
+
+> **能力演进分期说明**：在 Milestone 2.1 依赖上述高置信度文本启发式消歧；待 Milestone 3 引入 Tree-sitter AST 与符号表后，再平滑扩展真实的形参表达式静态类型匹配能力。
 
 系统按 `Score(S)` 降序排列，严格截取 **Top-3 核心调用点**注入上下文。
 
@@ -628,10 +663,11 @@ package planner
 
 // OuterScopeSummary 紧凑切片外层作用域结构保护摘要
 type OuterScopeSummary struct {
-    HasTryCatchBlock   bool   `json:"has_try_catch_block"`   // 外层函数是否包裹了 try-catch 异常捕获
-    HasErrorReturnPass bool   `json:"has_error_return_pass"` // 外层函数签名是否本身透传 error/Status 返回值
-    HasRAIIGuard       bool   `json:"has_raii_guard"`        // 外层是否使用了 std::lock_guard / defer 等资源守卫
-    EnclosingFuncName  string `json:"enclosing_func_name"`   // 所属外层宿主函数全名
+    HasTryCatchBlock     bool   `json:"has_try_catch_block"`     // 外层函数是否包裹了 try-catch 异常捕获
+    HasCatchAllSwallowed bool   `json:"has_catch_all_swallowed"` // 外层 catch 是否存在恶性吞异常/空 catch 模式（仅打日志或空块）
+    HasErrorReturnPass   bool   `json:"has_error_return_pass"`   // 外层函数签名是否本身透传 error/Status 返回值
+    HasRAIIGuard         bool   `json:"has_raii_guard"`          // 外层是否使用了 std::lock_guard / defer 等资源守卫
+    EnclosingFuncName    string `json:"enclosing_func_name"`     // 所属外层宿主函数全名
 }
 
 // DownstreamCallSite 下游真实调用点受控切片证据
@@ -642,7 +678,7 @@ type DownstreamCallSite struct {
     CallLineNumber int               `json:"call_line_number"` // 调用代码所在行号
     // 紧凑调用切片：调用点前后 10~15 行局部代码块（含局部变量准备与返回值处理，体积 < 500 字节）
     CompactSnippet string            `json:"compact_snippet"`
-    // 外层保护摘要：彻底解决 10~15 行截断带来的视野盲区
+    // 外层保护摘要：彻底解决 10~15 行截断带来的视野盲区（兼顾吞错防范）
     OuterScope     OuterScopeSummary `json:"outer_scope"`
 }
 
@@ -683,9 +719,9 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
         sb.WriteString(fmt.Sprintf("### 调用现场 %d: `%s` -> 函数 `%s` (行号: %d)\n",
             idx+1, site.CallerFile, site.CallerFunction, site.CallLineNumber))
 
-        // 显式注入外层保护事实证据，防止模型断章取义！
-        sb.WriteString(fmt.Sprintf("> **外层防护特征事实**: [外层包含 try-catch: %v] · [外层支持透传错误返回: %v] · [包含 RAII 资源托管: %v]\n",
-            site.OuterScope.HasTryCatchBlock, site.OuterScope.HasErrorReturnPass, site.OuterScope.HasRAIIGuard))
+        // 显式注入外层保护事实证据（含吞异常检测），防止模型断章取义或轻信空 catch 误脱罪！
+        sb.WriteString(fmt.Sprintf("> **外层防护特征事实**: [外层包含 try-catch: %v] · [包含空catch/恶性吞错: %v] · [外层支持透传错误返回: %v] · [包含 RAII 资源托管: %v]\n",
+            site.OuterScope.HasTryCatchBlock, site.OuterScope.HasCatchAllSwallowed, site.OuterScope.HasErrorReturnPass, site.OuterScope.HasRAIIGuard))
 
         sb.WriteString("```cpp\n")
         sb.WriteString(strings.TrimSpace(site.CompactSnippet))
@@ -702,7 +738,7 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
     sb.WriteString("### 契约对抗审查核心准则 (Debate Requirements):\n")
     sb.WriteString("1. 【排除编译器已覆盖项】：禁止指出形参类型不匹配、参数个数缺失等编译期确定性拦截项；\n")
     sb.WriteString("2. 【专注深层语义破坏】：重点审查调用现场是否未处理新增的错误返回值、破坏了对象生命周期假设、或遗漏了必要的释放逻辑；\n")
-    sb.WriteString("3. 【防截断反驳举证】：Challenger 若能根据【外层防护特征事实】证明调用方在外层具备 try-catch 拦截或全局透传机制，必须坚决驳斥 Hunter 的断章取义误报；\n")
+    sb.WriteString("3. 【防截断与防吞错辩论准则】：Challenger 若能根据【外层防护特征事实】证明调用方在外层具备有效 try-catch 拦截或全局透传机制，可据此驳斥 Hunter 的局部误报；但若【包含空catch/恶性吞错: true】（即 catch 块为空或仅有无害日志而无恢复补偿），Challenger 不得以此作为免责反驳依据，Hunter 可判定为静默吞错隐患；\n")
     sb.WriteString("4. 【严禁跨文件旧缺陷误归因】：仅审查本次变更对调用方造成的破坏，严禁挑剔调用方原本存在的历史遗留编码风格或独立逻辑缺陷。\n\n")
 }
 ```
@@ -724,15 +760,15 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
 
 | 评估维度 | 当前现状（基线） | 算力降本方案（原草案） | 准确度优先（中间修订版） | 务实演进方案（本规范） |
 | :--- | :--- | :--- | :--- | :--- |
-| **指导哲学** | 一刀切无序调度 | 节约 Token 为主，静态直接判死 | 拒绝算力妥协，全量深度对抗 | **务实平衡：漏斗分级 + 受控切片 + 弹性熔断** |
+| **指导哲学** | 一刀切无序调度 | 节约 Token 为主，静态直接判死 | 拒绝算力妥协，全量深度对抗 | **务实平衡：漏斗分级 + 受控切片 + 弹性自愈熔断** |
 | **单测审查算力开销** | 100% 走大模型，并发压力大 | **Token 骤降 75%**，但产生毁灭性误杀 | **Token 暴涨 300%**，全量 3-Agent 辩论算力倒挂 | **Token 骤降 85%+**：80% Fast Pass 放行，15% 走 Thin LLM 单轮复核 |
 | **单测审查误报率** | 约 8%~12%（偶发幻觉） | **极高 (> 45%)**：裸正则误杀 Helper 与 GMock | 极低 (< 2%)，但代价是算力不可承受 | **极低 (< 2%)**：静态不判死，Thin LLM 准确保底 |
-| **防作弊/漏报覆盖** | 依赖长文本泛读（偶发漏看） | 无法感知局部赋值作弊 | 极高（全量审查） | **高 (> 98%)**：Fast Pass 拦截恒真作弊，争议项强制复核 |
+| **防作弊/漏报覆盖** | 依赖长文本泛读（偶发漏看） | 无法感知局部赋值作弊 | 极高（全量审查） | **高 (> 98%)**：拦截恒真作弊与微空桩，争议项强制复核 |
 | **单测单次耗时** | 约 10~15 分钟 | 约 1.5 分钟 | 约 25~40 分钟（队列雪崩） | **< 1 分钟**（毫秒级静态 + 1~2s 单轮复核） |
-| **变更检视因果视野** | 仅单文件 Diff，跨文件完全盲区 | 注入 3 行碎片切片，易断章取义 | 注入全量整函数 + 专属 Agent（Token 爆炸，击穿 32KB 限制） | **Top-3 紧凑因果切片（10~15行）+ 外层保护摘要**：体积 < 2KB，专注隐式契约 |
-| **防断章取义误报** | 不涉及（无下游） | 极差（碎片代码缺乏上下文） | 较好（但引发旧代码误归因） | **极高**：外层 try-catch/error 结构特征摘要赋能 Challenger 举证 |
+| **变更检视因果视野** | 仅单文件 Diff，跨文件完全盲区 | 注入 3 行碎片切片，易断章取义 | 注入全量整函数 + 专属 Agent（Token 爆炸，击穿 32KB 限制） | **Top-3 紧凑因果切片（10~15行）+ 防吞错外层摘要**：体积 < 2KB，专注隐式契约 |
+| **防断章取义与吞错** | 不涉及（无下游） | 极差（碎片代码缺乏上下文） | 较好（但引发旧代码误归因） | **极高**：外层结构特征摘要赋能 Challenger，同时精准阻断空 catch 伪脱罪 |
 | **编译器职责边界** | 边界模糊 | 边界模糊 | 大模型充当低效“虚拟编译器” | **清晰解耦**：语法/类型归编译器，隐式契约归大模型 |
-| **异常容灾弹性** | 无熔断机制 | 无 | 无（单点阻塞拖垮整体） | **高可用**：Thin LLM 3.5s 超时熔断 + 符号检索 3s 熔断兜底 |
+| **异常容灾与补偿** | 无熔断机制 | 无 | 无（单点阻塞拖垮整体） | **高可用与一致性**：3.5s 超时 + 三态自愈熔断 + 异步追溯补偿对账 |
 | **CI 门禁 SLA 达成** | 勉强达标 | 达标 | **严重违背 (SLA > 30min)** | **完全达标 (SLA < 3min)** |
 
 ---
@@ -742,21 +778,26 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
 ```text
 2026-Q4 务实演进规划:
 ├── Milestone 1: 单测三阶漏斗与 Thin LLM 极速复核落地 (P0)
-│   ├── 在 services/engines/assessment/ 中定义 TriageDecision (含 DEGRADED_PASS 熔断状态)
-│   ├── 建立 LanguageRadar 多语言插件工厂，实现 C++、Python (pytest/unittest/mock) 与 Go 专用启发式雷达
+│   ├── 在 services/engines/assessment/ 中定义 TriageDecision (含 DEGRADED_PASS 与 PENDING_VERIFY 挂起态)
+│   ├── 建立 LanguageRadar 多语言插件工厂，实现 C++、Python 与 Go 特化雷达（含微空桩与表格测试闭包识别）
 │   ├── 上线 Anti-Cheating Guard：精准捕获字面量恒真与局部变量赋值恒真作弊
-│   ├── 集成 services/invoker/native.go (NativeInvoker)，实现单测单轮 3.5s 超时与熔断复核
-│   ├── 统一跨来源缺陷指纹 SSOT 生成逻辑，对接增量治理台账
-│   └── 达成目标: 单测用例扫描耗时降至 1 分钟内，误报率 < 2%，Token 消耗下降 85%
+│   ├── 集成 services/invoker/native.go (NativeInvoker)，实现单测 3.5s 超时与三态熔断自愈（Closed/Open/Half-Open）
+│   ├── 对接统一缺陷台账 SSOT，上线后台低峰期异步追溯补偿机制 (Compensating Sweep)
+│   └── 达成目标: 单测用例扫描耗时降至 1 分钟内，误报率 < 2%，Token 消耗下降 85%+
 │
-├── Milestone 2: 变更检视受控因果切片与多维加权排序升级 (P1)
-│   ├── 在 planner/change.go 中上线 Top-3 多维加权打分器 (Score = W_module + W_type + W_complexity - W_test)
+├── Milestone 2.1: 变更检视受控因果切片基础版 (P1)
+│   ├── 在 planner/change.go 中上线 Top-3 务实加权打分器 (Score = W_module + W_call_exact + W_branch - W_test)
 │   ├── 增加符号检索 3 秒全局超时熔断与回退保护机制
-│   ├── 实现紧凑调用切片与外层结构保护摘要提取器 (OuterScopeSummary)
-│   ├── 升级 debate/assembler.go，实现 Hunter/Challenger 对称因果注入与防断章取义反驳护栏
+│   ├── 实现紧凑调用切片提取器（调用点前后 10~15 行局部块，体积 < 2KB）
+│   ├── 升级 debate/assembler.go，实现 Hunter/Challenger/Judge 对称因果注入与编译器职责边界护栏
 │   └── 达成目标: 消除跨文件接口破坏漏报，杜绝下游旧代码误归因，单次变更扫描 < 3 分钟
 │
-└── Milestone 3: 静态分析基础设施平滑升级 (P2)
-    ├── 引入轻量级 Tree-sitter Go 绑定，逐步替代正则启发式匹配
-    └── 建立多语言精准函数作用域与外层异常捕获 AST 解析能力，进一步提升雷达线索与外层摘要置信度
+├── Milestone 2.2: 轻量 AST 作用域底座与防吞错外层摘要升级 (P1)
+│   ├── 引入 Tree-sitter 局部作用域解析器，建立精准的宿主函数与作用域栈底座（彻底替代脆弱正则）
+│   ├── 实现外层结构保护摘要提取器 (OuterScopeSummary)，精确识别 try-catch、RAII 与恶性吞异常/空 catch
+│   └── 升级 debate 辩论提示词，赋能反驳方防截断举证，同时阻断空 catch 虚假脱罪
+│
+└── Milestone 3: 跨语言全域 AST 语义底座与深度调用图演进 (P2)
+    ├── 完善 C++/Go/Java/Python 全语法 Tree-sitter 与轻量符号表关联
+    └── 将 Top-3 打分模型升级支持真实形参表达式静态类型推导匹配，进一步提升大规模代码库检索消歧精度
 ```
