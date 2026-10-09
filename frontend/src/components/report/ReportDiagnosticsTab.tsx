@@ -3,6 +3,7 @@ import { TaskDiagnostics, TaskReportMeta } from '../../types/report';
 import { formatDuration, copyToClipboardWithFallback } from '../../utils/reportUtils';
 import { useToast } from '../Toast';
 import ReportEmptyState from './ReportEmptyState';
+import './report.css';
 
 interface ReportDiagnosticsTabProps {
   meta?: TaskReportMeta;
@@ -156,7 +157,10 @@ function StageExecutionTraceTable({
   return (
     <div className="code-trace-table-wrapper">
       <div className="code-trace-table-header">
-        <span>{title || defaultTitle}</span>
+        <div className="code-trace-table-title">
+          <span>⚡</span>
+          <span>{title || defaultTitle}</span>
+        </div>
         <span className="code-trace-table-subtitle">共 {stepCount} 次调度</span>
       </div>
       <div className="code-trace-table-container">
@@ -165,9 +169,9 @@ function StageExecutionTraceTable({
             <tr>
               <th>执行阶段 / 轮次</th>
               <th>调度模型资源</th>
-              <th>队列等待</th>
-              <th>阶段耗时</th>
-              <th>执行状态</th>
+              <th className="col-align-right">队列等待</th>
+              <th className="col-align-right">阶段耗时</th>
+              <th className="col-align-center">执行状态</th>
             </tr>
           </thead>
           <tbody>
@@ -185,7 +189,10 @@ function StageExecutionTraceTable({
 
               return (
                 <tr key={i}>
-                  <td className="col-stage">{stageLabel}</td>
+                  <td className="col-stage">
+                    <span className="col-stage-dot" />
+                    <span>{stageLabel}</span>
+                  </td>
                   <td>
                     {resource ? (
                       <span className="code-trace-tag code-trace-tag--resource">{resource}</span>
@@ -193,19 +200,27 @@ function StageExecutionTraceTable({
                       <span className="trace-muted">-</span>
                     )}
                   </td>
-                  <td className="col-mono">
-                    {wait != null ? `${wait} ms` : <span className="trace-muted">-</span>}
+                  <td className="col-align-right col-mono">
+                    {wait != null ? (
+                      wait > 0 ? (
+                        <span>{wait} ms</span>
+                      ) : (
+                        <span className="trace-muted">0 ms</span>
+                      )
+                    ) : (
+                      <span className="trace-muted">-</span>
+                    )}
                   </td>
-                  <td className="col-duration">
+                  <td className="col-align-right col-duration">
                     {duration != null ? `${duration.toFixed(2)} s` : <span className="trace-muted">-</span>}
                   </td>
-                  <td>
+                  <td className="col-align-center">
                     {hasError ? (
                       <span className="code-trace-tag code-trace-tag--error">
-                        {errorClassLabels[errorClass] || errorClass}
+                        ✕ {errorClassLabels[errorClass] || errorClass}
                       </span>
                     ) : isLast && isFailed ? (
-                      <span className="code-trace-tag code-trace-tag--error">失败</span>
+                      <span className="code-trace-tag code-trace-tag--error">✕ 失败</span>
                     ) : (
                       <span className="code-trace-tag code-trace-tag--success">✓ 成功</span>
                     )}
