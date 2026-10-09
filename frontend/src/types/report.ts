@@ -413,6 +413,7 @@ export interface ChunkDiagnosticDetail {
   status: 'success' | 'failed';
   duration_seconds: number;
   attempts: number;
+  retries?: number;
   contract_repairs: number;
   resource_failovers?: number;
   driver_failovers: number;
