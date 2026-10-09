@@ -253,6 +253,7 @@ type ChunkDiagnosticDetail struct {
 	Status                   string    `json:"status"` // success, failed
 	DurationSeconds          float64   `json:"duration_seconds"`
 	Attempts                 int       `json:"attempts"`
+	Retries                  int       `json:"retries"`
 	FilesCount               int       `json:"files_count"`
 	FindingsCount            int       `json:"findings_count"`
 	ErrorMessage             string    `json:"error_message,omitempty"`

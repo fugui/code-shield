@@ -815,6 +815,10 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 							if att, ok := cMap["attempts"].(float64); ok {
 								attempts = int(att)
 							}
+							retries := 0
+							if r, ok := cMap["retries"].(float64); ok {
+								retries = int(r)
+							}
 							filesCount := 0
 							var files []string
 							if fl, ok := cMap["files"].([]interface{}); ok {
@@ -951,6 +955,7 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 								Status:                   status,
 								DurationSeconds:          dur,
 								Attempts:                 attempts,
+								Retries:                  retries,
 								FilesCount:               filesCount,
 								FindingsCount:            findingsCount,
 								ErrorMessage:             errMsg,

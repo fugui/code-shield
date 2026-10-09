@@ -1974,12 +1974,17 @@
 
 .report-viewer-container .retry-badge {
   font-size: 0.72rem;
-  background: rgba(239, 68, 68, 0.1);
-  color: #dc2626;
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.1));
+  color: var(--color-danger, #dc2626);
   padding: 0.12rem 0.45rem;
   border-radius: 4px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.report-viewer-container .retry-badge.info {
+  background: var(--color-info-subtle, rgba(14, 165, 233, 0.1));
+  color: var(--color-info, #0284c7);
 }
 
 .report-viewer-container .chunk-meta {
@@ -2041,13 +2046,35 @@
 }
 
 .report-viewer-container .chunk-error {
-  background: #fff1f2;
-  color: #be123c;
+  background: var(--color-danger-subtle, #fef2f2);
+  color: var(--color-danger, #dc2626);
+  border: 1px solid var(--color-danger-border, #fecaca);
   padding: 0.65rem 0.85rem;
   border-radius: 6px;
   font-size: 0.78rem;
   margin-bottom: 0.65rem;
   font-family: monospace;
+}
+
+.report-viewer-container .chunk-error .file-line {
+  color: inherit;
+}
+
+.report-viewer-container .chunk-trace-info {
+  background: var(--color-bg-muted, #f8fafc);
+  color: var(--color-text-secondary, #475569);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  padding: 0.65rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  margin-bottom: 0.65rem;
+  font-family: monospace;
+}
+
+.report-viewer-container .chunk-trace-title {
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+  margin-bottom: 0.25rem;
 }
 
 .report-viewer-container .chunk-error-summary {

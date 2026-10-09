@@ -513,41 +513,44 @@ export default function ReportDiagnosticsTab({
               {synthesis.resource_id && <span className="health-chip success">{synthesis.resource_id}</span>}
             </div>
 
-            <div style={{ marginTop: '0.9rem', fontSize: '0.85rem', color: '#475569' }}>
+            <div style={{ marginTop: '0.9rem', fontSize: '0.85rem', color: 'var(--color-text-secondary, #475569)' }}>
               {synthesis.resource_chain && synthesis.resource_chain.length > 0 && (
-                <div className="chunk-error">
-                  Resource Chain:
+                <div className="chunk-trace-info">
+                  <div className="chunk-trace-title">Resource Chain:</div>
                   {synthesis.resource_chain.map((resourceID, index) => (
                     <div key={`${resourceID}-${index}`} className="file-line">• attempt {index + 1}: {resourceID}</div>
                   ))}
                 </div>
               )}
-              {synthesis.error_classes && synthesis.error_classes.length > 0 && (
+              {synthesis.error_classes && synthesis.error_classes.some(errorClass => errorClass && errorClass !== 'none') && (
                 <div className="chunk-error">
-                  错误分类:
+                  <div className="chunk-trace-title">错误分类:</div>
                   {synthesis.error_classes.map((errorClass, index) => (
                     <div key={`${errorClass}-${index}`} className="file-line">• attempt {index + 1}: {errorClass}</div>
                   ))}
                 </div>
               )}
-              {synthesis.queue_wait_ms && synthesis.queue_wait_ms.length > 0 && (
-                <div className="chunk-error">
-                  每次尝试队列等待:
+              {synthesis.queue_wait_ms && synthesis.queue_wait_ms.some(wait => wait > 0) && (
+                <div className="chunk-trace-info">
+                  <div className="chunk-trace-title">每次尝试队列等待:</div>
                   {synthesis.queue_wait_ms.map((wait, index) => (
                     <div key={`synthesis-queue-${index}`} className="file-line">• attempt {index + 1}: {wait} ms</div>
                   ))}
                 </div>
               )}
               {synthesis.attempt_duration_seconds && synthesis.attempt_duration_seconds.length > 0 && (
-                <div className="chunk-error">
-                  每次尝试耗时:
+                <div className="chunk-trace-info">
+                  <div className="chunk-trace-title">每次尝试耗时:</div>
                   {synthesis.attempt_duration_seconds.map((duration, index) => (
                     <div key={`synthesis-duration-${index}`} className="file-line">• attempt {index + 1}: {duration.toFixed(2)} s</div>
                   ))}
                 </div>
               )}
               {synthesis.error_message && (
-                <div className="chunk-error">错误信息: {synthesis.error_message}</div>
+                <div className="chunk-error">
+                  <div className="chunk-trace-title">错误信息:</div>
+                  {synthesis.error_message}
+                </div>
               )}
             </div>
           </div>
@@ -612,6 +615,11 @@ export default function ReportDiagnosticsTab({
               const errorLabel = chunk.error_class ? (errorClassLabels[chunk.error_class] || chunk.error_class) : '';
               const errorSuggestion = chunk.error_class ? (errorClassSuggestions[chunk.error_class] || '展开错误信息并检查原始日志。') : '';
               const expanded = !!expandedChunks[chunk.chunk_name];
+              const retryCount = typeof chunk.retries === 'number'
+                ? chunk.retries
+                : (chunk.attempts > 1 && ((chunk.resource_failovers ?? 0) > 0 || (chunk.error_classes ?? []).some(c => c && c !== 'none'))
+                    ? chunk.attempts - 1
+                    : 0);
 
               return (
                 <div
@@ -660,11 +668,15 @@ export default function ReportDiagnosticsTab({
                           {isChunkFailed && errorLabel && (
                             <span className="retry-badge">{errorLabel}</span>
                           )}
-                          {chunk.attempts > 1 && (
+                          {retryCount > 0 ? (
                             <span className="retry-badge">
-                              重试 {chunk.attempts - 1} 次
+                              重试 {retryCount} 次
                             </span>
-                          )}
+                          ) : chunk.attempts > 1 ? (
+                            <span className="retry-badge info">
+                              {chunk.attempts} 阶段调用
+                            </span>
+                          ) : null}
                           {chunk.split_depth > 0 && (
                             <span className="retry-badge">
                               拆分 {chunk.split_count > 0 ? `${chunk.split_count} 次` : `${chunk.split_depth} 层`}
@@ -725,36 +737,37 @@ export default function ReportDiagnosticsTab({
                       )}
                       {chunk.error_message && (
                         <div className="chunk-error">
-                          错误信息: {chunk.error_message}
+                          <div className="chunk-trace-title">错误信息:</div>
+                          {chunk.error_message}
                         </div>
                       )}
                       {chunk.resource_chain && chunk.resource_chain.length > 0 && (
-                        <div className="chunk-error">
-                          Resource Chain:
+                        <div className="chunk-trace-info">
+                          <div className="chunk-trace-title">Resource Chain:</div>
                           {chunk.resource_chain.map((resourceID, i) => (
                             <div key={`${resourceID}-${i}`} className="file-line">• attempt {i + 1}: {resourceID}</div>
                           ))}
                         </div>
                       )}
-                      {chunk.error_classes && chunk.error_classes.length > 0 && (
+                      {chunk.error_classes && chunk.error_classes.some(c => c && c !== 'none') && (
                         <div className="chunk-error">
-                          错误分类:
+                          <div className="chunk-trace-title">错误分类:</div>
                           {chunk.error_classes.map((errorClass, i) => (
                             <div key={`${errorClass}-${i}`} className="file-line">• attempt {i + 1}: {errorClass}</div>
                           ))}
                         </div>
                       )}
-                      {(chunk.queue_wait_ms?.length ?? 0) > 0 && (
-                        <div className="chunk-error">
-                          每次尝试队列等待:
+                      {(chunk.queue_wait_ms?.length ?? 0) > 0 && chunk.queue_wait_ms!.some(wait => wait > 0) && (
+                        <div className="chunk-trace-info">
+                          <div className="chunk-trace-title">每次尝试队列等待:</div>
                           {chunk.queue_wait_ms!.map((wait, i) => (
                             <div key={`queue-${i}`} className="file-line">• attempt {i + 1}: {wait} ms</div>
                           ))}
                         </div>
                       )}
                       {(chunk.attempt_duration_seconds?.length ?? 0) > 0 && (
-                        <div className="chunk-error">
-                          每次尝试耗时:
+                        <div className="chunk-trace-info">
+                          <div className="chunk-trace-title">每次尝试耗时:</div>
                           {chunk.attempt_duration_seconds!.map((duration, i) => (
                             <div key={`duration-${i}`} className="file-line">• attempt {i + 1}: {duration.toFixed(2)} s</div>
                           ))}
@@ -762,7 +775,7 @@ export default function ReportDiagnosticsTab({
                       )}
                       {(chunk.schema_repair_issues?.length ?? 0) > 0 && (
                         <div className="chunk-error">
-                          Schema 修复残余问题:
+                          <div className="chunk-trace-title">Schema 修复残余问题:</div>
                           {chunk.schema_repair_issues!.map((issue, i) => (
                             <div key={i} className="file-line">• {issue}</div>
                           ))}
