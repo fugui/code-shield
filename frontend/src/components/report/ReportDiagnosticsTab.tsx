@@ -112,6 +112,114 @@ function getStageLabel(index: number, total: number, retryCount: number): string
   return '初次调用';
 }
 
+interface StageExecutionTraceTableProps {
+  title?: string;
+  resourceChain?: string[];
+  durationSeconds?: number[];
+  queueWaitMs?: number[];
+  errorClasses?: string[];
+  attempts: number;
+  retryCount?: number;
+  isFailed?: boolean;
+  isSynthesis?: boolean;
+}
+
+function StageExecutionTraceTable({
+  title,
+  resourceChain,
+  durationSeconds,
+  queueWaitMs,
+  errorClasses,
+  attempts,
+  retryCount = 0,
+  isFailed = false,
+  isSynthesis = false,
+}: StageExecutionTraceTableProps) {
+  const stepCount = Math.max(
+    resourceChain?.length ?? 0,
+    durationSeconds?.length ?? 0,
+    queueWaitMs?.length ?? 0,
+    errorClasses?.length ?? 0,
+    attempts || 0
+  );
+
+  if (stepCount <= 0 || ((resourceChain?.length ?? 0) === 0 && (durationSeconds?.length ?? 0) === 0)) {
+    return null;
+  }
+
+  const defaultTitle = isSynthesis
+    ? (attempts > 1 ? '聚合阶段调度与耗时明细 (Synthesis Trace)' : '聚合执行与耗时明细 (Synthesis Trace)')
+    : (retryCount > 0
+        ? '故障重试与耗时明细 (Retry Trace)'
+        : (attempts > 1 ? '多阶段调度与耗时明细 (Stage Trace)' : '执行与耗时明细 (Execution Trace)'));
+
+  return (
+    <div className="code-trace-table-wrapper">
+      <div className="code-trace-table-header">
+        <span>{title || defaultTitle}</span>
+        <span className="code-trace-table-subtitle">共 {stepCount} 次调度</span>
+      </div>
+      <div className="code-trace-table-container">
+        <table className="code-trace-table">
+          <thead>
+            <tr>
+              <th>执行阶段 / 轮次</th>
+              <th>调度模型资源</th>
+              <th>队列等待</th>
+              <th>阶段耗时</th>
+              <th>执行状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: stepCount }).map((_, i) => {
+              const stageLabel = isSynthesis
+                ? (stepCount > 1 ? `第 ${i + 1} 次调用` : '单次执行')
+                : getStageLabel(i, stepCount, retryCount);
+
+              const resource = resourceChain?.[i];
+              const wait = queueWaitMs?.[i];
+              const duration = durationSeconds?.[i];
+              const errorClass = errorClasses?.[i];
+              const hasError = errorClass && errorClass !== 'none';
+              const isLast = i === stepCount - 1;
+
+              return (
+                <tr key={i}>
+                  <td className="col-stage">{stageLabel}</td>
+                  <td>
+                    {resource ? (
+                      <span className="code-trace-tag code-trace-tag--resource">{resource}</span>
+                    ) : (
+                      <span className="trace-muted">-</span>
+                    )}
+                  </td>
+                  <td className="col-mono">
+                    {wait != null ? `${wait} ms` : <span className="trace-muted">-</span>}
+                  </td>
+                  <td className="col-duration">
+                    {duration != null ? `${duration.toFixed(2)} s` : <span className="trace-muted">-</span>}
+                  </td>
+                  <td>
+                    {hasError ? (
+                      <span className="code-trace-tag code-trace-tag--error">
+                        {errorClassLabels[errorClass] || errorClass}
+                      </span>
+                    ) : isLast && isFailed ? (
+                      <span className="code-trace-tag code-trace-tag--error">失败</span>
+                    ) : (
+                      <span className="code-trace-tag code-trace-tag--success">✓ 成功</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportDiagnosticsTab({
   meta,
   diagnostics,
@@ -527,47 +635,16 @@ export default function ReportDiagnosticsTab({
               {synthesis.resource_id && <span className="health-chip success">{synthesis.resource_id}</span>}
             </div>
 
-            <div style={{ marginTop: '0.9rem', fontSize: '0.85rem', color: 'var(--color-text-secondary, #475569)' }}>
-              {synthesis.resource_chain && synthesis.resource_chain.length > 0 && (
-                <div className="chunk-trace-info">
-                  <div className="chunk-trace-title">
-                    {synthesis.attempts > 1 ? '模型资源调度链 (Resource Chain):' : '执行资源 (Resource):'}
-                  </div>
-                  {synthesis.resource_chain.map((resourceID, index) => (
-                    <div key={`${resourceID}-${index}`} className="file-line">
-                      • {synthesis.attempts > 1 ? `第 ${index + 1} 次调用: ` : ''}{resourceID}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {synthesis.error_classes && synthesis.error_classes.some(errorClass => errorClass && errorClass !== 'none') && (
-                <div className="chunk-error">
-                  <div className="chunk-trace-title">错误分类:</div>
-                  {synthesis.error_classes.map((errorClass, index) => (
-                    <div key={`${errorClass}-${index}`} className="file-line">• attempt {index + 1}: {errorClass}</div>
-                  ))}
-                </div>
-              )}
-              {synthesis.queue_wait_ms && synthesis.queue_wait_ms.some(wait => wait > 0) && (
-                <div className="chunk-trace-info">
-                  <div className="chunk-trace-title">每次尝试队列等待:</div>
-                  {synthesis.queue_wait_ms.map((wait, index) => (
-                    <div key={`synthesis-queue-${index}`} className="file-line">• attempt {index + 1}: {wait} ms</div>
-                  ))}
-                </div>
-              )}
-              {synthesis.attempt_duration_seconds && synthesis.attempt_duration_seconds.length > 0 && (
-                <div className="chunk-trace-info">
-                  <div className="chunk-trace-title">
-                    {synthesis.attempts > 1 ? '各次调用耗时:' : '执行耗时:'}
-                  </div>
-                  {synthesis.attempt_duration_seconds.map((duration, index) => (
-                    <div key={`synthesis-duration-${index}`} className="file-line">
-                      • {synthesis.attempts > 1 ? `第 ${index + 1} 次: ` : ''}{duration.toFixed(2)} s
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="synthesis-details-box">
+              <StageExecutionTraceTable
+                resourceChain={synthesis.resource_chain}
+                durationSeconds={synthesis.attempt_duration_seconds}
+                queueWaitMs={synthesis.queue_wait_ms}
+                errorClasses={synthesis.error_classes}
+                attempts={synthesis.attempts}
+                isFailed={synthesis.status === 'failed'}
+                isSynthesis
+              />
               {synthesis.error_message && (
                 <div className="chunk-error">
                   <div className="chunk-trace-title">错误信息:</div>
@@ -763,50 +840,15 @@ export default function ReportDiagnosticsTab({
                           {chunk.error_message}
                         </div>
                       )}
-                      {chunk.resource_chain && chunk.resource_chain.length > 0 && (
-                        <div className="chunk-trace-info">
-                          <div className="chunk-trace-title">
-                            {retryCount > 0 ? '故障重试链路 (Retry Chain):' : (chunk.attempts > 1 ? '多阶段调度链路 (Stage Chain):' : '执行资源 (Resource):')}
-                          </div>
-                          {chunk.resource_chain.map((resourceID, i) => (
-                            <div key={`${resourceID}-${i}`} className="file-line">
-                              • {getStageLabel(i, chunk.resource_chain!.length, retryCount)}: {resourceID}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {chunk.error_classes && chunk.error_classes.some(c => c && c !== 'none') && (
-                        <div className="chunk-error">
-                          <div className="chunk-trace-title">错误分类:</div>
-                          {chunk.error_classes.map((errorClass, i) => (
-                            <div key={`${errorClass}-${i}`} className="file-line">
-                              • {getStageLabel(i, chunk.error_classes!.length, retryCount)}: {errorClass}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {(chunk.queue_wait_ms?.length ?? 0) > 0 && chunk.queue_wait_ms!.some(wait => wait > 0) && (
-                        <div className="chunk-trace-info">
-                          <div className="chunk-trace-title">队列等待:</div>
-                          {chunk.queue_wait_ms!.map((wait, i) => (
-                            <div key={`queue-${i}`} className="file-line">
-                              • {getStageLabel(i, chunk.queue_wait_ms!.length, retryCount)}: {wait} ms
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {(chunk.attempt_duration_seconds?.length ?? 0) > 0 && (
-                        <div className="chunk-trace-info">
-                          <div className="chunk-trace-title">
-                            {retryCount > 0 ? '各次尝试耗时:' : (chunk.attempts > 1 ? '各阶段执行耗时:' : '执行耗时:')}
-                          </div>
-                          {chunk.attempt_duration_seconds!.map((duration, i) => (
-                            <div key={`duration-${i}`} className="file-line">
-                              • {getStageLabel(i, chunk.attempt_duration_seconds!.length, retryCount)}: {duration.toFixed(2)} s
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <StageExecutionTraceTable
+                        resourceChain={chunk.resource_chain}
+                        durationSeconds={chunk.attempt_duration_seconds}
+                        queueWaitMs={chunk.queue_wait_ms}
+                        errorClasses={chunk.error_classes}
+                        attempts={chunk.attempts}
+                        retryCount={retryCount}
+                        isFailed={chunk.status === 'failed'}
+                      />
                       {(chunk.schema_repair_issues?.length ?? 0) > 0 && (
                         <div className="chunk-error">
                           <div className="chunk-trace-title">Schema 修复残余问题:</div>
