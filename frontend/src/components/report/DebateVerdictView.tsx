@@ -306,10 +306,35 @@ function parseDebateContent(rawText: string): ParsedDebateResult {
     /CONFIRMED|CONDITIONAL|CHALLENGE_FAILED|DEFENSE_SUCCESSFUL/i.test(text);
 
   if (!hasJudgeKeywords) {
+    const numbered = parseNumberedItems(text);
+    const sections: ParsedDebateSection[] = [];
+    let summary = text;
+    if (numbered) {
+      // eslint-disable-next-line no-useless-escape
+      const firstNumIndex = text.search(/(?:^|\n)\s*1[\.、\)]/);
+      if (firstNumIndex > 0) {
+        summary = text.substring(0, firstNumIndex).trim();
+      } else {
+        summary = text.split('\n')[0].trim();
+      }
+      for (const item of numbered) {
+        const classInfo = classifySectionTag(item.title || `分析要点 ${item.index}`);
+        sections.push({
+          type: classInfo.type,
+          title: item.title ? `${item.index}. ${item.title}` : `要点 ${item.index}`,
+          icon: classInfo.icon,
+          color: classInfo.color,
+          borderColor: classInfo.borderColor,
+          bgColor: classInfo.bgColor,
+          content: item.content,
+        });
+      }
+    }
     return {
       isDebate: false,
-      intro: text,
-      sections: [],
+      intro: '',
+      verdictSummary: summary,
+      sections,
       rawText: text,
     };
   }
@@ -648,10 +673,34 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
   );
 
   const verdictBadge = parsed.verdictBadge || (
-    judgeBodyText && /CONFIRMED/i.test(judgeBodyText)
+    judgeBodyText && /CONFIRMED|属真实缺陷点|缺陷点真实存在|判定成立|成立/i.test(judgeBodyText)
       ? {
           status: 'CONFIRMED' as const,
           label: '缺陷事实成立 (CONFIRMED)',
+          color: 'var(--color-success, #10b981)',
+          bg: 'var(--color-success-subtle, rgba(16, 185, 129, 0.1))',
+          border: 'var(--color-success-border, rgba(16, 185, 129, 0.3))',
+        }
+      : judgeBodyText && /REJECTED|误报|驳回/i.test(judgeBodyText)
+      ? {
+          status: 'REJECTED' as const,
+          label: '误报驳回 (REJECTED)',
+          color: 'var(--color-danger, #ef4444)',
+          bg: 'var(--color-danger-subtle, rgba(239, 68, 68, 0.1))',
+          border: 'var(--color-danger-border, rgba(239, 68, 68, 0.3))',
+        }
+      : judgeBodyText && /CONDITIONAL|条件/i.test(judgeBodyText)
+      ? {
+          status: 'CONDITIONAL' as const,
+          label: '条件触发 (CONDITIONAL)',
+          color: 'var(--color-warning, #f59e0b)',
+          bg: 'var(--color-warning-subtle, rgba(245, 158, 11, 0.1))',
+          border: 'var(--color-warning-border, rgba(245, 158, 11, 0.3))',
+        }
+      : judgeBodyText
+      ? {
+          status: 'CONFIRMED' as const,
+          label: '法官裁决已出 (ADJUDICATED)',
           color: 'var(--color-success, #10b981)',
           bg: 'var(--color-success-subtle, rgba(16, 185, 129, 0.1))',
           border: 'var(--color-success-border, rgba(16, 185, 129, 0.3))',
@@ -828,9 +877,13 @@ export const DebateVerdictView: React.FC<DebateVerdictViewProps> = ({
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
-                      {parsed.verdictSummary && (
-                        <div className="code-audit-stage__content" style={{ fontWeight: 500 }}>
-                          {renderInlineFormattedText(parsed.verdictSummary)}
+                      {/* 如果有解析出的摘要，或当没有 sections 时展示完整裁判文本 */}
+                      {(parsed.verdictSummary || parsed.sections.length === 0) && (
+                        <div
+                          className="code-audit-stage__content"
+                          style={{ fontWeight: parsed.sections.length > 0 ? 500 : 400 }}
+                        >
+                          {renderInlineFormattedText(parsed.verdictSummary || judgeBodyText || parsed.rawText || '')}
                         </div>
                       )}
                       {parsed.sections.length > 0 && (
