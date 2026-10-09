@@ -52,34 +52,55 @@ flowchart LR
 
 **现实代码特征**：
 ```cpp
-// 场景 A：断言被封装在 Helper 中，裸正则判定“无断言”必定误报！
+// 场景 A (C++)：断言被封装在 Helper 中，裸正则判定“无断言”必定误报！
 TEST_F(OrderServiceTest, ProcessValidOrder) {
     auto order = CreateSampleOrder();
     auto status = service_->Process(order);
     VerifyOrderAndTransactionSuccess(order, status); // 关键断言在 Helper 内部
 }
 
-// 场景 B：通过基类或 Mock 框架析构自动校验，无显式 ASSERT 语句
+// 场景 B (C++)：通过基类或 Mock 框架析构自动校验，无显式 ASSERT 语句
 TEST_F(MockPaymentTest, ChargeCard) {
     EXPECT_CALL(*mock_gateway_, Charge(100)).Times(1);
     payment_processor_->ExecutePayment(100);
     // 退出作用域时 gmock 自动验证断言，无 ASSERT 语句
 }
 
-// 场景 C：纯物理空桩（极低频，属于绝对确定性事实）
+// 场景 C (C++)：纯物理空桩（极低频，属于绝对确定性事实）
 TEST(DeviceTest, EmptyStub) {}
 
-// 场景 D：标准常规用例（占总测试集 80% 以上）
+// 场景 D (C++)：标准常规用例（占总测试集 80% 以上）
 TEST(MathTest, AddNumbers) {
     EXPECT_EQ(Add(2, 3), 5);
 }
 
-// 场景 E：形式化防守/作弊单测（必须防范 Fast Pass 漏网）
+// 场景 E (C++)：形式化防守/作弊单测（必须防范 Fast Pass 漏网）
 TEST(ReportTest, GenerateReportFake) {
     auto report = generator.Build();
     bool passed = true;
     EXPECT_TRUE(passed); // 恒真局部变量作弊，实际上根本没测 report 内容！
 }
+```
+
+```python
+# 场景 F (Python)：断言在上下文管理器或 Helper 内部，若裸正则只查 assert 必将误杀！
+def test_order_creation_exception():
+    with pytest.raises(InvalidOrderError):  # 上下文管理器捕获异常，无显式 assert 关键字
+        create_order(invalid_payload)
+
+def test_user_session_cleanup():
+    session = create_test_session()
+    verify_session_expired_in_cache(session)  # 断言在 Helper 内部
+
+# 场景 G (Python)：经典 pass / ... / 纯 docstring 语法空桩
+def test_pending_feature():
+    pass  # 纯语法空桩（或仅包含 ...）
+
+# 场景 H (Python)：恒真与 Mock 拼写作弊
+def test_mock_behavior(mocker):
+    mock_service = mocker.MagicMock()
+    mock_service.execute()
+    mock_service.asser_called()  # 常见拼写笔误/作弊：非合法断言方法，测试静默通过！
 ```
 
 * **方案比对痛点**：
@@ -231,7 +252,7 @@ func (r *RadarRegistry) Inspect(codesPath string, unit coverage.PlanUnit) RadarR
 
 ### 3.3 多语言插件化静态雷达与防作弊规则实现
 
-针对不同语言单测语法差异，分离特化雷达实现，同时强化防作弊特征捕获（以 C++ 与 Go 为例）：
+针对不同语言单测语法差异，分离特化雷达实现，覆盖主流语言测试框架（C++ GoogleTest/GMock、Python pytest/unittest/mock、Go testing/testify），同时强化防作弊特征捕获：
 
 ```go
 package entityreview
@@ -245,7 +266,7 @@ import (
 )
 
 var (
-    // 通用严格匹配纯空函数体（允许注释与空白符）
+    // 通用严格匹配纯空大括号函数体（C++/Go/Java）
     pureEmptyBodyPattern = regexp.MustCompile(`^\{\s*(?://[^\n]*\s*|/\*.*?\*/\s*)*\}$`)
 
     // C++ 特征
@@ -254,6 +275,22 @@ var (
     cppLiteralTautology   = regexp.MustCompile(`(?i)\b(?:ASSERT|EXPECT)_(?:TRUE|FALSE)\s*\(\s*(?:true|false|1|0)\s*\)`)
     cppLocalVarTautology  = regexp.MustCompile(`(?:bool|int)\s+([a-zA-Z0-9_]+)\s*=\s*(?:true|false|1|0)\s*;[^;]*?\b(?:ASSERT|EXPECT)_(?:TRUE|FALSE)\s*\(\s*\1\s*\)`)
     cppHelperPattern      = regexp.MustCompile(`\b(?:Verify|Check|Validate|Ensure|Assert)[A-Za-z0-9_]*\s*\(`)
+
+    // Python 特征 (涵盖 pytest, unittest, mock)
+    // 严格匹配 Python 物理/语法空桩（pass, ..., 纯注释或纯 docstring）
+    pureEmptyPythonPattern = regexp.MustCompile(`^(?:\s*(?:#[^\n]*|"""[\s\S]*?"""|'''[\s\S]*?'''|pass|\.\.\.)\s*)*$`)
+    // pytest 与 unittest 标准断言及异常上下文管理器
+    pyStdAssertPattern     = regexp.MustCompile(`(?m)(?:^\s*assert\b|self\.assert[A-Za-z0-9_]*\s*\(|pytest\.raises\s*\(|pytest\.warns\s*\()`)
+    // unittest.mock 断言
+    pyMockAssertPattern    = regexp.MustCompile(`\b[a-zA-Z0-9_]+\.assert_(?:called|called_once|called_with|called_once_with|has_calls|any_call|not_called)\s*\(`)
+    // Python 字面量恒真断言 (如 assert True, assert 1, self.assertTrue(True), assert x == x)
+    pyLiteralTautology     = regexp.MustCompile(`(?m)(?:assert\s+(?:True|1|'[^']*'|"[^"]*")\b|self\.assertTrue\s*\(\s*(?:True|1)\s*\)|assert\s+([a-zA-Z0-9_]+)\s*==\s*\1\b)`)
+    // Python 局部变量赋值后直接断言的作弊形式
+    pyLocalVarTautology    = regexp.MustCompile(`(?m)([a-zA-Z0-9_]+)\s*=\s*True[\s\S]*?\b(?:assert\s+\1|self\.assertTrue\(\s*\1\s*\))`)
+    // Python 验证类 Helper 函数 (启发式)
+    pyHelperPattern        = regexp.MustCompile(`\b(?:verify|check|validate|ensure|assert_)[a-zA-Z0-9_]*\s*\(`)
+    // Python Mock 常见拼写笔误陷阱 (如 mock.asser_called)
+    pyMockTypoPattern      = regexp.MustCompile(`\b[a-zA-Z0-9_]+\.asser[a-zA-Z0-9_]*\(`)
 
     // Go 特征
     goAssertPattern  = regexp.MustCompile(`\b(?:t\.(?:Error|Fatal|Fail)|assert\.|require\.)`)
@@ -329,6 +366,135 @@ func (r CppLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) as
     }
 }
 
+// PythonLinterRadar Python 特化雷达 (支持 pytest, unittest, mock)
+type PythonLinterRadar struct{}
+
+func (r PythonLinterRadar) CanHandle(fp string) bool {
+    return strings.ToLower(filepath.Ext(fp)) == ".py"
+}
+
+func (r PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) assessment.RadarResult {
+    content := extractUnitSource(codesPath, unit)
+    if content == "" {
+        return assessment.RadarResult{Decision: assessment.DecisionFastPass}
+    }
+
+    body := extractFunctionBody(content)
+    trimmed := strings.TrimSpace(body)
+
+    // 1. Tier 0：纯语法空桩（pass, ..., 纯 docstring）
+    if pureEmptyPythonPattern.MatchString(trimmed) {
+        return buildTier0Result(unit)
+    }
+
+    var hints []assessment.StructuralFactHint
+
+    // 2. 防作弊排查与 Mock 拼写笔误陷阱 (Anti-Cheating Guard)
+    if pyLiteralTautology.MatchString(body) {
+        hints = append(hints, assessment.StructuralFactHint{
+            Category:    "TAUTOLOGY_LITERAL",
+            Description: "检测到 Python 测试用例包含字面量恒真断言（如 assert True 或 assert x == x）",
+        })
+    }
+    if pyLocalVarTautology.MatchString(body) {
+        hints = append(hints, assessment.StructuralFactHint{
+            Category:    "TAUTOLOGY_LOCAL_VAR",
+            Description: "检测到 Python 测试用例存在局部常量赋值后立即断言的可疑形式化作弊特征",
+        })
+    }
+    if pyMockTypoPattern.MatchString(body) && !pyMockAssertPattern.MatchString(body) {
+        hints = append(hints, assessment.StructuralFactHint{
+            Category:    "MOCK_ASSERTION_TYPO",
+            Description: "检测到疑似 Mock 断言方法拼写错误（如 asser_called），可能导致断言静默失效",
+        })
+    }
+
+    hasStdAssert := pyStdAssertPattern.MatchString(body)
+    hasMockAssert := pyMockAssertPattern.MatchString(body)
+    hasHelper := pyHelperPattern.MatchString(body)
+
+    // 3. Fast Pass 放行：包含标准 assert / pytest.raises / unittest / mock 且无作弊嫌疑
+    if (hasStdAssert || hasMockAssert) && len(hints) == 0 {
+        return assessment.RadarResult{Decision: assessment.DecisionFastPass}
+    }
+
+    // 4. 组装争议特征并标记进入 Tier 1 单轮极速复核
+    if !hasStdAssert && !hasMockAssert {
+        if hasHelper {
+            hints = append(hints, assessment.StructuralFactHint{
+                Category:    "POTENTIAL_HELPER_VERIFICATION",
+                Description: "未检测到显式 assert/mock 语句，但调用了验证类辅助函数",
+            })
+        } else {
+            hints = append(hints, assessment.StructuralFactHint{
+                Category:    "NO_EXPLICIT_ASSERTION",
+                Description: "未检测到显式断言语句，需复核是否存在异常期望、上下文管理器验证或属于无效覆盖桩",
+            })
+        }
+    }
+
+    return assessment.RadarResult{
+        Decision:  assessment.DecisionNeedVerify,
+        FactHints: hints,
+    }
+}
+
+// GoLinterRadar Go 特化雷达 (支持 testing.T 与 testify)
+type GoLinterRadar struct{}
+
+func (r GoLinterRadar) CanHandle(fp string) bool {
+    return strings.ToLower(filepath.Ext(fp)) == ".go"
+}
+
+func (r GoLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) assessment.RadarResult {
+    content := extractUnitSource(codesPath, unit)
+    if content == "" {
+        return assessment.RadarResult{Decision: assessment.DecisionFastPass}
+    }
+
+    body := extractFunctionBody(content)
+    trimmed := strings.TrimSpace(body)
+
+    // 1. Tier 0：纯空代码块
+    if pureEmptyBodyPattern.MatchString(trimmed) {
+        return buildTier0Result(unit)
+    }
+
+    var hints []assessment.StructuralFactHint
+    if goTautology.MatchString(body) {
+        hints = append(hints, assessment.StructuralFactHint{
+            Category:    "TAUTOLOGY_LITERAL",
+            Description: "检测到 Go 测试用例包含 assert.True(t, true) 等字面量恒真断言",
+        })
+    }
+
+    hasStdAssert := goAssertPattern.MatchString(body)
+    hasHelper := goHelperPattern.MatchString(body)
+
+    if hasStdAssert && len(hints) == 0 {
+        return assessment.RadarResult{Decision: assessment.DecisionFastPass}
+    }
+
+    if !hasStdAssert {
+        if hasHelper {
+            hints = append(hints, assessment.StructuralFactHint{
+                Category:    "POTENTIAL_HELPER_VERIFICATION",
+                Description: "未检测到标准 t.Error/assert/require，但调用了辅助测试函数",
+            })
+        } else {
+            hints = append(hints, assessment.StructuralFactHint{
+                Category:    "NO_EXPLICIT_ASSERTION",
+                Description: "未检测到显式断言或错误校验逻辑，需复核是否存在隐式校验或属于无效覆盖桩",
+            })
+        }
+    }
+
+    return assessment.RadarResult{
+        Decision:  assessment.DecisionNeedVerify,
+        FactHints: hints,
+    }
+}
+
 func buildTier0Result(unit coverage.PlanUnit) assessment.RadarResult {
     return assessment.RadarResult{
         Decision: assessment.DecisionTier0Defect,
@@ -369,10 +535,10 @@ func buildTier0Result(unit coverage.PlanUnit) assessment.RadarResult {
 
 #### 2. 复核专用极简提示词设计（1~2 秒结案）
 ```markdown
-你是一名代码质量仲裁员。静态分析器在以下单测函数中未发现显式 ASSERT 语句，或怀疑存在形式化恒真断言作弊，需进行语义复核。
+你是一名多语言代码质量仲裁员。静态分析器在以下单测函数中未发现显式断言语句，或怀疑存在形式化恒真断言作弊（支持 C++/Python/Go），需进行语义复核。
 
-## 待审单测源码
-```cpp
+## 待审单测源码 ({{.Language}})
+```{{.Language}}
 {{.UnitSourceCode}}
 ```
 
@@ -381,8 +547,8 @@ func buildTier0Result(unit coverage.PlanUnit) assessment.RadarResult {
 {{end}}
 
 ## 审查判定准则
-1. 若用例通过 Helper 辅助函数、GMock 行为期望、异常抛出捕获、或被测对象内部断言完成了实质性验证，判定为 PASS；
-2. 若用例仅盲目调用接口以刷取覆盖率、使用恒真断言作弊（如 EXPECT_TRUE(true) 或恒真局部变量）、或确实没有任何业务校验意图，判定为 DEFECT。
+1. 若用例通过 Helper 辅助函数、Mock 行为期望（GMock / unittest.mock）、异常捕获上下文（pytest.raises / EXPECT_THROW）、或被测对象内部断言完成了实质性验证，判定为 PASS；
+2. 若用例仅盲目调用接口以刷取覆盖率、使用恒真断言作弊（如 EXPECT_TRUE(true)、assert True、局部变量恒真赋值）、Mock 方法拼写错误（如 asser_called 导致静默通过）、或确实没有任何业务校验意图，判定为 DEFECT。
 
 请直接输出严格的 JSON 判定结果：
 {"outcome": "PASS"|"DEFECT", "reason": "50字以内的专业裁决说明", "severity": "NORMAL"|"MAJOR"}
@@ -577,7 +743,7 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
 2026-Q4 务实演进规划:
 ├── Milestone 1: 单测三阶漏斗与 Thin LLM 极速复核落地 (P0)
 │   ├── 在 services/engines/assessment/ 中定义 TriageDecision (含 DEGRADED_PASS 熔断状态)
-│   ├── 建立 LanguageRadar 多语言插件工厂，实现 C++ 与 Go 专用启发式雷达
+│   ├── 建立 LanguageRadar 多语言插件工厂，实现 C++、Python (pytest/unittest/mock) 与 Go 专用启发式雷达
 │   ├── 上线 Anti-Cheating Guard：精准捕获字面量恒真与局部变量赋值恒真作弊
 │   ├── 集成 services/invoker/native.go (NativeInvoker)，实现单测单轮 3.5s 超时与熔断复核
 │   ├── 统一跨来源缺陷指纹 SSOT 生成逻辑，对接增量治理台账
