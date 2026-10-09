@@ -155,6 +155,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 				candidate,
 				execution,
 				string(invoker.ErrorClassNone),
+				metrics,
 			)
 			if err == nil {
 				assessmentFindings = findings
@@ -209,6 +210,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 				candidate,
 				execution,
 				string(invoker.ErrorClassNone),
+				retryMetrics,
 			)
 			tokens += retryTokens
 			recordFreshRetryMetrics(ctx.Ctx, candidate, retryMetrics, retryErr)
@@ -325,6 +327,7 @@ func (e *DebateEngine) runSpecializedAssessmentOnce(
 	candidate dispatcher.TierCandidate,
 	execution *specializedAssessmentPlan,
 	promptSuffix string,
+	metricsOpt ...*invoker.InvocationMetrics,
 ) ([]models.AnalysisFinding, []coverage.AssessmentRecord, int64, error) {
 	workCtx := &invoker.LLMWorkContext{
 		ReportID: ctx.ReportID,
@@ -340,6 +343,9 @@ func (e *DebateEngine) runSpecializedAssessmentOnce(
 		prompt += "\n\n" + promptSuffix
 	}
 	metrics := &invoker.InvocationMetrics{}
+	if len(metricsOpt) > 0 && metricsOpt[0] != nil {
+		metrics = metricsOpt[0]
+	}
 	responseFormatMode := models.AppConfig.AssessmentJSONSchemaMode()
 	jsonSchema := assessmentJSONSchemaRequest(execution.artifact, responseFormatMode)
 	rawOutput, tokens, err := callSpecializedAssessmentTier(

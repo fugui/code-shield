@@ -745,7 +745,7 @@ func (e *DebateEngine) runHunterStageRecovery(
 		func(callCtx context.Context, candidate dispatcher.TierCandidate, timeoutSeconds int, metrics *invoker.InvocationMetrics) (string, int64, error) {
 			callEngineCtx := *ctx
 			callEngineCtx.Ctx = callCtx
-			out, tokens, err := e.runHunterStageOnceWithPlan(&callEngineCtx, bundle, outPath, timeoutSeconds, candidate)
+			out, tokens, err := e.runHunterStageOnceWithPlan(&callEngineCtx, bundle, outPath, timeoutSeconds, candidate, metrics)
 			if err == nil {
 				hunterOut = out
 			}
@@ -919,7 +919,7 @@ func (e *DebateEngine) runHunterStageOnce(ctx *engines.EngineContext, bundle chu
 	return e.runHunterStageOnceWithPlan(ctx, bundle, outPath, timeoutSeconds, dispatcher.TierCandidate{})
 }
 
-func (e *DebateEngine) runHunterStageOnceWithPlan(ctx *engines.EngineContext, bundle chunker.SemanticBundle, outPath string, timeoutSeconds int, candidate dispatcher.TierCandidate) (*HunterOutput, int64, error) {
+func (e *DebateEngine) runHunterStageOnceWithPlan(ctx *engines.EngineContext, bundle chunker.SemanticBundle, outPath string, timeoutSeconds int, candidate dispatcher.TierCandidate, metricsOpt ...*invoker.InvocationMetrics) (*HunterOutput, int64, error) {
 	// The split wrapper owns the whole-budget context. Bound this function
 	// separately so both the initial call and its contract repair retry share
 	// one per-attempt timeout rather than consuming the remaining split budget.
@@ -962,6 +962,9 @@ func (e *DebateEngine) runHunterStageOnceWithPlan(ctx *engines.EngineContext, bu
 		workCtx.ResourceID = candidate.ResourceID
 	}
 	metrics := &invoker.InvocationMetrics{}
+	if len(metricsOpt) > 0 && metricsOpt[0] != nil {
+		metrics = metricsOpt[0]
+	}
 	rawOutput, tokens, err := callAITierWithMetrics(ctx.Ctx, backend, modelName, prompt, ctx.CodesPath, outPath, timeoutSeconds, tierTimeoutPolicy(tierCfg), metrics, workCtx)
 	if err != nil {
 		return nil, tokens, err
