@@ -209,11 +209,15 @@ func RunTierInvocationWithRecovery(
 			return rawOutput, candidate, tokens, lastErr
 		}
 
+		attemptStart := time.Now()
 		metrics := &invoker.InvocationMetrics{}
 		attemptOutput, attemptTokens, invokeErr := invoke(ctx, candidate, attemptSeconds, metrics)
 		rawOutput = attemptOutput
 		tokens += attemptTokens
 		lastErr = invokeErr
+		if metrics.DurationMs <= 0 {
+			metrics.DurationMs = time.Since(attemptStart).Milliseconds()
+		}
 		stats.recordTiming(metrics)
 		class := invoker.ErrorClassNone
 		if lastErr != nil {
