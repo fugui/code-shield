@@ -467,7 +467,9 @@ func buildAssessmentContractRepairPrompt(
 		sb.WriteString(fmt.Sprintf("Allowed outcomes: %s\n", strings.Join(contract.AllowedOutcomes, ", ")))
 	}
 	if contract.Example != "" {
-		sb.WriteString("\nExample:\n```json\n" + contract.Example + "\n```\n")
+		sb.WriteString("\nExample:\n```json\n")
+		sb.WriteString(contract.Example)
+		sb.WriteString("\n```\n")
 	}
 	return sb.String()
 }

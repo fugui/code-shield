@@ -220,8 +220,8 @@ func errorText(err error) string {
 }
 
 func persistStageArtifactRepairAudit(
-	ctx context.Context,
-	bundle chunker.SemanticBundle,
+	_ context.Context,
+	_ chunker.SemanticBundle,
 	bundleID string,
 	reportID, repoID, taskTypeID uint,
 	metrics *HunterArtifactRepairMetrics,

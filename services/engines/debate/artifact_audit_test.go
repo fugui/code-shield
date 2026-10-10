@@ -110,7 +110,10 @@ func runHunterAuditStage(t *testing.T, bundleName string, outName string, allowE
 		dispatcher.TierCandidate{ResourceID: "resource-1", Driver: "hunter-audit-invoker", Model: "audit-model"},
 	)
 	if err != nil {
-		t.Fatalf("runHunterStageOnceWithPlan() error = %v", err)
+		if !allowError {
+			t.Fatalf("runHunterStageOnceWithPlan() error = %v", err)
+		}
+		return err
 	}
 	return nil
 }

@@ -99,10 +99,11 @@ func ContractForStageWithTaxonomy(mode string, stage string, allowedCategories [
 	}
 	contract.Enums["category"] = labels
 	contract.Enums["category_code"] = codes
-	if stage == "hunter" {
+	switch stage {
+	case "hunter":
 		contract.SchemaID = CandidatesArtifactSchemaV2
 		contract.Example = strings.Replace(contract.Example, `"category":`, fmt.Sprintf(`"category_code": %q, "category":`, exampleCode), 1)
-	} else if stage == "judge" {
+	case "judge":
 		contract.SchemaID = FinalVerdictsArtifactSchemaV3
 		contract.Example = strings.Replace(contract.Example, `"category":`, fmt.Sprintf(`"category_code": %q, "category":`, exampleCode), 1)
 	}
@@ -266,7 +267,9 @@ func RenderOutputContract(contract OutputContract) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString("`" + field + "`")
+		sb.WriteByte('`')
+		sb.WriteString(field)
+		sb.WriteByte('`')
 	}
 	sb.WriteString("\n")
 	if len(contract.ForbiddenTopLevel) > 0 {
@@ -275,7 +278,9 @@ func RenderOutputContract(contract OutputContract) string {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString("`" + field + "`")
+			sb.WriteByte('`')
+			sb.WriteString(field)
+			sb.WriteByte('`')
 		}
 		sb.WriteString("\n")
 	}

@@ -60,7 +60,8 @@ func (e *DebateEngine) applyPreflightGates(ctx *engines.EngineContext, bundle *c
 	for _, unit := range bundle.PrimaryUnits {
 		res, decided := e.executePreflightTriage(ctx, unit)
 		if decided {
-			if res.Decision == plugins.DecisionTier0Defect {
+			switch res.Decision {
+			case plugins.DecisionTier0Defect:
 				if res.Finding != nil {
 					res.Finding.TaskReportID = ctx.ReportID
 					res.Finding.TaskTypeID = ctx.TaskTypeID
@@ -71,7 +72,7 @@ func (e *DebateEngine) applyPreflightGates(ctx *engines.EngineContext, bundle *c
 					PrimaryUnitID: unit.ID,
 					Status:        "DEFECT",
 				})
-			} else if res.Decision == plugins.DecisionFastPass {
+			case plugins.DecisionFastPass:
 				interceptRecords = append(interceptRecords, coverage.AssessmentRecord{
 					PrimaryUnitID: unit.ID,
 					Status:        "PASS",

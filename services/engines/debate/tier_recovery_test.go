@@ -655,7 +655,7 @@ func configureAssessmentRecovery(t *testing.T, primary string, recovery models.T
 	configureRecoveryTier(t, []string{primary}, recovery)
 }
 
-func runSpecializedAssessmentRecovery(t *testing.T, files []string, invokerName string) ([]models.AnalysisFinding, []coverage.AssessmentRecord, *splitStats, error) {
+func runSpecializedAssessmentRecovery(t *testing.T, files []string, _ string) ([]models.AnalysisFinding, []coverage.AssessmentRecord, *splitStats, error) {
 	t.Helper()
 	tempDir := t.TempDir()
 	ctx := &engines.EngineContext{

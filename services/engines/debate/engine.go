@@ -1144,7 +1144,7 @@ func recoveryAllows(classes []string, class invoker.ErrorClass) bool {
 }
 
 func shouldSplitBundleOnRecovery(
-	ctx context.Context,
+	_ context.Context,
 	recovery models.TierRecoveryConfig,
 	class invoker.ErrorClass,
 	bundle chunker.SemanticBundle,
@@ -1787,7 +1787,7 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 						})
 					}
 				} else {
-					audit.addLLMRepair(retryRaw, retryTokens, false, false, retryParseErr != nil && !isContractMismatch(retryParseErr), retryParseErr)
+					audit.addLLMRepair(retryRaw, retryTokens, false, false, !isContractMismatch(retryParseErr), retryParseErr)
 					if retryChanged {
 						audit.addLocalRepair(retryNormalized, false, retryParseErr)
 					}
@@ -2189,7 +2189,7 @@ func writeStagePromptFile(path string, prompt string) error {
 }
 
 // parseJSONFromAIOutput 清洗并解析大模型输出的 JSON
-func parseJSONFromAIOutput(rawOutput string, v interface{}, workDir string) error {
+func parseJSONFromAIOutput(rawOutput string, v interface{}, _ string) error {
 	cleaned := cleanJSONOutput([]byte(rawOutput))
 	if err := json.Unmarshal(cleaned, v); err == nil {
 		sanitizeNullStrings(v)
