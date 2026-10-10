@@ -45,6 +45,11 @@ func TestParseProfiles(t *testing.T) {
 			raw:      `{"scan_profile":{"version":1,"name":"entity_review","target_scope":"test","languages":["cpp","python","java","go"],"entity_kind":"test_case"}}`,
 			wantName: NameEntityReview,
 		},
+		{
+			name:     "custom entity review with business scope",
+			raw:      `{"scan_profile":{"version":1,"name":"entity_review","target_scope":"business","languages":["cpp","python","java","go"],"entity_kind":"coredump_entry"}}`,
+			wantName: NameEntityReview,
+		},
 	}
 
 	for _, test := range tests {
@@ -79,7 +84,7 @@ func TestParseRejectsInvalidProfiles(t *testing.T) {
 		{name: "forbidden keyword field", raw: `{"scan_profile":{"version":1,"name":"full_review","content_keywords":["x"]}}`, reason: "forbidden"},
 		{name: "keyword missing", raw: `{"scan_profile":{"version":1,"name":"keyword_review"}}`, reason: "content_keywords is required"},
 		{name: "change with go", raw: `{"scan_profile":{"version":1,"name":"change_review","languages":["cpp","python","go"],"scope_policy":"changed_hunks","context_policy":"changed_files","base_policy":{"strategy":"since_days","since_days":7}}}`, reason: "must be"},
-		{name: "test entity business scope", raw: `{"scan_profile":{"version":1,"name":"test_entity_review","target_scope":"business"}}`, reason: "target_scope must be test"},
+		{name: "entity review invalid scope", raw: `{"scan_profile":{"version":1,"name":"entity_review","target_scope":"unknown_scope"}}`, reason: "target_scope must be test, business or all"},
 		{name: "legacy top level field", raw: `{"scan_profile":{"version":1,"name":"full_review"},"exclude_paths":[]}`, reason: "outside scan_profile"},
 	}
 

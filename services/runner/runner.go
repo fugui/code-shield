@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -224,6 +226,12 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	var engCtx *engines.EngineContext
 	chunkPolicyID := coverage.ChunkPolicyID(ctx.TaskType.Name, engineConfig)
 	ctx.ChunkPolicyID = chunkPolicyID
+	pluginsCfg, _ := engines.ParsePluginsConfig(engineConfig)
+	if pluginsCfg.PreflightGate == nil && pluginsCfg.ContextEnricher == nil && pluginsCfg.ThinVerifier == nil {
+		if rawMeta, err := os.ReadFile(models.AppConfig.GetAbsPath(filepath.Join(ctx.TaskType.TaskDir(), "meta.json"))); err == nil {
+			pluginsCfg, _ = engines.ParsePluginsConfig(rawMeta)
+		}
+	}
 	engCtx = &engines.EngineContext{
 		Ctx:                       ctx.Ctx,
 		ReportID:                  ctx.Report.ID,
@@ -234,6 +242,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		TaskTypeKey:               ctx.TaskType.Name,
 		EngineMode:                ctx.Report.EngineMode,
 		AssessmentConfig:          ctx.ExecutionSnapshot.AssessmentConfig,
+		Plugins:                   pluginsCfg,
 		Profile:                   parsedProfile.Profile,
 		ChunkPolicyID:             chunkPolicyID,
 		TaskDir:                   ctx.TaskType.TaskDir(),

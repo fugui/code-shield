@@ -99,11 +99,8 @@ func rules() map[string]fieldRule {
 			optional:  set("languages", "exclude_paths", "target_scope", "entity_kind"),
 			forbidden: set("scope_policy", "context_policy", "base_policy", "include_extensions", "content_keywords", "primary_unit", "max_files", "depth"),
 			validate: func(p ScanProfile) error {
-				if p.TargetScope != "test" {
-					return fmt.Errorf("scan_profile.target_scope must be test for %s", NameEntityReview)
-				}
-				if p.EntityKind != "" && p.EntityKind != "test_case" {
-					return fmt.Errorf("scan_profile.entity_kind must be test_case")
+				if p.TargetScope != "" && p.TargetScope != "test" && p.TargetScope != "business" && p.TargetScope != "all" {
+					return fmt.Errorf("scan_profile.target_scope must be test, business or all for %s", NameEntityReview)
 				}
 				for _, language := range p.Languages {
 					if !slices.Contains([]string{LanguageCPP, LanguagePython, LanguageJava, LanguageGo}, language) {
@@ -113,6 +110,9 @@ func rules() map[string]fieldRule {
 				return nil
 			},
 			normalizer: func(p *ScanProfile) {
+				if p.TargetScope == "" {
+					p.TargetScope = "test"
+				}
 				if p.EntityKind == "" {
 					p.EntityKind = "test_case"
 				}
@@ -233,6 +233,9 @@ func Hash(profile ScanProfile) string {
 	}
 	if IsOccurrenceReview(normalized.Name) && normalized.PrimaryUnit == "" {
 		normalized.PrimaryUnit = PrimaryUnitFile
+	}
+	if normalized.Name == NameEntityReview && normalized.TargetScope == "" {
+		normalized.TargetScope = "test"
 	}
 	if normalized.Name == NameEntityReview && normalized.EntityKind == "" {
 		normalized.EntityKind = "test_case"
