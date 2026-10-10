@@ -146,6 +146,7 @@ func (Profile) MapFindings(ctx assessment.AssessmentContext, bundle assessment.B
 			finding.Category = issue.Category
 			finding.Detail = issueSummary(item.Issues)
 			finding.Suggestion = issue.Suggestion
+			finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, unit, issue.Code)
 		case assessment.OutcomeNotTarget:
 			finding.Title = fmt.Sprintf("非目标测试实体：%s", displayName)
 			finding.Detail = item.Reason
@@ -153,6 +154,7 @@ func (Profile) MapFindings(ctx assessment.AssessmentContext, bundle assessment.B
 			finding.Title = fmt.Sprintf("测试用例需人工评估：%s", displayName)
 			finding.Severity = "建议"
 			finding.Detail = item.Reason
+			finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, unit, "")
 		}
 		findings = append(findings, finding)
 	}
