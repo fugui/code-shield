@@ -120,9 +120,19 @@ func ExecuteSynthesis(ctx *TaskContext, allFindings []models.AnalysisFinding, co
 	criticalCount := counts["严重"] + counts["critical"] + counts["major_error"] + counts["error"]
 	minorCount := counts["一般"] + counts["minor"] + counts["warning"] + counts["主要"] + counts["major"] + counts["提示"] + counts["info"] + counts["hint"]
 	suggestionCount := counts["建议"] + counts["suggestion"] + counts["comment"]
+	passCount := counts["合格"] + counts["pass"]
 
-	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n致命：%d，严重：%d，一般：%d，建议：%d\n```",
-		fatalCount, criticalCount, minorCount, suggestionCount)
+	var summaryHeader string
+	if passCount > 0 {
+		summaryHeader = fmt.Sprintf("致命：%d，严重：%d，一般：%d，建议：%d（合格：%d）",
+			fatalCount, criticalCount, minorCount, suggestionCount, passCount)
+	} else {
+		summaryHeader = fmt.Sprintf("致命：%d，严重：%d，一般：%d，建议：%d",
+			fatalCount, criticalCount, minorCount, suggestionCount)
+	}
+
+	suffixPrompt := fmt.Sprintf("【重要硬性指标约束（必须严格遵守）】：为了确保报告的统计数据100%%精确，请不要根据输入的 JSON 数量进行统计，而**必须**将以下精确的统计结果原封不动地输出在报告的『一、检视结果概要』章节中：\n```\n## 检视结果概要\n\n%s\n```",
+		summaryHeader)
 
 	summaryFindingCount := len(activeItems) - tier4DetailedFindings
 	if summaryFindingCount < 0 {
