@@ -1,7 +1,7 @@
-# 任务形态差异化扫描引擎演进：务实漏斗分流与受控变更因果注入设计
+# 任务形态差异化扫描引擎演进：声明式SPI插件机制、务实漏斗分流与受控变更因果注入设计
 
 > **文档状态**：`Accepted (架构团队评审通过与修订定稿版)` · 工业级高准确度与 SLA 护栏演进规范 · 正式转入落地实施  
-> **设计范围**：单测质量漏斗分级（Tier 0 静态截断含微空桩 / Fast Pass 防作弊放行 / Tier 1 原生 Thin LLM 单轮复核与弹性熔断自愈 / 异步补偿台账）、多语言雷达注册工厂（C++/Go/Java/Python）、受控变更因果切片（Top-3 务实加权排序与防吞错外层保护摘要）、语义契约与编译器职责解耦、多智能体信息对称装配、跨来源统一缺陷指纹契约、工程演进路径（启发式到 AST 作用域底座）  
+> **设计范围**：声明式任务扩展插件体系（Declarative Task Plugin SPI）、单测质量门禁插件（Tier 0 静态截断含微空桩 / Fast Pass 防作弊放行 / Tier 1 原生 Thin LLM 单轮复核与弹性熔断自愈 / 异步补偿台账）、多语言雷达插件实现（C++/Go/Java/Python）、变更因果增强插件（Top-3 务实加权排序与防吞错外层保护摘要）、语义契约与编译器职责解耦、多智能体信息对称装配、跨来源统一缺陷指纹契约、工程演进路径（启发式到 AST 作用域底座）  
 > **关联文档**：
 * [01-下一代AI扫描引擎与多Agent对抗辩论设计](01-下一代AI扫描引擎与多Agent对抗辩论设计.md)
 * [02-原生LLM轻量执行引擎与动静分离混合调用设计](02-原生LLM轻量执行引擎与动静分离混合调用设计.md)
@@ -13,34 +13,39 @@
 
 ## 〇、一页纸摘要（TL;DR）
 
-**战略核心导向：务实性价比与高准确度平衡（Pragmatic Accuracy & SLA Protection）**
-在企业级代码安全与质量分析平台中，**盲目追求降本会导致误报失控，而脱离成本谈准确度则会导致工程无法落地**。架构设计必须摆脱非黑即白的“钟摆效应”，在**分析准确度（杜绝误杀与漏报）、系统耗时（CI 门禁 SLA < 5 分钟）与算力成本（Token 预算可承受）**三者之间求取工业级帕累托最优解。
+**战略核心导向：务实性价比、控制反转与任务无限扩展（Pragmatic Accuracy, IoC & Extensibility）**
+在企业级代码安全与质量分析平台中，**盲目追求降本会导致误报失控，而脱离成本谈准确度则会导致工程无法落地；同时，若在底层引擎中针对特定任务硬编码分支逻辑，将导致任务扩展性彻底被锁死**。架构设计必须摆脱非黑即白的“钟摆效应”，在**分析准确度（杜绝误杀与漏报）、系统耗时（CI 门禁 SLA < 5 分钟）、算力成本（Token 预算可承受）与架构开放度（声明式 SPI 插件化扩展）**四者之间求取工业级帕累托最优解。
 
 **历史复盘与架构演进脉络**：
 1. **原草案的降本陷阱**：试图用裸正则静态拦截 75% 的单测，遇到 Helper 封装、基类析构校验、GMock 框架时产生**毁灭性批量误报（False Positive Catastrophe）**；
-2. **中间修订版的过度工程化**：走向另一极端，提出“拒绝算力妥协”，让全量单测走 3-Agent 对抗辩论（1,000 单测产生 3,000 次 LLM 调用），导致**低危场景与重型算力严重倒挂**；同时在变更检视中引入“全量封闭函数图谱”与“专属推演 Agent”，试图让大模型充当低效的“虚拟编译器”，面临 **Token 爆炸、Prompt 32KB 上限被击穿、以及 CI 时延雪崩**的致命缺陷。
+2. **中间修订版的过度工程化**：走向另一极端，提出“拒绝算力妥协”，让全量单测走 3-Agent 对抗辩论（1,000 单测产生 3,000 次 LLM 调用），导致**低危场景与重型算力严重倒挂**；同时在变更检视中引入“全量封闭函数图谱”与“专属推演 Agent”，试图让大模型充当低效的“虚拟编译器”，面临 **Token 爆炸、Prompt 32KB 上限被击穿、以及 CI 时延雪崩**的致命缺陷；
+3. **硬编码分支陷阱（本次重构重点根除）**：原设计在全局 `ScanProfile` 校验中写死了 `target_scope must be test` 和 `entity_kind == "test_case"`，将单测专有逻辑深嵌至核心调度层，导致非单测实体审计与自定义任务扩展能力受损。
 
 ```mermaid
 flowchart LR
     A[原草案: 降本极端<br/>裸正则直接判死<br/>❌ 批量误杀 Helper/Mock]
     -->|修正过度| B[中间版: 防御极端<br/>全量3-Agent辩论+专属推演<br/>❌ 算力倒挂/Prompt溢出/时延雪崩]
-    -->|务实收敛| C[本演进版: 务实平衡与弹性护栏<br/>漏斗分流+Thin LLM复核+受控切片+熔断兜底<br/>✅ 零误杀/低Token/外层防截断/守住CI SLA]
+    -->|去特化解耦| C[本演进版: 声明式 SPI 插件架构 + 务实平衡<br/>IoC 插件装配 + 漏斗门禁 + 受控切片 + 弹性熔断<br/>✅ 核心零硬编码 / 任务无限扩展 / 守住 CI SLA]
 ```
 
 **核心务实演进方案**：
-1. **单测质量审查：三阶梯队收敛漏斗（Tiered Funnel）**
+1. **控制反转与声明式任务扩展插件体系（Declarative Task Plugin SPI）**：
+   * **正交解耦三层模型**：彻底厘清“业务任务定义（Task Type，开放无限）”、“物理执行形态（Execution Profile，几何收敛）”与“扩展管道插件（Pipeline Plugins，策略插拔）”；
+   * **元数据驱动装配**：任务在 `tasks/<task>/meta.json` 中声明其挂载的插件（如 `preflight_gate`、`context_enricher`、`thin_verifier`）；
+   * **核心调度纯黑盒化**：调度引擎完全消除 `if entity_kind == "test_case"` 或 `switch task.Name` 等业务特判，通过 Go 进程内 SPI 注册表（`FacetRegistry[T]`）通用分发。
+2. **单测质量审查：基于 `test_case_radar` 门禁插件的三阶梯队漏斗（Tiered Funnel）**
    * **Tier 0 极速确诊（物理空桩与微空桩）**：对 100% 确定事实（如纯空函数 `{}`、仅含局部变量声明或无被测调用的微空桩）实施毫秒级静态拦截；
    * **Fast Pass（极速放行 + 防作弊护栏）**：显式包含标准 `ASSERT/EXPECT`、`EXPECT_CALL` 的合规单测直接通过（包含 Table-Driven Tests 嵌套闭包断言识别）；针对形式化防守单测引入局部恒真检测，排除作弊后**静默放行 80%+ 规范用例，不消耗任何 LLM 算力**；
-   * **Tier 1 轻量单轮复核（Thin LLM Gate + 弹性熔断与自愈）**：针对“未检测到显式断言、可疑恒真参数、存在未知 Helper”的争议用例，调用基于 HTTP REST 的 **原生 Thin LLM 引擎** 执行 1~2 秒单轮语义复核。设置 3.5s 超时、三态熔断自愈（Closed/Open/Half-Open）以及**异步补偿对账机制（Compensating Sweep）**，既杜绝静态误杀、坚决不阻塞 CI，又防止高负载下作弊用例永久逃逸；**绝不拉起昂贵的 3-Agent 对抗辩论**；
+   * **Tier 1 轻量单轮复核（Thin LLM Gate + 弹性熔断与自愈）**：针对“未检测到显式断言、可疑恒真参数、存在未知 Helper”的争议用例，调用基于 HTTP REST 的 **原生 Thin LLM 引擎** 执行 1~2 秒单轮语义复核。复核提示词由任务元数据动态装配（绝不硬编码在 Go 常量中）。设置 3.5s 超时、三态熔断自愈（Closed/Open/Half-Open）以及**异步补偿对账机制（Compensating Sweep）**，既杜绝静态误杀、坚决不阻塞 CI，又防止高负载下作弊用例永久逃逸；**绝不拉起昂贵的 3-Agent 对抗辩论**；
    * **Tier 2 对抗辩论退避**：多智能体辩论仅保留给明确指定的深层架构/内存扫描任务，单测审查默认不进入 Tier 2。
-2. **变更检视：受控因果切片与多维加权（Controlled Causal Impact Slices）**
+3. **变更检视：基于 `downstream_causal_slice` 插件的受控因果切片（Controlled Causal Impact Slices）**
    * **职责明确分工**：语法错误、参数类型/个数不匹配完全由**编译器与 CI 构建步骤确定性拦截**；大模型专攻编译器无法感知的**隐式语义契约破坏**（如未捕获的新增错误码、状态机时序破坏、资源未释放）；
    * **Top-3 务实加权排序与检索熔断**：通过高置信度打分模型 $Score = W_{\text{module}} \cdot S_{\text{module}} + W_{\text{call\_exact}} \cdot S_{\text{call\_exact}} + W_{\text{branch}} \cdot S_{\text{branch}} - W_{\text{test}} \cdot S_{\text{test}}$ 精准锁定最典型的 3 处业务调用，避免在缺乏 AST 阶段宣称不可行的纯文本类型推导，并设置 3 秒全局检索超时熔断保护；
    * **物理上下文受控与外层保护摘要（防断章取义与防吞错）**：提取调用点前后 **10~15 行紧凑调用块**（体积严格控制在 2KB 内）的同时，静态提取外层 `try-catch`（含恶性空 catch/吞异常识别）、`error return`、`RAII` 保护特征摘要，为反驳提供事实护栏，坚决不突破 Prompt 32KB 硬截断上限，彻底杜绝下游陈旧缺陷误归因与断章取义误报；
    * **废弃“专属推演 Agent”**：所有因果切片统一注入主分片对局，严格守住 CI 3~5 分钟 SLA。
-3. **跨来源统一缺陷指纹（SSOT Alignment）**：Tier 0 静态截断、Tier 1 Thin LLM 与主对抗辩论全量采用标准统一哈希算法，确保跨轮次增量对账完全稳定。
-4. **多语言插件化雷达工厂（Language Radar Factory）**：建立 C++、Go、Java、Python 独立的雷达解析实现，避免单一大正则杂糅各语言语法。
-5. **静态基建稳步演进（解耦能力倒挂）**：短期以多语言插件式启发式模式识别提取高置信度线索，中期优先引入轻量 AST 作用域底座（Tree-sitter）精准支持外层结构摘要与嵌套函数解析，彻底摆脱复杂嵌套正则的脆弱性。
+4. **跨来源统一缺陷指纹（SSOT Alignment）**：Tier 0 静态截断、Tier 1 Thin LLM 与主对抗辩论全量采用标准统一哈希算法，确保跨轮次增量对账完全稳定。
+5. **多语言插件化雷达工厂（Language Radar Factory）**：建立 C++、Go、Java、Python 独立的雷达解析实现，避免单一大正则杂糅各语言语法。
+6. **静态基建稳步演进（解耦能力倒挂）**：短期以多语言插件式启发式模式识别提取高置信度线索，中期优先引入轻量 AST 作用域底座（Tree-sitter）精准支持外层结构摘要与嵌套函数解析，彻底摆脱复杂嵌套正则的脆弱性。
 
 ---
 
@@ -135,6 +140,28 @@ bundles = append(bundles, SemanticBundle{
 
 ---
 
+### 1.3 任务扩展性隐患：硬编码分支导致的类型泄漏与控制耦合
+
+在现存代码 [`services/engines/profile/profile.go:101-107`](file:///home/fugui/codes/code-shield/services/engines/profile/profile.go#L101-L107) 中存在如下强校验：
+```go
+NameEntityReview: {
+    validate: func(p ScanProfile) error {
+        if p.TargetScope != "test" {
+            return fmt.Errorf("scan_profile.target_scope must be test for %s", NameEntityReview)
+        }
+        if p.EntityKind != "" && p.EntityKind != "test_case" {
+            return fmt.Errorf("scan_profile.entity_kind must be test_case")
+        }
+        ...
+```
+* **现实痛点剖析**：
+  1. **实体概念缩水**：上述硬编码直接将“代码语法实体（Entity）”狭隘绑定为“测试用例（TestCase）”，导致未来若扩展生产代码实体审查（如 API 接口安全注解审计、微服务配置模型审计），无法复用 `entityreview` 拓扑；
+  2. **调度层硬编码侵入**：若在调度层使用 `switch entity_kind { case "test_case": ... }` 判定是否执行漏斗分流，每增加一个新任务类型，就必须修改底层引擎源码并重新编译，彻底违背**开闭原则（OCP）**；
+  3. **提示词特化泄漏**：若将单测特定的复核 Prompt 写死在底层通用执行器中，底层引擎将失去通用性。
+* **结论**：**必须通过“控制反转（IoC）与声明式任务插件化 SPI”，将单测漏斗和变更切片策略抽象为插件，任务元数据通过 `meta.json` 声明式挂载，核心引擎达到零硬编码。**
+
+---
+
 ## 二、架构设计原则（不可违背的不变量）
 
 | 编号 | 原则 | 核心含义 | 违背症状 |
@@ -146,18 +173,287 @@ bundles = append(bundles, SemanticBundle{
 | **P5** | **信息对称与统一契约 (Information Symmetry & SSOT)** | 调用点因果切片在对抗辩论中对 Hunter、Challenger、Judge 全链路透明；结论统一输出标准 `AssessmentsArtifactSchemaV2` 并附带精准指纹。 | 攻防双方信息不对等导致盲目反驳；缺陷台账无法完成跨轮增量对账。 |
 | **P6** | **弹性熔断与 SLA 兜底优先 (Resilient Circuit Breaker & Fallback)** | 当符号检索耗时超标（> 3s）或 Thin LLM 连续抖动/超时（> 3.5s）时，必须执行确定性降级放行或退避，坚决捍卫 CI SLA。 | 单个 LLM 接口阻塞或大仓深层检索引发流水线全局卡死。 |
 | **P7** | **局部切片防截断失真 (Anti-Truncation Distortions & Outer Summary)** | 受控切片必须附带外层结构特征摘要（try-catch、透传 error、RAII guard），为 Challenger 提供客观反驳事实，杜绝断章取义。 | 模型断章取义下游 10 行局部代码，误将全局已妥善拦截的异常判为缺陷。 |
+| **P8** | **声明式 SPI 与零业务硬编码 (Declarative SPI & Zero Hardcoding)** | 核心调度流水线严禁包含特定任务类型（如 `ut-effectiveness`）或实体类型（如 `test_case`）的条件硬编码特判；所有差异化行为必须抽象为通用 SPI 插件，并在 `meta.json` 中声明式装配。 | 每增加一个新扫描任务都必须修改核心调度源码；代码中满地散落单测专用正则与分支判定。 |
 
 ---
 
-## 三、单测场景演进：三阶梯队漏斗、防作弊与轻量语义复核
+## 三、任务形态正交解耦与声明式 SPI 插件架构设计
 
-### 3.1 总体执行拓扑
+### 3.1 三层正交解耦模型
+
+为了彻底根除“在核心代码中硬编码 `entity_kind == "test_case"`”带来的可扩展性破坏，Code-Shield 必须坚持**控制反转（Inversion of Control, IoC）**，将系统清晰划分为三个完全正交、独立演化的抽象层级：
 
 ```mermaid
 flowchart TD
-    subgraph S1 [阶段一: 实体提取与多语言雷达扫描]
-        A[Git/Repo 源码] --> B[Planner: 提取 PlanUnitTestCase 实体]
-        B --> C[RadarRegistry: 分发至多语言特化雷达<br/>CppRadar / GoRadar / JavaRadar]
+    subgraph L1 ["【层级 1: 业务任务定义 (Task Type)】开放无限扩展 (用户/租户定义)"]
+        T1["coredump_risk (Coredump 风险)"]
+        T2["memory_leak (内存泄漏)"]
+        T3["float_comparison (浮点比较)"]
+        T4["ut_effectiveness (单测有效性)"]
+        T5["change_review (近期变更检视)"]
+        T6["... 未来自定义任务 (如 api_security, sql_injection)"]
+    end
+
+    subgraph L2 ["【层级 2: 物理执行形态 (Execution Profile)】几何拓扑收敛 (3 种)"]
+        P1["occurrencereview / full_review<br/>(按文件或命中线索切片)"]
+        P2["changereview<br/>(按 Git Diff / PR 变更 hunk 切片)"]
+        P3["entityreview<br/>(按 AST 语法代码实体切片)"]
+    end
+
+    subgraph L3 ["【层级 3: 管道插件插槽 (Pipeline Plugin SPI)】策略模式装配"]
+        G1["preflight_gate (前置门禁插件)<br/>• test_case_radar: 空桩/恒真防作弊<br/>• api_auth_linter: 接口鉴权注解"]
+        G2["context_enricher (上下文增强插件)<br/>• downstream_causal_slice: Top-3 调用点切片"]
+        G3["thin_verifier (快速单轮复核插件)<br/>• native_single_round: 原生单轮极速仲裁"]
+    end
+
+    T1 & T2 & T3 -->|选择物理切片| P1
+    T4 -->|选择物理切片| P3
+    T5 -->|选择物理切片| P2
+
+    T4 -.->|在 meta.json 中声明挂载| G1 & G3
+    T5 -.->|在 meta.json 中声明挂载| G2
+    T1 -.->|若在 PR 增量模式下，也可声明挂载| G2
+```
+
+1. **业务任务定义层 (Task Type & Domain Family)**：
+   * 属于**业务领域层**，完全开放、无限扩展；
+   * 由 `tasks/<task>/meta.json`、`analysis_prompt.md`、`taxonomy`（分类白名单）与 `defense_dimensions`（抗辩维度）驱动；
+   * 核心引擎对其业务逻辑保持纯黑盒，不包含任何业务 if/else。
+2. **物理执行形态层 (Execution Profile / Topology)**：
+   * 属于**底层切片与编排几何形态**，高度收敛为三大正交范式：
+     - `entityreview`：按代码语法实体（函数、方法、类、用例）切片；
+     - `changereview`：按 Git 增量代码块（Hunk / PR Commit）切片；
+     - `occurrencereview`：按文件或静态命中规则线索切片；
+   * **实体（Entity）绝不等于单测用例**：单测只是实体的一种（`test_case`），未来 API 接口（`api_endpoint`）、数据模型（`database_model`）皆可复用 `entityreview`。
+3. **管道扩展插件层 (Pipeline Plugin SPI)**：
+   * 属于**引擎扩展策略层**，提供通用的生命周期插槽（Hooks & Interceptors）；
+   * 单测漏斗与变更切片分别作为具体的 SPI 插件实现，按需声明式挂载，严禁侵入核心调度器。
+
+---
+
+### 3.2 任务元数据声明式插件配置契约（`meta.json`）
+
+在 `tasks/<task>/meta.json` 中引入 `plugins` 声明块，任务通过插件 ID 及其选项参数完成装配：
+
+```json
+{
+  "name": "ut_effectiveness",
+  "domain_family": "test_engineering",
+  "engine_config": {
+    "scan_profile": {
+      "name": "entity_review",
+      "target_scope": "test",
+      "entity_kind": "test_case",
+      "languages": ["cpp", "go", "python", "java"],
+      "version": 1
+    }
+  },
+  "plugins": {
+    "preflight_gate": {
+      "id": "test_case_radar",
+      "options": {
+        "anti_cheating": true,
+        "languages": ["cpp", "python", "go"]
+      }
+    },
+    "thin_verifier": {
+      "id": "native_single_round",
+      "timeout_seconds": 3.5,
+      "prompt_file": "tasks/ut-effectiveness/triage_prompt.md"
+    }
+  }
+}
+```
+
+* **对于增量变更检视任务 (`change-review`)**：
+```json
+{
+  "name": "change_review",
+  "domain_family": "comprehensive_evolution",
+  "engine_config": {
+    "scan_profile": {
+      "name": "change_review",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "context_enricher": {
+      "id": "downstream_causal_slice",
+      "options": {
+        "top_k": 3,
+        "timeout_seconds": 3.0,
+        "extract_outer_scope": true
+      }
+    }
+  }
+}
+```
+
+* **对于未来用户自定义的业务实体任务 (如 `api-security`)**：
+*完全复用 `entity_review` 物理切片，但挂载自定义的 API 注解门禁，无需修改一行 Go 核心代码：*
+```json
+{
+  "name": "api_security",
+  "domain_family": "security_injection",
+  "engine_config": {
+    "scan_profile": {
+      "name": "entity_review",
+      "target_scope": "business",
+      "entity_kind": "api_endpoint",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "preflight_gate": {
+      "id": "api_auth_annotation_gate",
+      "options": {
+        "require_rbac": true
+      }
+    }
+  }
+}
+```
+
+---
+
+### 3.3 进程内 SPI 接口与统一插件注册中心
+
+利用 Code-Shield 现有的 [`FacetRegistry[T]`](file:///home/fugui/codes/code-shield/services/engines/assessment/profile.go#L201) 机制，在 `services/engines/plugins/` 下建立三大标准化扩展接口：
+
+```go
+package plugins
+
+import (
+    "code-shield/services/coverage"
+    "code-shield/services/engines/assessment"
+    "code-shield/services/engines/chunker"
+)
+
+// 1. 前置轻量门禁插件（负责执行 Tier 0 静态拦截、Fast Pass 极速放行与争议标记）
+type PreflightGatePlugin interface {
+    ID() string
+    Inspect(codesPath string, unit coverage.PlanUnit, options map[string]any) assessment.RadarResult
+}
+
+// 2. 上下文因果增强插件（负责向分片中注入 Top-3 下游调用点紧凑切片与外层保护特征）
+type ContextEnricherPlugin interface {
+    ID() string
+    Enrich(codesPath string, bundle *chunker.SemanticBundle, options map[string]any) error
+}
+
+// 3. 轻量快速复核插件（负责执行 Tier 1 Thin LLM 单轮语义仲裁）
+type ThinVerifierPlugin interface {
+    ID() string
+    Verify(codesPath string, unit coverage.PlanUnit, hints []assessment.StructuralFactHint, promptTemplate string, timeoutSec float64) (assessment.RadarResult, error)
+}
+```
+
+#### 插件注册中心（Plugin Registry）：
+```go
+package plugins
+
+import (
+    "sync"
+    "code-shield/services/engines/assessment"
+)
+
+var (
+    gateRegistry     = assessment.NewFacetRegistry[PreflightGatePlugin]()
+    enricherRegistry = assessment.NewFacetRegistry[ContextEnricherPlugin]()
+    verifierRegistry = assessment.NewFacetRegistry[ThinVerifierPlugin]()
+)
+
+func RegisterPreflightGate(gate PreflightGatePlugin) error {
+    return gateRegistry.Register(gate.ID(), gate)
+}
+
+func RegisterContextEnricher(enricher ContextEnricherPlugin) error {
+    return enricherRegistry.Register(enricher.ID(), enricher)
+}
+
+func RegisterThinVerifier(verifier ThinVerifierPlugin) error {
+    return verifierRegistry.Register(verifier.ID(), verifier)
+}
+
+func GetPreflightGate(id string) (PreflightGatePlugin, error) {
+    return gateRegistry.Get(id)
+}
+
+func GetContextEnricher(id string) (ContextEnricherPlugin, error) {
+    return enricherRegistry.Get(id)
+}
+
+func GetThinVerifier(id string) (ThinVerifierPlugin, error) {
+    return verifierRegistry.Get(id)
+}
+```
+
+---
+
+### 3.4 核心调度流水线去特化（零业务硬编码）
+
+核心引擎（`DebateEngine` / `Planner`）在执行时，完全不感知当前是何种具体任务类型，只做通用的管道调度：
+
+```go
+// 核心调度流水线中的纯通用执行逻辑
+func (e *DebateEngine) executePreflightTriage(ctx *EngineContext, unit coverage.PlanUnit) (assessment.RadarResult, bool) {
+    // 1. 检查任务是否在 meta.json 中声明挂载了 preflight_gate 插件
+    gateCfg := ctx.TaskMeta.Plugins.PreflightGate
+    if gateCfg == nil || gateCfg.ID == "" {
+        // 未声明插件：直接放行进入主分析对局 (Pass-through)
+        return assessment.RadarResult{Decision: assessment.DecisionNeedVerify}, false
+    }
+
+    // 2. 动态获取 SPI 插件实例
+    gate, err := plugins.GetPreflightGate(gateCfg.ID)
+    if err != nil {
+        log.Printf("[Preflight] Warning: plugin %q not found, fallback to main debate: %v", gateCfg.ID, err)
+        return assessment.RadarResult{Decision: assessment.DecisionNeedVerify}, false
+    }
+
+    // 3. 执行插件评估，完全黑盒，核心层零单测代码！
+    result := gate.Inspect(ctx.CodesPath, unit, gateCfg.Options)
+    if result.Decision == assessment.DecisionTier0Defect || result.Decision == assessment.DecisionFastPass {
+        return result, true // 静态直接截断或极速放行，不再消耗后续大模型算力
+    }
+
+    // 4. 若进入争议区 (NEED_VERIFY)，检查是否挂载了 thin_verifier 插件
+    verifierCfg := ctx.TaskMeta.Plugins.ThinVerifier
+    if verifierCfg != nil && verifierCfg.ID != "" {
+        verifier, err := plugins.GetThinVerifier(verifierCfg.ID)
+        if err == nil {
+            vResult, vErr := verifier.Verify(ctx.CodesPath, unit, result.FactHints, verifierCfg.PromptFile, verifierCfg.TimeoutSeconds)
+            if vErr == nil {
+                return vResult, true // Tier 1 单轮极速结案
+            }
+        }
+    }
+
+    return result, false
+}
+```
+
+---
+
+### 3.5 实体检视解绑改造（解耦 `ScanProfile` 约束）
+
+对 [`services/engines/profile/profile.go:98-120`](file:///home/fugui/codes/code-shield/services/engines/profile/profile.go#L98-L120) 进行规范化解耦修订：
+1. **解除 `TargetScope == "test"` 的硬编码强制**：`TargetScope` 允许配置为 `test` 或 `business`（缺省默认为 `test` 保持历史兼容）；
+2. **解除 `EntityKind == "test_case"` 的狭隘限制**：`EntityKind` 开放为任意合法标识符（如 `test_case`、`api_endpoint`、`model_class`，缺省默认为 `test_case`）；
+3. **彻底释放 `entityreview` 执行形态的通用代码分析潜能**。
+
+---
+
+## 四、实体场景演进：单测质量门禁插件（TestCaseRadarGate）与三阶漏斗
+
+
+### 4.1 总体执行拓扑
+
+```mermaid
+flowchart TD
+    subgraph S1 [阶段一: 实体提取与 TestCaseRadarGate 插件分发]
+        A[Git/Repo 源码] --> B[Planner: 提取 PlanUnit 实体]
+        B --> C[TestCaseRadarGate 门禁插件<br/>分发至多语言特化雷达: CppRadar / GoRadar / JavaRadar]
     end
 
     subgraph S2 [阶段二: 三阶梯队漏斗与防作弊收敛]
@@ -191,9 +487,47 @@ flowchart TD
 
 ---
 
-### 3.2 接口契约定义
+### 4.2 TestCaseRadarGate 插件契约与分流决策定义
 
-在 [`services/engines/assessment/profile.go`](file:///home/fugui/codes/code-shield/services/engines/assessment/profile.go) 中定义轻量雷达、分流决策与多语言工厂契约：
+在 [`services/engines/plugins/gates/testcase/radar.go`](file:///home/fugui/codes/code-shield/services/engines/plugins/gates/testcase/radar.go) 中实现通用的 `plugins.PreflightGatePlugin` 接口，并维护分流决策状态机：
+
+```go
+package testcase
+
+import (
+    "code-shield/services/coverage"
+    "code-shield/services/engines/assessment"
+    "code-shield/services/engines/plugins"
+)
+
+// TestCaseRadarGate 实现 plugins.PreflightGatePlugin 接口
+type TestCaseRadarGate struct {
+    registry *RadarRegistry
+}
+
+func NewTestCaseRadarGate() *TestCaseRadarGate {
+    gate := &TestCaseRadarGate{registry: &RadarRegistry{}}
+    gate.registry.Register(&CppLinterRadar{})
+    gate.registry.Register(&PythonLinterRadar{})
+    gate.registry.Register(&GoLinterRadar{})
+    return gate
+}
+
+func (g *TestCaseRadarGate) ID() string {
+    return "test_case_radar"
+}
+
+func (g *TestCaseRadarGate) Inspect(codesPath string, unit coverage.PlanUnit, options map[string]any) assessment.RadarResult {
+    return g.registry.Inspect(codesPath, unit)
+}
+
+// 自动在系统初始化时向全局 SPI 注册中心挂载
+func init() {
+    _ = plugins.RegisterPreflightGate(NewTestCaseRadarGate())
+}
+```
+
+在 [`services/engines/assessment/profile.go`](file:///home/fugui/codes/code-shield/services/engines/assessment/profile.go) 中定义通用的分流决策与事实线索基础模型（全引擎共享）：
 
 ```go
 package assessment
@@ -218,14 +552,14 @@ type StructuralFactHint struct {
     Snippet     string `json:"snippet"`       // 局部代码片段
 }
 
-// RadarResult 静态雷达分析结果
+// RadarResult 静态门禁分析结果
 type RadarResult struct {
     Decision        TriageDecision         // 分流决策
     EarlyAssessment *UnitAssessment        // 若 Decision=DecisionTier0Defect，直接输出结论
     FactHints       []StructuralFactHint   // 供给 Tier 1 Thin LLM 复核的线索
 }
 
-// LanguageRadar 多语言特化雷达接口
+// LanguageRadar 多语言特化雷达接口（内聚在 testcase 插件内部）
 type LanguageRadar interface {
     CanHandle(filePath string) bool
     InspectUnit(codesPath string, unit coverage.PlanUnit) RadarResult
@@ -253,12 +587,13 @@ func (r *RadarRegistry) Inspect(codesPath string, unit coverage.PlanUnit) RadarR
 
 ---
 
-### 3.3 多语言插件化静态雷达与防作弊规则实现
+### 4.3 多语言雷达与防作弊规则实现
 
 针对不同语言单测语法差异，分离特化雷达实现，覆盖主流语言测试框架（C++ GoogleTest/GMock、Python pytest/unittest/mock、Go testing/testify），同时强化防作弊特征捕获：
 
 ```go
-package entityreview
+package testcase
+
 
 import (
     "code-shield/services/coverage"
@@ -550,7 +885,7 @@ func buildTier0Result(unit coverage.PlanUnit, ruleID string, summary string) ass
 
 ---
 
-### 3.4 Tier 1 原生 Thin LLM 单轮极速复核与弹性熔断自愈机制
+### 4.4 Tier 1 原生 Thin LLM 单轮极速复核与弹性熔断自愈机制
 
 针对进入 `DecisionNeedVerify` 的单测（仅占全量 15%~20%），系统直接通过 [`services/invoker/native.go`](file:///home/fugui/codes/code-shield/services/invoker/native.go) 的 `NativeInvoker` 发起 HTTP/2 单轮轻量调用，并实施**强隔离弹性熔断与异步最终一致性补偿**。
 
@@ -566,8 +901,11 @@ func buildTier0Result(unit coverage.PlanUnit, ruleID string, summary string) ass
   * 门禁侧虽然放行，但后台调度任务在低峰期或网络恢复后自动拉起异步补偿复核；
   * 若补偿扫出恶意作弊空桩，系统将通过统一缺陷治理管道自动补记缺陷台账并向 PR 提交人推送对账工单，**彻底化解网络抖动期作弊逃逸的合规风险，实现质量安全最终一致性**。
 
-#### 2. 复核专用极简提示词设计（1~2 秒结案）
+#### 2. 复核专用自适应提示词（模板驱动，零 Go 常量硬编码）
+* **防硬编码规范**：复核提示词模板严格**禁止在 Go 核心代码中写死字符串**，必须外置存储在任务目录中（如 `tasks/ut-effectiveness/triage_prompt.md`），并通过 `meta.json` 的 `plugins.thin_verifier.prompt_file` 路径动态加载与参数渲染：
+
 ```markdown
+<!-- tasks/ut-effectiveness/triage_prompt.md -->
 你是一名多语言代码质量仲裁员。静态分析器在以下单测函数中未发现显式断言语句，或怀疑存在形式化恒真断言作弊（支持 C++/Python/Go），需进行语义复核。
 
 ## 待审单测源码 ({{.Language}})
@@ -589,7 +927,7 @@ func buildTier0Result(unit coverage.PlanUnit, ruleID string, summary string) ass
 
 ---
 
-### 3.5 跨来源统一缺陷指纹（SSOT Fingerprint）算法定义
+### 4.5 跨来源统一缺陷指纹（SSOT Fingerprint）算法定义
 
 为了与关联文档 [07-统一缺陷台账SSOT与分层对账算法](../04-fingerprint-governance/07-问题清单跨轮增量治理重构设计：统一缺陷台账SSOT与分层对账算法.md) 严格对齐，Tier 0 静态截断结果、Tier 1 Thin LLM 复核结果与主对抗辩论结果，统一采用完全一致的确定性指纹计算公式：
 
@@ -601,9 +939,12 @@ $$\text{Fingerprint} = \text{SHA256}(\text{RepoID} + \text{FilePath} + \text{Uni
 
 ---
 
-## 四、变更检视演进：受控因果切片、外层摘要与语义契约审计
+## 五、变更检视演进：受控因果增强插件（DownstreamCausalEnricher）与外层摘要
 
-### 4.1 核心因果闭环与编译器职责解耦拓扑
+该功能作为通用上下文增强插件 `ContextEnricherPlugin` 的标准实现（ID: `downstream_causal_slice`），注册在 `services/engines/plugins/enrichers/causal/` 中。**不仅用于 `change_review` 任务，任何在 PR 增量模式下运行的任务（如 `coredump_risk`、`memory_leak`）均可在其 `meta.json` 中声明挂载该插件。**
+
+### 5.1 核心因果闭环与编译器职责解耦拓扑
+
 
 ```mermaid
 flowchart TD
@@ -630,7 +971,7 @@ flowchart TD
 
 ---
 
-### 4.2 Top-3 核心调用点多维加权检索与排序算法
+### 5.2 Top-3 核心调用点多维加权检索与排序算法
 
 #### 1. 检索底座与超时熔断控制
 * **检索底座**：基于 Git Grep 快速过滤与文件名后缀匹配（`< 500ms`）。
@@ -654,7 +995,7 @@ $$\text{Score}(S) = W_{\text{module}} \cdot S_{\text{module}} + W_{\text{call\_e
 
 ---
 
-### 4.3 数据结构演进与外层结构保护摘要
+### 5.3 数据结构演进与外层结构保护摘要
 
 为解决“10~15 行紧凑切片截断导致模型断章取义”的核心副作用，在 [`services/engines/planner/change.go`](file:///home/fugui/codes/code-shield/services/engines/planner/change.go) 中扩展数据契约，**引入轻量静态外层结构特征摘要（体积 < 50 字节，消除 90% 断章取义误报）**：
 
@@ -699,7 +1040,7 @@ type DeepImpactContext struct {
 
 ---
 
-### 4.4 提示词装配中枢（PromptAssembler）受控注入与对抗护栏升级
+### 5.4 提示词装配中枢（PromptAssembler）受控注入与对抗护栏升级
 
 在 [`services/engines/debate/assembler.go`](file:///home/fugui/codes/code-shield/services/engines/debate/assembler.go) 中，Hunter、Challenger、Judge 共享对等的因果切片与外层保护证据，并显式注入**审查边界护栏**：
 
@@ -745,7 +1086,7 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
 
 ---
 
-### 4.5 为什么坚决废弃“专属推演 Agent（Dedicated Simulation）”？
+### 5.5 为什么坚决废弃“专属推演 Agent（Dedicated Simulation）”？
 
 在架构团队评审中，原案“为每个下游业务模块派生专属推演 Agent”被判定为不可实施，理由如下：
 1. **组合爆炸与队列雪崩**：公共基础符号被 10 个模块调用时，单次 PR 会派生 10 组并行 Agent 对局，单次变更消耗数百万 Token，CI 门禁耗时飙升至 30 分钟以上，彻底击穿研发容忍度；
@@ -754,13 +1095,14 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
 
 ---
 
-## 五、整体执行架构与系统收益对比
+## 六、整体执行架构与系统收益对比
 
-### 5.1 演进前后全景对比矩阵
+### 6.1 演进前后全景对比矩阵
 
 | 评估维度 | 当前现状（基线） | 算力降本方案（原草案） | 准确度优先（中间修订版） | 务实演进方案（本规范） |
 | :--- | :--- | :--- | :--- | :--- |
-| **指导哲学** | 一刀切无序调度 | 节约 Token 为主，静态直接判死 | 拒绝算力妥协，全量深度对抗 | **务实平衡：漏斗分级 + 受控切片 + 弹性自愈熔断** |
+| **指导哲学** | 一刀切无序调度 | 节约 Token 为主，静态直接判死 | 拒绝算力妥协，全量深度对抗 | **务实平衡：声明式 SPI 插件 + 漏斗分级 + 受控切片 + 弹性熔断** |
+| **任务扩展与架构解耦** | 核心校验绑定 `test_case`，代码硬编码 | 紧密耦合单测 | 紧密耦合单测 | **完全解耦：声明式 SPI 插件装配，核心引擎零业务硬编码，任务无限扩展** |
 | **单测审查算力开销** | 100% 走大模型，并发压力大 | **Token 骤降 75%**，但产生毁灭性误杀 | **Token 暴涨 300%**，全量 3-Agent 辩论算力倒挂 | **Token 骤降 85%+**：80% Fast Pass 放行，15% 走 Thin LLM 单轮复核 |
 | **单测审查误报率** | 约 8%~12%（偶发幻觉） | **极高 (> 45%)**：裸正则误杀 Helper 与 GMock | 极低 (< 2%)，但代价是算力不可承受 | **极低 (< 2%)**：静态不判死，Thin LLM 准确保底 |
 | **防作弊/漏报覆盖** | 依赖长文本泛读（偶发漏看） | 无法感知局部赋值作弊 | 极高（全量审查） | **高 (> 98%)**：拦截恒真作弊与微空桩，争议项强制复核 |
@@ -773,19 +1115,22 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
 
 ---
 
-### 5.2 实施演进路线图
+### 6.2 实施演进路线图
 
 ```text
 2026-Q4 务实演进规划:
-├── Milestone 1: 单测三阶漏斗与 Thin LLM 极速复核落地 (P0)
+├── Milestone 1: 声明式 SPI 插件底座与单测漏斗落地 (P0)
+│   ├── 建立 services/engines/plugins/ 统一 SPI 注册中心 (PreflightGatePlugin / ContextEnricherPlugin / ThinVerifierPlugin)
+│   ├── 解耦 profile.go：放宽 TargetScope 与 EntityKind 限制，支持任意合法实体扩展
+│   ├── 将单测漏斗封装为独立的 test_case_radar 插件实现，单测复核 Prompt 抽离为任务外置模板 (triage_prompt.md)
 │   ├── 在 services/engines/assessment/ 中定义 TriageDecision (含 DEGRADED_PASS 与 PENDING_VERIFY 挂起态)
-│   ├── 建立 LanguageRadar 多语言插件工厂，实现 C++、Python 与 Go 特化雷达（含微空桩与表格测试闭包识别）
 │   ├── 上线 Anti-Cheating Guard：精准捕获字面量恒真与局部变量赋值恒真作弊
 │   ├── 集成 services/invoker/native.go (NativeInvoker)，实现单测 3.5s 超时与三态熔断自愈（Closed/Open/Half-Open）
 │   ├── 对接统一缺陷台账 SSOT，上线后台低峰期异步追溯补偿机制 (Compensating Sweep)
-│   └── 达成目标: 单测用例扫描耗时降至 1 分钟内，误报率 < 2%，Token 消耗下降 85%+
+│   └── 达成目标: 核心引擎去特化、零硬编码，单测扫描耗时 < 1 分钟，误报率 < 2%，Token 下降 85%+
 │
-├── Milestone 2.1: 变更检视受控因果切片基础版 (P1)
+├── Milestone 2.1: 变更检视受控因果切片插件 (P1)
+│   ├── 实现 downstream_causal_slice 插件并注册至 ContextEnricherPlugin 注册中心
 │   ├── 在 planner/change.go 中上线 Top-3 务实加权打分器 (Score = W_module + W_call_exact + W_branch - W_test)
 │   ├── 增加符号检索 3 秒全局超时熔断与回退保护机制
 │   ├── 实现紧凑调用切片提取器（调用点前后 10~15 行局部块，体积 < 2KB）
@@ -801,3 +1146,4 @@ func (a *PromptAssembler) appendControlledImpactSection(sb *strings.Builder, imp
     ├── 完善 C++/Go/Java/Python 全语法 Tree-sitter 与轻量符号表关联
     └── 将 Top-3 打分模型升级支持真实形参表达式静态类型推导匹配，进一步提升大规模代码库检索消歧精度
 ```
+
