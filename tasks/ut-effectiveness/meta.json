@@ -68,6 +68,13 @@
     }
   },
   "engine_mode": "debate_full",
+  "governance_mode": "entity_assessment",
+  "is_active": true,
+  "is_campaign": true,
+  "name": "ut_effectiveness",
+  "notify_cc": [],
+  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
+  "notify_threshold": 10,
   "plugins": {
     "preflight_gate": {
       "id": "test_case_radar",
@@ -81,13 +88,6 @@
       "prompt_file": "tasks/ut-effectiveness/triage_prompt.md"
     }
   },
-  "governance_mode": "entity_assessment",
-  "is_active": true,
-  "is_campaign": true,
-  "name": "ut_effectiveness",
-  "notify_cc": [],
-  "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
-  "notify_threshold": 10,
   "target_scope": "test",
   "target_semantics": {
     "singular": "测试用例",
