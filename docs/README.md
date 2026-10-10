@@ -28,7 +28,7 @@ code-shield/docs/
 │   │   ├── 02-原生LLM轻量执行引擎与动静分离混合调用设计.md  # 原生 HTTP REST API 引擎与单轮混合调用
 │   │   ├── 03-智能体协作与异构调度深度设计.md              # 猎手/辩护/法官三方交互协议、Prompt与Go实现
 │   │   ├── 04-多任务自适应提示词体系与对抗辩论通用演进架构设计.md # 动态装配Prompt、五大领域族群抗辩维度与SSOT分类收敛
-│   │   └── 05-任务形态差异化扫描引擎演进：轻量LinterGate动静分流与变更影响域上下文注入设计.md # 任务形态差异化算力增强：LinterGate动静分流与反向调用点切片注入
+│   │   └── 05-任务形态差异化扫描引擎演进：声明式SPI插件架构、务实漏斗门禁与受控变更因果注入设计.md # 差异化扫描演进：声明式SPI插件架构、单测漏斗门禁与变更因果增强
 │   │
 │   ├── 03-dispatcher/                                    # ⚡【物理算力池与任务调度】
 │   │   ├── README.md                                     # 调度器与算力拓扑总览
@@ -103,7 +103,7 @@ code-shield/docs/
 ### 2. 💻 核心业务与引擎开发者 (Core Engineers)
 *   **服务层子包划分与调用门面**：👉 [01-Services领域驱动子包化重构设计与契约规范](02-architecture/01-core-pipeline/01-Services领域驱动子包化重构设计与契约规范.md)。
 *   **引擎契约与生命周期协同**：👉 [02-扫描引擎与执行流水线职责边界与协同模型深度设计](02-architecture/01-core-pipeline/02-扫描引擎与执行流水线职责边界与协同模型深度设计.md)。
-*   **多 Agent 辩论引擎与 Prompt 体系**：👉 [01-下一代AI扫描引擎与多Agent对抗辩论设计](02-architecture/02-scanner-engines/01-下一代AI扫描引擎与多Agent对抗辩论设计.md)、[03-智能体协作与异构调度深度设计](02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md)、[04-多任务自适应提示词体系与对抗辩论通用演进架构设计](02-architecture/02-scanner-engines/04-多任务自适应提示词体系与对抗辩论通用演进架构设计.md) 及 [05-任务形态差异化扫描引擎演进](02-architecture/02-scanner-engines/05-任务形态差异化扫描引擎演进：轻量LinterGate动静分流与变更影响域上下文注入设计.md)。
+*   **多 Agent 辩论引擎与 Prompt 体系**：👉 [01-下一代AI扫描引擎与多Agent对抗辩论设计](02-architecture/02-scanner-engines/01-下一代AI扫描引擎与多Agent对抗辩论设计.md)、[03-智能体协作与异构调度深度设计](02-architecture/02-scanner-engines/03-智能体协作与异构调度深度设计.md)、[04-多任务自适应提示词体系与对抗辩论通用演进架构设计](02-architecture/02-scanner-engines/04-多任务自适应提示词体系与对抗辩论通用演进架构设计.md) 及 [05-任务形态差异化扫描引擎演进](02-architecture/02-scanner-engines/05-任务形态差异化扫描引擎演进：声明式SPI插件架构、务实漏斗门禁与受控变更因果注入设计.md)。
 *   **确定性物理指纹提取**：👉 [01-确定性源码指纹与抗抖动增量生命周期架构设计](02-architecture/04-fingerprint-governance/01-确定性源码指纹与抗抖动增量生命周期架构设计.md)。
 *   **跨轮问题清单增量治理（推倒式重构总设计）**：👉 [07-问题清单跨轮增量治理重构设计：统一缺陷台账SSOT与分层对账算法](02-architecture/04-fingerprint-governance/07-问题清单跨轮增量治理重构设计：统一缺陷台账SSOT与分层对账算法.md)（身份/观测/台账三层拆分、六表 SSOT、指纹阶梯与全局最优指派）。
 
