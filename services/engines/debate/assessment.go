@@ -26,6 +26,18 @@ func (e *DebateEngine) runSpecializedAssessment(
 	bundle chunker.SemanticBundle,
 	outPath string,
 ) ([]models.AnalysisFinding, []coverage.AssessmentRecord, int64, error) {
+	// 1. 执行上下文增强插件 (Context Enricher SPI)
+	e.applyContextEnrichers(ctx, &bundle)
+
+	// 2. 执行前置轻量门禁与单轮极速复核 (Preflight Gate & Thin Verifier SPI)
+	interceptFindings, interceptRecords, remainingUnits, allDone := e.applyPreflightGates(ctx, &bundle)
+	if allDone {
+		log.Printf("[DebateEngine] Bundle [%s]: All %d units fully triaged by preflight SPI plugins (0 LLM Token).",
+			bundle.Name, len(bundle.PrimaryUnits))
+		return interceptFindings, interceptRecords, 0, nil
+	}
+	bundle.PrimaryUnits = remainingUnits
+
 	tierCfg := models.AppConfig.GetTierConfig("tier1_hunter")
 	budgetSeconds := tierCfg.TimeoutSeconds
 	if budgetSeconds <= 0 {
@@ -49,7 +61,13 @@ func (e *DebateEngine) runSpecializedAssessment(
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	return e.runSpecializedAssessmentWithBudget(&stageCtx, bundle, outPath, budgetSeconds, attemptSeconds, execution, plan)
+	llmFindings, llmRecords, tokens, err := e.runSpecializedAssessmentWithBudget(&stageCtx, bundle, outPath, budgetSeconds, attemptSeconds, execution, plan)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	finalFindings := append(interceptFindings, llmFindings...)
+	finalRecords := append(interceptRecords, llmRecords...)
+	return finalFindings, finalRecords, tokens, nil
 }
 
 type specializedAssessmentPlan struct {

@@ -68,6 +68,19 @@
     }
   },
   "engine_mode": "debate_full",
+  "plugins": {
+    "preflight_gate": {
+      "id": "test_case_radar",
+      "options": {
+        "anti_cheating": true
+      }
+    },
+    "thin_verifier": {
+      "id": "native_single_round",
+      "timeout_seconds": 3.5,
+      "prompt_file": "tasks/ut-effectiveness/triage_prompt.md"
+    }
+  },
   "governance_mode": "entity_assessment",
   "is_active": true,
   "is_campaign": true,

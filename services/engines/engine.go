@@ -9,6 +9,7 @@ import (
 
 	"code-shield/models"
 	"code-shield/services/coverage"
+	"code-shield/services/engines/plugins"
 	"code-shield/services/engines/profile"
 	"code-shield/services/invoker"
 )
@@ -71,6 +72,7 @@ type EngineContext struct {
 	EngineMode                string              // 引擎模式；当前只允许 debate_full
 	AssessmentConfig          json.RawMessage     // assessment plugin configuration snapshot
 	AssessmentProfile         string              // resolved assessment plugin registry key
+	Plugins                   plugins.PluginsConfig // 声明式挂载的 SPI 插件配置快照
 	Profile                   profile.ScanProfile // 已校验的 scan profile 快照
 	ChunkPolicyID             string
 	TaskDir                   string                    // 任务文件目录，如 "tasks/ut-effectiveness"
@@ -413,3 +415,22 @@ func BuildScanCoverage(ctx *EngineContext, details []ChunkDetails, plan *coverag
 	built.WorktreeClean = worktreeClean
 	return &built
 }
+
+// ParsePluginsConfig 从原始 JSON 中反序列化插件声明配置
+func ParsePluginsConfig(raw json.RawMessage) (plugins.PluginsConfig, error) {
+	if len(raw) == 0 {
+		return plugins.PluginsConfig{}, nil
+	}
+	var envelope struct {
+		Plugins plugins.PluginsConfig `json:"plugins"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err == nil && (envelope.Plugins.PreflightGate != nil || envelope.Plugins.ContextEnricher != nil || envelope.Plugins.ThinVerifier != nil) {
+		return envelope.Plugins, nil
+	}
+	var direct plugins.PluginsConfig
+	if err := json.Unmarshal(raw, &direct); err == nil && (direct.PreflightGate != nil || direct.ContextEnricher != nil || direct.ThinVerifier != nil) {
+		return direct, nil
+	}
+	return plugins.PluginsConfig{}, nil
+}
+
