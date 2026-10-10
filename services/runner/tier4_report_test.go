@@ -374,3 +374,56 @@ func TestBuildTier4AIInputUsesBoundedDetailedDTO(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderTier4ReportCoverageExcludedAndPassSeverity(t *testing.T) {
+	tempDir := t.TempDir()
+	reportPath := filepath.Join(tempDir, "report.md")
+	findings := []models.AnalysisFinding{
+		{
+			Severity:   "严重",
+			Category:   "assert",
+			FilePath:   "test/a_test.cc",
+			LineNumber: "10-20",
+			Title:      "empty test",
+		},
+		{
+			Severity:          "合格",
+			Category:          "无问题",
+			FilePath:          "test/b_test.cc",
+			LineNumber:        "30-40",
+			Title:             "pass test",
+			AssessmentOutcome: "pass",
+		},
+	}
+	ctx := &TaskContext{
+		ReportPath: reportPath,
+		Repo:       models.Repository{Name: "fmt"},
+		TaskType:   models.TaskType{DisplayName: "测试用例有效性评估"},
+		Report:     models.TaskReport{ID: 193},
+	}
+	scanCoverage := &coverage.Coverage{
+		Files: []coverage.File{
+			{Path: "test/a_test.cc", Status: coverage.StatusSuccess},
+			{Path: "src/lib.cc", Status: coverage.StatusExcluded},
+		},
+		AnalysisComplete: true,
+		CommitVerified:   true,
+		WorktreeClean:    true,
+	}
+
+	report, err := RenderTier4Report(ctx, findings, scanCoverage)
+	if err != nil {
+		t.Fatalf("RenderTier4Report failed: %v", err)
+	}
+	text := string(report)
+
+	// 1. 验证覆盖率包含排除数
+	if !strings.Contains(text, "扫描 1 / 计划 2（排除 1）") {
+		t.Fatalf("coverage line mismatch:\n%s", text)
+	}
+
+	// 2. 验证检视概要区分合格，不把合格计入建议
+	if !strings.Contains(text, "致命：0，严重：1，一般：0，建议：0（合格：1）") {
+		t.Fatalf("summary line mismatch:\n%s", text)
+	}
+}

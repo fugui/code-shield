@@ -37,6 +37,7 @@ type tier4Counts struct {
 	Critical   int `json:"critical"`
 	Minor      int `json:"minor"`
 	Suggestion int `json:"suggestion"`
+	Pass       int `json:"pass,omitempty"`
 }
 
 type tier4SummaryFinding struct {
@@ -84,8 +85,16 @@ func tier4SeverityCounts(findings []models.AnalysisFinding) tier4Counts {
 			counts.Critical++
 		case "一般", "minor", "warning", "主要", "major", "提示", "info", "hint", "中", "中危", "中风险", "medium", "medium_risk", "p2":
 			counts.Minor++
-		default:
+		case "合格", "pass", "valid":
+			counts.Pass++
+		case "建议", "suggestion", "low", "低", "低危", "p3", "p4":
 			counts.Suggestion++
+		default:
+			if strings.EqualFold(finding.AssessmentStatus, "valid") || strings.EqualFold(finding.AssessmentOutcome, "pass") {
+				counts.Pass++
+			} else {
+				counts.Suggestion++
+			}
 		}
 	}
 	return counts
@@ -99,8 +108,10 @@ func tier4SeverityRank(severity string) int {
 		return 3
 	case "一般", "minor", "warning", "主要", "major", "提示", "info", "hint", "中", "中危", "中风险", "medium", "medium_risk", "p2":
 		return 2
-	default:
+	case "建议", "suggestion", "low", "低", "低危", "p3", "p4":
 		return 1
+	default:
+		return 0
 	}
 }
 
@@ -190,9 +201,15 @@ func RenderTier4Report(ctx *TaskContext, findings []models.AnalysisFinding, scan
 	case coverageSummary.ManifestMissing:
 		fmt.Fprintln(&body, "- **覆盖率**: 覆盖率清单缺失，结果降级")
 	default:
-		fmt.Fprintf(&body, "- **覆盖率**: 扫描 %d / 计划 %d，完整 %t，降级 %t\n",
-			coverageSummary.ScannedFiles, coverageSummary.PlannedFiles,
-			coverageSummary.CoverageComplete, coverageSummary.Degraded)
+		if coverageSummary.ExcludedFiles > 0 {
+			fmt.Fprintf(&body, "- **覆盖率**: 扫描 %d / 计划 %d（排除 %d），完整 %t，降级 %t\n",
+				coverageSummary.ScannedFiles, coverageSummary.PlannedFiles, coverageSummary.ExcludedFiles,
+				coverageSummary.CoverageComplete, coverageSummary.Degraded)
+		} else {
+			fmt.Fprintf(&body, "- **覆盖率**: 扫描 %d / 计划 %d，完整 %t，降级 %t\n",
+				coverageSummary.ScannedFiles, coverageSummary.PlannedFiles,
+				coverageSummary.CoverageComplete, coverageSummary.Degraded)
+		}
 	}
 	if reconciliation := coverageSummary.PlanReconciliation; reconciliation != nil {
 		fmt.Fprintf(&body, "- **Primary Plan 对账**: 计划 %d / 结论 %d，缺失 %d，孤儿 %d\n",
@@ -226,12 +243,19 @@ func RenderTier4Report(ctx *TaskContext, findings []models.AnalysisFinding, scan
 	}
 
 	body.WriteString("\n## 一、检视结果概要\n\n")
-	fmt.Fprintf(&body, "致命：%d，严重：%d，一般：%d，建议：%d\n", counts.Fatal, counts.Critical, counts.Minor, counts.Suggestion)
+	if counts.Pass > 0 {
+		fmt.Fprintf(&body, "致命：%d，严重：%d，一般：%d，建议：%d（合格：%d）\n",
+			counts.Fatal, counts.Critical, counts.Minor, counts.Suggestion, counts.Pass)
+	} else {
+		fmt.Fprintf(&body, "致命：%d，严重：%d，一般：%d，建议：%d\n",
+			counts.Fatal, counts.Critical, counts.Minor, counts.Suggestion)
+	}
 	if verdictCounts := tier4AssessmentCounts(findings); len(verdictCounts) > 0 {
 		fmt.Fprintf(&body, "变更结论：回归 %d，暴露存量 %d，条件成立 %d，非本次变更 %d，安全 %d，需人工 %d\n",
 			verdictCounts["REGRESSION"], verdictCounts["EXPOSED_EXISTING"], verdictCounts["CONDITIONAL"],
 			verdictCounts["NOT_CHANGE_RELATED"], verdictCounts["SAFE"], verdictCounts["NEEDS_HUMAN"])
 	}
+
 	body.WriteString("\n## 二、重点问题\n\n")
 	if len(sorted) == 0 {
 		body.WriteString("本次扫描未发现符合规则的缺陷。\n")
@@ -287,11 +311,21 @@ func RenderTier4Report(ctx *TaskContext, findings []models.AnalysisFinding, scan
 	}
 
 	body.WriteString("\n## 四、总结与建议\n\n")
-	if len(sorted) == 0 {
-		body.WriteString("未发现相关类型缺陷，建议继续保持现有质量门禁。\n")
+	activeDefects := counts.Fatal + counts.Critical + counts.Minor + counts.Suggestion
+	if activeDefects == 0 {
+		if counts.Pass > 0 {
+			fmt.Fprintf(&body, "未发现相关类型缺陷，共 %d 个用例评估合格，建议继续保持现有质量门禁。\n", counts.Pass)
+		} else {
+			body.WriteString("未发现相关类型缺陷，建议继续保持现有质量门禁。\n")
+		}
 	} else {
-		fmt.Fprintf(&body, "本轮共发现 %d 条活动问题，其中致命 %d 条、严重 %d 条。请优先处理上方重点问题；完整明细请查看 JSON 台账和报告详情页。\n",
-			counts.Total, counts.Fatal, counts.Critical)
+		if counts.Pass > 0 {
+			fmt.Fprintf(&body, "本轮共发现 %d 条活动问题（另有 %d 个用例评估合格），其中致命 %d 条、严重 %d 条。请优先处理上方重点问题；完整明细请查看 JSON 台账和报告详情页。\n",
+				activeDefects, counts.Pass, counts.Fatal, counts.Critical)
+		} else {
+			fmt.Fprintf(&body, "本轮共发现 %d 条活动问题，其中致命 %d 条、严重 %d 条。请优先处理上方重点问题；完整明细请查看 JSON 台账和报告详情页。\n",
+				counts.Total, counts.Fatal, counts.Critical)
+		}
 	}
 
 	return bytes.TrimSpace(body.Bytes()), nil
