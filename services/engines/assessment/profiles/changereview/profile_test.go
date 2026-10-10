@@ -230,3 +230,34 @@ func TestRegistrationImplementsAllRequiredFacets(t *testing.T) {
 		t.Fatalf("registration is incomplete: %+v", registration)
 	}
 }
+
+func TestMapFindingsPopulatesCodeSnippet(t *testing.T) {
+	snippet := "ptr->field = 1;"
+	result := assessment.AssessmentResult{Valid: []assessment.UnitAssessment{
+		{
+			UnitRef:       "u002",
+			PrimaryUnitID: "src/b.cpp#h1",
+			Outcome:       assessment.OutcomeDefect,
+			Summary:       "unsafe",
+			Issues: []assessment.AssessmentIssue{
+				{
+					Category:   "内存安全",
+					Severity:   "严重",
+					Detail:     "null deref",
+					Suggestion: "guard it",
+					Code:       snippet,
+				},
+			},
+		},
+	}}
+	findings, err := Profile{}.MapFindings(assessment.AssessmentContext{}, testBundle(), result)
+	if err != nil {
+		t.Fatalf("MapFindings() error = %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings len = %d, want 1", len(findings))
+	}
+	if findings[0].CodeSnippet != snippet {
+		t.Fatalf("CodeSnippet = %q, want %q", findings[0].CodeSnippet, snippet)
+	}
+}

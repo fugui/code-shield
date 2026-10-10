@@ -134,10 +134,12 @@ func (Profile) MapFindings(ctx assessment.AssessmentContext, bundle assessment.B
 			finding.Category = issue.Category
 			finding.Detail = item.Summary
 			finding.Suggestion = issue.Suggestion
+			finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, unit, issue.Code)
 		default:
 			finding.Title = fmt.Sprintf("变更需人工评估：%s", displayName)
 			finding.Severity = "建议"
 			finding.Detail = item.Summary
+			finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, unit, "")
 		}
 		findings = append(findings, finding)
 	}

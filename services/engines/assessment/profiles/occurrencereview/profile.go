@@ -3,8 +3,6 @@ package occurrencereview
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -158,7 +156,7 @@ func (Profile) MapFindings(ctx assessment.AssessmentContext, bundle assessment.B
 			finding.Detail = issueSummary(item.Issues)
 			finding.Suggestion = issue.Suggestion
 			if finding.CodeSnippet == "" {
-				finding.CodeSnippet = issueSnippet(ctx, unit, issue.Code)
+				finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, unit, issue.Code)
 			}
 		default:
 			finding.Title = fmt.Sprintf("%s需人工评估：%s", occurrenceTargetLabel(ctx), displayName)
@@ -241,29 +239,6 @@ func baseFinding(ctx assessment.AssessmentContext, item assessment.UnitAssessmen
 		Severity:           severity,
 		CreatedAt:          time.Now(),
 	}
-}
-
-func issueSnippet(ctx assessment.AssessmentContext, unit coverage.PlanUnit, trigger string) string {
-	if ctx.EngineContext == nil || unit.Path == "" {
-		return strings.TrimSpace(trigger)
-	}
-	content, err := os.ReadFile(filepath.Join(ctx.EngineContext.CodesPath, filepath.FromSlash(unit.Path)))
-	if err != nil {
-		return strings.TrimSpace(trigger)
-	}
-	lines := strings.Split(string(content), "\n")
-	if unit.StartLine > 0 && unit.StartLine <= len(lines) {
-		return strings.TrimSpace(lines[unit.StartLine-1])
-	}
-	if trigger == "" {
-		return ""
-	}
-	for _, line := range lines {
-		if strings.Contains(line, trigger) {
-			return strings.TrimSpace(line)
-		}
-	}
-	return strings.TrimSpace(trigger)
 }
 
 func validateOutcome(item *assessment.UnitAssessment, allowedCategories []string) error {

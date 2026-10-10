@@ -1,6 +1,8 @@
 package entityreview
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -194,5 +196,84 @@ func TestRegistrationImplementsAllRequiredFacets(t *testing.T) {
 	}
 	if !reflect.TypeOf(profile).Implements(reflect.TypeOf((*assessment.ArtifactValidator)(nil)).Elem()) {
 		t.Fatal("profile does not implement validator facet")
+	}
+}
+
+func TestMapFindingsPopulatesCodeSnippetFromIssueCode(t *testing.T) {
+	snippet := "TEST(xchar_test, print) {\n  fmt::print(L\"test\");\n}"
+	result := assessment.AssessmentResult{Valid: []assessment.UnitAssessment{
+		{
+			UnitRef:       "u002",
+			PrimaryUnitID: "sha256:two",
+			Outcome:       assessment.OutcomeDefect,
+			Issues: []assessment.AssessmentIssue{
+				{
+					Category:   "断言有效性-空测试",
+					Severity:   "严重",
+					Detail:     "no assertion",
+					Suggestion: "add assertion",
+					Code:       snippet,
+				},
+			},
+		},
+	}}
+	findings, err := Profile{}.MapFindings(assessment.AssessmentContext{}, testBundle(), result)
+	if err != nil {
+		t.Fatalf("MapFindings() error = %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings len = %d, want 1", len(findings))
+	}
+	if findings[0].CodeSnippet != snippet {
+		t.Fatalf("CodeSnippet = %q, want %q", findings[0].CodeSnippet, snippet)
+	}
+}
+
+func TestMapFindingsFallbackCodeSnippetFromFile(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "tests")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	lines := make([]string, 100)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d: code", i+1)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "b_test.cpp"), []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := assessment.AssessmentResult{Valid: []assessment.UnitAssessment{
+		{
+			UnitRef:       "u002",
+			PrimaryUnitID: "sha256:two",
+			Outcome:       assessment.OutcomeDefect,
+			Issues: []assessment.AssessmentIssue{
+				{
+					Category:   "断言有效性-空测试",
+					Severity:   "严重",
+					Detail:     "no assertion",
+					Suggestion: "add assertion",
+					Code:       "", // 为空，触发文件切片回退
+				},
+			},
+		},
+	}}
+	ctx := assessment.AssessmentContext{
+		EngineContext: &engines.EngineContext{
+			CodesPath: tempDir,
+		},
+	}
+	findings, err := Profile{}.MapFindings(ctx, testBundle(), result)
+	if err != nil {
+		t.Fatalf("MapFindings() error = %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings len = %d, want 1", len(findings))
+	}
+	// testBundle 中 sha256:two 的 StartLine 为 64, EndLine 为 82
+	want := strings.Join(lines[63:82], "\n")
+	if findings[0].CodeSnippet != want {
+		t.Fatalf("CodeSnippet = %q, want %q", findings[0].CodeSnippet, want)
 	}
 }
