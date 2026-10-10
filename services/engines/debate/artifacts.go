@@ -123,7 +123,7 @@ func validateRelativeSourcePath(path string) error {
 
 // validateHunterOutput enforces the minimum fields required to carry a candidate
 // through Challenger and Judge without silently losing its anchor.
-func validateHunterOutput(out *HunterOutput, allowedCategories []string) error {
+func validateHunterOutput(out *HunterOutput, _ []string) error {
 	if out == nil {
 		return fmt.Errorf("hunter output is nil")
 	}

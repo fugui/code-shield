@@ -506,6 +506,10 @@ func scanBundleFiles(ctx context.Context, root string, bundle chunker.SemanticBu
 				break
 			}
 		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			_ = file.Close()
+			continue
+		}
 		_ = file.Close()
 		if len(matches) >= 200 {
 			break

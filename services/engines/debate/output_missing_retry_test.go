@@ -29,10 +29,11 @@ func (i *outputMissingInvoker) Invoke(req invoker.AIRequest) error {
 			"opencode completed with exit code 0 but target output was not generated",
 		)
 	}
-	return os.WriteFile(req.OutputPath, []byte(fmt.Sprintf(
+	return os.WriteFile(req.OutputPath, fmt.Appendf(
+		nil,
 		`{"schema":%q,"candidates":[]}`,
 		CandidatesArtifactSchemaV1,
-	)), 0644)
+	), 0644)
 }
 
 func configureOutputMissingRetryTest(t *testing.T) {

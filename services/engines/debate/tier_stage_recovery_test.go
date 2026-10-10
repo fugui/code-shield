@@ -69,8 +69,7 @@ func TestTierStageRecoveryRetriesSameResource(t *testing.T) {
 
 			tempDir := t.TempDir()
 			ctx := &engines.EngineContext{
-				Ctx:       beginSplitStats(context.Background()),
-				CodesPath: tempDir,
+				Ctx: beginSplitStats(context.Background()),
 			}
 			promptPath := filepath.Join(tempDir, "prompt.txt")
 			if err := os.WriteFile(promptPath, []byte("prompt"), 0644); err != nil {
@@ -130,7 +129,7 @@ func TestTierStageRecoveryContractMismatchRepairsBeforeNormalRetry(t *testing.T)
 	})
 
 	tempDir := t.TempDir()
-	ctx := &engines.EngineContext{Ctx: beginSplitStats(context.Background()), CodesPath: tempDir}
+	ctx := &engines.EngineContext{Ctx: beginSplitStats(context.Background())}
 	promptPath := filepath.Join(tempDir, "prompt.txt")
 	outputPath := filepath.Join(tempDir, "artifact.json")
 	raw, candidate, _, err := runTierInvocationWithRecovery(
