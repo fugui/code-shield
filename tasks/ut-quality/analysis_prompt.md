@@ -3,22 +3,22 @@
 请对测试代码文件进行工程质量与实践规范审计，识别测试代码中影响可维护性、稳定性和长期演进的坏味道与缺陷，严格对照以下受控维度进行判定与归类：
 
 ### 1. 健壮性与稳定性 (Robustness & Stability)
-* **脆弱测试与环境依赖 (Flaky & Fragile Tests)** [Category: `健壮性与稳定性`]:
+* **脆弱测试与环境依赖 (Flaky & Fragile Tests)** [Category: `健壮性与稳定性` (Code: `UTQ_ROBUSTNESS`)]:
   - 引入了 `sleep` / `time.Sleep` 等不可靠的时间等待来同步异步结果，容易在流水线高负载时产生偶发失败。
   - 测试断言强依赖当前系统时间、时区、特定机器名称或特定网络/端口的可用性。
   - 测试中包含硬编码的绝对文件路径（如 `/home/...`）、局域网 IP / 域名或敏感凭证（Token、私钥等）。
 
 ### 2. 资源与生命周期管理 (Resource & Lifecycle Management)
-* **资源未释放与状态污染 (Resource Leaks & State Contamination)** [Category: `资源与生命周期管理`]:
+* **资源未释放与状态污染 (Resource Leaks & State Contamination)** [Category: `资源与生命周期管理` (Code: `UTQ_RESOURCE_LIFECYCLE`)]:
   - 测试中启动了外部进程、文件描述符、数据库连接、HTTP/TCP 客户端或并发协程/线程，但未在 `TearDown`、`defer` 或清理回调中可靠关闭。
   - 修改了全局变量、环境变量、系统属性或单例状态，测试完成后未予复原，导致不同测试用例并发或乱序执行时相互污染。
 
 ### 3. 代码坏味道与重构问题 (Code Smells & Refactoring)
-* **坏味道与过度 Mock (Test Smells & Over-Mocking)** [Category: `代码坏味道与重构问题`]:
+* **坏味道与过度 Mock (Test Smells & Over-Mocking)** [Category: `代码坏味道与重构问题` (Code: `UTQ_SMELL_REFACTOR`)]:
   - 存在大段注释掉的废弃测试代码、未使用的 Mock 桩对象或无法触达的死代码。
   - 错误地 Mock 了“被测目标类/函数”本身，或对私有实现细节进行了深层 Mock，导致测试与内部实现过度耦合，阻碍正常业务重构。
   - 单个测试用例过长（> 100行）或包含大段重复冗余的 Arrange 数据准备逻辑，未提炼为可复用的 Fixture 或参数化测试。
-* **其它质量缺陷 (Other Quality Issues)** [Category: `其它缺陷`]: 确凿可信但不属于上述细分维度的其它单元测试工程质量与可维护性隐患。
+* **其它质量缺陷 (Other Quality Issues)** [Category: `其它缺陷` (Code: `UTQ_OTHER`)]: 确凿可信但不属于上述细分维度的其它单元测试工程质量与可维护性隐患。
 
 ---
 
@@ -27,4 +27,4 @@
 1. **敏锐发现与稳定性隐患挖掘**：重点排查 hard sleep、跨用例状态污染、资源未释放及过度耦合的私有 Mock。只要存在引发流水线偶发失败 (Flaky Test) 或阻碍业务重构的坏味道即应列为主候选；同时充分识别必要的集成环境契约或参数化测试，避免虚报。
 2. **多语言测试生态适配**：覆盖并适配主流测试框架规范（如 C++ GTest/Catch2、Go testing/testify、Java JUnit/Mockito、Python pytest/unittest）。
 3. **代码锚定与上下文完整性**：必须精准指出问题发生的行号，截取包含完整上下文逻辑的 **5-25行** 原始代码片段。
-4. **务实修复建议**：提供具备工程可行性的重构方案（如推荐轮询等待代替 hard sleep、使用 RAII/defer 管理测试资源、参数化重构等）。
+4. **测试框架工程规范约束**：严格依据主流测试框架工程规范与用例执行生命周期（如 Setup/Teardown、Fixture 隔离），客观推导测试坏味道对 CI 稳定性与长期可维护性的实际负面影响。
