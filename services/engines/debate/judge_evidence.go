@@ -558,7 +558,7 @@ func sameRelativePath(left, right string) bool {
 	return filepath.ToSlash(filepath.Clean(left)) == filepath.ToSlash(filepath.Clean(right))
 }
 
-// isTrivialSourceLine 判断源码行是否为纯语法占位符或纯注释，避免作为有效证据造成噪音干扰
+// isTrivialSourceLine 判断源码行是否为纯语法占位符、纯注释或版权许可证，避免作为有效证据造成噪音干扰
 func isTrivialSourceLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || trimmed == "{" || trimmed == "}" || trimmed == "};" || trimmed == ";" {
@@ -568,6 +568,10 @@ func isTrivialSourceLine(line string) bool {
 		return true
 	}
 	if strings.HasPrefix(trimmed, "namespace ") || strings.HasPrefix(trimmed, "}  // namespace") || strings.HasPrefix(trimmed, "} // namespace") {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "copyright") || strings.Contains(lower, "all rights reserved") || strings.Contains(lower, "spdx-license-identifier") {
 		return true
 	}
 	return false

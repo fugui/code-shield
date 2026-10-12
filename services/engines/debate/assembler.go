@@ -380,7 +380,7 @@ func (a *PromptAssembler) BuildJudgePrompt(
 	sb.WriteString("## Invocation Scope\n")
 	sb.WriteString("本次调用只裁决当前 semantic bundle 中列出的候选缺陷。\n")
 	sb.WriteString("这是分片终审，不是全仓审查。\n")
-	sb.WriteString("你可以读取 Target Files 及其直接相关文件，但输出证据必须来自当前候选的 Evidence Pack；不得修改业务源码。\n")
+	sb.WriteString("你可以读取 Target Files 及其直接相关文件。输出证据优先使用当前候选 Evidence Pack 中的条目；若通过源码探查发现更关键的触发或防御事实（在 allowed_evidence_paths 范围内），允许提取真实源码作为补充证据；不得修改业务源码。\n")
 	sb.WriteString("不得为候选清单之外的业务文件生成 final_verdict。\n\n")
 
 	sb.WriteString("## Target Files\n")
@@ -413,11 +413,11 @@ func (a *PromptAssembler) BuildJudgePrompt(
 
 	sb.WriteString("## Evidence Rules\n")
 	sb.WriteString("1. 证据优先级：真实源码 > 调用链 / 生命周期证据 > Challenger 反证 > Hunter 假设。\n")
-	sb.WriteString("2. 优先引用 Evidence Pack 中已有 Evidence 的 `evidence_id`；服务端会使用该 ID 绑定的 path、line_range 和 snippet 复核证据。\n")
+	sb.WriteString("2. 优先引用 Evidence Pack 中已有 Evidence 的 `evidence_id`（服务端会自动物化对账）；若为自主探查补充的证据，可省略 `evidence_id`，但必须提供真实的 path、line_range 与 snippet（服务端会基于源码实际内容进行校验）。\n")
 	sb.WriteString("3. Challenger 的每个辩护结论必须有 file:line 或真实代码片段支撑；否则视为未证明。\n")
 	sb.WriteString("4. `CONFIRMED` 必须证明：缺陷点真实存在；存在可达触发路径；后果符合缺陷分类；没有有效前置防御。\n")
 	sb.WriteString("5. `CONDITIONAL` 必须写清触发条件，例如宏、部署模式、调用线程、特殊输入或历史兼容行为。\n")
-	sb.WriteString("6. `REJECTED` 必须说明误报原因，例如外层锁、调用约束、框架托管、协议保证、宏隔离或无实际调用点。\n")
+	sb.WriteString("6. `REJECTED` 必须说明误报原因并提供证据：优先引用辩方 counter_evidence 或 absence_probe；若无独立抗辩，必须引用自主探查的防护代码或直接引用 primary_evidence 中的现有源码行，并在 reason 中说明为何该指控不成立。\n")
 	sb.WriteString("7. 无法证明触发路径时，禁止输出 `CONFIRMED`。\n")
 	sb.WriteString("8. 不得为了保持输出完整而编造源码。\n\n")
 
