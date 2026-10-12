@@ -347,6 +347,112 @@ func TestPromptAssembler_BuildJudgePrompt_SummaryMatrix(t *testing.T) {
 	}
 }
 
+func TestPromptAssembler_BuildJudgePrompt_DynamicStaticDecoupled(t *testing.T) {
+	assembler := &PromptAssembler{}
+	ctx := &engines.EngineContext{
+		TaskTypeName: "内存破坏终审",
+		EngineMode:   "debate_full",
+		CodesPath:    "/home/user/project",
+	}
+	bundle := chunker.SemanticBundle{
+		AllFiles: []string{"src/core.c", "src/buffer.c"},
+	}
+	evidencePacks := []JudgeCaseEvidencePack{
+		{
+			CandidateID: "CAND-01",
+			Claim: JudgeCandidateView{
+				CandidateID: "CAND-01",
+				Category:    "内存破坏-堆溢出",
+				Title:       "缓冲区未边界校验写入",
+				FilePath:    "src/buffer.c",
+				LineRange:   "45-50",
+				TriggerLine: "memcpy(dst, src, len)",
+			},
+			Defense: &ChallengerDefenseCase{
+				CandidateID:       "CAND-01",
+				DefenseVerdict:    "CHALLENGE_FAILED",
+				MitigatingFactors: "未发现有效前置截断防御",
+			},
+		},
+	}
+
+	// 1. 验证静态 System Prompt: 仅包含角色定位、证据哲学、裁决标准与输出契约
+	sysPrompt, err := assembler.BuildJudgeSystemPrompt(ctx)
+	if err != nil {
+		t.Fatalf("BuildJudgeSystemPrompt failed: %v", err)
+	}
+	if !strings.Contains(sysPrompt, "# Role") || !strings.Contains(sysPrompt, "内存破坏终审") {
+		t.Errorf("expected sysPrompt to contain role and task name")
+	}
+	if !strings.Contains(sysPrompt, "## Claims Are Not Facts") {
+		t.Errorf("expected sysPrompt to contain claims philosophy")
+	}
+	if !strings.Contains(sysPrompt, "## Evidence Rules") {
+		t.Errorf("expected sysPrompt to contain evidence rules")
+	}
+	if !strings.Contains(sysPrompt, "## Verdict Rules") {
+		t.Errorf("expected sysPrompt to contain verdict rules")
+	}
+	if !strings.Contains(sysPrompt, "## Stage Output Contract") {
+		t.Errorf("expected sysPrompt to contain output contract")
+	}
+	// 静态系统提示词中绝不能渗入动态分片文件与具体案卷证据！
+	if strings.Contains(sysPrompt, "## Target Files") {
+		t.Errorf("sysPrompt must NOT contain Target Files")
+	}
+	if strings.Contains(sysPrompt, "## Evidence Pack") {
+		t.Errorf("sysPrompt must NOT contain Evidence Pack")
+	}
+	if strings.Contains(sysPrompt, "控辩双方主张对照大纲") {
+		t.Errorf("sysPrompt must NOT contain Claims vs Defenses summary")
+	}
+	if strings.Contains(sysPrompt, "CAND-01") {
+		t.Errorf("sysPrompt must NOT contain dynamic candidate IDs")
+	}
+
+	// 2. 验证动态 User Prompt: 包含待审文件、控辩大纲、证据包与批次约束
+	userPrompt, err := assembler.BuildJudgeUserPrompt(ctx, bundle, evidencePacks, []string{"CAND-01"})
+	if err != nil {
+		t.Fatalf("BuildJudgeUserPrompt failed: %v", err)
+	}
+	if !strings.Contains(userPrompt, "## Target Files") || !strings.Contains(userPrompt, "src/buffer.c") {
+		t.Errorf("expected userPrompt to contain Target Files")
+	}
+	if !strings.Contains(userPrompt, "## 控辩双方主张对照大纲 (Claims vs Defenses Summary)") {
+		t.Errorf("expected userPrompt to contain claims vs defenses summary")
+	}
+	if !strings.Contains(userPrompt, "## Evidence Pack") || !strings.Contains(userPrompt, "CAND-01") {
+		t.Errorf("expected userPrompt to contain evidence pack with candidate ID")
+	}
+	if !strings.Contains(userPrompt, "本批次必须为以下每个 candidate_id 各输出恰好一条 final_verdict：CAND-01") {
+		t.Errorf("expected userPrompt to contain batch candidate requirement")
+	}
+	// 动态用户提示词中不应冗余包含静态法官规则
+	if strings.Contains(userPrompt, "# Role") {
+		t.Errorf("userPrompt must NOT contain # Role")
+	}
+	if strings.Contains(userPrompt, "## Claims Are Not Facts") {
+		t.Errorf("userPrompt must NOT contain Claims Are Not Facts")
+	}
+
+	// 3. 验证 BuildJudgePrompt 向后兼容组合版
+	hunterOut := &HunterOutput{
+		Candidates: []HunterCandidate{
+			{CandidateID: "CAND-01", Title: "缓冲区未边界校验写入"},
+		},
+	}
+	combinedPrompt, err := assembler.BuildJudgePrompt(ctx, bundle, hunterOut, nil, evidencePacks)
+	if err != nil {
+		t.Fatalf("BuildJudgePrompt failed: %v", err)
+	}
+	if !strings.Contains(combinedPrompt, "# Role") || !strings.Contains(combinedPrompt, "src/buffer.c") {
+		t.Errorf("expected combinedPrompt to contain both system and user elements")
+	}
+	if !strings.Contains(combinedPrompt, "\n\n---\n\n") {
+		t.Errorf("expected combinedPrompt to join system and user prompts with separator")
+	}
+}
+
 func TestBuildChallengerPromptSlimEvidencePack(t *testing.T) {
 	assembler := &PromptAssembler{}
 	ctx := &engines.EngineContext{

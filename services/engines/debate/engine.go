@@ -1568,25 +1568,6 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 	var failureReasons []string
 
 	for bIdx, batch := range batches {
-		subHunterOut := &HunterOutput{
-			Candidates: sanitizeCandidatesForPrompt(batch),
-		}
-		var subCases []ChallengerDefenseCase
-		for _, cand := range batch {
-			if dc, ok := caseMap[cand.CandidateID]; ok {
-				subCases = append(subCases, dc)
-			} else {
-				subCases = append(subCases, ChallengerDefenseCase{
-					CandidateID:       cand.CandidateID,
-					DefenseVerdict:    "CHALLENGE_FAILED",
-					MitigatingFactors: "[Challenger Degraded: 辩护人无此候选辩护记录，请法官独立基于源码客观裁决]",
-				})
-			}
-		}
-		subChallOut := &ChallengerOutput{
-			DefenseCases: subCases,
-		}
-
 		batchIDs := make([]string, 0, len(batch))
 		for _, candidate := range batch {
 			batchIDs = append(batchIDs, candidate.CandidateID)
@@ -1607,14 +1588,14 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 			return nil, totalTokens, fmt.Errorf("build judge evidence pack: %w", evidenceErr)
 		}
 
-		prompt, promptErr := buildJudgePrompt(ctx, bundle, subHunterOut, subChallOut, evidencePacks)
+		sysPrompt, userPrompt, promptErr := buildJudgeSplitPrompt(ctx, bundle, evidencePacks, batchIDs)
 		if promptErr != nil {
-			return nil, totalTokens, fmt.Errorf("failed to build judge prompt: %w", promptErr)
+			return nil, totalTokens, fmt.Errorf("failed to build judge prompts: %w", promptErr)
 		}
 
 		promptPath := stagePromptFilePath(subOutPath, "judge", 0)
-		if promptErr := writeStagePromptFile(promptPath, prompt); promptErr != nil {
-			return nil, totalTokens, fmt.Errorf("write judge prompt file: %w", promptErr)
+		if promptErr := writeStagePromptFile(promptPath, sysPrompt); promptErr != nil {
+			return nil, totalTokens, fmt.Errorf("write judge system prompt file: %w", promptErr)
 		}
 
 		workCtx := &invoker.LLMWorkContext{
@@ -1636,10 +1617,11 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 			workCtx,
 			func(callCtx context.Context, candidate dispatcher.TierCandidate, timeoutSeconds int, metrics *invoker.InvocationMetrics) (string, int64, error) {
 				workCtx.ResourceID = candidate.ResourceID
-				return callAITierPromptFileWithMetrics(
+				return callAITierSplitPromptWithMetrics(
 					callCtx,
 					candidate.Driver,
 					candidate.Model,
+					userPrompt,
 					promptPath,
 					stageCtx.CodesPath,
 					subOutPath,
@@ -1732,17 +1714,18 @@ func (e *DebateEngine) runJudgeStage(ctx *engines.EngineContext, bundle chunker.
 			if stats := splitStatsFromContext(stageCtx.Ctx); stats != nil {
 				stats.ContractRepairs++
 			}
-			retryPrompt := buildContractRetryPrompt(prompt, judgeContract, parseErr)
+			retryUserPrompt := buildContractRetryPrompt(userPrompt, judgeContract, parseErr)
 			retryPromptPath := stagePromptFilePath(subOutPath, "judge", 1)
-			if retryWriteErr := writeStagePromptFile(retryPromptPath, retryPrompt); retryWriteErr != nil {
+			if retryWriteErr := writeStagePromptFile(retryPromptPath, retryUserPrompt); retryWriteErr != nil {
 				return nil, totalTokens, fmt.Errorf("write judge retry prompt file: %w", retryWriteErr)
 			}
 			retryMetrics := &invoker.InvocationMetrics{}
-			retryRaw, retryTokens, retryErr := callAITierPromptFileWithMetrics(
+			retryRaw, retryTokens, retryErr := callAITierSplitPromptWithMetrics(
 				stageCtx.Ctx,
 				candidate.Driver,
 				candidate.Model,
-				retryPromptPath,
+				retryUserPrompt,
+				promptPath,
 				ctx.CodesPath,
 				subOutPath,
 				attemptSeconds,
@@ -2013,6 +1996,25 @@ func buildJudgePrompt(
 	return assembler.BuildJudgePrompt(ctx, bundle, hunterOut, challOut, evidencePacks)
 }
 
+// buildJudgeSplitPrompt 委托 PromptAssembler 分别装配静态系统提示词与动态用户提示词
+func buildJudgeSplitPrompt(
+	ctx *engines.EngineContext,
+	bundle chunker.SemanticBundle,
+	evidencePacks []JudgeCaseEvidencePack,
+	expectedCandidateIDs []string,
+) (string, string, error) {
+	assembler := &PromptAssembler{}
+	sysPrompt, err := assembler.BuildJudgeSystemPrompt(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build judge system prompt: %w", err)
+	}
+	userPrompt, err := assembler.BuildJudgeUserPrompt(ctx, bundle, evidencePacks, expectedCandidateIDs)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build judge user prompt: %w", err)
+	}
+	return sysPrompt, userPrompt, nil
+}
+
 // aiTimeoutPolicy allows a stage to distinguish wall-clock protection from
 // inactivity detection. Attempt/FirstByte only apply to native SSE calls.
 type aiTimeoutPolicy struct {
@@ -2046,6 +2048,10 @@ func callAITierPromptFile(ctx context.Context, backend string, modelName string,
 
 func callAITierPromptFileWithMetrics(ctx context.Context, backend string, modelName string, promptPath string, workDir string, outPath string, timeoutSeconds int, timeoutPolicy aiTimeoutPolicy, metrics *invoker.InvocationMetrics, workCtx ...*invoker.LLMWorkContext) (string, int64, error) {
 	return invokeAITier(ctx, backend, modelName, "", promptPath, workDir, outPath, timeoutSeconds, timeoutPolicy, metrics, workCtx...)
+}
+
+func callAITierSplitPromptWithMetrics(ctx context.Context, backend string, modelName string, userPrompt string, sysPromptPath string, workDir string, outPath string, timeoutSeconds int, timeoutPolicy aiTimeoutPolicy, metrics *invoker.InvocationMetrics, workCtx ...*invoker.LLMWorkContext) (string, int64, error) {
+	return invokeAITier(ctx, backend, modelName, userPrompt, sysPromptPath, workDir, outPath, timeoutSeconds, timeoutPolicy, metrics, workCtx...)
 }
 
 func invokeAITier(
@@ -2118,7 +2124,7 @@ func invokeAITierWithRequestOptions(
 
 	requestPrompt := prompt
 	requestPromptPath := promptPath
-	if promptPath != "" && strings.EqualFold(backend, "native") {
+	if promptPath != "" && strings.EqualFold(backend, "native") && strings.TrimSpace(requestPrompt) == "" {
 		promptBytes, readErr := os.ReadFile(promptPath)
 		if readErr != nil {
 			return "", 0, fmt.Errorf("read prompt file for native backend: %w", readErr)
