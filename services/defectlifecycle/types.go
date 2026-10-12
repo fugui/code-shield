@@ -81,6 +81,10 @@ type Identity struct {
 	RootFamily       string
 	ResourceIdentity string
 	ValidationChain  string
+	TargetEntity     string
+	StmtAnchorHash   string
+	CoreSlotKey      string
+	SlotKey          string
 	K1               string
 	K2               string
 	F1               string

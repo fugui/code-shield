@@ -173,7 +173,7 @@ func TestRollbackReportLedgerRetentionGuard(t *testing.T) {
 		t.Fatalf("expected error for expired rollback, got nil")
 	}
 	expectedMsg := "outside the snapshot retention window"
-	if err != nil && !containsStr(err.Error(), expectedMsg) {
+	if !containsStr(err.Error(), expectedMsg) {
 		t.Fatalf("expected error containing %q, got %v", expectedMsg, err)
 	}
 }

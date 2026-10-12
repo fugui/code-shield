@@ -350,3 +350,52 @@ func TestRunMatchingResourceAliasCanBridgePathDriftForReview(t *testing.T) {
 		t.Fatalf("expected resource evidence gate, got %+v", decision.ScoreDetail)
 	}
 }
+
+func TestRunMatchingMatchesPreciseSlotKeyDirectly(t *testing.T) {
+	normPath := "test/scan-test.cc"
+	scopeSymbol := "TEST"
+	targetEntity := "scan_test"
+	defectClass := "断言有效性-空测试"
+	cleanToken := "test(scan_test,invalid_format){"
+	stmtAnchorHash := ComputeStmtAnchorHash(cleanToken)
+	coreSlotKey := ComputeCoreSlotKey(normPath, scopeSymbol, defectClass, targetEntity)
+	slotKey := ComputePreciseSlotKey(coreSlotKey, stmtAnchorHash)
+
+	// 存量 defect 70 拥有相同的 slot_key，但指纹为 old-k2
+	existing := defect(70, "ACTIVE")
+	existing.NormPath = normPath
+	existing.ScopeSymbol = scopeSymbol
+	existing.TargetEntity = targetEntity
+	existing.DefectClassMajor = defectClass
+	existing.CleanToken = cleanToken
+	existing.StmtAnchorHash = stmtAnchorHash
+	existing.CoreSlotKey = coreSlotKey
+	existing.SlotKey = slotKey
+	existing.CanonicalFingerprint = "old-k2"
+
+	// observation 携带新的指纹 new-k2，但槽位相同
+	group := observation("uid-1", normPath, "shape", cleanToken)
+	group.Identity.SymbolPath = scopeSymbol
+	group.Identity.TargetEntity = targetEntity
+	group.Identity.DefectClassMajor = defectClass
+	group.Identity.StmtAnchorHash = stmtAnchorHash
+	group.Identity.CoreSlotKey = coreSlotKey
+	group.Identity.SlotKey = slotKey
+	group.Identity.K2 = "new-k2"
+
+	result := RunMatching(MatchingInput{
+		Observations: []ObservationGroup{group},
+		Defects:      []models.Defect{existing},
+		Thresholds:   RuntimeMatchThresholds(),
+	})
+	decision := result.Observations[0]
+	if decision.Verdict != VerdictExisted {
+		t.Fatalf("expected verdict EXISTED, got %s", decision.Verdict)
+	}
+	if decision.DefectID == nil || *decision.DefectID != 70 {
+		t.Fatalf("expected matched defect ID 70, got %+v", decision.DefectID)
+	}
+	if decision.Reason != "SLOT_PRECISE" {
+		t.Fatalf("expected reason SLOT_PRECISE, got %s", decision.Reason)
+	}
+}

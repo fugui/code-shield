@@ -27,17 +27,19 @@ const (
 	MatchHuman      = "HUMAN"
 	MatchUnclaimed  = "UNCLAIMED"
 
-	AliasK2       = "K2"
-	AliasF1       = "F1"
-	AliasK1       = "K1"
-	AliasF2       = "F2"
-	AliasF3       = "F3"
-	AliasPath     = "PATH"
-	AliasRename   = "RENAME"
-	AliasHuman    = "HUMAN"
-	AliasRoot     = "ROOT"
-	AliasResource = "RESOURCE"
-	AliasChain    = "CHAIN"
+	AliasSlotPrecise = "SLOT_PRECISE"
+	AliasSlotHealed  = "SLOT_HEALED"
+	AliasK2          = "K2"
+	AliasF1          = "F1"
+	AliasK1          = "K1"
+	AliasF2          = "F2"
+	AliasF3          = "F3"
+	AliasPath        = "PATH"
+	AliasRename      = "RENAME"
+	AliasHuman       = "HUMAN"
+	AliasRoot        = "ROOT"
+	AliasResource    = "RESOURCE"
+	AliasChain       = "CHAIN"
 
 	AliasStrong = "STRONG"
 	AliasBucket = "BUCKET"
@@ -252,7 +254,10 @@ func bindStrongAliases(observations []ObservationGroup, edges [][]scoredCandidat
 			continue
 		}
 		for _, edge := range edges[i] {
-			if !hasSource(edge.candidate, AliasK2) && !hasSource(edge.candidate, AliasF1) {
+			if !hasSource(edge.candidate, AliasSlotPrecise) &&
+				!hasSource(edge.candidate, AliasSlotHealed) &&
+				!hasSource(edge.candidate, AliasK2) &&
+				!hasSource(edge.candidate, AliasF1) {
 				continue
 			}
 			edge.detail["strong_alias_equal"] = 1
@@ -263,7 +268,13 @@ func bindStrongAliases(observations []ObservationGroup, edges [][]scoredCandidat
 			decisions[i].ScoreDetail = edge.detail
 			decisions[i].Verdict = matchedVerdict(edge.candidate.Defect.Status)
 			decisions[i].MatchTier = MatchStrong
-			decisions[i].Reason = "STRONG_ALIAS"
+			if hasSource(edge.candidate, AliasSlotPrecise) {
+				decisions[i].Reason = "SLOT_PRECISE"
+			} else if hasSource(edge.candidate, AliasSlotHealed) {
+				decisions[i].Reason = "SLOT_HEALED"
+			} else {
+				decisions[i].Reason = "STRONG_ALIAS"
+			}
 			break
 		}
 	}
@@ -288,6 +299,20 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 		{AliasF2, identity.F2}, {AliasF3, identity.F3}, {AliasPath, identity.NormPath},
 		{AliasRoot, identity.RootFamily}, {AliasResource, identity.ResourceIdentity}, {AliasChain, identity.ValidationChain},
 	}
+	slotKey := identity.SlotKey
+	if slotKey == "" && identity.NormPath != "" && identity.DefectClassMajor != "" {
+		targetEntity, _ := ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
+		stmtHash := ComputeStmtAnchorHash(identity.CleanToken)
+		scopeSymbol := NormalizeScopeSymbol(identity.SymbolPath)
+		coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
+		slotKey = ComputePreciseSlotKey(coreSlot, stmtHash)
+	}
+	if slotKey != "" {
+		values = append(values, struct {
+			aliasType string
+			value     string
+		}{AliasSlotHealed, slotKey})
+	}
 	if target, ok := input.RenameTargets[identity.NormPath]; ok {
 		values = append(values, struct {
 			aliasType string
@@ -311,6 +336,21 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 			candidates[alias.DefectID] = candidate
 		}
 		candidate.Sources[alias.AliasType] = struct{}{}
+	}
+	if slotKey != "" {
+		for _, defect := range input.Defects {
+			if defect.Status != DefectStatusActive || defect.SlotKey == "" {
+				continue
+			}
+			if defect.SlotKey == slotKey &&
+				defect.NormPath == identity.NormPath &&
+				defect.DefectClassMajor == identity.DefectClassMajor {
+				addAlias(models.DefectAlias{
+					DefectID:  defect.ID,
+					AliasType: AliasSlotPrecise,
+				})
+			}
+		}
 	}
 	for _, item := range values {
 		if item.value == "" {
@@ -356,22 +396,26 @@ func aliasMatchesIdentity(alias models.DefectAlias, aliasType string, identity I
 
 func sourcePriority(candidate Candidate) int {
 	switch {
-	case hasSource(candidate, AliasK2):
+	case hasSource(candidate, AliasSlotPrecise):
 		return 0
-	case hasSource(candidate, AliasF1):
+	case hasSource(candidate, AliasSlotHealed):
 		return 1
-	case hasSource(candidate, AliasHuman):
+	case hasSource(candidate, AliasK2):
 		return 2
-	case hasSource(candidate, AliasK1):
+	case hasSource(candidate, AliasF1):
 		return 3
-	case hasSource(candidate, AliasF2):
+	case hasSource(candidate, AliasHuman):
 		return 4
-	case hasSource(candidate, AliasRename):
+	case hasSource(candidate, AliasK1):
 		return 5
-	case hasSource(candidate, AliasResource), hasSource(candidate, AliasChain):
-		return 5
-	default:
+	case hasSource(candidate, AliasF2):
 		return 6
+	case hasSource(candidate, AliasRename):
+		return 7
+	case hasSource(candidate, AliasResource), hasSource(candidate, AliasChain):
+		return 7
+	default:
+		return 8
 	}
 }
 
@@ -381,6 +425,9 @@ func hasSource(candidate Candidate, source string) bool {
 }
 
 func hardGatePass(identity Identity, candidate Candidate) bool {
+	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) {
+		return true
+	}
 	if identity.NormPath == candidate.Defect.NormPath {
 		return true
 	}
@@ -397,7 +444,8 @@ func hardGatePass(identity Identity, candidate Candidate) bool {
 }
 
 func passAnchorGate(identity Identity, candidate Candidate, detail map[string]float64) bool {
-	if hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
+	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) ||
+		hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
 		return true
 	}
 	if detail["stmt_shape_equal"] == 1 {
@@ -409,7 +457,8 @@ func passAnchorGate(identity Identity, candidate Candidate, detail map[string]fl
 
 func scoreCandidate(identity Identity, candidate Candidate) (float64, map[string]float64) {
 	detail := map[string]float64{}
-	if hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
+	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) ||
+		hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
 		detail["context_key_equal"] = 1
 	}
 	if identity.StmtShape == candidate.Defect.StmtShape && identity.StmtShape != "" {
