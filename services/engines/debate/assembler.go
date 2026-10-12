@@ -173,7 +173,9 @@ func (a *PromptAssembler) BuildHunterPrompt(ctx *engines.EngineContext, bundle c
 	}
 
 	// 3. 分片上下文 (宏环境 + 头文件声明 + 负样本)
-	if len(bundle.MacroContext) > 0 {
+	isCxxBundle := hasCxxTargetFiles(bundle.AllFiles)
+
+	if isCxxBundle && len(bundle.MacroContext) > 0 {
 		sb.WriteString("## Build Context\n")
 		sb.WriteString("以下值来自构建系统提取，可能包含未展开变量；它们不是已确认的源码宏值。\n")
 		sb.WriteString("只有当目标源码真实使用这些变量或宏，且影响可从上下文证明时，才能作为判定依据。\n")
@@ -183,7 +185,7 @@ func (a *PromptAssembler) BuildHunterPrompt(ctx *engines.EngineContext, bundle c
 		sb.WriteString("\n")
 	}
 
-	if bundle.HeaderOutline != "" {
+	if isCxxBundle && bundle.HeaderOutline != "" {
 		sb.WriteString("## 核心头文件大纲声明 (Header Outline)\n```cpp\n")
 		sb.WriteString(bundle.HeaderOutline)
 		sb.WriteString("\n```\n\n")
@@ -483,4 +485,19 @@ func (a *PromptAssembler) renderJudgeDebateSummary(sb *strings.Builder, packs []
 		}
 		sb.WriteString("\n")
 	}
+}
+
+// hasCxxTargetFiles 判断待检视文件中是否包含 C/C++ 语言源码或头文件
+func hasCxxTargetFiles(files []string) bool {
+	if len(files) == 0 {
+		return true // 无文件显式声明时保守回退为允许注入
+	}
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f))
+		switch ext {
+		case ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inl", ".tpp", ".ipp":
+			return true
+		}
+	}
+	return false
 }

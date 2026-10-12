@@ -304,7 +304,7 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- `line_range` 与 `additional_line_ranges` 禁止携带文件名前缀（如 `a.cpp:10-20`），只输出行号或行号区间。\n")
 		sb.WriteString("- `trigger_line` 必须引用命中的真实源码行原文，禁止空字符串或省略。\n")
 		sb.WriteString("- `category_code` 必须与 `category` 一一对应配对，禁止自造分类或短码。\n")
-		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【崩溃机理】导致段错误、越界或死锁的具体物理机制与致命后果。禁止空泛陈述。\n")
+		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【故障机理】导致未捕获致命异常、段错误/Panic、状态破坏、资源耗尽或安全越权的具体物理机制与致命后果。禁止空泛陈述。\n")
 		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的崩溃或缺陷隐患，必须返回顶层空候选列表，即 `{\"schema\": \"" + contract.SchemaID + "\", \"candidates\": []}`；严禁为了输出而生搬硬套、严禁将 `candidates` 设为 null、严禁输出含有空字段的占位对象。\n")
 	}
 	if contract.Profile == OutputProfileJudge {
