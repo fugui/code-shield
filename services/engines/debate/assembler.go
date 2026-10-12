@@ -292,7 +292,8 @@ func (a *PromptAssembler) BuildChallengerPrompt(
 	sb.Write(claimBytes)
 	sb.WriteString("\n```\n\n")
 
-	evidenceBytes, err := json.MarshalIndent(evidencePacks, "", "  ")
+	challengerPacks := ToChallengerPromptEvidencePacks(evidencePacks)
+	evidenceBytes, err := json.MarshalIndent(challengerPacks, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal evidence packs for challenger prompt: %w", err)
 	}

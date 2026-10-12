@@ -204,3 +204,57 @@ func writeFile(path, content string) error {
 	}
 	return os.WriteFile(path, []byte(content), 0644)
 }
+
+func TestEvidenceIdentifiersFiltersCommonNamespaces(t *testing.T) {
+	view := JudgeCandidateView{
+		ScopeSymbol: "fmt::detail::vprintf",
+		TriggerLine: "auto nul = std::find(str, str_end, Char());",
+	}
+	identifiers := evidenceIdentifiers(view)
+	for _, id := range identifiers {
+		if id == "detail" || id == "fmt" || id == "std" || id == "find" {
+			t.Errorf("expected identifier %q to be filtered by stop words, got %v", id, identifiers)
+		}
+	}
+	foundVprintf := false
+	for _, id := range identifiers {
+		if id == "vprintf" {
+			foundVprintf = true
+		}
+	}
+	if !foundVprintf {
+		t.Errorf("expected vprintf to be kept in identifiers: %v", identifiers)
+	}
+}
+
+func TestIsTrivialSourceLine(t *testing.T) {
+	trivialLines := []string{
+		"namespace detail {",
+		"} // namespace detail",
+		"}  // namespace",
+		"/* block comment */",
+		"// single line comment",
+		"{",
+		"}",
+		"};",
+		";",
+		"   ",
+	}
+	for _, line := range trivialLines {
+		if !isTrivialSourceLine(line) {
+			t.Errorf("expected line %q to be identified as trivial", line)
+		}
+	}
+
+	nonTrivialLines := []string{
+		"if (ptr == nullptr) return false;",
+		"auto sv = string_view(str);",
+		"mutex.lock();",
+	}
+	for _, line := range nonTrivialLines {
+		if isTrivialSourceLine(line) {
+			t.Errorf("expected line %q NOT to be trivial", line)
+		}
+	}
+}
+
