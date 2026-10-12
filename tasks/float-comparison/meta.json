@@ -62,6 +62,11 @@
   "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "总结潜在浮点数直接比较风险分布情况（致命、严重、一般、建议）。",
+    "recommendation_guidelines": "评估本代码仓整体的防浮点数精度风险质量水平；在财务/计费等强一致性场景推广定点数（如 Python Decimal，C/C++ int64 最小单位）；在计算场景采用 epsilon 近似容差比较；在 CI/CD 中开启 -Wfloat-equal 等静态检查。"
+  },
   "target_scope": "business",
   "target_semantics": {
     "singular": "源码文件",
@@ -225,10 +230,5 @@
     ]
   },
   "timeout": 60,
-  "updated_at": "2026-08-22T07:29:40.654047+08:00",
-  "synthesis_config": {
-    "report_type": "static",
-    "overview_guidelines": "总结潜在浮点数直接比较风险分布情况（致命、严重、一般、建议）。",
-    "recommendation_guidelines": "评估本代码仓整体的防浮点数精度风险质量水平；在财务/计费等强一致性场景推广定点数（如 Python Decimal，C/C++ int64 最小单位）；在计算场景采用 epsilon 近似容差比较；在 CI/CD 中开启 -Wfloat-equal 等静态检查。"
-  }
+  "updated_at": "2026-08-22T07:29:40.654047+08:00"
 }

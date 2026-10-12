@@ -88,6 +88,11 @@
   "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "总结潜在无序集合遍历与导出对下游业务逻辑确定性的影响。",
+    "recommendation_guidelines": "评估本代码仓整体的集合迭代与跨模块数据流契约稳定性；在安全签名与接口序列化前强制执行 Key 字典序排序；对插入顺序敏感场景选用保序容器，避免使用相同下标对不同无序集合导出的切片建立关联。"
+  },
   "target_scope": "business",
   "target_semantics": {
     "singular": "源码文件",
@@ -336,10 +341,5 @@
       }
     ]
   },
-  "timeout": 60,
-  "synthesis_config": {
-    "report_type": "static",
-    "overview_guidelines": "总结潜在无序集合遍历与导出对下游业务逻辑确定性的影响。",
-    "recommendation_guidelines": "评估本代码仓整体的集合迭代与跨模块数据流契约稳定性；在安全签名与接口序列化前强制执行 Key 字典序排序；对插入顺序敏感场景选用保序容器，避免使用相同下标对不同无序集合导出的切片建立关联。"
-  }
+  "timeout": 60
 }

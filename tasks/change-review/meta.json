@@ -79,6 +79,11 @@
   "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 20,
+  "synthesis_config": {
+    "report_type": "incremental",
+    "overview_guidelines": "重点总结本次提交或合并中，主要新增、修改、去除了哪些功能/特性；若涉及对外公共接口（API、SDK函数签名、暴露的 RPC 方法）变更，必须以醒目的高亮形式（如 Blockquote 或 Warning Alert）明确指出。",
+    "recommendation_guidelines": "评估增量变更的回归风险，对公共接口演进契约和伴随单测防护给出针对性合并建议。"
+  },
   "target_scope": "business",
   "target_semantics": {
     "singular": "变更 hunk",
@@ -327,10 +332,5 @@
   "tier_fast_backend": "",
   "tier_reasoning_backend": "",
   "timeout": 60,
-  "updated_at": "2026-08-31T17:23:25.464957+08:00",
-  "synthesis_config": {
-    "report_type": "incremental",
-    "overview_guidelines": "重点总结本次提交或合并中，主要新增、修改、去除了哪些功能/特性；若涉及对外公共接口（API、SDK函数签名、暴露的 RPC 方法）变更，必须以醒目的高亮形式（如 Blockquote 或 Warning Alert）明确指出。",
-    "recommendation_guidelines": "评估增量变更的回归风险，对公共接口演进契约和伴随单测防护给出针对性合并建议。"
-  }
+  "updated_at": "2026-08-31T17:23:25.464957+08:00"
 }

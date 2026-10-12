@@ -62,6 +62,11 @@
   "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 10,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "重点总结 cJSON 对象的内存分配与生命周期管理合规性，分析深层嵌套与多分支退出场景下的资源状态。",
+    "recommendation_guidelines": "评估 cJSON 对象的生命周期配对完整性，重点排查 cJSON_Delete 遗漏与多分支提前 return 导致的泄漏隐患；推广封装统一的 cJSON 自动释放 Guard 或 RAII 包装器。"
+  },
   "target_scope": "business",
   "target_semantics": {
     "singular": "cJSON 内存操作命中",
@@ -230,10 +235,5 @@
     ]
   },
   "timeout": 60,
-  "updated_at": "2026-08-22T07:36:50.396405+08:00",
-  "synthesis_config": {
-    "report_type": "static",
-    "overview_guidelines": "重点总结 cJSON 对象的内存分配与生命周期管理合规性，分析深层嵌套与多分支退出场景下的资源状态。",
-    "recommendation_guidelines": "评估 cJSON 对象的生命周期配对完整性，重点排查 cJSON_Delete 遗漏与多分支提前 return 导致的泄漏隐患；推广封装统一的 cJSON 自动释放 Guard 或 RAII 包装器。"
-  }
+  "updated_at": "2026-08-22T07:36:50.396405+08:00"
 }

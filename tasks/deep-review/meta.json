@@ -63,6 +63,11 @@
   "notify_cc": [],
   "notify_template": "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告",
   "notify_threshold": 20,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "综合评估代码仓的架构合理性、高内聚低耦合、并发模型与异常安全性等全局质量维度。",
+    "recommendation_guidelines": "对代码仓的整体模块解耦、消除循环依赖、收敛全局状态及长远架构演进给出系统性重构与治理建议。"
+  },
   "target_scope": "business",
   "target_semantics": {
     "singular": "源码文件",
@@ -381,10 +386,5 @@
     ]
   },
   "timeout": 60,
-  "updated_at": "2026-09-08T11:14:49.470097+08:00",
-  "synthesis_config": {
-    "report_type": "static",
-    "overview_guidelines": "综合评估代码仓的架构合理性、高内聚低耦合、并发模型与异常安全性等全局质量维度。",
-    "recommendation_guidelines": "对代码仓的整体模块解耦、消除循环依赖、收敛全局状态及长远架构演进给出系统性重构与治理建议。"
-  }
+  "updated_at": "2026-09-08T11:14:49.470097+08:00"
 }
