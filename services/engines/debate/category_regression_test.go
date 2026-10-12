@@ -30,7 +30,7 @@ type categoryRegressionSample struct {
 }
 
 const expectedRegressionTaxonomyHash = "sha256:6c10bae97849fd70f37467be8884101c99f5ddc507f8246ed8fd38542d8adbcf"
-const expectedRegressionPromptHash = "sha256:bc8601e91f3ae46657d5cd5a0fc9181c38a623621ca3bb05f57fb0bfe537af55"
+const expectedRegressionPromptHash = "sha256:96a85b3e7b5de2a4555807f974520421a59f3da96a1d23db6752ae8b97045374"
 
 func TestSemanticRegressionCoversClosePairs(t *testing.T) {
 	file, err := os.Open(filepath.Join("..", "..", "..", "testdata", "category-regression.jsonl"))
