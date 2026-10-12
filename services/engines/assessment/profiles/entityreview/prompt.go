@@ -33,13 +33,15 @@ func (Profile) BuildPrompt(ctx assessment.AssessmentContext, bundle assessment.B
 			domainRules, err = os.ReadFile(ctx.EngineContext.AnalysisPromptPath)
 		}
 		if err == nil && len(domainRules) > 0 {
-			content := string(domainRules)
+			content := assessment.SanitizeDomainPrompt(string(domainRules))
 			if len(content) > maxDomainPromptBytes {
 				content = content[:maxDomainPromptBytes] + "\n\n[... 领域规则过长，已截断 ...]"
 			}
-			sb.WriteString("## Domain Specifications\n")
-			sb.WriteString(strings.TrimSpace(content))
-			sb.WriteString("\n\n")
+			if len(content) > 0 {
+				sb.WriteString("## Domain Specifications\n")
+				sb.WriteString(strings.TrimSpace(content))
+				sb.WriteString("\n\n")
+			}
 		}
 	}
 	sb.WriteString("## Target Files\n")

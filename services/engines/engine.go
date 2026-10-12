@@ -68,12 +68,12 @@ type EngineContext struct {
 	RepoName                  string
 	TaskTypeID                uint
 	TaskTypeName              string
-	TaskTypeKey               string              // 任务英文标识，如 "ut-effectiveness"
-	EngineMode                string              // 引擎模式；当前只允许 debate_full
-	AssessmentConfig          json.RawMessage     // assessment plugin configuration snapshot
-	AssessmentProfile         string              // resolved assessment plugin registry key
+	TaskTypeKey               string                // 任务英文标识，如 "ut-effectiveness"
+	EngineMode                string                // 引擎模式；当前只允许 debate_full
+	AssessmentConfig          json.RawMessage       // assessment plugin configuration snapshot
+	AssessmentProfile         string                // resolved assessment plugin registry key
 	Plugins                   plugins.PluginsConfig // 声明式挂载的 SPI 插件配置快照
-	Profile                   profile.ScanProfile // 已校验的 scan profile 快照
+	Profile                   profile.ScanProfile   // 已校验的 scan profile 快照
 	ChunkPolicyID             string
 	TaskDir                   string                    // 任务文件目录，如 "tasks/ut-effectiveness"
 	AnalysisPromptPath        string                    // 任务分析提示词文件绝对路径
@@ -433,4 +433,3 @@ func ParsePluginsConfig(raw json.RawMessage) (plugins.PluginsConfig, error) {
 	}
 	return plugins.PluginsConfig{}, nil
 }
-

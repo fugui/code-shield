@@ -10,15 +10,15 @@ import (
 )
 
 var (
-	pyStdAssertPattern       = regexp.MustCompile(`(?m)^\s*assert\s+|self\.assert|pytest\.raises|mocker\.`)
-	pyMockAssertPattern      = regexp.MustCompile(`\b(assert_called|assert_called_once|assert_called_with|assert_called_once_with|assert_any_call|assert_has_calls|assert_not_called)\b`)
-	pyMockTypoPattern        = regexp.MustCompile(`\b(asser_called|assert_caled|assert_called_wth|assert_calld)\b`)
+	pyStdAssertPattern        = regexp.MustCompile(`(?m)^\s*assert\s+|self\.assert|pytest\.raises|mocker\.`)
+	pyMockAssertPattern       = regexp.MustCompile(`\b(assert_called|assert_called_once|assert_called_with|assert_called_once_with|assert_any_call|assert_has_calls|assert_not_called)\b`)
+	pyMockTypoPattern         = regexp.MustCompile(`\b(asser_called|assert_caled|assert_called_wth|assert_calld)\b`)
 	pyLiteralTautologyPattern = regexp.MustCompile(`\bassert\s+(True|1|not\s+False|\([Tt]rue\))\b`)
-	pyAssertEqPattern        = regexp.MustCompile(`\bassert\s+([a-zA-Z0-9_]+)\s*==\s*([a-zA-Z0-9_]+)\b`)
-	pyHelperPattern          = regexp.MustCompile(`\b(verify_[A-Za-z0-9_]*|check_[A-Za-z0-9_]*|assert_[A-Za-z0-9_]*|validate_[A-Za-z0-9_]*)\s*\(`)
-	pyPrintPattern           = regexp.MustCompile(`(?m)^\s*(print\s*\(|logging\.|logger\.)[^)]*\)?\s*$`)
-	pyDocstringPattern       = regexp.MustCompile(`(?s)"""[\s\S]*?"""|'''[\s\S]*?'''`)
-	pySingleCommentPattern   = regexp.MustCompile(`(?m)#.*$`)
+	pyAssertEqPattern         = regexp.MustCompile(`\bassert\s+([a-zA-Z0-9_]+)\s*==\s*([a-zA-Z0-9_]+)\b`)
+	pyHelperPattern           = regexp.MustCompile(`\b(verify_[A-Za-z0-9_]*|check_[A-Za-z0-9_]*|assert_[A-Za-z0-9_]*|validate_[A-Za-z0-9_]*)\s*\(`)
+	pyPrintPattern            = regexp.MustCompile(`(?m)^\s*(print\s*\(|logging\.|logger\.)[^)]*\)?\s*$`)
+	pyDocstringPattern        = regexp.MustCompile(`(?s)"""[\s\S]*?"""|'''[\s\S]*?'''`)
+	pySingleCommentPattern    = regexp.MustCompile(`(?m)#.*$`)
 )
 
 func hasPySelfEqTautology(code string) bool {

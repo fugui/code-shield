@@ -32,11 +32,11 @@ type StructuralFactHint struct {
 
 // RadarResult 门禁与探针评估结果
 type RadarResult struct {
-	Decision   Decision                `json:"decision"`
-	Finding    *models.AnalysisFinding `json:"finding,omitempty"`
-	Reason     string                  `json:"reason,omitempty"`
-	FactHints  []StructuralFactHint    `json:"fact_hints,omitempty"`
-	Metadata   map[string]any          `json:"metadata,omitempty"`
+	Decision  Decision                `json:"decision"`
+	Finding   *models.AnalysisFinding `json:"finding,omitempty"`
+	Reason    string                  `json:"reason,omitempty"`
+	FactHints []StructuralFactHint    `json:"fact_hints,omitempty"`
+	Metadata  map[string]any          `json:"metadata,omitempty"`
 }
 
 // PreflightGatePlugin 前置轻量门禁插件（负责执行 Tier 0 静态拦截、Fast Pass 极速放行与争议标记）

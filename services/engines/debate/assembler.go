@@ -3,6 +3,7 @@ package debate
 import (
 	"code-shield/models"
 	"code-shield/services/engines"
+	"code-shield/services/engines/assessment"
 	"code-shield/services/engines/chunker"
 	"encoding/json"
 	"fmt"
@@ -51,58 +52,11 @@ func (a *PromptAssembler) loadTaskDomainPrompt(promptPath string, allowedBaseDir
 // stripLegacyOutputContracts removes hand-written JSON/output sections from task
 // prompt files during migration. Domain prompts must not own output contracts.
 func (a *PromptAssembler) stripLegacyOutputContracts(content string, source string) string {
-	lines := strings.Split(content, "\n")
-	kept := make([]string, 0, len(lines))
-	stripped := false
-	skipping := false
-	skipLevel := 0
-
-	isLegacyHeading := func(line string) bool {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "#") {
-			return false
-		}
-		title := strings.TrimLeft(trimmed, "#")
-		title = strings.TrimSpace(title)
-		return strings.Contains(title, "输出格式") ||
-			strings.Contains(title, "JSON 格式") ||
-			strings.Contains(title, "标准 JSON") ||
-			strings.Contains(title, "输出通道")
-	}
-
-	headingLevel := func(line string) int {
-		trimmed := strings.TrimSpace(line)
-		level := 0
-		for _, char := range trimmed {
-			if char != '#' {
-				break
-			}
-			level++
-		}
-		return level
-	}
-
-	for _, line := range lines {
-		if !skipping && isLegacyHeading(line) {
-			skipping = true
-			skipLevel = headingLevel(line)
-			stripped = true
-			continue
-		}
-		if skipping {
-			if strings.TrimSpace(line) != "" && strings.HasPrefix(strings.TrimSpace(line), "#") && headingLevel(line) <= skipLevel {
-				skipping = false
-				kept = append(kept, line)
-			}
-			continue
-		}
-		kept = append(kept, line)
-	}
-
-	if stripped {
+	cleaned := assessment.SanitizeDomainPrompt(content)
+	if len(cleaned) < len(content) {
 		log.Printf("[PromptAssembler] Stripped legacy output contract from task prompt %s", source)
 	}
-	return strings.TrimSpace(strings.Join(kept, "\n"))
+	return cleaned
 }
 
 // getDefenseDimensionsForFamily 获取领域族群的默认抗辩维度模板 (基于 models.GetAllDomainFamilies SSOT)
