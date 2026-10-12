@@ -378,3 +378,23 @@ if (status) return false;
 		}
 	}
 }
+
+func TestExtractHeaderOutline_DeduplicatesDeclarations(t *testing.T) {
+	tmpDir := t.TempDir()
+	headerContent := `
+struct is_contiguous;
+struct is_contiguous : std::false_type {};
+void process_item(int id);
+void process_item(int id);
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "base.h"), []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outline := ExtractHeaderOutline(tmpDir, []string{"base.h"})
+	if count := strings.Count(outline, "struct is_contiguous { ... };"); count != 1 {
+		t.Errorf("expected 1 struct is_contiguous, got %d in: %s", count, outline)
+	}
+	if count := strings.Count(outline, "void process_item(int id);"); count != 1 {
+		t.Errorf("expected 1 void process_item, got %d in: %s", count, outline)
+	}
+}

@@ -172,3 +172,28 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestFloatComparisonContractUsesDomainTriggerCondition(t *testing.T) {
+	metaRaw, err := os.ReadFile(filepath.Join("..", "..", "..", "tasks", "float-comparison", "meta.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var taskType models.TaskType
+	if err := json.Unmarshal(metaRaw, &taskType); err != nil {
+		t.Fatal(err)
+	}
+	taxonomy := taskType.GetCategoryTaxonomy()
+	if taxonomy == nil {
+		t.Fatal("float-comparison task does not expose taxonomy")
+	}
+	contract, err := ContractForStageWithTaxonomy("debate_full", "hunter", taskType.GetAllowedCategories(), *taxonomy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(contract.Example, "IEEE 754") {
+		t.Fatalf("expected float contract example to contain IEEE 754 trigger condition, got:\n%s", contract.Example)
+	}
+	if strings.Contains(contract.Example, "段错误崩溃") {
+		t.Fatalf("float contract example must not contain segment fault crash, got:\n%s", contract.Example)
+	}
+}
