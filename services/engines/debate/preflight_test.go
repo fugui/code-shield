@@ -98,3 +98,60 @@ TEST(CalcTest, ValidAdd) {
 		t.Fatalf("unexpected assessment records: %+v", records)
 	}
 }
+
+func TestPreflightGateGeneratesPassFindingForEntityReview(t *testing.T) {
+	tmpDir := t.TempDir()
+	relPath := "test_calc.cpp"
+	absPath := filepath.Join(tmpDir, relPath)
+
+	content := `TEST(CalcTest, ValidAdd) {
+    EXPECT_EQ(1 + 2, 3);
+}
+`
+	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	engine := &DebateEngine{}
+	ctx := &engines.EngineContext{
+		Ctx:               context.Background(),
+		CodesPath:         tmpDir,
+		AssessmentProfile: "entityreview",
+		Plugins: plugins.PluginsConfig{
+			PreflightGate: &plugins.TaskPluginDeclaration{
+				ID: "test_case_radar",
+			},
+		},
+	}
+
+	validUnit := coverage.PlanUnit{
+		ID:          "unit-valid",
+		Kind:        coverage.PlanUnitEntity,
+		Path:        relPath,
+		DisplayName: "CalcTest.ValidAdd",
+		StartLine:   1,
+		EndLine:     3,
+	}
+
+	bundle := chunker.SemanticBundle{
+		Name:         "bundle-001",
+		PrimaryUnits: []coverage.PlanUnit{validUnit},
+	}
+
+	findings, records, remaining, allDone := engine.applyPreflightGates(ctx, &bundle)
+	if !allDone || len(remaining) != 0 {
+		t.Fatalf("expected allDone=true, remaining=%d", len(remaining))
+	}
+	if len(records) != 1 || records[0].Status != "PASS" {
+		t.Fatalf("expected 1 PASS record, got %+v", records)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding for pass unit, got %d", len(findings))
+	}
+	if findings[0].Severity != "合格" || findings[0].AssessmentOutcome != "pass" {
+		t.Fatalf("expected pass finding, got %+v", findings[0])
+	}
+	if findings[0].Title != "测试用例合格：CalcTest.ValidAdd" {
+		t.Fatalf("unexpected finding title: %q", findings[0].Title)
+	}
+}
