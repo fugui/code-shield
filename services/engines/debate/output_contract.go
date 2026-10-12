@@ -156,7 +156,7 @@ func newHunterCandidateContract(allowedCategories []string) OutputContract {
       "category": %q,
       "title": "简明候选标题",
       "code_snippet": "真实源码片段",
-      "trigger_condition": "触发前提、数据状态、调用路径和后果"
+      "trigger_condition": "【前置假设】外部入参传入非法边界或空指针；【触发路径】经 Process() 调用但未作非空校验；【崩溃机理】在当前行解引用导致段错误崩溃"
     }
   ]
 }`, CandidatesArtifactSchemaV1, category),
@@ -261,7 +261,7 @@ func newJudgeContract(allowedCategories []string) OutputContract {
 func RenderOutputContract(contract OutputContract) string {
 	var sb strings.Builder
 	sb.WriteString("## Stage Output Contract\n")
-	sb.WriteString("必须输出一个合法 UTF-8 JSON 对象；不得输出 Markdown 代码围栏、注释、日志或解释文字。\n")
+	sb.WriteString("数据内容契约：最终结果必须是一个合法 UTF-8 JSON 对象；不得包含 Markdown 代码围栏、注释、日志或解释文字。\n")
 	sb.WriteString(fmt.Sprintf("- schema：`%s`\n", contract.SchemaID))
 	sb.WriteString(fmt.Sprintf("- 顶层主键：`%s`\n", contract.TopLevel))
 	sb.WriteString("- 必填顶层字段：")
@@ -304,7 +304,8 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- `line_range` 与 `additional_line_ranges` 禁止携带文件名前缀（如 `a.cpp:10-20`），只输出行号或行号区间。\n")
 		sb.WriteString("- `trigger_line` 必须引用命中的真实源码行原文，禁止空字符串或省略。\n")
 		sb.WriteString("- `category_code` 必须与 `category` 一一对应配对，禁止自造分类或短码。\n")
-		sb.WriteString("- 零缺陷安全退避契约：若当前分片代码经审查确认安全合规、不存在可达的崩溃或缺陷隐患，必须返回 `\"candidates\": []`；严禁为了输出而生搬硬套或虚构安全代码。\n")
+		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【崩溃机理】导致段错误、越界或死锁的具体物理机制与致命后果。禁止空泛陈述。\n")
+		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的崩溃或缺陷隐患，必须返回顶层空候选列表，即 `{\"schema\": \"" + contract.SchemaID + "\", \"candidates\": []}`；严禁为了输出而生搬硬套、严禁将 `candidates` 设为 null、严禁输出含有空字段的占位对象。\n")
 	}
 	if contract.Profile == OutputProfileJudge {
 		sb.WriteString("- `evidence[].kind` 枚举：`target_source` | `related_source` | `caller` | `definition` | `macro` | `absence_probe`\n")
@@ -326,5 +327,8 @@ func RenderOutputContract(contract OutputContract) string {
 	sb.WriteString("\n结构示例（仅说明字段；输出时不得复制本说明，也不得添加围栏）：\n")
 	sb.WriteString(contract.Example)
 	sb.WriteString("\n")
+	if contract.Profile == OutputProfileCandidates {
+		sb.WriteString(fmt.Sprintf("\n若当前分片未发现任何可达缺陷，直接输出顶层空候选数组（示例）：\n{\n  \"schema\": %q,\n  \"candidates\": []\n}\n", contract.SchemaID))
+	}
 	return sb.String()
 }
