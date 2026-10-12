@@ -1,74 +1,24 @@
-# cJSON 内存泄漏扫描
+## 扫描聚焦领域 (Scan Focus Areas)
 
-## 工作任务
+请对代码中使用的 cJSON 库相关操作进行深度审计，重点排查因生命周期失衡、所有权未移交或异常提前退出导致的内存泄漏问题，严格对照以下分类进行判定与归类：
 
-你是一个资深的高级软件架构师和C/C++代码专家。请仔细阅读传入的代码仓库内容，并执行详尽的代码检视。
+### 1. 解析与构造生命周期 (Parse & Create Lifecycle)
+* **cJSON 解析结果未释放 (Parse Result Leak)** [Category: `cJSON 解析结果未释放`]: 调用 `cJSON_Parse` / `cJSON_ParseWithOpts` 解析文本生成的 JSON 树对象，在正常返回、解析失败校验或提前退出分支中缺少配对的 `cJSON_Delete` 调用，且未移交给全局/长生命周期管理者。
+* **cJSON 组装临时节点泄漏 (Detached Temporary Node Leak)** [Category: `cJSON 组装临时节点泄漏`]: 使用 `cJSON_Create...` 系列 API 分配的临时节点，在挂载至对象/数组失败、参数校验失败或提前返回时未被释放；注意：若节点已成功通过 `cJSON_AddItemToObject` / `cJSON_AddItemToArray` 挂载，所有权已转移给根节点，无需单独释放。
 
-当前目录下的C/C++代码中中可能存在 cjson 的内存泄漏问题， 特别是每一个 cJSON_Parse 申请的内存， 是否正确释放。 
+### 2. 序列化与拷贝管理 (Print & Duplicate Lifecycle)
+* **cJSON 序列化输出未释放 (Print Output String Leak)** [Category: `cJSON 序列化输出未释放`]: 调用 `cJSON_Print` / `cJSON_PrintUnformatted` / `cJSON_PrintBuffered` 生成的堆内存字符串，在消费完成后未调用 `free`（或配对的 hook 释放函数），或在错误分支中丢失指针导致内存泄漏。
+* **cJSON 深拷贝副本泄漏 (Duplicate Copy Leak)** [Category: `cJSON 深拷贝副本泄漏`]: 使用 `cJSON_Duplicate` 复制出的独立 JSON 树副本，在使用完毕后未调用 `cJSON_Delete` 回收，或在失败处理路径中丢失所有权。
 
-基于对 cJSON 的文档中， 提到如下三种内存泄漏的情况：
-1. For every value type there is a cJSON_Create... function that can be used to create an item of that type. All of these will allocate a cJSON struct that can later be deleted with cJSON_Delete. Note that you have to delete them at some point, otherwise you will get a memory leak.
-Important: If you have added an item to an array or an object already, you mustn't delete it with cJSON_Delete. Adding it to an array or object transfers its ownership so that when that array or object is deleted, it gets deleted as well. You also could use cJSON_SetValuestring to change a cJSON_String's valuestring, and you needn't to free the previous valuestring manually.
-
-2. If you want to take an item out of an array at a given index and continue using it, use cJSON_DetachItemFromArray, it will return the detached item, so be sure to assign it to a pointer, otherwise you will have a memory leak.
-
-3. If you want to take an item out of an object, use cJSON_DetachItemFromObjectCaseSensitive, it will return the detached item, so be sure to assign it to a pointer, otherwise you will have a memory leak.
-
-基于之前的分析， 如下函数类别， 都需要进行正确的内存释放：
-|函数类别|内存分配|需配合释放|
-|---|---|---|
-|`cJSON_Create...`|✅ 分配 `cJSON` 结构体|`cJSON_Delete`|
-|`cJSON_Parse...`|✅ 分配整个 `cJSON` 树|`cJSON_Delete`|
-|`cJSON_Print...`|✅ 分配 JSON 字符串|`free`（或对应的 hooks）|
-|`cJSON_Duplicate`|✅ 复制整个树|`cJSON_Delete`|
-
-**注意**： 本次代码分析， 仅仅分析 cJSON 内存泄漏， 不做任何其它的工作。
-
-## 输出格式与约束 (Output Format & Constraints)
-
-1. **输出形式**：输出严格合法的纯 JSON 字符串。**绝对不能**包含 ` ```json ` 或 ` ``` ` 等 Markdown 代码块标记，不得包含任何前导或后随的解释性文字。
-2. **输出通道**：若指定了物理文件路径，应优先调用写入/修改工具将结果保存至该文件。
-3. **核心约束**：
-   - **相对路径**：`file_path` 必须是相对代码仓根目录的相对路径，绝对不能是绝对路径（严禁以 `/home/...` 等开头）。
-   - **枚举值限制**：`severity` 只能是 `致命`、`严重`、`一般`、`建议` 之一。
-   - **无问题情况**：如果未发现任何问题，`findings` 数组为空 `[]`，并在 `summary` 中说明代码质量良好。
+### 3. 节点摘除与其它所有权问题 (Detach & Other Lifecycle)
+* **cJSON 节点摘除后泄漏 (Detached Item Leak)** [Category: `cJSON 节点摘除后泄漏`]: 使用 `cJSON_DetachItemFromArray` 或 `cJSON_DetachItemFromObject` 等函数将节点从原树中摘除后，未将其保存至新所有者（未挂载到新树），也未显式调用 `cJSON_Delete` 释放该脱离节点。
+* **其它 cJSON 生命周期泄漏 (Other cJSON Leak)** [Category: `其它 cJSON 生命周期泄漏`]: 其它涉及 cJSON 对象所有权转换失衡、结构体字段替换未清理旧值（如未妥善处理 `cJSON_SetValuestring` 或自定义 hook 内存管理）导致的资源泄漏隐患。
 
 ---
 
-### JSON 格式说明（带字段约束提示）
-```json
-{
-  "findings": [
-    {
-      "severity": "必须且仅能填入：'致命' | '严重' | '一般' | '建议'",
-      "category": "必须填入具体的内存泄漏类型说明（如：cJSON_Parse 内存泄漏、cJSON_Print 内存泄漏等）",
-      "file_path": "相对代码仓根目录的相对路径",
-      "line_number": "问题所在的行号或行范围（字符串格式，例如 \"56-62\"）",
-      "code_snippet": "问题发生处的原始代码片段（3-10行）",
-      "title": "问题简述（一句话概括）",
-      "detail": "详细说明问题的原因和可能的影响",
-      "suggestion": "具体的修复建议和改进方案， 尽可能包含正确的修复代码或伪代码"
-    }
-  ],
-  "summary": "200-400字的整体代码质量评估摘要，描述主要问题类别及其风险影响"
-}
-```
+## 分析与判定原则
 
-### 标准 JSON 真实示例
-```json
-{
-  "findings": [
-    {
-      "severity": "严重",
-      "category": "cJSON_Parse 内存泄漏",
-      "file_path": "src/parser.c",
-      "line_number": "56-62",
-      "code_snippet": "void parse_config(const char* json_str) {\n    cJSON *root = cJSON_Parse(json_str);\n    if (root == NULL) return;\n    cJSON *item = cJSON_GetObjectItem(root, \"port\");\n    printf(\"port: %d\\n\", item->valueint);\n    // 缺少 cJSON_Delete(root)\n}",
-      "title": "cJSON_Parse 解析后的 JSON 树未进行释放",
-      "detail": "在 parse_config 函数中，使用 cJSON_Parse 成功解析了 JSON 字符串并分配了内存，但在函数正常退出时未调用 cJSON_Delete(root) 释放整个树，导致严重的内存泄漏风险。",
-      "suggestion": "在函数执行完毕的退出路径上添加 cJSON_Delete(root) 释放内存。\n\n正确代码示例：\nvoid parse_config(const char* json_str) {\n    cJSON *root = cJSON_Parse(json_str);\n    if (root == NULL) return;\n    ...\n    cJSON_Delete(root);\n}"
-    }
-  ],
-  "summary": "本次审计主要关注 C/C++ 代码中使用 cJSON 库导致的潜在内存泄漏问题。共发现 1 处严重缺陷，为 cJSON_Parse 树在退出时未调用 cJSON_Delete 进行资源回收。高频调用该解析函数会持续耗尽堆内存，建议优先进行修复。"
-}
-```
+1. **拒绝虚报与所有权识别**：充分识别 cJSON 的所有权转移机制。若节点已被成功 `AddItem...` 挂载至父节点，其生命周期由根节点接管，严禁将其误报为泄漏。
+2. **完整覆盖执行路径**：重点排查入参为 NULL、解析失败、JSON 字段不存在及各提前返回（Early Return）的异常分支，证明其存在确定性的资源丢失路径。
+3. **代码锚定**：必须精准指出问题发生的行号，截取包含完整分配与遗漏退出上下文的 **3-10行** 原始代码片段。
+4. **C/C++ 规范适配**：修复建议应符合标准 C/C++ 内存管理规范，对于 C++ 代码可优先推荐使用 RAII 智能指针或自定义 Deleter 进行自动回收。
