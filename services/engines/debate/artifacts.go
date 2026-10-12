@@ -314,6 +314,9 @@ func validateJudgeOutput(out *JudgeOutput, expectedIDs []string, allowedCategori
 			item.LineRange = normalized
 			modelLine = normalized
 		}
+		if item.Verdict == "REJECTED" && strings.TrimSpace(item.Suggestion) == "" {
+			item.Suggestion = "该项已被法官裁定为误报或已有充分前置防护，无需业务代码修复。"
+		}
 		for name, value := range map[string]string{
 			"trigger_line":        item.TriggerLine,
 			"scope_symbol":        item.ScopeSymbol,

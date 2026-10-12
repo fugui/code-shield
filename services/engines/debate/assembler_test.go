@@ -287,3 +287,62 @@ func TestPromptAssembler_FallsBackToLegacyTaskPromptPath(t *testing.T) {
 		t.Fatalf("legacy prompt path fallback = %q, want %q", domainRules, "legacy path domain rule")
 	}
 }
+
+func TestPromptAssembler_BuildJudgePrompt_SummaryMatrix(t *testing.T) {
+	assembler := &PromptAssembler{}
+	ctx := &engines.EngineContext{
+		TaskTypeName: "Coredump专项",
+		EngineMode:   "debate_full",
+	}
+	bundle := chunker.SemanticBundle{
+		AllFiles: []string{"src/test.cpp"},
+	}
+	hunterOut := &HunterOutput{
+		Candidates: []HunterCandidate{
+			{
+				CandidateID: "H-001",
+				Title:       "空指针解引用",
+			},
+		},
+	}
+	evidencePacks := []JudgeCaseEvidencePack{
+		{
+			CandidateID: "H-001",
+			Claim: JudgeCandidateView{
+				CandidateID: "H-001",
+				Category:    "空指针解引用",
+				Title:       "空指针解引用",
+				Claim:       "解引用前无判空",
+				FilePath:    "src/test.cpp",
+				LineRange:   "10-15",
+				TriggerLine: "ptr->doSomething()",
+			},
+			Defense: &ChallengerDefenseCase{
+				CandidateID:       "H-001",
+				DefenseVerdict:    "DEFENSE_SUCCESSFUL",
+				MitigatingFactors: "上层调用已具备强校验",
+				DefenseArguments: []DefenseArgument{
+					{
+						Dimension: "Guards",
+						Finding:   "调用方在调用前执行了 assert(ptr != nullptr)",
+					},
+				},
+			},
+		},
+	}
+
+	prompt, err := assembler.BuildJudgePrompt(ctx, bundle, hunterOut, nil, evidencePacks)
+	if err != nil {
+		t.Fatalf("BuildJudgePrompt failed: %v", err)
+	}
+
+	if !strings.Contains(prompt, "控辩双方主张对照大纲 (Claims vs Defenses Summary)") {
+		t.Errorf("expected prompt to contain debate summary matrix heading")
+	}
+	if !strings.Contains(prompt, "候选 H-001") || !strings.Contains(prompt, "DEFENSE_SUCCESSFUL") {
+		t.Errorf("expected prompt to contain candidate defense information in matrix")
+	}
+	if !strings.Contains(prompt, "调用方在调用前执行了 assert(ptr != nullptr)") {
+		t.Errorf("expected prompt to contain defense argument finding in matrix")
+	}
+}

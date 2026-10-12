@@ -165,4 +165,14 @@ func TestValidateJudgeOutput(t *testing.T) {
 	if err := validateJudgeOutput(out, []string{"H-001"}, []string{"测试分类"}, models.CategoryTaxonomy{}); err == nil {
 		t.Fatalf("expected invalid verdict to be rejected")
 	}
+
+	// 验证 REJECTED 且 suggestion 为空时可自动兜底通过
+	out.FinalVerdicts[0].Verdict = "REJECTED"
+	out.FinalVerdicts[0].Suggestion = ""
+	if err := validateJudgeOutput(out, []string{"H-001"}, []string{"测试分类"}, models.CategoryTaxonomy{}); err != nil {
+		t.Fatalf("expected REJECTED verdict with empty suggestion to pass via fallback, got: %v", err)
+	}
+	if out.FinalVerdicts[0].Suggestion == "" {
+		t.Fatalf("expected REJECTED suggestion to be populated by fallback")
+	}
 }

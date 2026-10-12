@@ -29,7 +29,7 @@ const (
 ## 线索:
 {{range .FactHints}}- [{{.Kind}}]: {{.Description}}
 {{end}}
-请输出严格 JSON: {"outcome": "PASS"|"DEFECT", "reason": "原因说明", "severity": "NORMAL"|"MAJOR"}`
+请输出严格 JSON: {"outcome": "PASS"|"DEFECT", "category_code": "UTE_EMPTY_TEST"|"UTE_TAUTOLOGY_ASSERTION"|"UTE_SILENT_CATCH"|"UTE_OTHER", "severity": "一般"|"严重"|"致命", "reason": "原因说明"}`
 )
 
 // TriagePromptData 传递给复核提示词模板的参数
@@ -41,9 +41,10 @@ type TriagePromptData struct {
 
 // TriageLLMResponse LLM 单轮极速复核返回的结构化结果
 type TriageLLMResponse struct {
-	Outcome  string `json:"outcome"`
-	Reason   string `json:"reason"`
-	Severity string `json:"severity"`
+	Outcome      string `json:"outcome"`
+	CategoryCode string `json:"category_code,omitempty"`
+	Reason       string `json:"reason"`
+	Severity     string `json:"severity"`
 }
 
 // NativeSingleRoundVerifier 基于轻量单轮大模型仲裁的复核插件
@@ -231,19 +232,57 @@ func buildThinDefectFinding(unit coverage.PlanUnit, resp TriageLLMResponse, snip
 	}
 
 	ruleID := "UT_VERIFIER_CONFIRMED_DEFECT"
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s", unit.Path, unit.ID, ruleID)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%s", unit.Path, unit.ID, ruleID))
 	obsUID := hex.EncodeToString(sum[:])
 
 	sev := "严重"
-	if strings.ToUpper(resp.Severity) == "MAJOR" {
+	switch strings.TrimSpace(resp.Severity) {
+	case "致命", "BLOCKER", "FATAL":
+		sev = "致命"
+	case "一般", "NORMAL", "MINOR":
+		sev = "一般"
+	case "建议", "SUGGESTION", "LOW":
+		sev = "建议"
+	case "严重", "MAJOR", "CRITICAL":
 		sev = "严重"
+	}
+
+	catCode := strings.TrimSpace(resp.CategoryCode)
+	catLabel := "断言有效性-永真断言"
+	suggestion := "请删除或重构形式化恒真断言/无效覆盖桩，补充真实被测逻辑的输入输出边界验证。"
+
+	switch catCode {
+	case "UTE_EMPTY_TEST":
+		catLabel = "断言有效性-空测试"
+		suggestion = "请为测试用例补充实质性断言语句，验证被测方法关键返回值或状态变更。"
+	case "UTE_SILENT_CATCH":
+		catLabel = "断言有效性-无效捕获"
+		suggestion = "请在 catch 块中唤起测试失败（如 fail() 或 ADD_FAILURE()），避免吞噬被测逻辑抛出的异常。"
+	case "UTE_INCOMPLETE_EXPECT":
+		catLabel = "断言有效性-预期结果不完整"
+		suggestion = "请补充对业务关键载荷或核心属性的断言校验。"
+	case "UTE_ILLEGAL_EXIT":
+		catLabel = "提前返回-非法退出"
+		suggestion = "请重构测试逻辑，移除提早返回的条件分支，确保后续断言稳定执行。"
+	case "UTE_SILENT_SKIP":
+		catLabel = "提前返回-静默跳过"
+		suggestion = "请检查 skip 条件，确保关键用例在 CI 流水线中能被真实执行。"
+	case "UTE_MISSING_MOCK":
+		catLabel = "断言有效性-Mock遗漏"
+		suggestion = "请对 Mock 对象的关键行为与交互进行显式 verify 校验。"
+	case "UTE_OTHER":
+		catLabel = "其它"
+		suggestion = "请检查并重构测试用例，排除无效测试逻辑。"
+	default:
+		catCode = "UTE_TAUTOLOGY_ASSERTION"
+		catLabel = "断言有效性-永真断言"
 	}
 
 	return &models.AnalysisFinding{
 		PrimaryUnitID:       unit.ID,
 		Severity:            sev,
-		Category:            "断言有效性-永真断言",
-		CategoryCode:        "UTE_TAUTOLOGY_ASSERTION",
+		Category:            catLabel,
+		CategoryCode:        catCode,
 		CategorySource:      "thin_verifier",
 		CategoryStatus:      "active",
 		FilePath:            unit.Path,
@@ -251,7 +290,7 @@ func buildThinDefectFinding(unit coverage.PlanUnit, resp TriageLLMResponse, snip
 		CodeSnippet:         snippet,
 		Title:               "单测有效性复核裁定存在形式化作弊或无效验证",
 		Detail:              resp.Reason,
-		Suggestion:          "请删除或重构形式化恒真断言/无效覆盖桩，补充真实被测逻辑的输入输出边界验证。",
+		Suggestion:          suggestion,
 		CalibrationRule:     ruleID,
 		ObservationGroupUID: obsUID,
 		AnchorConfidence:    "HIGH",

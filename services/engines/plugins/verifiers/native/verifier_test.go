@@ -14,10 +14,12 @@ import (
 )
 
 type mockInvoker struct {
-	outcome string
-	reason  string
-	delay   time.Duration
-	err     error
+	outcome      string
+	categoryCode string
+	severity     string
+	reason       string
+	delay        time.Duration
+	err          error
 }
 
 func (m *mockInvoker) Name() string { return "mock" }
@@ -32,10 +34,15 @@ func (m *mockInvoker) Invoke(req invoker.AIRequest) error {
 	if m.err != nil {
 		return m.err
 	}
+	sev := m.severity
+	if sev == "" {
+		sev = "MAJOR"
+	}
 	resp := TriageLLMResponse{
-		Outcome:  m.outcome,
-		Reason:   m.reason,
-		Severity: "MAJOR",
+		Outcome:      m.outcome,
+		CategoryCode: m.categoryCode,
+		Reason:       m.reason,
+		Severity:     sev,
 	}
 	raw, _ := json.Marshal(resp)
 	return os.WriteFile(req.OutputPath, raw, 0644)
@@ -66,8 +73,18 @@ func TestNativeSingleRoundVerifierDecisions(t *testing.T) {
 	if res.Decision != plugins.DecisionTier0Defect {
 		t.Fatalf("res.Decision = %s, want %s", res.Decision, plugins.DecisionTier0Defect)
 	}
-	if res.Finding == nil || res.Finding.CategoryCode != "UTE_TAUTOLOGY_ASSERTION" {
+	if res.Finding == nil || res.Finding.CategoryCode != "UTE_TAUTOLOGY_ASSERTION" || res.Finding.Severity != "严重" {
 		t.Fatalf("unexpected finding: %+v", res.Finding)
+	}
+
+	// 1.1 动态分类与严重度映射（空测试 + 一般）
+	verifier.SetInvokerForTest(&mockInvoker{outcome: "DEFECT", categoryCode: "UTE_EMPTY_TEST", severity: "一般", reason: "no assertions found"})
+	resEmpty, err := verifier.Verify(tmpDir, unit, nil, "", 2.0)
+	if err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+	if resEmpty.Finding == nil || resEmpty.Finding.CategoryCode != "UTE_EMPTY_TEST" || resEmpty.Finding.Severity != "一般" || resEmpty.Finding.Category != "断言有效性-空测试" {
+		t.Fatalf("unexpected finding for empty test: %+v", resEmpty.Finding)
 	}
 
 	// 2. PASS 判定

@@ -138,7 +138,7 @@ func executeCategoryRepairs(
 	}
 	defer cleanup()
 
-	prompt, promptErr := buildCategoryRepairPrompt(requests, contract)
+	prompt, promptErr := buildCategoryRepairPrompt(requests, contract, taxonomy)
 	if promptErr != nil {
 		return nil, 0, false, promptErr
 	}
@@ -197,7 +197,7 @@ func executeCategoryRepairsWithAudit(
 	}
 	defer cleanup()
 
-	prompt, promptErr := buildCategoryRepairPrompt(requests, contract)
+	prompt, promptErr := buildCategoryRepairPrompt(requests, contract, taxonomy)
 	if promptErr != nil {
 		return nil, nil, 0, "", false, promptErr
 	}
@@ -425,7 +425,7 @@ func categoryRepairAuditMessages(state *hunterArtifactState) []string {
 	return messages
 }
 
-func buildCategoryRepairPrompt(requests []CategoryRepairRequest, contract OutputContract) (string, error) {
+func buildCategoryRepairPrompt(requests []CategoryRepairRequest, contract OutputContract, taxonomy models.CategoryTaxonomy) (string, error) {
 	if len(requests) == 0 {
 		return "", fmt.Errorf("category repair requests are empty")
 	}
@@ -439,7 +439,20 @@ func buildCategoryRepairPrompt(requests []CategoryRepairRequest, contract Output
 	sb.Write(raw)
 	sb.WriteString("\n```\n\n")
 
-	if codes, ok := contract.Enums["category_code"]; ok && len(codes) > 0 {
+	if len(taxonomy.Categories) > 0 {
+		sb.WriteString("## Active Category Codes\n`category_code` 必须且只能从以下受控定义中选取：\n")
+		for _, cat := range taxonomy.Categories {
+			if taxonomy.SchemaVersion >= 3 && cat.Status != "active" {
+				continue
+			}
+			if cat.Definition != "" {
+				sb.WriteString(fmt.Sprintf("- `%s` (%s): %s\n", cat.Code, cat.Label, cat.Definition))
+			} else {
+				sb.WriteString(fmt.Sprintf("- `%s` (%s)\n", cat.Code, cat.Label))
+			}
+		}
+		sb.WriteString("\n")
+	} else if codes, ok := contract.Enums["category_code"]; ok && len(codes) > 0 {
 		sb.WriteString("## Active Category Codes\n`category_code` 必须且只能从以下代码中选取：\n")
 		for _, code := range codes {
 			sb.WriteString(fmt.Sprintf("- `%s`\n", code))

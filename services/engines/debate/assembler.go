@@ -394,6 +394,8 @@ func (a *PromptAssembler) BuildJudgePrompt(
 	}
 	sb.WriteString("\n")
 
+	a.renderJudgeDebateSummary(&sb, evidencePacks)
+
 	evidenceBytes, err := json.MarshalIndent(evidencePacks, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal judge evidence packs: %w", err)
@@ -449,4 +451,35 @@ func (a *PromptAssembler) BuildJudgePrompt(
 	}
 
 	return sb.String(), nil
+}
+
+func (a *PromptAssembler) renderJudgeDebateSummary(sb *strings.Builder, packs []JudgeCaseEvidencePack) {
+	if len(packs) == 0 {
+		return
+	}
+	sb.WriteString("## 控辩双方主张对照大纲 (Claims vs Defenses Summary)\n")
+	for _, pack := range packs {
+		cid := pack.CandidateID
+		if cid == "" {
+			cid = pack.Claim.CandidateID
+		}
+		sb.WriteString(fmt.Sprintf("### 候选 %s\n", cid))
+		claimText := pack.Claim.Claim
+		if strings.TrimSpace(claimText) == "" {
+			claimText = pack.Claim.Title
+		}
+		sb.WriteString(fmt.Sprintf("- **控方指控 (Hunter Claim)**: [%s] %s\n", pack.Claim.Category, claimText))
+		if pack.Claim.FilePath != "" {
+			sb.WriteString(fmt.Sprintf("  - 位置: `%s:%s` (触发: `%s`)\n", pack.Claim.FilePath, pack.Claim.LineRange, pack.Claim.TriggerLine))
+		}
+		if pack.Defense != nil {
+			sb.WriteString(fmt.Sprintf("- **辩方抗辩 (Challenger Defense)**: [%s] %s\n", pack.Defense.DefenseVerdict, pack.Defense.MitigatingFactors))
+			for _, arg := range pack.Defense.DefenseArguments {
+				sb.WriteString(fmt.Sprintf("  - 论据 [%s]: %s\n", arg.Dimension, arg.Finding))
+			}
+		} else {
+			sb.WriteString("- **辩方抗辩 (Challenger Defense)**: [未提交独立抗辩]\n")
+		}
+		sb.WriteString("\n")
+	}
 }
