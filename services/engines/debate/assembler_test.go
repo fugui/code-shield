@@ -426,3 +426,48 @@ func TestBuildChallengerPromptSlimEvidencePack(t *testing.T) {
 		t.Errorf("expected text within limit not to be truncated")
 	}
 }
+
+func TestPromptAssembler_BuildHunterPrompt_LanguageFilter(t *testing.T) {
+	assembler := &PromptAssembler{}
+	ctx := &engines.EngineContext{
+		TaskTypeName: "多语言测试",
+		EngineMode:   "debate_full",
+	}
+
+	// 1. 纯 Python 分片：应跳过 C++ 头文件大纲和构建宏
+	pyBundle := chunker.SemanticBundle{
+		Name:          "python-bundle",
+		AllFiles:      []string{"support/docopt.py", "support/release.py"},
+		HeaderOutline: "struct CxxOnly { int val; };",
+		MacroContext: map[string]string{
+			"FMT_LIB_NAME": "fmt",
+		},
+	}
+	pyPrompt := assembler.BuildHunterPrompt(ctx, pyBundle)
+	if strings.Contains(pyPrompt, "## Build Context") {
+		t.Errorf("expected python bundle not to contain Build Context")
+	}
+	if strings.Contains(pyPrompt, "## 核心头文件大纲声明 (Header Outline)") {
+		t.Errorf("expected python bundle not to contain Header Outline")
+	}
+	if !strings.Contains(pyPrompt, "【故障机理】导致未捕获致命异常、段错误/Panic") {
+		t.Errorf("expected generalized trigger_condition failure mechanism in prompt contract")
+	}
+
+	// 2. C++ 分片：应正常保留头文件大纲和构建宏
+	cxxBundle := chunker.SemanticBundle{
+		Name:          "cxx-bundle",
+		AllFiles:      []string{"src/format.cc", "include/fmt/format.h"},
+		HeaderOutline: "struct CxxOnly { int val; };",
+		MacroContext: map[string]string{
+			"FMT_LIB_NAME": "fmt",
+		},
+	}
+	cxxPrompt := assembler.BuildHunterPrompt(ctx, cxxBundle)
+	if !strings.Contains(cxxPrompt, "## Build Context") {
+		t.Errorf("expected cxx bundle to contain Build Context")
+	}
+	if !strings.Contains(cxxPrompt, "## 核心头文件大纲声明 (Header Outline)") {
+		t.Errorf("expected cxx bundle to contain Header Outline")
+	}
+}

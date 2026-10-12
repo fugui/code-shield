@@ -13,8 +13,6 @@
     "安全风险-内存破坏",
     "安全风险-敏感硬编码",
     "安全风险-输入注入",
-    "可维护性-魔鬼数字",
-    "可维护性-圈复杂度过高",
     "可维护性-冗余代码",
     "架构与设计-高耦合",
     "架构与设计-职责违背",
@@ -255,42 +253,6 @@
           "input is strictly allowlisted"
         ],
         "priority": 55,
-        "status": "active"
-      },
-      {
-        "code": "DEEP_MAGIC_NUMBER",
-        "label": "可维护性-魔鬼数字",
-        "definition": "A semantically meaningful numeric literal is repeated or unexplained.",
-        "decision_rules": [
-          "number has domain meaning",
-          "same value is copied in multiple places",
-          "no named constant exists"
-        ],
-        "positive_hints": [
-          "named constant or configuration is used"
-        ],
-        "negative_hints": [
-          "number is a local indexing convention"
-        ],
-        "priority": 50,
-        "status": "active"
-      },
-      {
-        "code": "DEEP_COMPLEXITY",
-        "label": "可维护性-圈复杂度过高",
-        "definition": "Control-flow complexity exceeds the level needed for the behavior and impedes safe change.",
-        "decision_rules": [
-          "branch or loop nesting is deep",
-          "decision paths are hard to test",
-          "a simpler decomposition exists"
-        ],
-        "positive_hints": [
-          "behavior requires the branch matrix"
-        ],
-        "negative_hints": [
-          "validation is extracted cleanly"
-        ],
-        "priority": 45,
         "status": "active"
       },
       {
