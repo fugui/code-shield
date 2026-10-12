@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"code-shield/services/coverage"
@@ -307,5 +308,71 @@ func TestIsSourceFileAndTestFile(t *testing.T) {
 	}
 	if IsTestFile("main.go") {
 		t.Errorf("expected main.go not to be test file")
+	}
+}
+
+func TestExtractGlobalMacros_FiltersCMakeNoise(t *testing.T) {
+	tmpDir := t.TempDir()
+	cmakeContent := `
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
+set(CPACK_PACKAGE_NAME fmt)
+set(result "${result}${arg}")
+set(sources foo.cpp bar.cpp)
+set(FMT_USE_GRISU 1)
+set(ENABLE_THREADS ON)
+add_definitions(-DFMT_HEADER_ONLY=1)
+add_definitions(-DCMAKE_NOISE=0)
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "CMakeLists.txt"), []byte(cmakeContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	macros := ExtractGlobalMacros(tmpDir)
+	if macros["FMT_USE_GRISU"] != "1" {
+		t.Errorf("expected FMT_USE_GRISU=1, got %q", macros["FMT_USE_GRISU"])
+	}
+	if macros["ENABLE_THREADS"] != "ON" {
+		t.Errorf("expected ENABLE_THREADS=ON, got %q", macros["ENABLE_THREADS"])
+	}
+	if macros["FMT_HEADER_ONLY"] != "1" {
+		t.Errorf("expected FMT_HEADER_ONLY=1, got %q", macros["FMT_HEADER_ONLY"])
+	}
+	for _, bad := range []string{"CMAKE_RUNTIME_OUTPUT_DIRECTORY", "CPACK_PACKAGE_NAME", "result", "sources", "CMAKE_NOISE"} {
+		if _, exists := macros[bad]; exists {
+			t.Errorf("macro %q should have been filtered out", bad)
+		}
+	}
+}
+
+func TestExtractHeaderOutline_FiltersNonDeclarations(t *testing.T) {
+	tmpDir := t.TempDir()
+	headerContent := `
+class MyService;
+struct RequestContext { ... };
+enum class Status;
+
+auto get_context() -> RequestContext*;
+void process_item(int id) const;
+
+return __builtin_is_constant_evaluated();
+return to_unsigned(1 + (cp >= 0x1100));
+if (status) return false;
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "core.h"), []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outline := ExtractHeaderOutline(tmpDir, []string{"core.h"})
+	if !strings.Contains(outline, "class MyService") {
+		t.Errorf("expected class declaration in outline")
+	}
+	if !strings.Contains(outline, "struct RequestContext") {
+		t.Errorf("expected struct declaration in outline")
+	}
+	if !strings.Contains(outline, "void process_item(int id) const;") {
+		t.Errorf("expected function declaration in outline: %s", outline)
+	}
+	for _, bad := range []string{"return __builtin", "return to_unsigned", "return false"} {
+		if strings.Contains(outline, bad) {
+			t.Errorf("outline contains non-declaration statement %q: %s", bad, outline)
+		}
 	}
 }

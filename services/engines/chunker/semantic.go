@@ -449,6 +449,28 @@ func SplitSemanticBundleInHalf(bundle SemanticBundle) []SemanticBundle {
 	return subBundles
 }
 
+// isMeaningfulMacro 过滤构建过程变量与未展开模板，仅保留真正的宏开关
+func isMeaningfulMacro(name, val string, fromCmakeSet bool) bool {
+	if strings.Contains(val, "${") || strings.Contains(val, "$(") {
+		return false
+	}
+	upperName := strings.ToUpper(name)
+	ignoredPrefixes := []string{
+		"CMAKE_", "CPACK_", "PROJECT_", "BMI_", "WERROR_", "PEDANTIC_",
+		"PKGCONFIG_", "TARGETS_", "_CMAKE_", "INSTALL_",
+	}
+	for _, p := range ignoredPrefixes {
+		if strings.HasPrefix(upperName, p) {
+			return false
+		}
+	}
+	// 来自 CMake set 的变量必须是大写宏开关，过滤小写/内部构建变量 (如 sources, gitignore, obj, pcm 等)
+	if fromCmakeSet && strings.ToUpper(name) != name {
+		return false
+	}
+	return true
+}
+
 // ExtractGlobalMacros 扫描构建文件（如 CMakeLists.txt 等）提取宏开关
 func ExtractGlobalMacros(codesPath string) map[string]string {
 	macros := make(map[string]string)
@@ -473,17 +495,23 @@ func ExtractGlobalMacros(codesPath string) map[string]string {
 		for scanner.Scan() {
 			line := scanner.Text()
 			if m := reDefine.FindStringSubmatch(line); len(m) >= 3 {
-				macros[m[1]] = m[2]
+				if isMeaningfulMacro(m[1], m[2], false) {
+					macros[m[1]] = m[2]
+				}
 			}
 			if m := reCmakeSet.FindStringSubmatch(line); len(m) >= 3 {
-				macros[m[1]] = m[2]
+				if isMeaningfulMacro(m[1], m[2], true) {
+					macros[m[1]] = m[2]
+				}
 			}
 			if m := reCmakeDef.FindStringSubmatch(line); len(m) >= 2 {
 				val := "1"
 				if len(m) >= 3 && m[2] != "" {
 					val = m[2]
 				}
-				macros[m[1]] = val
+				if isMeaningfulMacro(m[1], val, false) {
+					macros[m[1]] = val
+				}
 			}
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
@@ -493,6 +521,17 @@ func ExtractGlobalMacros(codesPath string) map[string]string {
 	}
 
 	return macros
+}
+
+// isReservedKeyword 检查词首是否为控制流或返回等非类型关键字
+func isReservedKeyword(firstWord string) bool {
+	switch firstWord {
+	case "return", "throw", "co_return", "co_yield", "goto", "case", "default",
+		"if", "else", "while", "for", "switch", "delete", "new", "sizeof":
+		return true
+	default:
+		return false
+	}
 }
 
 // ExtractHeaderOutline 针对核心公共头文件提取结构体与函数声明摘要（~30-50 行）
@@ -537,11 +576,31 @@ func ExtractHeaderOutline(codesPath string, files []string) string {
 		}
 
 		// 提取核心方法声明
-		funcs := reFuncSig.FindAllString(content, 15)
+		funcs := reFuncSig.FindAllString(content, 30)
 		for _, fn := range funcs {
-			outlineBuilder.WriteString(strings.TrimSpace(fn))
+			trimmed := strings.TrimSpace(fn)
+			fields := strings.Fields(trimmed)
+			if len(fields) == 0 || isReservedKeyword(fields[0]) {
+				continue
+			}
+			// 过滤包含计算表达式的函数调用误判
+			if parenStart := strings.IndexByte(trimmed, '('); parenStart > 0 {
+				if parenEnd := strings.LastIndexByte(trimmed, ')'); parenEnd > parenStart {
+					args := trimmed[parenStart+1 : parenEnd]
+					if strings.ContainsAny(args, "+|&") && !strings.Contains(args, "const") && !strings.Contains(args, "*") {
+						continue
+					}
+					if strings.Contains(args, "<<") || strings.Contains(args, ">>") || strings.Contains(args, "==") {
+						continue
+					}
+				}
+			}
+			outlineBuilder.WriteString(trimmed)
 			outlineBuilder.WriteString("\n")
 			outlineCount++
+			if outlineCount >= 40 {
+				break
+			}
 		}
 
 		if outlineCount >= 40 {
