@@ -523,15 +523,42 @@ func ExtractGlobalMacros(codesPath string) map[string]string {
 	return macros
 }
 
-// isReservedKeyword 检查词首是否为控制流或返回等非类型关键字
-func isReservedKeyword(firstWord string) bool {
+// isInvalidDeclarationLine 过滤非函数声明代码行（如构造初始化列表、switch 标签、断言、控制流语句等）
+func isInvalidDeclarationLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) == 0 {
+		return true
+	}
+	// 排除以冒号开头的构造函数初始化列表 (: vprint(...);) 或点/箭头开头
+	if strings.HasPrefix(trimmed, ":") || strings.HasPrefix(trimmed, ".") || strings.HasPrefix(trimmed, "->") {
+		return true
+	}
+	// 排除 switch/case 标签及断言
+	if strings.HasPrefix(trimmed, "default:") || strings.HasPrefix(trimmed, "case ") ||
+		strings.Contains(trimmed, "FMT_ASSERT") || strings.Contains(trimmed, "assert(") {
+		return true
+	}
+	// 排除包含内联 return 的语句
+	if strings.Contains(trimmed, "return ") {
+		return true
+	}
+	// 提取首个单词（去除末尾标点符号，如冒号或分号）
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return true
+	}
+	firstWord := strings.TrimRight(fields[0], ":;,")
 	switch firstWord {
 	case "return", "throw", "co_return", "co_yield", "goto", "case", "default",
-		"if", "else", "while", "for", "switch", "delete", "new", "sizeof":
+		"if", "else", "while", "for", "switch", "delete", "new", "sizeof", "static_assert":
 		return true
-	default:
-		return false
 	}
+	// 首字符必须是字母、下划线或析构符 ~
+	firstChar := trimmed[0]
+	if !((firstChar >= 'A' && firstChar <= 'Z') || (firstChar >= 'a' && firstChar <= 'z') || firstChar == '_' || firstChar == '~') {
+		return true
+	}
+	return false
 }
 
 // ExtractHeaderOutline 针对核心公共头文件提取结构体与函数声明摘要（~30-50 行）
@@ -576,11 +603,10 @@ func ExtractHeaderOutline(codesPath string, files []string) string {
 		}
 
 		// 提取核心方法声明
-		funcs := reFuncSig.FindAllString(content, 30)
+		funcs := reFuncSig.FindAllString(content, 40)
 		for _, fn := range funcs {
 			trimmed := strings.TrimSpace(fn)
-			fields := strings.Fields(trimmed)
-			if len(fields) == 0 || isReservedKeyword(fields[0]) {
+			if isInvalidDeclarationLine(trimmed) {
 				continue
 			}
 			// 过滤包含计算表达式的函数调用误判

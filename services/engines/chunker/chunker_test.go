@@ -353,6 +353,8 @@ enum class Status;
 auto get_context() -> RequestContext*;
 void process_item(int id) const;
 
+: vprint(fmt.str, va);
+default: FMT_ASSERT(false, "");
 return __builtin_is_constant_evaluated();
 return to_unsigned(1 + (cp >= 0x1100));
 if (status) return false;
@@ -370,7 +372,7 @@ if (status) return false;
 	if !strings.Contains(outline, "void process_item(int id) const;") {
 		t.Errorf("expected function declaration in outline: %s", outline)
 	}
-	for _, bad := range []string{"return __builtin", "return to_unsigned", "return false"} {
+	for _, bad := range []string{": vprint", "default:", "FMT_ASSERT", "return __builtin", "return to_unsigned", "return false"} {
 		if strings.Contains(outline, bad) {
 			t.Errorf("outline contains non-declaration statement %q: %s", bad, outline)
 		}
