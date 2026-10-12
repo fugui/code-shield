@@ -151,3 +151,177 @@ func TestCommitLedgerAssignsSameFingerprintObservationsOnce(t *testing.T) {
 		t.Fatalf("expected one defect, got %d", defectCount)
 	}
 }
+
+func TestCommitLedgerReusesExistingActiveSlotDefectOnNewVerdict(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_slot_uniqueness",
+		&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+
+	repo := models.Repository{Name: "demo", URL: "https://example.com/demo.git"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("create task type: %v", err)
+	}
+	report1 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	if err := db.Create(&report1).Error; err != nil {
+		t.Fatalf("create report 1: %v", err)
+	}
+
+	normPath := "test/scan-test.cc"
+	scopeSymbol := "TEST"
+	targetEntity := "scan_test"
+	defectClass := "断言有效性-空测试"
+	cleanToken := "test(scan_test,invalid_format){"
+	stmtAnchorHash := ComputeStmtAnchorHash(cleanToken)
+	coreSlotKey := ComputeCoreSlotKey(normPath, scopeSymbol, defectClass, targetEntity)
+	slotKey := ComputePreciseSlotKey(coreSlotKey, stmtAnchorHash)
+
+	// 存量库中已存在一条 ACTIVE 缺陷，拥有相同的 slot_key 但指纹为 old-fingerprint
+	existingDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "old-fingerprint-k2", IdentityKind: "K2",
+		NormPath: normPath, ScopeSymbol: scopeSymbol, TargetEntity: targetEntity,
+		DefectClassMajor: defectClass, CleanToken: cleanToken,
+		StmtAnchorHash: stmtAnchorHash, CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+		FirstReportID: report1.ID, LastSeenReportID: report1.ID, LastMatchedReportID: report1.ID,
+		RowVersion: 1,
+	}
+	if err := db.Create(&existingDefect).Error; err != nil {
+		t.Fatalf("create existing defect: %v", err)
+	}
+
+	// 模拟新一轮扫描
+	report2 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing}
+	if err := db.Create(&report2).Error; err != nil {
+		t.Fatalf("create report 2: %v", err)
+	}
+
+	// 新扫描中由于上下文变化指纹变为 new-fingerprint-k2，但槽位相同
+	newIdentity := Identity{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: normPath,
+		SymbolPath: scopeSymbol, ScopeKey: "scope-key", StmtShape: "shape",
+		DefectClassMajor: defectClass, CleanToken: cleanToken,
+		TargetEntity: targetEntity, StmtAnchorHash: stmtAnchorHash,
+		CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+		K2: "new-fingerprint-k2",
+	}
+	groups := []ObservationGroup{
+		{UID: "group-scan-test", Identity: newIdentity},
+	}
+	// 假设由于极端原因该 observation 裁定为 VerdictNew
+	decisions := []ObservationDecision{
+		{ObservationGroupUID: groups[0].UID, Identity: newIdentity, Verdict: VerdictNew},
+	}
+	input := LedgerInput{
+		Report: report2, Repo: repo, TaskType: taskType, Observations: groups, Decisions: decisions,
+	}
+
+	var result *LedgerResult
+	err := db.Transaction(func(tx *gorm.DB) (txErr error) {
+		result, txErr = commitLedger(tx, input)
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("commit ledger failed: %v", err)
+	}
+
+	// 验证未产生假新缺陷，且 Observation 正确复用了存量 defect ID
+	if len(result.NewDefectIDs) != 0 {
+		t.Fatalf("expected 0 new defect IDs, got %+v", result.NewDefectIDs)
+	}
+	if len(result.Observations) != 1 || result.Observations[0].DefectID == nil || *result.Observations[0].DefectID != existingDefect.ID {
+		t.Fatalf("expected observation bound to existing defect %d, got %+v", existingDefect.ID, result.Observations)
+	}
+
+	// 数据库中 defect 总数依然为 1
+	var count int64
+	db.Model(&models.Defect{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("expected exactly 1 defect in db, got %d", count)
+	}
+}
+
+func TestCommitLedgerDeduplicatesMultipleNewObservationsWithSameSlotKey(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_batch_slot_dedup",
+		&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+
+	repo := models.Repository{Name: "demo", URL: "https://example.com/demo.git"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("create task type: %v", err)
+	}
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing}
+	if err := db.Create(&report).Error; err != nil {
+		t.Fatalf("create report: %v", err)
+	}
+
+	normPath := "test/scan-test.cc"
+	scopeSymbol := "TEST"
+	targetEntity := "scan_test"
+	defectClass := "断言有效性-空测试"
+	cleanToken := "test(scan_test,invalid_format){"
+	stmtAnchorHash := ComputeStmtAnchorHash(cleanToken)
+	coreSlotKey := ComputeCoreSlotKey(normPath, scopeSymbol, defectClass, targetEntity)
+	slotKey := ComputePreciseSlotKey(coreSlotKey, stmtAnchorHash)
+
+	// 同一批次中有两个 observation，指纹不同，但槽位相同
+	identity1 := Identity{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: normPath,
+		SymbolPath: scopeSymbol, ScopeKey: "scope-1", StmtShape: "shape-1",
+		DefectClassMajor: defectClass, CleanToken: cleanToken,
+		TargetEntity: targetEntity, StmtAnchorHash: stmtAnchorHash,
+		CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+		K2: "fingerprint-alpha",
+	}
+	identity2 := Identity{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: normPath,
+		SymbolPath: scopeSymbol, ScopeKey: "scope-2", StmtShape: "shape-2",
+		DefectClassMajor: defectClass, CleanToken: cleanToken,
+		TargetEntity: targetEntity, StmtAnchorHash: stmtAnchorHash,
+		CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+		K2: "fingerprint-beta",
+	}
+	groups := []ObservationGroup{
+		{UID: "group-1", Identity: identity1},
+		{UID: "group-2", Identity: identity2},
+	}
+	decisions := []ObservationDecision{
+		{ObservationGroupUID: groups[0].UID, Identity: identity1, Verdict: VerdictNew},
+		{ObservationGroupUID: groups[1].UID, Identity: identity2, Verdict: VerdictNew},
+	}
+	input := LedgerInput{
+		Report: report, Repo: repo, TaskType: taskType, Observations: groups, Decisions: decisions,
+	}
+
+	var result *LedgerResult
+	err := db.Transaction(func(tx *gorm.DB) (txErr error) {
+		result, txErr = commitLedger(tx, input)
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("commit ledger failed: %v", err)
+	}
+
+	if len(result.NewDefectIDs) != 1 {
+		t.Fatalf("expected 1 new defect ID, got %+v", result.NewDefectIDs)
+	}
+	if len(result.Observations) != 2 ||
+		*result.Observations[0].DefectID != result.NewDefectIDs[0] ||
+		*result.Observations[1].DefectID != result.NewDefectIDs[0] {
+		t.Fatalf("expected both observations to share defect ID %d, got %+v", result.NewDefectIDs[0], result.Observations)
+	}
+	var count int64
+	db.Model(&models.Defect{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 defect in db, got %d", count)
+	}
+}

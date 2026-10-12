@@ -211,6 +211,11 @@ func BuildIdentities(repoRoot string, repoID, taskTypeID uint, findings []models
 
 		symbolPath, scopeKind, arity, scopeKey := scopeIdentity(normPath, symbolPath)
 		class := defectClassMajor(finding.Category)
+		targetEntity, _ := ExtractPhysicalTargetEntity(finding.CodeSnippet, finding.TargetSymbol, class)
+		stmtHash := ComputeStmtAnchorHash(cleanToken)
+		scopeSymbol := NormalizeScopeSymbol(symbolPath)
+		coreSlotKey := ComputeCoreSlotKey(normPath, scopeSymbol, class, targetEntity)
+		slotKey := ComputePreciseSlotKey(coreSlotKey, stmtHash)
 		identity := Identity{
 			RepoID: repoID, TaskTypeID: taskTypeID, NormPath: normPath,
 			SymbolPath: symbolPath, ScopeKind: scopeKind, Arity: arity,
@@ -218,6 +223,8 @@ func BuildIdentities(repoRoot string, repoID, taskTypeID uint, findings []models
 			OccurrenceIndex: 0, DefectClassMajor: class,
 			LineStart: startLine, LineEnd: endLine, CleanToken: cleanToken,
 			ScopeBodyHash: scopeBodyHash, Severity: finding.Severity, Confidence: confidence,
+			TargetEntity: targetEntity, StmtAnchorHash: stmtHash,
+			CoreSlotKey: coreSlotKey, SlotKey: slotKey,
 		}
 		identity.ResourceIdentity = extractIdentityToken(identity.CleanToken)
 		identity.ValidationChain = validationChainIdentity(identity.CleanToken)

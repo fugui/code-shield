@@ -146,6 +146,7 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 	now := input.CommittedAt
 
 	newDefectByFingerprint := make(map[string]uint)
+	newDefectBySlotKey := make(map[string]uint)
 	for _, decision := range committableDecisions(input) {
 		observation := models.DefectObservation{
 			ReportID:            input.Report.ID,
@@ -168,7 +169,24 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 				identity = group.Identity
 			}
 			fingerprint, _ := canonicalIdentity(identity)
+			slotKey := identity.SlotKey
+			if slotKey == "" && identity.NormPath != "" && identity.DefectClassMajor != "" {
+				targetEntity := identity.TargetEntity
+				if targetEntity == "" {
+					targetEntity, _ = ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
+				}
+				stmtHash := identity.StmtAnchorHash
+				if stmtHash == "" && identity.CleanToken != "" {
+					stmtHash = ComputeStmtAnchorHash(identity.CleanToken)
+				}
+				scopeSymbol := NormalizeScopeSymbol(identity.SymbolPath)
+				coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
+				slotKey = ComputePreciseSlotKey(coreSlot, stmtHash)
+			}
 			defectID, exists := newDefectByFingerprint[fingerprint]
+			if !exists && slotKey != "" {
+				defectID, exists = newDefectBySlotKey[slotKey]
+			}
 			if !exists {
 				var err error
 				var finding *models.AnalysisFinding
@@ -181,17 +199,42 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 				}
 				defectID = createdDefect.ID
 				newDefectByFingerprint[fingerprint] = defectID
+				if createdDefect.SlotKey != "" {
+					newDefectBySlotKey[createdDefect.SlotKey] = defectID
+				}
+				if slotKey != "" {
+					newDefectBySlotKey[slotKey] = defectID
+				}
 				defectByID[defectID] = createdDefect
-				result.NewDefectIDs = append(result.NewDefectIDs, defectID)
+				if createdDefect.FirstReportID == input.Report.ID {
+					alreadyNew := false
+					for _, existingNewID := range result.NewDefectIDs {
+						if existingNewID == defectID {
+							alreadyNew = true
+							break
+						}
+					}
+					if !alreadyNew {
+						result.NewDefectIDs = append(result.NewDefectIDs, defectID)
+					}
+				}
+			}
+			newDefectByFingerprint[fingerprint] = defectID
+			if slotKey != "" {
+				newDefectBySlotKey[slotKey] = defectID
 			}
 			observation.DefectID = &defectID
 			createdDefect := defectByID[defectID]
-			createdEvent := models.DefectEvent{
-				DefectID: createdDefect.ID, ReportID: &input.Report.ID, EventType: EventTypeCreated,
-				FromStatus: "", ToStatus: createdDefect.Status, ActorType: "SYSTEM", Reason: "NEW observation",
-				Evidence: datatypes.JSON("{}"), CreatedAt: now,
+			if createdDefect.FirstReportID == input.Report.ID {
+				createdEvent := models.DefectEvent{
+					DefectID: createdDefect.ID, ReportID: &input.Report.ID, EventType: EventTypeCreated,
+					FromStatus: "", ToStatus: createdDefect.Status, ActorType: "SYSTEM", Reason: "NEW observation",
+					Evidence: datatypes.JSON("{}"), CreatedAt: now,
+				}
+				result.Events = append(result.Events, createdEvent)
+			} else {
+				observation.Verdict = matchedVerdict(createdDefect.Status)
 			}
-			result.Events = append(result.Events, createdEvent)
 		}
 		if observation.DefectID != nil {
 			if source, exists := defectByID[*observation.DefectID]; exists &&
@@ -514,17 +557,40 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 	if defect.ScopeSymbol == "" && identity.SymbolPath != "" {
 		defect.ScopeSymbol = NormalizeScopeSymbol(identity.SymbolPath)
 	}
+	if defect.TargetEntity == "" && identity.TargetEntity != "" {
+		defect.TargetEntity = identity.TargetEntity
+	}
 	if defect.TargetEntity == "" && identity.DefectClassMajor != "" {
 		defect.TargetEntity, _ = ExtractPhysicalTargetEntity(defect.CodeSnippet, "", identity.DefectClassMajor)
+	}
+	if defect.StmtAnchorHash == "" && identity.StmtAnchorHash != "" {
+		defect.StmtAnchorHash = identity.StmtAnchorHash
 	}
 	if defect.StmtAnchorHash == "" && defect.CleanToken != "" {
 		defect.StmtAnchorHash = ComputeStmtAnchorHash(defect.CleanToken)
 	}
+	if defect.CoreSlotKey == "" && identity.CoreSlotKey != "" {
+		defect.CoreSlotKey = identity.CoreSlotKey
+	}
 	if defect.CoreSlotKey == "" && defect.NormPath != "" && defect.DefectClassMajor != "" {
 		defect.CoreSlotKey = ComputeCoreSlotKey(defect.NormPath, defect.ScopeSymbol, defect.DefectClassMajor, defect.TargetEntity)
 	}
+	if defect.SlotKey == "" && identity.SlotKey != "" {
+		defect.SlotKey = identity.SlotKey
+	}
 	if defect.SlotKey == "" && defect.CoreSlotKey != "" {
 		defect.SlotKey = ComputePreciseSlotKey(defect.CoreSlotKey, defect.StmtAnchorHash)
+	}
+	if defect.SlotKey != "" {
+		var slotExisting models.Defect
+		err := tx.Where("repo_id = ? AND task_type_id = ? AND slot_key = ? AND status = ?",
+			input.Repo.ID, input.TaskType.ID, defect.SlotKey, DefectStatusActive).First(&slotExisting).Error
+		if err == nil {
+			return slotExisting, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.Defect{}, fmt.Errorf("check existing active slot defect: %w", err)
+		}
 	}
 	if scope != nil {
 		defect.BlobHash = scope.BlobHash
