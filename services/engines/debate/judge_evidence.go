@@ -100,6 +100,14 @@ var judgeCommonIdentifiers = map[string]struct{}{
 	"struct": {}, "switch": {}, "template": {}, "this": {}, "true": {},
 	"typename": {}, "union": {}, "unsigned": {}, "virtual": {}, "void": {},
 	"while": {}, "include": {}, "define": {}, "namespace": {}, "using": {},
+	// 通用实现、命名空间与高频组织词
+	"detail": {}, "internal": {}, "impl": {}, "common": {}, "util": {}, "utils": {},
+	"helper": {}, "helpers": {}, "base": {}, "core": {}, "test": {}, "tests": {}, "main": {},
+	// 常见三方库命名空间与全局作用域
+	"std": {}, "fmt": {}, "boost": {}, "google": {}, "absl": {}, "folly": {},
+	// 基础容器与超高频通用方法词
+	"string": {}, "vector": {}, "list": {}, "map": {}, "set": {}, "size": {},
+	"data": {}, "begin": {}, "end": {}, "find": {}, "clear": {}, "empty": {},
 }
 
 func NewJudgeCandidateViews(candidates []HunterCandidate) []JudgeCandidateView {
@@ -163,12 +171,17 @@ func buildJudgeEvidencePack(
 	view JudgeCandidateView,
 	defense ChallengerDefenseCase,
 ) (JudgeCaseEvidencePack, error) {
+	var defensePtr *ChallengerDefenseCase
+	if strings.TrimSpace(defense.CandidateID) != "" || strings.TrimSpace(defense.DefenseVerdict) != "" {
+		defensePtr = &defense
+	}
+
 	pack := JudgeCaseEvidencePack{
 		CandidateID:   view.CandidateID,
 		Claim:         view,
 		WorkspaceRoot: root,
 		TargetFiles:   append([]string(nil), bundle.AllFiles...),
-		Defense:       &defense,
+		Defense:       defensePtr,
 		NegativeRules: append([]string(nil), bundle.NegativeRules...),
 	}
 
@@ -202,6 +215,9 @@ func buildJudgeEvidencePack(
 
 	seen := map[string]struct{}{}
 	for _, match := range matches {
+		if isTrivialSourceLine(match.Content) {
+			continue
+		}
 		key := match.Path + ":" + fmt.Sprint(match.LineNo)
 		if _, ok := seen[key]; ok {
 			continue
@@ -211,12 +227,19 @@ func buildJudgeEvidencePack(
 		if sameRelativePath(match.Path, view.FilePath) {
 			kind = JudgeEvidenceDefinition
 		}
+
+		snippet, lineRange := extractSnippetAroundLine(root, match.Path, match.LineNo, 1)
+		if snippet == "" {
+			snippet = truncateEvidenceSnippet(match.Content)
+			lineRange = fmt.Sprintf("%d", match.LineNo)
+		}
+
 		pack.RelatedEvidence = append(pack.RelatedEvidence, JudgeEvidenceRef{
 			EvidenceID: fmt.Sprintf("%s-symbol-%03d", view.CandidateID, len(pack.RelatedEvidence)+1),
 			Kind:       kind,
 			Path:       match.Path,
-			LineRange:  fmt.Sprintf("%d", match.LineNo),
-			Snippet:    truncateEvidenceSnippet(match.Content),
+			LineRange:  lineRange,
+			Snippet:    snippet,
 			Reason:     fmt.Sprintf("Deterministic symbol match: %s", strings.Join(identifiers, ", ")),
 		})
 		if len(pack.RelatedEvidence) >= 10 {
@@ -533,6 +556,93 @@ func truncateEvidenceSnippet(value string) string {
 
 func sameRelativePath(left, right string) bool {
 	return filepath.ToSlash(filepath.Clean(left)) == filepath.ToSlash(filepath.Clean(right))
+}
+
+// isTrivialSourceLine 判断源码行是否为纯语法占位符或纯注释，避免作为有效证据造成噪音干扰
+func isTrivialSourceLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || trimmed == "{" || trimmed == "}" || trimmed == "};" || trimmed == ";" {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") || strings.HasPrefix(trimmed, "*") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "namespace ") || strings.HasPrefix(trimmed, "}  // namespace") || strings.HasPrefix(trimmed, "} // namespace") {
+		return true
+	}
+	return false
+}
+
+// extractSnippetAroundLine 提取指定源码行及其前后各 radius 行的局部上下文，增强证据可读性
+func extractSnippetAroundLine(root, relativePath string, centerLine int, radius int) (string, string) {
+	absPath, err := safeWorkspacePath(root, relativePath)
+	if err != nil {
+		return "", fmt.Sprintf("%d", centerLine)
+	}
+	file, err := os.Open(absPath)
+	if err != nil {
+		return "", fmt.Sprintf("%d", centerLine)
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 512*1024)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil || len(lines) == 0 {
+		return "", fmt.Sprintf("%d", centerLine)
+	}
+
+	start := centerLine - radius
+	if start < 1 {
+		start = 1
+	}
+	end := centerLine + radius
+	if end > len(lines) {
+		end = len(lines)
+	}
+	if start > end || start > len(lines) {
+		return "", fmt.Sprintf("%d", centerLine)
+	}
+
+	snippet := strings.Join(lines[start-1:end], "\n")
+	lineRange := fmt.Sprintf("%d-%d", start, end)
+	if start == end {
+		lineRange = fmt.Sprintf("%d", start)
+	}
+	return truncateEvidenceSnippet(snippet), lineRange
+}
+
+// ChallengerPromptEvidencePack 是专供 Challenger Prompt 渲染的轻量视图，消除与顶层 Claims 的重复嵌套
+type ChallengerPromptEvidencePack struct {
+	CandidateID          string              `json:"candidate_id"`
+	AllowedEvidencePaths []string            `json:"allowed_evidence_paths,omitempty"`
+	PrimaryEvidence      []JudgeEvidenceRef  `json:"primary_evidence"`
+	RelatedEvidence      []JudgeEvidenceRef  `json:"related_evidence"`
+	MacroEvidence        []JudgeEvidenceRef  `json:"macro_evidence,omitempty"`
+	AbsenceProbes        []JudgeAbsenceProbe `json:"absence_probes,omitempty"`
+	NegativeRules        []string            `json:"negative_rules,omitempty"`
+	EvidenceDegraded     bool                `json:"evidence_degraded"`
+}
+
+// ToChallengerPromptEvidencePacks 将全量 EvidencePack 投影为专用于 Challenger Prompt 的精简包
+func ToChallengerPromptEvidencePacks(packs []JudgeCaseEvidencePack) []ChallengerPromptEvidencePack {
+	views := make([]ChallengerPromptEvidencePack, len(packs))
+	for i, p := range packs {
+		views[i] = ChallengerPromptEvidencePack{
+			CandidateID:          p.CandidateID,
+			AllowedEvidencePaths: p.AllowedEvidencePaths,
+			PrimaryEvidence:      p.PrimaryEvidence,
+			RelatedEvidence:      p.RelatedEvidence,
+			MacroEvidence:        p.MacroEvidence,
+			AbsenceProbes:        p.AbsenceProbes,
+			NegativeRules:        p.NegativeRules,
+			EvidenceDegraded:     p.EvidenceDegraded,
+		}
+	}
+	return views
 }
 
 func VerifyJudgeEvidencePacks(packs []JudgeCaseEvidencePack, out *JudgeOutput) (map[string]JudgeEvidenceVerification, error) {

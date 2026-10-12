@@ -346,3 +346,84 @@ func TestPromptAssembler_BuildJudgePrompt_SummaryMatrix(t *testing.T) {
 		t.Errorf("expected prompt to contain defense argument finding in matrix")
 	}
 }
+
+func TestBuildChallengerPromptSlimEvidencePack(t *testing.T) {
+	assembler := &PromptAssembler{}
+	ctx := &engines.EngineContext{
+		TaskTypeName: "Coredump 风险分析",
+		DomainFamily: models.DomainFamilyMemoryCrash,
+	}
+	bundle := chunker.SemanticBundle{
+		Name:     "bundle-1",
+		AllFiles: []string{"include/fmt/printf.h"},
+	}
+	hunterOut := &HunterOutput{
+		Candidates: []HunterCandidate{
+			{
+				CandidateID:      "H-001",
+				FilePath:         "include/fmt/printf.h",
+				LineRange:        "485-492",
+				TriggerLine:      "auto nul = std::find(str, str_end, Char());",
+				Title:            "空指针解引用",
+				AttackHypothesis: "当调用 fmt::sprintf 格式化带有精度控制且实际值为 nullptr 的字符串时，解引用空指针触发段错误。",
+				Category:         "内存管理问题-空指针解引用",
+			},
+		},
+	}
+	evidencePacks := []JudgeCaseEvidencePack{
+		{
+			CandidateID: "H-001",
+			Claim: JudgeCandidateView{
+				CandidateID: "H-001",
+				FilePath:    "include/fmt/printf.h",
+				LineRange:   "485-492",
+				TriggerLine: "auto nul = std::find(str, str_end, Char());",
+				Title:       "空指针解引用",
+				Claim:       "当调用 fmt::sprintf 格式化带有精度控制且实际值为 nullptr 的字符串时，解引用空指针触发段错误。",
+				Category:    "内存管理问题-空指针解引用",
+			},
+			PrimaryEvidence: []JudgeEvidenceRef{
+				{
+					EvidenceID: "H-001-target",
+					Kind:       JudgeEvidenceTarget,
+					Path:       "include/fmt/printf.h",
+					LineRange:  "485-492",
+					Snippet:    "auto nul = std::find(str, str_end, Char());",
+					Reason:     "Candidate anchor",
+				},
+			},
+		},
+	}
+
+	prompt, err := assembler.BuildChallengerPrompt(ctx, bundle, hunterOut, evidencePacks)
+	if err != nil {
+		t.Fatalf("BuildChallengerPrompt failed: %v", err)
+	}
+
+	// 1. Candidate Claims 包含候选指控
+	if !strings.Contains(prompt, "## Candidate Claims (Unverified)") {
+		t.Errorf("expected prompt to contain Candidate Claims section")
+	}
+
+	// 2. Evidence Pack 应当瘦身，不包含空 defense 结构体
+	if strings.Contains(prompt, `"counter_evidence_snippet": ""`) || strings.Contains(prompt, `"defense": {`) {
+		t.Errorf("expected Evidence Pack to omit empty defense object")
+	}
+
+	// 3. 验证 safeTruncateRunes 正确性
+	chineseText := "当调用 fmt::sprintf 格式化带有精度控制且实际值为 nullptr 的 C 风格字符串指针时：解引用空指针直接触发段错误并导致崩溃。"
+	truncated := safeTruncateRunes(chineseText, 30, "...")
+	if !strings.HasSuffix(truncated, "...") {
+		t.Errorf("expected suffix ...")
+	}
+	// 验证没有产生乱码（合法 UTF-8）
+	if strings.Contains(truncated, "\ufffd") {
+		t.Errorf("unexpected unicode replacement char in truncated string: %s", truncated)
+	}
+	// 验证未超长的正常文本不被截断
+	noTruncate := safeTruncateRunes(chineseText, 2000, "...")
+	if noTruncate != chineseText {
+		t.Errorf("expected text within limit not to be truncated")
+	}
+}
+

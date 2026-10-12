@@ -1960,21 +1960,26 @@ func deriveDefectDetail(origCand HunterCandidate, jv JudgeFinalVerdict) string {
 	return "未提供缺陷机理描述"
 }
 
-// sanitizeCandidatesForPrompt 清洗与缩减 candidate，避免大 Prompt 溢出
+// safeTruncateRunes 按 Unicode 字符安全截断，避免按字节截断劈开多字节 UTF-8 字符产生乱码
+func safeTruncateRunes(s string, maxRunes int, suffix string) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + suffix
+}
+
+// sanitizeCandidatesForPrompt 清洗与缩减 candidate，避免超长投毒或大 Prompt 溢出；正常长度完全放行
 func sanitizeCandidatesForPrompt(candidates []HunterCandidate) []HunterCandidate {
 	sanitized := make([]HunterCandidate, len(candidates))
 	copy(sanitized, candidates)
 	for i := range sanitized {
 		c := &sanitized[i]
-		if len(c.CodeSnippet) > 1500 {
-			c.CodeSnippet = c.CodeSnippet[:1500] + "\n... (truncated)"
-		}
-		if len(c.AttackHypothesis) > 500 {
-			c.AttackHypothesis = c.AttackHypothesis[:500] + "..."
-		}
-		if len(c.TriggerCondition) > 500 {
-			c.TriggerCondition = c.TriggerCondition[:500] + "..."
-		}
+		// 代码片段放宽到 4000 字符，按安全字符边界截断
+		c.CodeSnippet = safeTruncateRunes(c.CodeSnippet, 4000, "\n... (truncated)")
+		// 攻击假设与触发条件放宽到 2000 字符（正常推导约为 300~500 字，绝不截断）
+		c.AttackHypothesis = safeTruncateRunes(c.AttackHypothesis, 2000, "...")
+		c.TriggerCondition = safeTruncateRunes(c.TriggerCondition, 2000, "...")
 	}
 	return sanitized
 }
