@@ -426,4 +426,3 @@ func TestBuildChallengerPromptSlimEvidencePack(t *testing.T) {
 		t.Errorf("expected text within limit not to be truncated")
 	}
 }
-

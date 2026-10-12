@@ -147,23 +147,8 @@ func CreateTaskType(c *gin.Context) {
 		"  \"summary\": \"200-300字的整体评估摘要，描述主要隐患及其风险影响\"\n" +
 		"}\n" +
 		"```\n"
-	defaultSynthesisPrompt := "# " + req.DisplayName + " 综合报告生成指令\n\n" +
-		"你将收到一份 JSON 格式的分析发现清单（基于 @analysis_prompt.md 提示词进行的分析）。请基于这些发现，生成一份指导开发者进行安全修复的综合评估报告。\n\n" +
-		"## 输出格式要求\n\n" +
-		"请使用简体中文，以 Markdown 格式输出，内容包括\"概要\"、\"问题清单\"、\"总结与建议\"三部分组成。\n\n" +
-		"### 一、概要\n" +
-		"- 介绍本次审查的目的与主要方法。\n" +
-		"- 问题总数： 3 个\n\n" +
-		"> ⚠️ **概要部分的最后一行，格式约束（机器解析，不得违反）**： 必须严格使用 `问题总数： N 个` 的格式，关键字和标点均不得更改， N 为非负整数，无则填 `0`。\n\n" +
-		"### 二、问题清单\n" +
-		"- 按照严重程度从高到低对风险列表进行整理排版。\n" +
-		"- 给出文件定位、风险分类、严重级别、原始代码片段以及具体可靠的修复代码方案。\n\n" +
-		"### 三、总结与建议\n" +
-		"- 一个简洁的问题缺陷总结和预防改进指导。\n"
 	logTaskTypeFileErr("write analysis prompt", req.AnalysisPromptFile(),
 		os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644))
-	logTaskTypeFileErr("write synthesis prompt", req.SynthesisPromptFile(),
-		os.WriteFile(models.AppConfig.GetAbsPath(req.SynthesisPromptFile()), []byte(defaultSynthesisPrompt), 0644))
 
 	// 写入 meta.json
 	if metaBytes, err := json.MarshalIndent(req, "", "  "); err != nil {

@@ -297,5 +297,10 @@
       }
     ]
   },
-  "timeout": 60
+  "timeout": 60,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "概述测试用例整体质量，明确指出通过评估的合格测试用例数量（statistics.pass）。",
+    "recommendation_guidelines": "对该代码仓的整体测试有效性与防护质量进行评价；提供针对性的工程化改进建议（如引入断言静态检查、拦截空测试与恒真作弊、规范 Mock 行为校验等）。"
+  }
 }

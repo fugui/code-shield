@@ -262,7 +262,17 @@ func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPro
 		promptMsg += "\n\n" + suffixPrompt
 	}
 
-	absPrompt := models.AppConfig.GetAbsPath(ctx.TaskType.SynthesisPromptFile())
+	// 动态装配 Tier 4 综合报告 Prompt（优先基于 meta.json 声明与内置标准契约装配）
+	promptContent := BuildSynthesisPrompt(&ctx.TaskType)
+	reportDir := filepath.Dir(ctx.ReportPath)
+	dynamicPromptPath := filepath.Join(reportDir, fmt.Sprintf("report-%d-dynamic-synthesis-prompt.md", ctx.Report.ID))
+	var absPrompt string
+	if writeErr := os.WriteFile(dynamicPromptPath, []byte(promptContent), 0644); writeErr == nil {
+		absPrompt = dynamicPromptPath
+		defer os.Remove(dynamicPromptPath)
+	} else {
+		absPrompt = models.AppConfig.GetAbsPath(ctx.TaskType.SynthesisPromptFile())
+	}
 	workCtx := &invoker.LLMWorkContext{
 		ReportID: ctx.Report.ID,
 		RepoName: ctx.Repo.Name,

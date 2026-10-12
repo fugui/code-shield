@@ -212,5 +212,10 @@
       }
     ]
   },
-  "timeout": 60
+  "timeout": 60,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "总结潜在内存与系统资源泄漏风险隐患分布情况（致命、严重、一般、建议）。",
+    "recommendation_guidelines": "评估本代码仓整体的内存生命周期管理与异常安全性水平；全面推行智能指针管理堆内存、消除裸指针 new/delete、对文件描述符与锁引入 Guard 对象、在 CI 中集成 ASan/LSan 动态泄漏检测。"
+  }
 }
