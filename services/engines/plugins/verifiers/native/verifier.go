@@ -17,6 +17,8 @@ import (
 	"code-shield/services/coverage"
 	"code-shield/services/engines/plugins"
 	"code-shield/services/invoker"
+
+	"gorm.io/datatypes"
 )
 
 const (
@@ -184,6 +186,7 @@ func (v *NativeSingleRoundVerifier) Verify(
 
 	return plugins.RadarResult{
 		Decision: plugins.DecisionFastPass,
+		Finding:  buildThinPassFinding(unit, resp),
 		Reason:   resp.Reason,
 	}, nil
 }
@@ -296,6 +299,42 @@ func buildThinDefectFinding(unit coverage.PlanUnit, resp TriageLLMResponse, snip
 		AnchorConfidence:    "HIGH",
 		AssessmentStatus:    "DEFECT",
 		AssessmentOutcome:   "DEFECT",
+	}
+}
+
+func buildThinPassFinding(unit coverage.PlanUnit, resp TriageLLMResponse) *models.AnalysisFinding {
+	displayName := unit.DisplayName
+	if displayName == "" {
+		displayName = unit.Path
+	}
+	lineStr := fmt.Sprintf("%d", unit.StartLine)
+	if unit.EndLine > unit.StartLine {
+		lineStr = fmt.Sprintf("%d-%d", unit.StartLine, unit.EndLine)
+	}
+	detail := resp.Reason
+	if detail == "" {
+		detail = "单测有效性轻量复核通过：包含实质性测试验证逻辑。"
+	}
+
+	rawArtifact, _ := json.Marshal(map[string]any{
+		"unit_ref": unit.DisplayName,
+		"outcome":  "pass",
+		"summary":  detail,
+	})
+
+	return &models.AnalysisFinding{
+		PrimaryUnitID:      unit.ID,
+		AssessmentStatus:   "pass",
+		AssessmentOutcome:  "pass",
+		AssessmentArtifact: datatypes.JSON(rawArtifact),
+		FilePath:           unit.Path,
+		LineNumber:         lineStr,
+		Category:           "无问题",
+		CategorySource:     "thin_verifier",
+		CategoryStatus:     "LEGACY",
+		Severity:           "合格",
+		Title:              fmt.Sprintf("测试用例合格：%s", displayName),
+		Detail:             detail,
 	}
 }
 

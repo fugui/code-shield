@@ -91,6 +91,7 @@ func (r *CppLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit) p
 	if hasStdAssert && len(hints) == 0 {
 		return plugins.RadarResult{
 			Decision: plugins.DecisionFastPass,
+			Finding:  buildFastPassFinding(unit, "前置门禁校验通过：包含规范断言且无作弊或空测试模式。"),
 			Reason:   "contains standard assertions and no cheating patterns",
 		}
 	}

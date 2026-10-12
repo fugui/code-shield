@@ -116,6 +116,11 @@ func TestCppRadarDecisions(t *testing.T) {
 					t.Fatalf("expected hint kind %q, got hints: %+v", tt.wantHintKind, res.FactHints)
 				}
 			}
+			if tt.wantDecision == plugins.DecisionFastPass {
+				if res.Finding == nil || res.Finding.Severity != "合格" {
+					t.Fatalf("expected valid fast pass finding, got: %+v", res.Finding)
+				}
+			}
 		})
 	}
 }
@@ -208,6 +213,11 @@ func TestPythonRadarDecisions(t *testing.T) {
 				}
 				if !found {
 					t.Fatalf("expected hint kind %q, got hints: %+v", tt.wantHintKind, res.FactHints)
+				}
+			}
+			if tt.wantDecision == plugins.DecisionFastPass {
+				if res.Finding == nil || res.Finding.Severity != "合格" {
+					t.Fatalf("expected valid fast pass finding, got: %+v", res.Finding)
 				}
 			}
 		})
@@ -309,6 +319,11 @@ func TestGoRadarDecisions(t *testing.T) {
 				}
 				if !found {
 					t.Fatalf("expected hint kind %q, got hints: %+v", tt.wantHintKind, res.FactHints)
+				}
+			}
+			if tt.wantDecision == plugins.DecisionFastPass {
+				if res.Finding == nil || res.Finding.Severity != "合格" {
+					t.Fatalf("expected valid fast pass finding, got: %+v", res.Finding)
 				}
 			}
 		})

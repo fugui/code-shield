@@ -98,6 +98,7 @@ func (r *PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit
 	if (hasStdAssert || hasMockAssert) && len(hints) == 0 {
 		return plugins.RadarResult{
 			Decision: plugins.DecisionFastPass,
+			Finding:  buildFastPassFinding(unit, "前置门禁校验通过：包含规范断言或Mock校验且无作弊模式。"),
 			Reason:   "contains standard assertions and no cheating patterns",
 		}
 	}
