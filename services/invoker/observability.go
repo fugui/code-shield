@@ -680,6 +680,7 @@ func newPromptProvider(req AIRequest, driver string) PromptProvider {
 		case "native":
 			detail.UserPrompt = req.PromptMsg
 		case "opencode", "codex", "agy":
+			detail.UserPrompt = req.PromptMsg
 			rendered, err := BuildPromptPayload(req, true)
 			if err != nil {
 				return detail, err
@@ -690,6 +691,7 @@ func newPromptProvider(req AIRequest, driver string) PromptProvider {
 			}
 			detail.RenderedPrompt = rendered
 		case "claude":
+			detail.UserPrompt = req.PromptMsg
 			rendered, err := BuildPromptPayload(req, false)
 			if err != nil {
 				return detail, err
@@ -698,7 +700,7 @@ func newPromptProvider(req AIRequest, driver string) PromptProvider {
 			if truncated {
 				truncations = append(truncations, "user prompt truncated to 2MB")
 			}
-			detail.UserPrompt = rendered
+			detail.RenderedPrompt = rendered
 		default:
 			detail.UserPrompt = req.PromptMsg
 		}

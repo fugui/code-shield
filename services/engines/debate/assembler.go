@@ -352,14 +352,8 @@ func (a *PromptAssembler) BuildChallengerPrompt(
 	return sb.String(), nil
 }
 
-// BuildJudgePrompt 组装终审法官裁决 Prompt
-func (a *PromptAssembler) BuildJudgePrompt(
-	ctx *engines.EngineContext,
-	bundle chunker.SemanticBundle,
-	hunterOut *HunterOutput,
-	challOut *ChallengerOutput,
-	evidencePacks []JudgeCaseEvidencePack,
-) (string, error) {
+// BuildJudgeSystemPrompt 组装终审法官静态 System Prompt (规则与元协议，跨分片与批次不变)
+func (a *PromptAssembler) BuildJudgeSystemPrompt(ctx *engines.EngineContext) (string, error) {
 	var sb strings.Builder
 
 	taskName := ctx.TaskTypeName
@@ -384,29 +378,6 @@ func (a *PromptAssembler) BuildJudgePrompt(
 	sb.WriteString("这是分片终审，不是全仓审查。\n")
 	sb.WriteString("你可以读取 Target Files 及其直接相关文件。输出证据优先使用当前候选 Evidence Pack 中的条目；若通过源码探查发现更关键的触发或防御事实（在 allowed_evidence_paths 范围内），允许提取真实源码作为补充证据；不得修改业务源码。\n")
 	sb.WriteString("不得为候选清单之外的业务文件生成 final_verdict。\n\n")
-
-	sb.WriteString("## Target Files\n")
-	if ctx.CodesPath != "" {
-		sb.WriteString(fmt.Sprintf("当前代码仓根目录：%s\n", ctx.CodesPath))
-	}
-	if len(bundle.AllFiles) == 0 {
-		sb.WriteString("- （本次分片未显式提供目标文件列表）\n")
-	}
-	for _, file := range bundle.AllFiles {
-		sb.WriteString(fmt.Sprintf("- `%s`\n", file))
-	}
-	sb.WriteString("\n")
-
-	a.renderJudgeDebateSummary(&sb, evidencePacks)
-
-	evidenceBytes, err := json.MarshalIndent(evidencePacks, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal judge evidence packs: %w", err)
-	}
-
-	sb.WriteString("## Evidence Pack\n```json\n")
-	sb.Write(evidenceBytes)
-	sb.WriteString("\n```\n\n")
 
 	sb.WriteString("## Claims Are Not Facts\n")
 	sb.WriteString("Hunter 的 Claim 是候选指控，不是已验证事实。\n")
@@ -445,15 +416,84 @@ func (a *PromptAssembler) BuildJudgePrompt(
 	sb.WriteString("\n")
 	sb.WriteString(RenderOutputContract(judgeContract))
 
-	expectedIDs := make([]string, 0, len(hunterOut.Candidates))
-	for _, candidate := range hunterOut.Candidates {
-		expectedIDs = append(expectedIDs, candidate.CandidateID)
+	return sb.String(), nil
+}
+
+// BuildJudgeUserPrompt 组装终审法官动态 User Prompt (目标文件、控辩对照大纲、证据包与批次约束)
+func (a *PromptAssembler) BuildJudgeUserPrompt(
+	ctx *engines.EngineContext,
+	bundle chunker.SemanticBundle,
+	evidencePacks []JudgeCaseEvidencePack,
+	expectedCandidateIDs []string,
+) (string, error) {
+	var sb strings.Builder
+
+	sb.WriteString("## Target Files\n")
+	if ctx.CodesPath != "" {
+		sb.WriteString(fmt.Sprintf("当前代码仓根目录：%s\n", ctx.CodesPath))
 	}
-	if len(expectedIDs) > 0 {
-		sb.WriteString(fmt.Sprintf("\n本批次必须为以下每个 candidate_id 各输出恰好一条 final_verdict：%s。\n", strings.Join(expectedIDs, ", ")))
+	if len(bundle.AllFiles) == 0 {
+		sb.WriteString("- （本次分片未显式提供目标文件列表）\n")
+	}
+	for _, file := range bundle.AllFiles {
+		sb.WriteString(fmt.Sprintf("- `%s`\n", file))
+	}
+	sb.WriteString("\n")
+
+	a.renderJudgeDebateSummary(&sb, evidencePacks)
+
+	evidenceBytes, err := json.MarshalIndent(evidencePacks, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal judge evidence packs: %w", err)
+	}
+
+	sb.WriteString("## Evidence Pack\n```json\n")
+	sb.Write(evidenceBytes)
+	sb.WriteString("\n```\n\n")
+
+	if len(expectedCandidateIDs) > 0 {
+		sb.WriteString(fmt.Sprintf("本批次必须为以下每个 candidate_id 各输出恰好一条 final_verdict：%s。\n", strings.Join(expectedCandidateIDs, ", ")))
 	}
 
 	return sb.String(), nil
+}
+
+// BuildJudgePrompt 组装终审法官裁决 Prompt (完整合并版本，用于单输入后端或测试兼容)
+func (a *PromptAssembler) BuildJudgePrompt(
+	ctx *engines.EngineContext,
+	bundle chunker.SemanticBundle,
+	hunterOut *HunterOutput,
+	challOut *ChallengerOutput,
+	evidencePacks []JudgeCaseEvidencePack,
+) (string, error) {
+	sysPrompt, err := a.BuildJudgeSystemPrompt(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	expectedIDs := make([]string, 0)
+	if hunterOut != nil && len(hunterOut.Candidates) > 0 {
+		for _, candidate := range hunterOut.Candidates {
+			expectedIDs = append(expectedIDs, candidate.CandidateID)
+		}
+	} else {
+		for _, pack := range evidencePacks {
+			cid := pack.CandidateID
+			if cid == "" && pack.Claim.CandidateID != "" {
+				cid = pack.Claim.CandidateID
+			}
+			if cid != "" {
+				expectedIDs = append(expectedIDs, cid)
+			}
+		}
+	}
+
+	userPrompt, err := a.BuildJudgeUserPrompt(ctx, bundle, evidencePacks, expectedIDs)
+	if err != nil {
+		return "", err
+	}
+
+	return sysPrompt + "\n\n---\n\n" + userPrompt, nil
 }
 
 func (a *PromptAssembler) renderJudgeDebateSummary(sb *strings.Builder, packs []JudgeCaseEvidencePack) {
