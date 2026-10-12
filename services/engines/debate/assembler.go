@@ -366,8 +366,8 @@ func (a *PromptAssembler) BuildJudgePrompt(
 
 	sb.WriteString(fmt.Sprintf("# Role\n你是一个资深代码缺陷终审仲裁专家 (Code Audit Arbitrator)，负责【%s】任务。\n你需要综合初筛指控与辩护抗辩事实，依据真实源码上下文独立研判，做出确定性终审裁决。\n\n", taskName))
 
-	// 强制分类白名单约束 (SSOT)
-	if len(ctx.AllowedCategories) > 0 {
+	// 强制分类白名单约束 (SSOT) - SchemaVersion < 2 时保留前置输出；SchemaVersion >= 2 时由底部的 RenderOutputContract 统一渲染
+	if ctx.Taxonomy.SchemaVersion < 2 && len(ctx.AllowedCategories) > 0 {
 		sb.WriteString("## 强制分类白名单约束 (Strict Category Constraint)\n")
 		sb.WriteString("裁决结论中的 `category` 字段**必须且仅能**从以下受控列表中选取，严禁自造分类：\n")
 		for _, c := range ctx.AllowedCategories {

@@ -431,16 +431,37 @@ func buildCategoryRepairPrompt(requests []CategoryRepairRequest, contract Output
 	}
 	var sb strings.Builder
 	sb.WriteString("你是受控分类修复器。只修复 category_code 和 classification_rationale，不得修改 title、file、line、snippet 或 trigger。\n\n")
-	sb.WriteString("## Candidates\n```json\n")
+	sb.WriteString("## Candidates To Reclassify\n```json\n")
 	raw, err := json.MarshalIndent(requests, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	sb.Write(raw)
 	sb.WriteString("\n```\n\n")
-	sb.WriteString("## Output Contract\n")
-	sb.WriteString(`{"repairs":[{"candidate_id":"H-001","category_code":"CODE","classification_rationale":"证据与规则","needs_review":false}]}`)
-	sb.WriteString("\n\nUse one exact category_code from the active taxonomy. Output JSON only.\n")
-	sb.WriteString(RenderOutputContract(contract))
+
+	if codes, ok := contract.Enums["category_code"]; ok && len(codes) > 0 {
+		sb.WriteString("## Active Category Codes\n`category_code` 必须且只能从以下代码中选取：\n")
+		for _, code := range codes {
+			sb.WriteString(fmt.Sprintf("- `%s`\n", code))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("## Stage Output Contract\n")
+	sb.WriteString("必须输出一个合法 UTF-8 JSON 对象；不得输出 Markdown 代码围栏、注释、日志或解释文字。\n")
+	sb.WriteString("- 顶层主键：`repairs`\n")
+	sb.WriteString("- 必填顶层字段：`repairs`\n")
+	sb.WriteString("- `repairs[]` 必填字段：`candidate_id`, `category_code`, `classification_rationale`, `needs_review`\n\n")
+	sb.WriteString("结构示例（输出时不得复制本说明，也不得添加围栏）：\n")
+	sb.WriteString(`{
+  "repairs": [
+    {
+      "candidate_id": "H-001",
+      "category_code": "THREAD_DATA_RACE",
+      "classification_rationale": "引用真实源码与调用链说明归类理由",
+      "needs_review": false
+    }
+  ]
+}` + "\n")
 	return sb.String(), nil
 }
