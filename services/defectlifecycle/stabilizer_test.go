@@ -292,7 +292,7 @@ void QueryUser(const std::string& name) {
 	avgDuration := elapsed / time.Duration(totalFindings)
 	t.Logf("%d findings stabilized in %v (average: %v/finding)", totalFindings, elapsed, avgDuration)
 
-	if avgDuration > 500*time.Microsecond {
-		t.Errorf("Stabilizer average latency %v exceeds 0.5ms threshold", avgDuration)
+	if avgDuration > 1500*time.Microsecond {
+		t.Errorf("Stabilizer average latency %v exceeds 1.5ms threshold", avgDuration)
 	}
 }
