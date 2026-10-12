@@ -52,7 +52,7 @@ func BuildPromptPayload(req AIRequest, includePromptFile bool) (string, error) {
 		sb.WriteString("如果目标文件已存在，直接覆盖。不得修改业务源码。\n\n")
 	}
 
-	if req.WorkDir != "" {
+	if req.WorkDir != "" && !strings.Contains(req.PromptMsg, fmt.Sprintf("当前分析运行目录为代码仓根目录：%s", req.WorkDir)) {
 		sb.WriteString(fmt.Sprintf("## Workspace\n当前分析运行目录为代码仓根目录：%s，待分析文件路径均为相对于该根目录的相对路径。\n\n", req.WorkDir))
 	}
 

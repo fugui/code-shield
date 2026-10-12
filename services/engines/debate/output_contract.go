@@ -303,6 +303,8 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- 禁止把多个区间合并进一个字符串（如 `\"70-91 120-125\"`）、禁止嵌套数组或 `[70, 91]` 数字对。\n")
 		sb.WriteString("- `line_range` 与 `additional_line_ranges` 禁止携带文件名前缀（如 `a.cpp:10-20`），只输出行号或行号区间。\n")
 		sb.WriteString("- `trigger_line` 必须引用命中的真实源码行原文，禁止空字符串或省略。\n")
+		sb.WriteString("- `category_code` 必须与 `category` 一一对应配对，禁止自造分类或短码。\n")
+		sb.WriteString("- 零缺陷安全退避契约：若当前分片代码经审查确认安全合规、不存在可达的崩溃或缺陷隐患，必须返回 `\"candidates\": []`；严禁为了输出而生搬硬套或虚构安全代码。\n")
 	}
 	if contract.Profile == OutputProfileJudge {
 		sb.WriteString("- `evidence[].kind` 枚举：`target_source` | `related_source` | `caller` | `definition` | `macro` | `absence_probe`\n")
