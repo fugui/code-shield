@@ -105,6 +105,10 @@ func TestBuiltinTaskTypesUseV3Contracts(t *testing.T) {
 			if !strings.Contains(contract.Example, wantExample) {
 				t.Fatalf("%s %s example lacks %s: %s", taskType.Name, stage, wantExample, contract.Example)
 			}
+			wantSchemaInExample := fmt.Sprintf(`"schema": %q`, wantSchema)
+			if !strings.Contains(contract.Example, wantSchemaInExample) {
+				t.Fatalf("%s %s example lacks %s: %s", taskType.Name, stage, wantSchemaInExample, contract.Example)
+			}
 		}
 	}
 	if found == 0 {

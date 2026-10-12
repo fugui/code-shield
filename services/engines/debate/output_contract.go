@@ -102,9 +102,11 @@ func ContractForStageWithTaxonomy(mode string, stage string, allowedCategories [
 	switch stage {
 	case "hunter":
 		contract.SchemaID = CandidatesArtifactSchemaV2
+		contract.Example = strings.Replace(contract.Example, fmt.Sprintf(`"schema": %q`, CandidatesArtifactSchemaV1), fmt.Sprintf(`"schema": %q`, CandidatesArtifactSchemaV2), 1)
 		contract.Example = strings.Replace(contract.Example, `"category":`, fmt.Sprintf(`"category_code": %q, "category":`, exampleCode), 1)
 	case "judge":
 		contract.SchemaID = FinalVerdictsArtifactSchemaV3
+		contract.Example = strings.Replace(contract.Example, fmt.Sprintf(`"schema": %q`, FinalVerdictsArtifactSchemaV2), fmt.Sprintf(`"schema": %q`, FinalVerdictsArtifactSchemaV3), 1)
 		contract.Example = strings.Replace(contract.Example, `"category":`, fmt.Sprintf(`"category_code": %q, "category":`, exampleCode), 1)
 	}
 	contract.SchemaHash = outputContractSchemaHash(contract)
@@ -292,7 +294,7 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString(fmt.Sprintf("- `%s` 枚举：`%s`\n", field, strings.Join(values, "` | `")))
 	}
 	if contract.Profile == OutputProfileCandidates {
-		sb.WriteString("- `candidate_id` / `file_path` / `line_range` / `scope_symbol` / `category_code` / `category` / `title` / `code_snippet` / `trigger_condition` 是精确字段名。\n")
+		sb.WriteString("- `candidate_id` / `file_path` / `line_range` / `trigger_line` / `scope_symbol` / `category_code` / `category` / `title` / `code_snippet` / `trigger_condition` 是精确字段名。\n")
 		sb.WriteString("- 禁止使用 `id`、`file`、`path`、`function`、`description`、`snippet` 等替代字段名。\n")
 		sb.WriteString("- `file_path` 必须是相对 repo root 的 POSIX 路径，禁止绝对路径。\n")
 		sb.WriteString("- `line_range` 只能是单一主锚点：`42` 或 `42-50`；不要输出 `42,43` 或 `1-2,10-20`。\n")

@@ -198,8 +198,8 @@ func (a *PromptAssembler) BuildHunterPrompt(ctx *engines.EngineContext, bundle c
 		sb.WriteString("\n")
 	}
 
-	// 4. 标准受控分类白名单约束 (SSOT)
-	if len(ctx.AllowedCategories) > 0 {
+	// 4. 标准受控分类白名单约束 (SSOT: SchemaVersion >= 2 时由 Stage Output Contract 统一呈现，避免重复)
+	if len(ctx.AllowedCategories) > 0 && ctx.Taxonomy.SchemaVersion < 2 {
 		sb.WriteString("## 候选缺陷受控分类白名单 (Allowed Categories)\n")
 		sb.WriteString("`category` 必须且只能使用以下值；禁止自造分类，禁止省略二级分类。\n")
 		for _, cat := range ctx.AllowedCategories {
