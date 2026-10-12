@@ -3,10 +3,13 @@ package testcase
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gorm.io/datatypes"
 
 	"code-shield/models"
 	"code-shield/services/coverage"
@@ -117,5 +120,42 @@ func buildTier0Finding(unit coverage.PlanUnit, ruleID, title, detail, snippet st
 		AnchorConfidence:    "HIGH",
 		AssessmentStatus:    "DEFECT",
 		AssessmentOutcome:   "DEFECT",
+	}
+}
+
+// buildFastPassFinding 构造测试用例快速放行（合格）Finding
+func buildFastPassFinding(unit coverage.PlanUnit, reason string) *models.AnalysisFinding {
+	displayName := unit.DisplayName
+	if displayName == "" {
+		displayName = unit.Path
+	}
+	lineStr := fmt.Sprintf("%d", unit.StartLine)
+	if unit.EndLine > unit.StartLine {
+		lineStr = fmt.Sprintf("%d-%d", unit.StartLine, unit.EndLine)
+	}
+	detail := reason
+	if detail == "" {
+		detail = "前置门禁校验通过：测试用例包含规范断言且无作弊或空测试模式。"
+	}
+
+	rawArtifact, _ := json.Marshal(map[string]any{
+		"unit_ref": unit.DisplayName,
+		"outcome":  "pass",
+		"summary":  detail,
+	})
+
+	return &models.AnalysisFinding{
+		PrimaryUnitID:      unit.ID,
+		AssessmentStatus:   "pass",
+		AssessmentOutcome:  "pass",
+		AssessmentArtifact: datatypes.JSON(rawArtifact),
+		FilePath:           unit.Path,
+		LineNumber:         lineStr,
+		Category:           "无问题",
+		CategorySource:     "preflight_gate",
+		CategoryStatus:     "LEGACY",
+		Severity:           "合格",
+		Title:              fmt.Sprintf("测试用例合格：%s", displayName),
+		Detail:             detail,
 	}
 }

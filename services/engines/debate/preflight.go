@@ -1,10 +1,7 @@
 package debate
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
-	"time"
 
 	"code-shield/models"
 	"code-shield/services/coverage"
@@ -13,7 +10,6 @@ import (
 	"code-shield/services/engines/plugins"
 	_ "code-shield/services/engines/plugins/gates/testcase"
 	_ "code-shield/services/engines/plugins/verifiers/native"
-	"gorm.io/datatypes"
 )
 
 // executePreflightTriage 核心调度流水线中的纯通用前置分流与复核逻辑
@@ -66,14 +62,14 @@ func (e *DebateEngine) applyPreflightGates(ctx *engines.EngineContext, bundle *c
 	for _, unit := range bundle.PrimaryUnits {
 		res, decided := e.executePreflightTriage(ctx, unit)
 		if decided {
+			if res.Finding != nil {
+				res.Finding.TaskReportID = ctx.ReportID
+				res.Finding.TaskTypeID = ctx.TaskTypeID
+				res.Finding.RepoID = ctx.RepoID
+				interceptFindings = append(interceptFindings, *res.Finding)
+			}
 			switch res.Decision {
 			case plugins.DecisionTier0Defect:
-				if res.Finding != nil {
-					res.Finding.TaskReportID = ctx.ReportID
-					res.Finding.TaskTypeID = ctx.TaskTypeID
-					res.Finding.RepoID = ctx.RepoID
-					interceptFindings = append(interceptFindings, *res.Finding)
-				}
 				interceptRecords = append(interceptRecords, coverage.AssessmentRecord{
 					PrimaryUnitID: unit.ID,
 					Status:        "DEFECT",
@@ -83,9 +79,6 @@ func (e *DebateEngine) applyPreflightGates(ctx *engines.EngineContext, bundle *c
 					PrimaryUnitID: unit.ID,
 					Status:        "PASS",
 				})
-				if isEntityAssessment(ctx) {
-					interceptFindings = append(interceptFindings, buildFastPassFinding(ctx, unit, res.Reason))
-				}
 			}
 		} else {
 			remainingUnits = append(remainingUnits, unit)
@@ -96,62 +89,6 @@ func (e *DebateEngine) applyPreflightGates(ctx *engines.EngineContext, bundle *c
 		return interceptFindings, interceptRecords, nil, true
 	}
 	return interceptFindings, interceptRecords, remainingUnits, false
-}
-
-func isEntityAssessment(ctx *engines.EngineContext) bool {
-	if ctx == nil {
-		return false
-	}
-	if ctx.AssessmentProfile == "entityreview" {
-		return true
-	}
-	if ctx.Profile.EntityKind == "test_case" {
-		return true
-	}
-	if ctx.TargetSemantics.Singular == "测试用例" {
-		return true
-	}
-	return false
-}
-
-func buildFastPassFinding(ctx *engines.EngineContext, unit coverage.PlanUnit, reason string) models.AnalysisFinding {
-	displayName := unit.DisplayName
-	if displayName == "" {
-		displayName = unit.Path
-	}
-	lineStr := fmt.Sprintf("%d", unit.StartLine)
-	if unit.EndLine > unit.StartLine {
-		lineStr = fmt.Sprintf("%d-%d", unit.StartLine, unit.EndLine)
-	}
-	detail := reason
-	if detail == "" {
-		detail = "前置门禁校验通过：测试用例包含规范断言且无作弊或空测试模式。"
-	}
-
-	rawArtifact, _ := json.Marshal(map[string]any{
-		"unit_ref": unit.DisplayName,
-		"outcome":  "pass",
-		"summary":  detail,
-	})
-
-	return models.AnalysisFinding{
-		TaskReportID:       ctx.ReportID,
-		TaskTypeID:         ctx.TaskTypeID,
-		RepoID:             ctx.RepoID,
-		PrimaryUnitID:      unit.ID,
-		AssessmentStatus:   "pass",
-		AssessmentOutcome:  "pass",
-		AssessmentArtifact: datatypes.JSON(rawArtifact),
-		FilePath:           unit.Path,
-		LineNumber:         lineStr,
-		Category:           "无问题",
-		CategorySource:     "preflight_gate",
-		CategoryStatus:     "LEGACY",
-		Severity:           "合格",
-		Title:              fmt.Sprintf("测试用例合格：%s", displayName),
-		Detail:             detail,
-		CreatedAt:          time.Now(),
-	}
 }
 
 // applyContextEnrichers 检查并执行声明式挂载的上下文因果增强插件

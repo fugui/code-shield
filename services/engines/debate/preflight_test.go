@@ -88,8 +88,8 @@ TEST(CalcTest, ValidAdd) {
 	if !allDone {
 		t.Fatalf("expected all units to be resolved by preflight gate, but remaining %d units", len(remaining))
 	}
-	if len(findings) != 1 {
-		t.Fatalf("expected exactly 1 finding for empty stub, got %d", len(findings))
+	if len(findings) != 2 {
+		t.Fatalf("expected exactly 2 findings (1 defect, 1 pass), got %d", len(findings))
 	}
 	if len(records) != 2 {
 		t.Fatalf("expected 2 assessment records, got %d", len(records))
@@ -99,7 +99,7 @@ TEST(CalcTest, ValidAdd) {
 	}
 }
 
-func TestPreflightGateGeneratesPassFindingForEntityReview(t *testing.T) {
+func TestPreflightGateFastPassFindingPropagation(t *testing.T) {
 	tmpDir := t.TempDir()
 	relPath := "test_calc.cpp"
 	absPath := filepath.Join(tmpDir, relPath)
@@ -114,9 +114,11 @@ func TestPreflightGateGeneratesPassFindingForEntityReview(t *testing.T) {
 
 	engine := &DebateEngine{}
 	ctx := &engines.EngineContext{
-		Ctx:               context.Background(),
-		CodesPath:         tmpDir,
-		AssessmentProfile: "entityreview",
+		Ctx:          context.Background(),
+		CodesPath:    tmpDir,
+		ReportID:     1001,
+		TaskTypeID:   206,
+		RepoID:       88,
 		Plugins: plugins.PluginsConfig{
 			PreflightGate: &plugins.TaskPluginDeclaration{
 				ID: "test_case_radar",
@@ -150,6 +152,10 @@ func TestPreflightGateGeneratesPassFindingForEntityReview(t *testing.T) {
 	}
 	if findings[0].Severity != "合格" || findings[0].AssessmentOutcome != "pass" {
 		t.Fatalf("expected pass finding, got %+v", findings[0])
+	}
+	if findings[0].TaskReportID != 1001 || findings[0].TaskTypeID != 206 || findings[0].RepoID != 88 {
+		t.Fatalf("expected metadata injected into finding, got reportID=%d taskType=%d repoID=%d",
+			findings[0].TaskReportID, findings[0].TaskTypeID, findings[0].RepoID)
 	}
 	if findings[0].Title != "测试用例合格：CalcTest.ValidAdd" {
 		t.Fatalf("unexpected finding title: %q", findings[0].Title)
