@@ -596,19 +596,27 @@ func ExtractHeaderOutline(codesPath string, files []string) string {
 
 		// 提取类与结构体声明
 		classes := reDeclaration.FindAllString(content, 10)
+		seenClasses := make(map[string]bool)
 		for _, c := range classes {
-			outlineBuilder.WriteString(strings.TrimSpace(c))
+			trimmed := strings.TrimSpace(c)
+			if seenClasses[trimmed] {
+				continue
+			}
+			seenClasses[trimmed] = true
+			outlineBuilder.WriteString(trimmed)
 			outlineBuilder.WriteString(" { ... };\n")
 			outlineCount++
 		}
 
 		// 提取核心方法声明
 		funcs := reFuncSig.FindAllString(content, 40)
+		seenFuncs := make(map[string]bool)
 		for _, fn := range funcs {
 			trimmed := strings.TrimSpace(fn)
-			if isInvalidDeclarationLine(trimmed) {
+			if isInvalidDeclarationLine(trimmed) || seenFuncs[trimmed] {
 				continue
 			}
+			seenFuncs[trimmed] = true
 			// 过滤包含计算表达式的函数调用误判
 			if parenStart := strings.IndexByte(trimmed, '('); parenStart > 0 {
 				if parenEnd := strings.LastIndexByte(trimmed, ')'); parenEnd > parenStart {

@@ -104,6 +104,14 @@ func ContractForStageWithTaxonomy(mode string, stage string, allowedCategories [
 		contract.SchemaID = CandidatesArtifactSchemaV2
 		contract.Example = strings.Replace(contract.Example, fmt.Sprintf(`"schema": %q`, CandidatesArtifactSchemaV1), fmt.Sprintf(`"schema": %q`, CandidatesArtifactSchemaV2), 1)
 		contract.Example = strings.Replace(contract.Example, `"category":`, fmt.Sprintf(`"category_code": %q, "category":`, exampleCode), 1)
+		if strings.HasPrefix(exampleCode, "FLOAT_") {
+			contract.Example = strings.Replace(
+				contract.Example,
+				`"trigger_condition": "【前置假设】外部入参传入非法边界或空指针；【触发路径】经 Process() 调用但未作非空校验；【崩溃机理】在当前行解引用导致段错误崩溃"`,
+				`"trigger_condition": "【前置假设】外部数值经浮点算术运算引入 IEEE 754 舍入误差；【触发路径】经 Process() 传参至目标等值或边界比较语句；【故障机理】因二进制微小精度偏差导致关键分支判定失真或无法精确命中终止边界"`,
+				1,
+			)
+		}
 	case "judge":
 		contract.SchemaID = FinalVerdictsArtifactSchemaV3
 		contract.Example = strings.Replace(contract.Example, fmt.Sprintf(`"schema": %q`, FinalVerdictsArtifactSchemaV2), fmt.Sprintf(`"schema": %q`, FinalVerdictsArtifactSchemaV3), 1)
@@ -304,8 +312,8 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- `line_range` 与 `additional_line_ranges` 禁止携带文件名前缀（如 `a.cpp:10-20`），只输出行号或行号区间。\n")
 		sb.WriteString("- `trigger_line` 必须引用命中的真实源码行原文，禁止空字符串或省略。\n")
 		sb.WriteString("- `category_code` 必须与 `category` 一一对应配对，禁止自造分类或短码。\n")
-		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【故障机理】导致未捕获致命异常、段错误/Panic、状态破坏、资源耗尽或安全越权的具体物理机制与致命后果。禁止空泛陈述。\n")
-		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的崩溃或缺陷隐患，必须返回顶层空候选列表，即 `{\"schema\": \"" + contract.SchemaID + "\", \"candidates\": []}`；严禁为了输出而生搬硬套、严禁将 `candidates` 设为 null、严禁输出含有空字段的占位对象。\n")
+		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【故障机理】导致未捕获致命异常、段错误/Panic、关键控制分支偏离、死循环/收敛失败、状态破坏、数据漂移/计算失真、资源耗尽或安全越权的具体物理机制与致命后果。禁止空泛陈述。\n")
+		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的缺陷隐患或异常偏差，必须返回顶层空候选列表，即 `{\"schema\": \"" + contract.SchemaID + "\", \"candidates\": []}`；严禁为了输出而生搬硬套、严禁将 `candidates` 设为 null、严禁输出含有空字段的占位对象。\n")
 	}
 	if contract.Profile == OutputProfileJudge {
 		sb.WriteString("- `evidence[].kind` 枚举：`target_source` | `related_source` | `caller` | `definition` | `macro` | `absence_probe`\n")
