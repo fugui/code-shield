@@ -309,11 +309,11 @@ func RenderOutputContract(contract OutputContract) string {
 	}
 	if contract.Profile == OutputProfileJudge {
 		sb.WriteString("- `evidence[].kind` 枚举：`target_source` | `related_source` | `caller` | `definition` | `macro` | `absence_probe`\n")
-		sb.WriteString("- `evidence[].evidence_id` 必须原样复制当前候选 Evidence Pack 中已有 Evidence 的 ID；服务端会以该 ID 对应的 path/line/snippet 为准。\n")
+		sb.WriteString("- `evidence[].evidence_id`：若引用 Evidence Pack 中的已有条目，必须原样复制其 ID（服务端以其权威切片为准）；若为自主探查补充的证据可省略该字段，但 `path` 必须在 `allowed_evidence_paths` 范围内，`line_range` 与 `snippet` 必须严格提取自真实源码。\n")
 		sb.WriteString("- `absence_probe[].probe_id` / `evidence[].probe_id` 必须原样复制 Evidence Pack 中的 `probe_id`；没有可用 probe 时不要输出 absence_probe。\n")
 		sb.WriteString("- `line_range` 只能是一个区间，如 `42` 或 `42-50`；不要输出 `42,43` 或 `1-2,10-20`。\n")
 		sb.WriteString("- `CONFIRMED` 必须包含同一候选的 source 证据，且至少包含一个 `caller` / `definition` / `macro` 类型的可达性证据。\n")
-		sb.WriteString("- `REJECTED` 必须保留原候选的 `trigger_line`、`scope_symbol`、`code_snippet`、`file_path`、`line_range` 与 `severity_preliminary`（不得省略或自造枚举）；`suggestion` 填写防误报说明或维护提示（禁止空字符串）；`evidence` 必须引用至少一项反证或无调用点证据。\n")
+		sb.WriteString("- `REJECTED` 必须保留原候选的 `trigger_line`、`scope_symbol`、`code_snippet`、`file_path`、`line_range` 与 `severity_preliminary`（不得省略或自造枚举）；`suggestion` 填写防误报说明或维护提示（禁止空字符串）；`evidence` 必须引用至少一项证明误报的证据（可使用辩方反证、无调用点 probe、自主探查的防御代码或引用 primary_evidence 并在 reason 中阐明否定理由）。\n")
 		sb.WriteString("- 禁止返回 `source_verified`；该字段由服务端 Evidence Verifier 计算。\n")
 	}
 	if contract.Profile == OutputProfileChallenger {

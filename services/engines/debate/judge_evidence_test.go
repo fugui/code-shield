@@ -239,6 +239,9 @@ func TestIsTrivialSourceLine(t *testing.T) {
 		"};",
 		";",
 		"   ",
+		"// All rights reserved.",
+		"// Copyright (c) 2012 - present, Victor Zverovich",
+		"// SPDX-License-Identifier: BSL-1.0",
 	}
 	for _, line := range trivialLines {
 		if !isTrivialSourceLine(line) {
