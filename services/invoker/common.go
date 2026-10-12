@@ -46,10 +46,10 @@ func BuildPromptPayload(req AIRequest, includePromptFile bool) (string, error) {
 
 	if req.OutputPath != "" {
 		sb.WriteString("## Output Delivery\n")
-		sb.WriteString(fmt.Sprintf("将最终结果写入普通文件：%s\n", req.OutputPath))
+		sb.WriteString(fmt.Sprintf("请将符合上方契约规范的纯内容完整写入目标普通文件：%s\n", req.OutputPath))
 		sb.WriteString("硬性要求：目标路径必须是普通文件；不得创建同名目录；不得把结果写入其子目录。\n")
 		sb.WriteString("文件内容只能是 UTF-8 JSON 或任务指定的 Markdown；不得包含 BOM、注释、Markdown 代码围栏、日志或解释文字。\n")
-		sb.WriteString("如果目标文件已存在，直接覆盖。不得修改业务源码。\n\n")
+		sb.WriteString("如果目标文件已存在，直接覆盖。不得修改业务源码。写入完成后无需输出任何额外解释文字。\n\n")
 	}
 
 	if req.WorkDir != "" && !strings.Contains(req.PromptMsg, fmt.Sprintf("当前分析运行目录为代码仓根目录：%s", req.WorkDir)) {
