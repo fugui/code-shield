@@ -172,7 +172,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 				timeoutSeconds,
 				candidate,
 				execution,
-				string(invoker.ErrorClassNone),
+				"",
 				metrics,
 			)
 			if err == nil {
@@ -227,7 +227,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 				retryTimeout,
 				candidate,
 				execution,
-				string(invoker.ErrorClassNone),
+				"",
 				retryMetrics,
 			)
 			tokens += retryTokens
@@ -357,8 +357,9 @@ func (e *DebateEngine) runSpecializedAssessmentOnce(
 	}
 	workCtx.ResourceID = candidate.ResourceID
 	prompt := execution.prompt
-	if strings.TrimSpace(promptSuffix) != "" {
-		prompt += "\n\n" + promptSuffix
+	trimmedSuffix := strings.TrimSpace(promptSuffix)
+	if trimmedSuffix != "" && trimmedSuffix != string(invoker.ErrorClassNone) {
+		prompt += "\n\n" + trimmedSuffix
 	}
 	metrics := &invoker.InvocationMetrics{}
 	if len(metricsOpt) > 0 && metricsOpt[0] != nil {

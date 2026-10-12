@@ -277,3 +277,44 @@ func TestMapFindingsFallbackCodeSnippetFromFile(t *testing.T) {
 		t.Fatalf("CodeSnippet = %q, want %q", findings[0].CodeSnippet, want)
 	}
 }
+
+func TestBuildPromptSanitizesDomainRules(t *testing.T) {
+	rawDomain := `# Role: 资深自动化测试与质量评估专家
+
+## Task
+请审计测试代码。
+
+## 审计维度与判定标准
+重点检查空测试与永真断言。
+
+## 输出格式与约束
+{"findings": []}`
+
+	profile := Profile{}
+	prompt, _, err := profile.BuildPrompt(assessment.AssessmentContext{
+		BundleID: "entity-001",
+		EngineContext: &engines.EngineContext{
+			AnalysisPromptContent: rawDomain,
+		},
+	}, testBundle())
+	if err != nil {
+		t.Fatalf("BuildPrompt() error = %v", err)
+	}
+
+	domainIdx := strings.Index(prompt, "## Domain Specifications")
+	targetIdx := strings.Index(prompt, "## Target Files")
+	if domainIdx == -1 || targetIdx == -1 {
+		t.Fatalf("expected Domain Specifications and Target Files sections in prompt")
+	}
+	domainSection := prompt[domainIdx:targetIdx]
+
+	if strings.Contains(domainSection, "findings") {
+		t.Errorf("expected findings to be stripped from domain specs:\n%s", domainSection)
+	}
+	if strings.Contains(domainSection, "输出格式与约束") {
+		t.Errorf("expected legacy output heading to be stripped:\n%s", domainSection)
+	}
+	if !strings.Contains(domainSection, "重点检查空测试与永真断言") {
+		t.Errorf("expected domain rule content to be retained:\n%s", domainSection)
+	}
+}

@@ -10,14 +10,14 @@ import (
 )
 
 var (
-	cppStdAssertPattern          = regexp.MustCompile(`\b(EXPECT_|ASSERT_|CPPUNIT_ASSERT|BOOST_CHECK|CHECK\(|REQUIRE\()`)
-	cppExpectCallOrThrowPattern  = regexp.MustCompile(`\b(EXPECT_CALL|ON_CALL|EXPECT_THROW|EXPECT_NO_THROW|ASSERT_THROW|ASSERT_NO_THROW)\b`)
-	cppTautologyLiteralPattern   = regexp.MustCompile(`\b(EXPECT_TRUE\s*\(\s*(true|1)\s*\)|EXPECT_FALSE\s*\(\s*(false|0)\s*\)|ASSERT_TRUE\s*\(\s*(true|1)\s*\)|ASSERT_FALSE\s*\(\s*(false|0)\s*\))`)
-	cppEqPattern                 = regexp.MustCompile(`\b(?:EXPECT_EQ|ASSERT_EQ)\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*([a-zA-Z0-9_]+)\s*\)`)
-	cppLoggingPattern            = regexp.MustCompile(`(?m)^\s*(LOG\s*\(|printf\s*\(|std::cout\b|cout\s*<<)[^;]*;?\s*$`)
-	cppHelperCallPattern         = regexp.MustCompile(`\b(verify[A-Za-z0-9_]*|check[A-Za-z0-9_]*|assert[A-Za-z0-9_]*|validate[A-Za-z0-9_]*)\s*\(`)
-	cppSingleCommentPattern      = regexp.MustCompile(`//.*`)
-	cppMultiCommentPattern       = regexp.MustCompile(`/\*[\s\S]*?\*/`)
+	cppStdAssertPattern         = regexp.MustCompile(`\b(EXPECT_|ASSERT_|CPPUNIT_ASSERT|BOOST_CHECK|CHECK\(|REQUIRE\()`)
+	cppExpectCallOrThrowPattern = regexp.MustCompile(`\b(EXPECT_CALL|ON_CALL|EXPECT_THROW|EXPECT_NO_THROW|ASSERT_THROW|ASSERT_NO_THROW)\b`)
+	cppTautologyLiteralPattern  = regexp.MustCompile(`\b(EXPECT_TRUE\s*\(\s*(true|1)\s*\)|EXPECT_FALSE\s*\(\s*(false|0)\s*\)|ASSERT_TRUE\s*\(\s*(true|1)\s*\)|ASSERT_FALSE\s*\(\s*(false|0)\s*\))`)
+	cppEqPattern                = regexp.MustCompile(`\b(?:EXPECT_EQ|ASSERT_EQ)\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*([a-zA-Z0-9_]+)\s*\)`)
+	cppLoggingPattern           = regexp.MustCompile(`(?m)^\s*(LOG\s*\(|printf\s*\(|std::cout\b|cout\s*<<)[^;]*;?\s*$`)
+	cppHelperCallPattern        = regexp.MustCompile(`\b(verify[A-Za-z0-9_]*|check[A-Za-z0-9_]*|assert[A-Za-z0-9_]*|validate[A-Za-z0-9_]*)\s*\(`)
+	cppSingleCommentPattern     = regexp.MustCompile(`//.*`)
+	cppMultiCommentPattern      = regexp.MustCompile(`/\*[\s\S]*?\*/`)
 )
 
 func hasCppSelfEqTautology(code string) bool {
