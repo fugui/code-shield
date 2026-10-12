@@ -489,5 +489,10 @@
       }
     ]
   },
-  "timeout": 60
+  "timeout": 60,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "重点突出内存非法访问、空指针解引用、缓冲区越界读写及并发死锁对系统稳定性的致命危害。",
+    "recommendation_guidelines": "评估本代码仓整体的防崩溃与内存/并发健壮性水平；给出系统性的 Coredump 预防建议（例如：推广 RAII 资源管理、开启编译器严格警告参数 -Wall -Wextra、在 CI/CD 流水线中引入 AddressSanitizer (ASan) / ThreadSanitizer (TSan) 动态检查等工程化手段）。"
+  }
 }

@@ -274,5 +274,10 @@
       }
     ]
   },
-  "timeout": 60
+  "timeout": 60,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "线程创建总体情况：说明已确认合理的线程数量，以及存在并发安全/资源泄漏风险的线程数量。",
+    "recommendation_guidelines": "评估本代码仓整体的多线程与并发设计质量；规范多线程开发指导（例如：引入统一线程池、避免裸线程分离 detach、使用 RAII 线程守卫托管生命周期等）。"
+  }
 }

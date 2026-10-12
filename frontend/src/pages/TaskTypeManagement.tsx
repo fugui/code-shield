@@ -3,7 +3,7 @@ import { Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import { Code2, Settings, Trash2, Plus, RefreshCw, X, Shield, Layers, CheckCircle2 } from 'lucide-react';
 
-type FileTab = 'analysis_prompt' | 'synthesis_prompt';
+type FileTab = 'analysis_prompt';
 
 type ScanProfileName = 'full_review' | 'occurrence_review' | 'keyword_review' | 'change_review' | 'entity_review';
 
@@ -230,9 +230,8 @@ function TaskTypeManagement() {
   const [showFileEditor, setShowFileEditor] = useState(false);
   const [fileEditorTaskId, setFileEditorTaskId] = useState<number | null>(null);
   const [fileEditorTaskName, setFileEditorTaskName] = useState('');
-  const [activeFileTab, setActiveFileTab] = useState<FileTab>('analysis_prompt');
-  const [fileContents, setFileContents] = useState({ analysis_prompt: '', synthesis_prompt: '' });
-  const [fileDirty, setFileDirty] = useState({ analysis_prompt: false, synthesis_prompt: false });
+  const [fileContents, setFileContents] = useState({ analysis_prompt: '' });
+  const [fileDirty, setFileDirty] = useState({ analysis_prompt: false });
   const [fileSaving, setFileSaving] = useState(false);
 
   const fetchTaskTypes = React.useCallback(async () => {
@@ -589,15 +588,13 @@ function TaskTypeManagement() {
   const openFileEditor = async (tt: TaskTypeItem) => {
     setFileEditorTaskId(tt.id);
     setFileEditorTaskName(tt.display_name);
-    setActiveFileTab('analysis_prompt');
-    setFileDirty({ analysis_prompt: false, synthesis_prompt: false });
+    setFileDirty({ analysis_prompt: false });
     try {
       const res = await fetch(`/api/task-types/${tt.id}/files`);
       if (res.ok) {
         const data = await res.json();
         setFileContents({
           analysis_prompt: data.analysis_prompt || '',
-          synthesis_prompt: data.synthesis_prompt || '',
         });
       }
     } catch {
@@ -606,18 +603,18 @@ function TaskTypeManagement() {
     setShowFileEditor(true);
   };
 
-  const handleFileSave = async (fileType: FileTab) => {
+  const handleFileSave = async () => {
     if (!fileEditorTaskId) return;
     setFileSaving(true);
     try {
-      const res = await fetch(`/api/task-types/${fileEditorTaskId}/files/${fileType}`, {
+      const res = await fetch(`/api/task-types/${fileEditorTaskId}/files/analysis_prompt`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: fileContents[fileType] })
+        body: JSON.stringify({ content: fileContents.analysis_prompt })
       });
       if (res.ok) {
-        showToast('文件已保存', 'success');
-        setFileDirty({ ...fileDirty, [fileType]: false });
+        showToast('分析规则已保存', 'success');
+        setFileDirty({ analysis_prompt: false });
       } else {
         const d = await res.json();
         showToast(d.error || '保存失败', 'error');
@@ -628,9 +625,9 @@ function TaskTypeManagement() {
     setFileSaving(false);
   };
 
-  const updateFileContent = (tab: FileTab, content: string) => {
-    setFileContents({ ...fileContents, [tab]: content });
-    setFileDirty({ ...fileDirty, [tab]: true });
+  const updateFileContent = (content: string) => {
+    setFileContents({ analysis_prompt: content });
+    setFileDirty({ analysis_prompt: true });
   };
 
   const fieldStyle: React.CSSProperties = {
@@ -653,10 +650,7 @@ function TaskTypeManagement() {
     fontWeight: 600
   };
 
-  const fileTabLabels: Record<FileTab, string> = {
-    analysis_prompt: '分析提示词 (analysis_prompt)',
-    synthesis_prompt: '综合报告提示词 (synthesis_prompt)',
-  };
+
 
   const activeFamilyInfo = domainFamilies.find(f => f.key === form.domain_family);
 
@@ -1609,59 +1603,31 @@ function TaskTypeManagement() {
       <Drawer
         open={showFileEditor}
         onClose={() => setShowFileEditor(false)}
-        title={`编辑脚本 — ${fileEditorTaskName}`}
-        subtitle="配置 AI 任务提示词（分析/综合阶段）与前置 Bash 检查脚本"
+        title={`配置 AI 分析规则 — ${fileEditorTaskName}`}
+        subtitle="编写初筛与辩论阶段的专业领域代码规则（analysis_prompt.md）"
         width="min(1000px, 92vw)"
         bodyStyle={{ padding: 0, gap: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-              {activeFileTab === 'analysis_prompt'
-                ? '分析阶段提示词 · 领域规则将注入猎手与辩论流'
-                : activeFileTab === 'synthesis_prompt'
-                ? '综合报告提示词 · AI 输出 Markdown'
-                : 'Bash 脚本 · 前置: exit 0=继续, 1=跳过, 2=失败'}
+              分析阶段提示词 · 领域规则将注入猎手初筛与对抗辩论流（综合报告由系统内置契约驱动）
             </span>
             <button
               className="btn btn-primary"
-              onClick={() => handleFileSave(activeFileTab)}
-              disabled={fileSaving || !fileDirty[activeFileTab]}
-              style={{ padding: '0.4rem 1.2rem', fontSize: '0.85rem', opacity: fileDirty[activeFileTab] ? 1 : 0.5 }}
+              onClick={handleFileSave}
+              disabled={fileSaving || !fileDirty.analysis_prompt}
+              style={{ padding: '0.4rem 1.2rem', fontSize: '0.85rem', opacity: fileDirty.analysis_prompt ? 1 : 0.5 }}
             >
               {fileSaving ? '保存中...' : '保存'}
             </button>
           </div>
         }
       >
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border-primary)', flexShrink: 0, background: 'var(--color-bg-muted)' }}>
-          {(['analysis_prompt', 'synthesis_prompt'] as FileTab[]).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveFileTab(tab)}
-              style={{
-                padding: '0.75rem 1.25rem',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontWeight: activeFileTab === tab ? 600 : 400,
-                fontSize: '0.85rem',
-                color: activeFileTab === tab ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                borderBottom: activeFileTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
-                transition: 'all 0.15s'
-              }}
-            >
-              {fileTabLabels[tab]}
-              {fileDirty[tab] && <span style={{ marginLeft: '0.3rem', color: 'var(--color-warning)', fontSize: '0.7rem' }}>●</span>}
-            </button>
-          ))}
-        </div>
-
         {/* Editor */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <textarea
-            value={fileContents[activeFileTab]}
-            onChange={e => updateFileContent(activeFileTab, e.target.value)}
+            value={fileContents.analysis_prompt}
+            onChange={e => updateFileContent(e.target.value)}
             spellCheck={false}
             style={{
               flex: 1,
@@ -1678,11 +1644,7 @@ function TaskTypeManagement() {
               color: 'var(--color-text-primary)',
               boxSizing: 'border-box'
             }}
-            placeholder={
-              activeFileTab === 'analysis_prompt' || activeFileTab === 'synthesis_prompt'
-                ? '在此编写 AI 任务提示词（Markdown 格式）...'
-                : '在此编写 Bash 脚本...'
-            }
+            placeholder="# 领域专业规则&#10;请在此处编写针对该任务类型的特定分析指导与判定规则..."
           />
         </div>
       </Drawer>

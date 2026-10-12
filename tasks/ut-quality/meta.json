@@ -137,5 +137,10 @@
       }
     ]
   },
-  "timeout": 60
+  "timeout": 60,
+  "synthesis_config": {
+    "report_type": "static",
+    "overview_guidelines": "概述单元测试代码的整体工程质量分布情况与维护性状态。",
+    "recommendation_guidelines": "对该代码仓的整体测试代码质量、可维护性及潜在的稳定性风险进行评价；提供针对性的工程化改进建议（如规范 Mock 实践、增加自动化静态代码检查、完善 TearDown 资源清理等）。"
+  }
 }

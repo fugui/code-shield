@@ -260,4 +260,3 @@ func TestIsTrivialSourceLine(t *testing.T) {
 		}
 	}
 }
-
