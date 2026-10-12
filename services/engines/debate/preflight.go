@@ -8,6 +8,8 @@ import (
 	"code-shield/services/engines"
 	"code-shield/services/engines/chunker"
 	"code-shield/services/engines/plugins"
+	_ "code-shield/services/engines/plugins/gates/testcase"
+	_ "code-shield/services/engines/plugins/verifiers/native"
 )
 
 // executePreflightTriage 核心调度流水线中的纯通用前置分流与复核逻辑
