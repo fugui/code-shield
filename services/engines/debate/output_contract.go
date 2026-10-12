@@ -310,6 +310,7 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- `absence_probe[].probe_id` / `evidence[].probe_id` 必须原样复制 Evidence Pack 中的 `probe_id`；没有可用 probe 时不要输出 absence_probe。\n")
 		sb.WriteString("- `line_range` 只能是一个区间，如 `42` 或 `42-50`；不要输出 `42,43` 或 `1-2,10-20`。\n")
 		sb.WriteString("- `CONFIRMED` 必须包含同一候选的 source 证据，且至少包含一个 `caller` / `definition` / `macro` 类型的可达性证据。\n")
+		sb.WriteString("- `REJECTED` 必须保留原候选的 `trigger_line`、`scope_symbol`、`code_snippet`、`file_path`、`line_range` 与 `severity_preliminary`（不得省略或自造枚举）；`suggestion` 填写防误报说明或维护提示（禁止空字符串）；`evidence` 必须引用至少一项反证或无调用点证据。\n")
 		sb.WriteString("- 禁止返回 `source_verified`；该字段由服务端 Evidence Verifier 计算。\n")
 	}
 	if contract.Profile == OutputProfileChallenger {

@@ -15,4 +15,4 @@
 2. 若用例仅盲目调用接口以刷取覆盖率、使用恒真断言作弊（如 EXPECT_TRUE(true)、assert True、局部变量恒真赋值）、Mock 方法拼写错误（如 asser_called 导致静默通过）、或确实没有任何业务校验意图，判定为 DEFECT。
 
 请直接输出严格的 JSON 判定结果（无需其他Markdown标记或对话寒暄）：
-{"outcome": "PASS"|"DEFECT", "reason": "50字以内的专业裁决说明", "severity": "NORMAL"|"MAJOR"}
+{"outcome": "PASS"|"DEFECT", "category_code": "UTE_EMPTY_TEST"|"UTE_TAUTOLOGY_ASSERTION"|"UTE_SILENT_CATCH"|"UTE_OTHER", "severity": "一般"|"严重"|"致命", "reason": "50字以内的专业裁决说明"}
