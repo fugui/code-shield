@@ -201,7 +201,7 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 				if group != nil {
 					finding = &group.Representative
 				}
-				createdDefect, err := createDefect(tx, input, identity, finding, now)
+				createdDefect, err := createDefect(tx, input, identity, finding)
 				if err != nil {
 					return nil, err
 				}
@@ -533,7 +533,7 @@ func passObservationCovered(input LedgerInput, identity Identity) bool {
 	return scope != nil && scope.Outcome == ScopeScanned
 }
 
-func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *models.AnalysisFinding, now time.Time) (models.Defect, error) {
+func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *models.AnalysisFinding) (models.Defect, error) {
 	fingerprint, fingerprintKind := canonicalIdentity(identity)
 	if tx.Dialector.Name() == "postgres" {
 		lockKey := fmt.Sprintf("%d:%d", input.Repo.ID, input.TaskType.ID)

@@ -286,7 +286,7 @@ func UpdateDefectWorkflow(db *gorm.DB, defectID uint, input DefectWorkflowInput)
 				DefectID: defectID, EventType: "HUMAN_DECISION", FromStatus: nextStatus,
 				ToStatus: nextStatus, ActorType: "HUMAN", ActorID: actorOrNil(input.ActorID),
 				Reason:   "assignment changed",
-				Evidence: []byte(fmt.Sprintf(`{"assignee_id":%d}`, assigneeValue)), CreatedAt: now,
+				Evidence: fmt.Appendf(nil, `{"assignee_id":%d}`, assigneeValue), CreatedAt: now,
 			}
 			if err := tx.Create(&event).Error; err != nil {
 				return fmt.Errorf("create assignment event: %w", err)

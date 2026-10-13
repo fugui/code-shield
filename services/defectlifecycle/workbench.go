@@ -294,7 +294,7 @@ func AssignDefect(db *gorm.DB, defectID uint, assigneeID *uint, actorID uint) er
 			DefectID: defectID, EventType: "HUMAN_DECISION", FromStatus: defect.Status,
 			ToStatus: defect.Status, ActorType: "HUMAN", ActorID: &actorID,
 			Reason:    "assignment changed",
-			Evidence:  []byte(fmt.Sprintf(`{"assignee_id":%d}`, assigneeValue)),
+			Evidence:  fmt.Appendf(nil, `{"assignee_id":%d}`, assigneeValue),
 			CreatedAt: now,
 		}
 		if err := tx.Create(&event).Error; err != nil {

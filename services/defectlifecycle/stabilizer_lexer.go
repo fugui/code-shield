@@ -170,7 +170,7 @@ func extractCalleeIdentifier(stmt string, prefix string) string {
 }
 
 // extractLexicalCandidates 纯 Go 轻量词法抽取物理候选变量标识符
-func extractLexicalCandidates(stmt string, classMajor string) []string {
+func extractLexicalCandidates(stmt string) []string {
 	var candidates []string
 	seen := make(map[string]bool)
 
@@ -237,7 +237,7 @@ func ExtractPhysicalTargetEntity(physicalSnippet string, promptTargetSymbol stri
 		}
 	case "DEADLOCK", "DATA_RACE", "CONCUR":
 		// 优先识别带有 mtx, lock, mutex 标识的变量
-		candidates := extractLexicalCandidates(cleanLine, classMajor)
+		candidates := extractLexicalCandidates(cleanLine)
 		for _, cand := range candidates {
 			lower := strings.ToLower(cand)
 			if strings.Contains(lower, "mtx") || strings.Contains(lower, "mutex") || strings.Contains(lower, "lock") {
@@ -255,7 +255,7 @@ func ExtractPhysicalTargetEntity(physicalSnippet string, promptTargetSymbol stri
 	}
 
 	// 2. 纯 Go 词法扫描物理候选标识符
-	candidates := extractLexicalCandidates(cleanLine, classMajor)
+	candidates := extractLexicalCandidates(cleanLine)
 	if len(candidates) == 0 {
 		return "", ConfidenceLow
 	}
