@@ -35,12 +35,13 @@ func TestRepairJSON_WithNative(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.ToolBackends.RepairJSON = "native"
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:             "native",
+		Driver:         "native",
 		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 10,
-	}
+	}}
 
 	tempDir := t.TempDir()
 	brokenJSONPath := filepath.Join(tempDir, "broken.json")
@@ -100,12 +101,13 @@ func TestExtractFeedbackRuleViaNative(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.ToolBackends.FeedbackExtraction = "native"
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:             "native",
+		Driver:         "native",
 		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 10,
-	}
+	}}
 
 	rule, err := ExtractFeedbackRuleViaNative("src/crypto/aes.go", "AESKey = nil", "Hardcoded Key", "采用外部 HSM 密钥管理")
 	if err != nil {
@@ -131,11 +133,13 @@ func TestExecuteSynthesisOnce_Tier3Native(t *testing.T) {
 	defer func() { models.AppConfig = origCfg }()
 
 	models.AppConfig.Scanner.Debate.Tiers.Tier4Synthesis.Resource = "native"
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:             "native",
+		Driver:         "native",
 		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 10,
-	}
+	}}
 
 	tempDir := t.TempDir()
 	jsonPath := filepath.Join(tempDir, "findings.json")

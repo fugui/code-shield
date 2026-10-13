@@ -22,7 +22,6 @@ import (
 // 凡影响 prompt、输出契约、findings/debate log 转换、bundle 拆分或 token 统计的改动必须递增。
 const (
 	bundleResumeSchemaVersion = 5
-	bundleResumeLegacyVersion = 3
 )
 
 type BundleResumeMetadata struct {
@@ -222,12 +221,8 @@ func LoadBundleResumeCheckpoints(chunkDir string) map[string]BundleResumeCheckpo
 			continue
 		}
 		if cp.ResumeSchemaVersion != bundleResumeSchemaVersion {
-			if cp.ResumeSchemaVersion != bundleResumeLegacyVersion ||
-				!models.AppConfig.AcceptLegacyBundleV2Checkpoints() {
-				log.Printf("[BundleResume] Checkpoint invalid path=%s reason=schema version=%d\n", path, cp.ResumeSchemaVersion)
-				continue
-			}
-			log.Printf("[BundleResume] Accepting legacy v%d checkpoint path=%s policy=accept_success_as_complete\n", cp.ResumeSchemaVersion, path)
+			log.Printf("[BundleResume] Checkpoint invalid path=%s reason=schema version=%d\n", path, cp.ResumeSchemaVersion)
+			continue
 		}
 		if cp.BundleName == "" {
 			log.Printf("[BundleResume] Checkpoint invalid path=%s reason=empty bundle name\n", path)
@@ -247,9 +242,7 @@ func ValidBundleResumeCheckpoint(
 	metadata BundleResumeMetadata,
 	snapshotHash string,
 ) bool {
-	versionAccepted := cp.ResumeSchemaVersion == bundleResumeSchemaVersion ||
-		(cp.ResumeSchemaVersion == bundleResumeLegacyVersion &&
-			models.AppConfig.AcceptLegacyBundleV2Checkpoints())
+	versionAccepted := cp.ResumeSchemaVersion == bundleResumeSchemaVersion
 	if !versionAccepted ||
 		cp.ReportID != reportID ||
 		cp.EngineMode != engineMode ||

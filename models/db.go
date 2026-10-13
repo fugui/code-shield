@@ -343,7 +343,6 @@ func InitDynamicConfigs(seed Config) {
 	AppConfig.Identity = AppConfig.Governance.Identity
 	AppConfig.Arbitration = AppConfig.Governance.Arbitration
 	AppConfig.Lifecycle = AppConfig.Governance.Lifecycle
-	AppConfig.SyncLegacy()
 	AppConfig.Scanner.NormalizeDefaults()
 
 	log.Println("================================================================================")

@@ -100,7 +100,7 @@ type ThrottleInfo struct {
 	ScaleExpiresAt  *time.Time                     `json:"scale_expires_at"`  // 手动过期时间
 	IsManual        bool                           `json:"is_manual"`         // 是否正处于手动覆盖中
 	IsWorkHours     bool                           `json:"is_work_hours"`     // 当前是否命中工作时间
-	WorkHoursConfig models.WorkHoursThrottleConfig `json:"work_hours_config"` // 工作时间自动限流配置
+	WorkHoursConfig models.WorkHoursConfig `json:"work_hours_config"` // 工作时间自动限流配置
 }
 
 // ModelResourceStatus 封装单台 LLM 服务器的状态快照
@@ -149,7 +149,7 @@ type ModelDispatcher struct {
 	scaleExpiresAt     time.Time                      // 手动设置失效时间
 	scaleTimer         *time.Timer                    // 到期自动恢复定时器
 	stopHeartbeat      chan struct{}                  // 停止心跳通道
-	workHours          models.WorkHoursThrottleConfig // 内部纳管的工作时间限流配置
+	workHours          models.WorkHoursConfig // 内部纳管的工作时间限流配置
 	unsupportedWarned  map[string]time.Time           // 记录各 backend 最近一次直通降级告警时间
 	lastEffectiveScale float64                        // 记录上一时刻生效的 scale
 	lastThrottleMode   string                         // 记录上一时刻模式
@@ -185,7 +185,7 @@ func (d *ModelDispatcher) Close() {
 }
 
 // SetWorkHoursThrottle 线程安全地更新调度器工作时间限流配置
-func (d *ModelDispatcher) SetWorkHoursThrottle(cfg models.WorkHoursThrottleConfig) {
+func (d *ModelDispatcher) SetWorkHoursThrottle(cfg models.WorkHoursConfig) {
 	if d == nil {
 		return
 	}
@@ -220,65 +220,46 @@ func InitModelDispatcher() {
 		stopHeartbeat:        make(chan struct{}),
 		activeLeases:         make(map[string]*LLMSlotLease),
 		skipSuccessfulLeases: true,
-		workHours:            models.AppConfig.AI.WorkHoursThrottle,
+		workHours:            models.AppConfig.Scanner.Throttling.WorkHours,
 	}
 	d.metrics = newDispatcherMetrics()
 	d.cond = sync.NewCond(&d.mu)
 
-	if len(models.AppConfig.LLM.Resources) > 0 {
-		for i, res := range models.AppConfig.LLM.Resources {
-			resourceModel := res.ResourceModel()
-			concurrent := res.ResourceConcurrent()
-			if res.Driver == "native" && len(res.Endpoints) == 0 {
-				continue
-			}
-			mr := &ModelResource{
-				Index:      i,
-				ID:         res.ID,
-				Driver:     res.Driver,
-				Model:      resourceModel,
-				Concurrent: concurrent,
-				Endpoints:  res.Endpoints,
-			}
-			switch res.Driver {
-			case "opencode":
-				mr.OpenCode = resourceModel
-			case "claude":
-				mr.Claude = resourceModel
-			case "codex":
-				mr.Codex = resourceModel
-			case "agy":
-				mr.Agy = resourceModel
-			case "native":
-				mr.Native = resourceModel
-				if mr.Native == "" {
-					mr.Native = res.ID
-				}
-				if mr.Native == "" {
-					mr.Native = "native"
-				}
-			default:
-				mr.Native = resourceModel
-			}
-			d.resources = append(d.resources, mr)
+	for i, res := range models.AppConfig.LLM.Resources {
+		resourceModel := res.ResourceModel()
+		concurrent := res.ResourceConcurrent()
+		if res.Driver == "native" && len(res.Endpoints) == 0 {
+			continue
 		}
-	} else {
-		for i, mc := range models.AppConfig.AI.Models {
-			concurrent := mc.Concurrent
-			if concurrent <= 0 {
-				concurrent = 1
-			}
-			d.resources = append(d.resources, &ModelResource{
-				Index:      i,
-				OpenCode:   mc.OpenCode,
-				Claude:     mc.Claude,
-				Codex:      mc.Codex,
-				Agy:        mc.Agy,
-				Native:     mc.Native,
-				Concurrent: concurrent,
-			})
+		mr := &ModelResource{
+			Index:      i,
+			ID:         res.ID,
+			Driver:     res.Driver,
+			Model:      resourceModel,
+			Concurrent: concurrent,
+			Endpoints:  res.Endpoints,
 		}
-
+		switch res.Driver {
+		case "opencode":
+			mr.OpenCode = resourceModel
+		case "claude":
+			mr.Claude = resourceModel
+		case "codex":
+			mr.Codex = resourceModel
+		case "agy":
+			mr.Agy = resourceModel
+		case "native":
+			mr.Native = resourceModel
+			if mr.Native == "" {
+				mr.Native = res.ID
+			}
+			if mr.Native == "" {
+				mr.Native = "native"
+			}
+		default:
+			mr.Native = resourceModel
+		}
+		d.resources = append(d.resources, mr)
 	}
 
 	if len(d.resources) > 0 {

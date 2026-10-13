@@ -36,10 +36,10 @@ func TestCodexInvoker_BuildArgs(t *testing.T) {
 	}
 
 	// 保存并恢复全局配置，避免测试间状态污染
-	prevOutputFormat := models.AppConfig.AI.OutputFormat
-	t.Cleanup(func() { models.AppConfig.AI.OutputFormat = prevOutputFormat })
+	prevOutputFormat := models.AppConfig.Scanner.OutputFormat
+	t.Cleanup(func() { models.AppConfig.Scanner.OutputFormat = prevOutputFormat })
 
-	models.AppConfig.AI.OutputFormat = "json"
+	models.AppConfig.Scanner.OutputFormat = "json"
 	args, stdinPayload, err := invoker.buildArgs(req)
 	if err != nil {
 		t.Fatalf("buildArgs failed: %v", err)
@@ -92,10 +92,10 @@ func TestCodexInvoker_BuildArgsProfilePrefix(t *testing.T) {
 		ModelName:  "profile:sol",
 	}
 
-	prevOutputFormat := models.AppConfig.AI.OutputFormat
-	t.Cleanup(func() { models.AppConfig.AI.OutputFormat = prevOutputFormat })
+	prevOutputFormat := models.AppConfig.Scanner.OutputFormat
+	t.Cleanup(func() { models.AppConfig.Scanner.OutputFormat = prevOutputFormat })
 
-	models.AppConfig.AI.OutputFormat = "json"
+	models.AppConfig.Scanner.OutputFormat = "json"
 	args, _, err := invoker.buildArgs(req)
 	if err != nil {
 		t.Fatalf("buildArgs failed: %v", err)

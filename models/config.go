@@ -3,7 +3,6 @@ package models
 import (
 	"code-common/backend/configutil"
 	commonModels "code-common/backend/models"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -47,81 +46,9 @@ type ComputeResourceConfig struct {
 	FirstByteTimeoutSeconds int                      `yaml:"first_byte_timeout_seconds" json:"first_byte_timeout_seconds"`
 	IdleTimeoutSeconds      int                      `yaml:"idle_timeout_seconds" json:"idle_timeout_seconds"`
 	MaxOutputBytes          int                      `yaml:"max_output_bytes" json:"max_output_bytes"`
+	Model                   string                   `yaml:"model,omitempty" json:"model,omitempty"`
+	Concurrent              int                      `yaml:"concurrent,omitempty" json:"concurrent,omitempty"`
 	Endpoints               []ResourceEndpointConfig `yaml:"endpoints" json:"endpoints"`
-
-	legacyBaseURL    string
-	legacyAPIKey     string
-	legacyModel      string
-	legacyConcurrent int
-}
-
-func (c *ComputeResourceConfig) UnmarshalYAML(value *yaml.Node) error {
-	type computeResourceConfig ComputeResourceConfig
-	var raw computeResourceConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*c = ComputeResourceConfig(raw)
-	for i := 0; i+1 < len(value.Content); i += 2 {
-		switch strings.ToLower(strings.TrimSpace(value.Content[i].Value)) {
-		case "base_url":
-			c.legacyBaseURL = value.Content[i+1].Value
-		case "api_key":
-			c.legacyAPIKey = value.Content[i+1].Value
-		case "model":
-			c.legacyModel = value.Content[i+1].Value
-		case "concurrent":
-			if err := value.Content[i+1].Decode(&c.legacyConcurrent); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (c *ComputeResourceConfig) UnmarshalJSON(data []byte) error {
-	type computeResourceConfig ComputeResourceConfig
-	var raw computeResourceConfig
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	*c = ComputeResourceConfig(raw)
-	var legacy struct {
-		BaseURL    string `json:"base_url"`
-		APIKey     string `json:"api_key"`
-		Model      string `json:"model"`
-		Concurrent int    `json:"concurrent"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return err
-	}
-	c.legacyBaseURL = legacy.BaseURL
-	c.legacyAPIKey = legacy.APIKey
-	c.legacyModel = legacy.Model
-	c.legacyConcurrent = legacy.Concurrent
-	return nil
-}
-
-// MarshalJSON 序列化算力节点时回填旧版顶层连接字段。
-// 端点池重构后这些字段只被记录到私有兼容字段，
-// 若不在此处回填，/api/admin/config/full 会丢失顶层 concurrent 与 model：
-// 配置页“模型名”保存后刷新显示为空，且写回可能冲掉节点模型配置。
-func (c ComputeResourceConfig) MarshalJSON() ([]byte, error) {
-	type computeResourceConfig ComputeResourceConfig
-	type computeResourceJSON struct {
-		computeResourceConfig
-		BaseURL    string `json:"base_url,omitempty"`
-		APIKey     string `json:"api_key,omitempty"`
-		Model      string `json:"model,omitempty"`
-		Concurrent int    `json:"concurrent"`
-	}
-	return json.Marshal(computeResourceJSON{
-		computeResourceConfig: computeResourceConfig(c),
-		BaseURL:               c.legacyBaseURL,
-		APIKey:                c.legacyAPIKey,
-		Model:                 c.ResourceModel(),
-		Concurrent:            c.ResourceConcurrent(),
-	})
 }
 
 // LLMConfig 大模型算力供给层配置
@@ -229,6 +156,7 @@ type AnalysisRetryConfig struct {
 
 // ScannerConfig 智能扫描引擎与任务调度配置
 type ScannerConfig struct {
+	OutputFormat     string              `yaml:"output_format" json:"output_format"`
 	WorkerCount      int                 `yaml:"worker_count" json:"worker_count"`
 	ChunkConcurrency int                 `yaml:"chunk_concurrency" json:"chunk_concurrency"`
 	MaxQueueSize     int                 `yaml:"max_queue_size" json:"max_queue_size"`
@@ -243,19 +171,8 @@ type ScannerConfig struct {
 	Determinism      DeterminismConfig   `yaml:"determinism" json:"determinism"`
 }
 
-// ResumeConfig controls backward-compatible interpretation of legacy scan
-// checkpoints. The default is deliberately conservative.
-type ResumeConfig struct {
-	// LegacyV2Policy controls bundle checkpoints written by the previous
-	// schema version. "reject" replays them; "accept_success_as_complete" may
-	// only be enabled when callers know those checkpoints predate candidate
-	// salvage.
-	LegacyV2Policy string `yaml:"legacy_v2_policy" json:"legacy_v2_policy"`
-}
-
-func (c Config) AcceptLegacyBundleV2Checkpoints() bool {
-	return strings.EqualFold(strings.TrimSpace(c.Scanner.Resume.LegacyV2Policy), "accept_success_as_complete")
-}
+// ResumeConfig controls scan resumption policy.
+type ResumeConfig struct{}
 
 // ArtifactGuardConfig controls deterministic normalization and bounded recovery
 // for AI scanner artifacts.
@@ -296,8 +213,24 @@ func (c Config) SchemaRepairResource() string {
 	if value := strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource); value != "" {
 		return value
 	}
-	if value := strings.TrimSpace(c.AI.ToolBackends.RepairJSON); value != "" {
-		return value
+	return "native"
+}
+
+// ToolResource 根据工具名称（如 "repair_json", "finding_match", "feedback_extraction"）解析绑定的算力资源
+func (c Config) ToolResource(toolName string) string {
+	if c.Scanner.Tools.Overrides != nil {
+		if res, ok := c.Scanner.Tools.Overrides[toolName]; ok && strings.TrimSpace(res) != "" {
+			return strings.TrimSpace(res)
+		}
+	}
+	if toolName == "repair_json" && strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource) != "" {
+		return strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource)
+	}
+	if strings.TrimSpace(c.Scanner.Tools.DefaultResource) != "" {
+		return strings.TrimSpace(c.Scanner.Tools.DefaultResource)
+	}
+	if strings.TrimSpace(c.LLM.DefaultResource) != "" {
+		return strings.TrimSpace(c.LLM.DefaultResource)
 	}
 	return "native"
 }
@@ -428,9 +361,6 @@ func (s *ScannerConfig) NormalizeDefaults() {
 	}
 	if s.Artifact.CategoryRepairMaxCandidates <= 0 {
 		s.Artifact.CategoryRepairMaxCandidates = 20
-	}
-	if s.Resume.LegacyV2Policy == "" {
-		s.Resume.LegacyV2Policy = "reject"
 	}
 }
 
@@ -662,21 +592,7 @@ type AuthConfig struct {
 	OAuth2               OAuth2Config `yaml:"oauth2" json:"oauth2"`
 }
 
-// ==============================================================================
-// 4. 旧版结构体兼容别名 (Backward-Compatibility Types)
-// ==============================================================================
-
-type ModelConfig struct {
-	OpenCode   string `yaml:"opencode"`
-	Claude     string `yaml:"claude"`
-	Codex      string `yaml:"codex"`
-	Agy        string `yaml:"agy"`
-	Native     string `yaml:"native"`
-	Concurrent int    `yaml:"concurrent"`
-}
-
-type WorkHoursThrottleConfig = WorkHoursConfig
-
+// TierConfig 单个阶梯模型的资源配置
 type TierConfig struct {
 	Backend                 string             `yaml:"backend" json:"backend"`
 	Model                   string             `yaml:"model" json:"model"`
@@ -691,87 +607,6 @@ type TierConfig struct {
 	MaxSplitDepth           int                `yaml:"max_split_depth" json:"max_split_depth"`
 	Recovery                TierRecoveryConfig `yaml:"recovery" json:"recovery"`
 	ResourceID              string             `yaml:"resource_id" json:"resource_id"`
-}
-
-type DebateFlowConfig = DebateConfig
-
-type GovernanceSystemConfig struct {
-	ScopeGuardEnabled  bool `yaml:"scope_guard_enabled" json:"scope_guard_enabled"`
-	AutoResolveMissing bool `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
-	FeedbackInjection  bool `yaml:"feedback_injection" json:"feedback_injection"`
-	DiffGateStrict     bool `yaml:"diff_gate_strict" json:"diff_gate_strict"`
-}
-
-type NativeEndpointConfig = ResourceEndpointConfig
-
-// NativeLLMConfig is deprecated; endpoints are managed on native compute resources.
-type NativeLLMConfig struct {
-	MaxTokens               int                    `yaml:"max_tokens" json:"max_tokens"`
-	ResponseFormatJSON      bool                   `yaml:"response_format_json" json:"response_format_json"`
-	EnableThinking          bool                   `yaml:"enable_thinking" json:"enable_thinking"`
-	MaxRetries              int                    `yaml:"max_retries" json:"max_retries"`
-	RetryBackoffMs          int                    `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
-	AttemptTimeoutSeconds   int                    `yaml:"attempt_timeout_seconds" json:"attempt_timeout_seconds"`
-	FirstByteTimeoutSeconds int                    `yaml:"first_byte_timeout_seconds" json:"first_byte_timeout_seconds"`
-	IdleTimeoutSeconds      int                    `yaml:"idle_timeout_seconds" json:"idle_timeout_seconds"`
-	MaxOutputBytes          int                    `yaml:"max_output_bytes" json:"max_output_bytes"`
-	Endpoints               []NativeEndpointConfig `yaml:"endpoints" json:"endpoints"`
-
-	legacyEndpoint   string
-	legacyBaseURL    string
-	legacyAPIKey     string
-	legacyModelField string
-}
-
-func (n *NativeLLMConfig) UnmarshalYAML(value *yaml.Node) error {
-	type nativeLLMConfig NativeLLMConfig
-	var raw nativeLLMConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*n = NativeLLMConfig(raw)
-	for i := 0; i+1 < len(value.Content); i += 2 {
-		switch strings.ToLower(strings.TrimSpace(value.Content[i].Value)) {
-		case "endpoint":
-			n.legacyEndpoint = value.Content[i+1].Value
-		case "base_url":
-			n.legacyBaseURL = value.Content[i+1].Value
-		case "api_key":
-			n.legacyAPIKey = value.Content[i+1].Value
-		case "default_model":
-			n.legacyModelField = value.Content[i+1].Value
-		}
-	}
-	return nil
-}
-
-func (n *NativeLLMConfig) UnmarshalJSON(data []byte) error {
-	type nativeLLMConfig NativeLLMConfig
-	var raw nativeLLMConfig
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	*n = NativeLLMConfig(raw)
-	var legacy struct {
-		Endpoint     string `json:"endpoint"`
-		BaseURL      string `json:"base_url"`
-		APIKey       string `json:"api_key"`
-		DefaultModel string `json:"default_model"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return err
-	}
-	n.legacyEndpoint = legacy.Endpoint
-	n.legacyBaseURL = legacy.BaseURL
-	n.legacyAPIKey = legacy.APIKey
-	n.legacyModelField = legacy.DefaultModel
-	return nil
-}
-
-type ToolBackendsConfig struct {
-	RepairJSON         string `yaml:"repair_json" json:"repair_json"`
-	FindingMatch       string `yaml:"finding_match" json:"finding_match"`
-	FeedbackExtraction string `yaml:"feedback_extraction" json:"feedback_extraction"`
 }
 
 // ==============================================================================
@@ -794,228 +629,28 @@ type Config struct {
 	Notification NotificationConfig     `yaml:"notification" json:"notification"`
 	AIFix        AIFixConfig            `yaml:"ai_fix" json:"-"`
 	Retention    RetentionConfig        `yaml:"retention" json:"retention"`
-
-	// 兼容旧版 config.yaml 的 AI 块与影子镜像
-	AI struct {
-		Backend           string                  `yaml:"backend"`
-		DebugLogs         bool                    `yaml:"debug_logs"`
-		OutputFormat      string                  `yaml:"output_format"`
-		MockOnMissingCLI  *bool                   `yaml:"mock_on_missing_cli"`
-		WorkHoursThrottle WorkHoursThrottleConfig `yaml:"work_hours_throttle"`
-		Models            []ModelConfig           `yaml:"models"`
-		Native            NativeLLMConfig         `yaml:"native" json:"native"`
-		ToolBackends      ToolBackendsConfig      `yaml:"tool_backends" json:"tool_backends"`
-		Debate            DebateFlowConfig        `yaml:"debate" json:"debate"`
-	} `yaml:"ai"`
 }
 
 var AppConfig Config
-
-// SyncLegacy 保持新顶层结构与旧 AI 影子镜像的双向同步
-func (c *Config) SyncLegacy() {
-	// 1. 若新版 LLM 为空但旧版 AI 有配置，从旧版生成新版
-	if len(c.LLM.Resources) == 0 && (c.AI.Backend != "" || len(c.AI.Models) > 0 || hasLegacyNativeConnection(&c.AI.Native) || len(c.AI.Native.Endpoints) > 0) {
-		c.LLM.DefaultResource = "native"
-		c.LLM.DebugLogs = c.AI.DebugLogs
-
-		// 填充 native 资源节点
-		nativeRes := ComputeResourceConfig{
-			ID:                      "native",
-			Driver:                  "native",
-			ResponseFormatJSON:      c.AI.Native.ResponseFormatJSON,
-			EnableThinking:          c.AI.Native.EnableThinking,
-			MaxRetries:              c.AI.Native.MaxRetries,
-			RetryBackoffMs:          c.AI.Native.RetryBackoffMs,
-			MaxTokens:               c.AI.Native.MaxTokens,
-			AttemptTimeoutSeconds:   c.AI.Native.AttemptTimeoutSeconds,
-			FirstByteTimeoutSeconds: c.AI.Native.FirstByteTimeoutSeconds,
-			IdleTimeoutSeconds:      c.AI.Native.IdleTimeoutSeconds,
-			MaxOutputBytes:          c.AI.Native.MaxOutputBytes,
-		}
-		if len(c.AI.Native.Endpoints) > 0 {
-			for _, ep := range c.AI.Native.Endpoints {
-				nativeRes.Endpoints = append(nativeRes.Endpoints, ResourceEndpointConfig{
-					Name:       ep.Name,
-					BaseURL:    ep.BaseURL,
-					APIKey:     ep.APIKey,
-					Model:      ep.Model,
-					Concurrent: ep.Concurrent,
-				})
-			}
-		}
-		c.LLM.Resources = append(c.LLM.Resources, nativeRes)
-
-		// 填充 models 资源
-		for i, m := range c.AI.Models {
-			id := "model-" + string(rune('1'+i))
-			driver := "opencode"
-			modelName := m.OpenCode
-			if m.Claude != "" {
-				driver = "claude"
-				modelName = m.Claude
-			} else if m.Agy != "" {
-				driver = "agy"
-				modelName = m.Agy
-			} else if m.Codex != "" {
-				driver = "codex"
-				modelName = m.Codex
-			}
-			c.LLM.Resources = append(c.LLM.Resources, ComputeResourceConfig{
-				ID:     id,
-				Driver: driver,
-			})
-			c.LLM.Resources[len(c.LLM.Resources)-1].legacyModel = modelName
-			c.LLM.Resources[len(c.LLM.Resources)-1].legacyConcurrent = m.Concurrent
-		}
-	}
-
-	// 2. 若 Scanner 为空，从 Server 与 AI 填充
-	if c.Scanner.WorkerCount == 0 && c.Server.WorkerCount > 0 {
-		c.Scanner.WorkerCount = c.Server.WorkerCount
-	}
-	if c.Scanner.MaxQueueSize == 0 && c.Server.MaxQueueSize > 0 {
-		c.Scanner.MaxQueueSize = c.Server.MaxQueueSize
-	}
-	if c.Scanner.MockOnMissingCLI == nil && c.AI.MockOnMissingCLI != nil {
-		c.Scanner.MockOnMissingCLI = c.AI.MockOnMissingCLI
-	}
-	if !c.Scanner.Throttling.WorkHours.Enabled && c.AI.WorkHoursThrottle.Enabled {
-		c.Scanner.Throttling.WorkHours = c.AI.WorkHoursThrottle
-	}
-	if !c.Scanner.Debate.Enabled && c.AI.Debate.Enabled {
-		c.Scanner.Debate = c.AI.Debate
-	}
-	c.Scanner.NormalizeDefaults()
-	if c.Scanner.Tools.DefaultResource == "" {
-		c.Scanner.Tools.DefaultResource = "native"
-		c.Scanner.Tools.Overrides = map[string]string{
-			"repair_json":         c.AI.ToolBackends.RepairJSON,
-			"finding_match":       c.AI.ToolBackends.FindingMatch,
-			"feedback_extraction": c.AI.ToolBackends.FeedbackExtraction,
-		}
-	}
-
-	// 3. 将新版状态同步回旧版字段（保证旧业务逻辑不报错）
-	if c.Scanner.WorkerCount > 0 {
-		c.Server.WorkerCount = c.Scanner.WorkerCount
-	}
-	if c.Scanner.MaxQueueSize > 0 {
-		c.Server.MaxQueueSize = c.Scanner.MaxQueueSize
-	}
-	c.AI.MockOnMissingCLI = c.Scanner.MockOnMissingCLI
-	c.AI.WorkHoursThrottle = c.Scanner.Throttling.WorkHours
-	c.AI.DebugLogs = c.LLM.DebugLogs
-	c.AI.Debate = c.Scanner.Debate
-
-	c.NormalizeNativeEndpoints()
-
-	// 寻找 native 节点同步给 AI.Native
-	for _, res := range c.LLM.Resources {
-		if res.ID == "native" || res.Driver == "native" {
-			c.AI.Native.legacyBaseURL = ""
-			c.AI.Native.legacyEndpoint = ""
-			c.AI.Native.legacyAPIKey = ""
-			c.AI.Native.legacyModelField = ""
-			c.AI.Native.ResponseFormatJSON = res.ResponseFormatJSON
-			c.AI.Native.EnableThinking = res.EnableThinking
-			c.AI.Native.MaxTokens = res.MaxTokens
-			c.AI.Native.MaxRetries = res.MaxRetries
-			c.AI.Native.RetryBackoffMs = res.RetryBackoffMs
-			c.AI.Native.AttemptTimeoutSeconds = res.AttemptTimeoutSeconds
-			c.AI.Native.FirstByteTimeoutSeconds = res.FirstByteTimeoutSeconds
-			c.AI.Native.IdleTimeoutSeconds = res.IdleTimeoutSeconds
-			c.AI.Native.MaxOutputBytes = res.MaxOutputBytes
-			c.AI.Native.Endpoints = nil
-			for _, ep := range res.Endpoints {
-				c.AI.Native.Endpoints = append(c.AI.Native.Endpoints, ep)
-			}
-			break
-		}
-	}
-	if c.AI.Backend == "" {
-		if c.LLM.DefaultResource != "" {
-			c.AI.Backend = c.LLM.DefaultResource
-		} else {
-			c.AI.Backend = "claude"
-		}
-	}
-}
 
 // FindResource 根据 ID 或 Driver 查找匹配的算力资源配置
 func (c *Config) FindResource(id string) *ComputeResourceConfig {
 	return c.LLM.FindResource(id)
 }
 
-// NormalizeNativeEndpoints expands legacy native shorthand into endpoint pools.
-func (c *Config) NormalizeNativeEndpoints() {
-	for i := range c.LLM.Resources {
-		resource := &c.LLM.Resources[i]
-		if resource.Driver != "native" || len(resource.Endpoints) > 0 {
-			continue
-		}
-
-		baseURL := resource.legacyBaseURL
-		apiKey := resource.legacyAPIKey
-		model := resource.legacyModel
-		concurrent := resource.legacyConcurrent
-		if baseURL == "" && apiKey == "" && model == "" && !hasLegacyNativeConnection(&c.AI.Native) {
-			continue
-		}
-		if baseURL == "" {
-			baseURL = c.AI.Native.legacyBaseURL
-		}
-		if baseURL == "" {
-			baseURL = c.AI.Native.legacyEndpoint
-		}
-		if apiKey == "" {
-			apiKey = c.AI.Native.legacyAPIKey
-		}
-		if model == "" {
-			model = c.AI.Native.legacyModelField
-		}
-		if model == "" {
-			model = "glm-4-flash"
-		}
-		if concurrent <= 0 {
-			concurrent = 20
-		}
-		resource.Endpoints = []ResourceEndpointConfig{{
-			Name:       "default",
-			BaseURL:    baseURL,
-			APIKey:     apiKey,
-			Model:      model,
-			Concurrent: concurrent,
-		}}
-	}
-}
-
-func hasLegacyNativeConnection(cfg *NativeLLMConfig) bool {
-	return cfg.legacyEndpoint != "" || cfg.legacyBaseURL != "" || cfg.legacyAPIKey != "" || cfg.legacyModelField != ""
-}
-
 func (c ComputeResourceConfig) ResourceModel() string {
+	if c.Model != "" {
+		return c.Model
+	}
 	if len(c.Endpoints) == 1 {
 		return c.Endpoints[0].Model
-	}
-	if len(c.Endpoints) > 1 {
-		return ""
-	}
-	if c.legacyModel != "" {
-		return c.legacyModel
 	}
 	return ""
 }
 
 func (c ComputeResourceConfig) ResourceConcurrent() int {
-	if c.Driver == "native" {
-		concurrent := 0
-		for _, endpoint := range c.Endpoints {
-			concurrent += endpoint.Concurrent
-		}
-		return concurrent
-	}
-	if c.legacyConcurrent > 0 {
-		return c.legacyConcurrent
+	if c.Concurrent > 0 {
+		return c.Concurrent
 	}
 	if len(c.Endpoints) > 0 {
 		concurrent := 0
@@ -1144,8 +779,12 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 	if timeout <= 0 {
 		timeout = 600
 	}
+	backend := c.LLM.DefaultResource
+	if backend == "" {
+		backend = "claude"
+	}
 	return TierConfig{
-		Backend:        c.AI.Backend,
+		Backend:        backend,
 		Concurrent:     concurrent,
 		TimeoutSeconds: timeout,
 	}
@@ -1341,12 +980,12 @@ func LoadConfig(filename string) error {
 	cfg.Governance.Lifecycle = cfg.Lifecycle
 
 	// 默认输出格式
-	if cfg.AI.OutputFormat == "" {
-		cfg.AI.OutputFormat = "text"
+	if cfg.Scanner.OutputFormat == "" {
+		cfg.Scanner.OutputFormat = "text"
 	}
-	if cfg.AI.MockOnMissingCLI == nil {
+	if cfg.Scanner.MockOnMissingCLI == nil {
 		enabled := true
-		cfg.AI.MockOnMissingCLI = &enabled
+		cfg.Scanner.MockOnMissingCLI = &enabled
 	}
 	if cfg.Scanner.OpenCode.Continuation.MaxSeconds <= 0 {
 		cfg.Scanner.OpenCode.Continuation.MaxSeconds = 300
@@ -1356,9 +995,6 @@ func LoadConfig(filename string) error {
 	}
 	if cfg.Scanner.Artifact.SchemaRepairTimeoutSeconds <= 0 {
 		cfg.Scanner.Artifact.SchemaRepairTimeoutSeconds = 600
-	}
-	if cfg.Scanner.Artifact.SchemaRepairResource == "" {
-		cfg.Scanner.Artifact.SchemaRepairResource = cfg.AI.ToolBackends.RepairJSON
 	}
 	if cfg.Scanner.Artifact.SchemaRepairResource == "" {
 		cfg.Scanner.Artifact.SchemaRepairResource = "native"
@@ -1384,19 +1020,10 @@ func LoadConfig(filename string) error {
 	}
 	cfg.Scanner.NormalizeDefaults()
 
-	// 同步新旧配置
-	cfg.SyncLegacy()
-
 	// 算力总并发推导 WorkerCount
 	sumConcurrent := 0
 	for _, r := range cfg.LLM.Resources {
 		sumConcurrent += r.ResourceConcurrent()
-	}
-	for i := range cfg.AI.Models {
-		if cfg.AI.Models[i].Concurrent <= 0 {
-			cfg.AI.Models[i].Concurrent = 1
-		}
-		sumConcurrent += cfg.AI.Models[i].Concurrent
 	}
 
 	if cfg.Server.WorkerCount <= 0 {
@@ -1485,5 +1112,5 @@ func (c *Config) MockOnMissingCLIEnabled() bool {
 	if c.Scanner.MockOnMissingCLI != nil {
 		return *c.Scanner.MockOnMissingCLI
 	}
-	return c.AI.MockOnMissingCLI == nil || *c.AI.MockOnMissingCLI
+	return true
 }

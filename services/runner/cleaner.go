@@ -233,14 +233,14 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 	ext := filepath.Ext(jsonFilePath)
 	fixedPath := strings.TrimSuffix(jsonFilePath, ext) + ".fixed" + ext
 
-	backend := models.AppConfig.AI.ToolBackends.RepairJSON
-	if backend == "" {
-		backend = "native"
-	}
+	backend := models.AppConfig.ToolResource("repair_json")
 	if !invoker.IsValidAIBackend(backend) {
 		backend = aiBackend
 		if backend == "" {
-			backend = models.AppConfig.AI.Backend
+			backend = models.AppConfig.LLM.DefaultResource
+		}
+		if backend == "" {
+			backend = "native"
 		}
 	}
 

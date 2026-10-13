@@ -42,9 +42,10 @@ func main() {
 		log.Fatalf("Failed to load config.yaml: %v", err)
 	}
 
-	// 校验全局 AI 后端配置（空值已在 LoadConfig 中默认 claude）
-	if !services.IsValidAIBackend(models.AppConfig.AI.Backend) {
-		log.Fatalf("Invalid ai.backend %q in config.yaml. Allowed: claude, opencode, codex, agy", models.AppConfig.AI.Backend)
+	// 校验全局算力配置（空值已在 LoadConfig 中默认 claude）
+	defaultResource := models.AppConfig.LLM.DefaultResource
+	if defaultResource != "" && !services.IsValidAIBackend(defaultResource) && models.AppConfig.LLM.FindResource(defaultResource) == nil {
+		log.Fatalf("Invalid llm.default_resource %q in config.yaml. Allowed: claude, opencode, codex, agy, native or configured compute resource ID", defaultResource)
 	}
 
 	// Initialize database

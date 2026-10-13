@@ -35,6 +35,22 @@ func (m *configuredMockInvoker) Invoke(req AIRequest) error {
 	return nil
 }
 
+func setTestNativeResource(res models.ComputeResourceConfig) {
+	res.ID = "native"
+	res.Driver = "native"
+	found := false
+	for i, r := range models.AppConfig.LLM.Resources {
+		if r.ID == "native" || r.Driver == "native" {
+			models.AppConfig.LLM.Resources[i] = res
+			found = true
+			break
+		}
+	}
+	if !found {
+		models.AppConfig.LLM.Resources = append(models.AppConfig.LLM.Resources, res)
+	}
+}
+
 func TestNativeInvokerFallbackMapsNativeAliasToCLIModel(t *testing.T) {
 	var receivedModel string
 	RegisterAIInvoker("opencode", &modelCapturingMockInvoker{capture: func(req AIRequest) error {
@@ -115,12 +131,13 @@ func TestNativeInvoker_FallsBackToConfiguredThickAgent(t *testing.T) {
 	defer func() { models.AppConfig = origCfg }()
 	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{
 		{ID: "opencode-deepseek", Driver: "opencode", Endpoints: []models.ResourceEndpointConfig{{Name: "default", Model: "modelgate/deepseek-v4-flash"}}},
-		{ID: "native", Driver: "native", Endpoints: []models.ResourceEndpointConfig{{Name: "default", Model: "deepseek-v4-flash"}}},
-	}
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints:      []models.NativeEndpointConfig{{Name: "default", BaseURL: badServer.URL, Model: "deepseek-v4-flash", Concurrent: 20}},
-		MaxRetries:     1,
-		RetryBackoffMs: 1,
+		{
+			ID:             "native",
+			Driver:         "native",
+			Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: badServer.URL, Model: "deepseek-v4-flash", Concurrent: 20}},
+			MaxRetries:     1,
+			RetryBackoffMs: 1,
+		},
 	}
 
 	invoker := NewNativeInvoker()
@@ -165,7 +182,7 @@ func TestNativeInvokerResolveEndpointsEmpty(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Native = models.NativeLLMConfig{}
+	models.AppConfig.LLM.Resources = nil
 	invoker := NewNativeInvoker()
 	if endpoints := invoker.resolveEndpoints("glm-4-flash"); len(endpoints) != 0 {
 		t.Fatalf("expected empty endpoints, got %+v", endpoints)
@@ -189,15 +206,15 @@ func TestNativeInvokerTemperatureFallbackChain(t *testing.T) {
 
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			Model:      "glm-4-flash",
 			Concurrent: 1,
 		}},
 		MaxRetries: 1,
-	}
+	})
 	models.AppConfig.Scanner.Determinism.Enabled = true
 	models.AppConfig.Scanner.Determinism.Temperature = 0.2
 
@@ -268,8 +285,8 @@ func TestNativeInvoker_BasicSuccess(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
@@ -279,7 +296,7 @@ func TestNativeInvoker_BasicSuccess(t *testing.T) {
 		ResponseFormatJSON: true,
 		MaxRetries:         1,
 		RetryBackoffMs:     10,
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "output.json")
@@ -346,14 +363,14 @@ func TestNativeInvoker_FailoverAndRetry(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
+	setTestNativeResource(models.ComputeResourceConfig{
 		MaxRetries:     2,
 		RetryBackoffMs: 10,
-		Endpoints: []models.NativeEndpointConfig{
+		Endpoints: []models.ResourceEndpointConfig{
 			{Name: "s1", BaseURL: server1.URL, Model: "m1", Concurrent: 50},
 			{Name: "s2", BaseURL: server2.URL, Model: "m2", Concurrent: 50},
 		},
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "output.json")
@@ -396,12 +413,12 @@ func TestNativeInvoker_CircuitBreakerAndFallback(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Backend = "mock-fallback"
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints:      []models.NativeEndpointConfig{{Name: "default", BaseURL: badServer.URL, Model: "glm-4-flash", Concurrent: 20}},
+	models.AppConfig.LLM.DefaultResource = "mock-fallback"
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: badServer.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 5,
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	invoker.failureThreshold = 2 // 连续失败 2 次开启熔断
@@ -479,14 +496,14 @@ func TestNativeInvoker_UnauthorizedFailover(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
+	setTestNativeResource(models.ComputeResourceConfig{
 		MaxRetries:     2,
 		RetryBackoffMs: 10,
-		Endpoints: []models.NativeEndpointConfig{
+		Endpoints: []models.ResourceEndpointConfig{
 			{Name: "auth-bad", BaseURL: authServer.URL, APIKey: "bad-key", Model: "m1", Concurrent: 50},
 			{Name: "auth-backup", BaseURL: backupServer.URL, APIKey: "good-key", Model: "m2", Concurrent: 50},
 		},
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "output_auth.json")
@@ -551,8 +568,8 @@ func TestNativeInvoker_ResponseFormatDynamic(t *testing.T) {
 	defer func() { models.AppConfig = origCfg }()
 
 	// 1. 全局开启 ResponseFormatJSON=true，但请求显式声明 ResponseFormat="text"
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
@@ -560,7 +577,7 @@ func TestNativeInvoker_ResponseFormatDynamic(t *testing.T) {
 			Concurrent: 20,
 		}},
 		ResponseFormatJSON: true,
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "report.md")
@@ -580,7 +597,9 @@ func TestNativeInvoker_ResponseFormatDynamic(t *testing.T) {
 	}
 
 	// 2. 全局关闭 ResponseFormatJSON=false，但请求显式声明 ResponseFormat="json"
-	models.AppConfig.AI.Native.ResponseFormatJSON = false
+	if res := models.AppConfig.LLM.FindResource("native"); res != nil {
+		res.ResponseFormatJSON = false
+	}
 	err = invoker.Invoke(AIRequest{
 		PromptMsg:      "输出结构化 JSON",
 		OutputPath:     tmpOut,
@@ -619,15 +638,15 @@ func TestNativeInvoker_ThinkingControl(t *testing.T) {
 
 	// Existing dynamic configs omit enable_thinking; the zero value must disable
 	// unbounded reasoning for reasoning-style OpenAI-compatible models.
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
 			Model:      "deepseek-v4-flash",
 			Concurrent: 20,
 		}},
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "thinking.json")
@@ -650,8 +669,10 @@ func TestNativeInvoker_ThinkingControl(t *testing.T) {
 
 	// Models/providers that do not support the thinking field can explicitly
 	// restore the old wire format.
-	models.AppConfig.AI.Native.EnableThinking = true
-	t.Logf("config before second invoke: %#v", models.AppConfig.AI.Native)
+	if res := models.AppConfig.LLM.FindResource("native"); res != nil {
+		res.EnableThinking = true
+	}
+	t.Logf("config before second invoke: %#v", models.AppConfig.LLM.FindResource("native"))
 	if err := invoker.Invoke(AIRequest{PromptMsg: "provider default thinking", OutputPath: tmpOut, TimeoutMin: 1}); err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -681,8 +702,8 @@ func TestNativeInvoker_JSONModeStreams(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
@@ -690,7 +711,7 @@ func TestNativeInvoker_JSONModeStreams(t *testing.T) {
 			Concurrent: 20,
 		}},
 		ResponseFormatJSON: true,
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "output.json")
@@ -735,8 +756,8 @@ func TestNativeInvoker_StreamSurvivesAttemptTimeout(t *testing.T) {
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
 
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
@@ -746,7 +767,7 @@ func TestNativeInvoker_StreamSurvivesAttemptTimeout(t *testing.T) {
 		AttemptTimeoutSeconds:   1,
 		FirstByteTimeoutSeconds: 5,
 		IdleTimeoutSeconds:      5,
-	}
+	})
 
 	invoker := NewNativeInvoker()
 	tmpOut := filepath.Join(t.TempDir(), "output.json")

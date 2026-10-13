@@ -19,13 +19,13 @@ func TestClaudeInvoker_BuildArgs(t *testing.T) {
 		t.Fatalf("failed to write test settings file: %v", err)
 	}
 
-	prevFormat := models.AppConfig.AI.OutputFormat
+	prevFormat := models.AppConfig.Scanner.OutputFormat
 	prevDataDir := models.AppConfig.Server.DataDir
 	t.Cleanup(func() {
-		models.AppConfig.AI.OutputFormat = prevFormat
+		models.AppConfig.Scanner.OutputFormat = prevFormat
 		models.AppConfig.Server.DataDir = prevDataDir
 	})
-	models.AppConfig.AI.OutputFormat = "json"
+	models.AppConfig.Scanner.OutputFormat = "json"
 	models.AppConfig.Server.DataDir = tempDir
 
 	invoker := &ClaudeInvoker{}

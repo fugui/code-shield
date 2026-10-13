@@ -351,7 +351,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 	var debugLogFile *os.File
 	debugLogPath := req.OutputPath + ".debug.log"
 
-	if models.AppConfig.AI.DebugLogs {
+	if models.AppConfig.LLM.DebugLogs {
 		debugLogFile, err = os.Create(debugLogPath)
 		if err == nil {
 			defer debugLogFile.Close()
@@ -656,7 +656,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 			log.Printf("[%s] Failed to remove stdout mirror %s: %v\n", cliName, cliOutputPath, removeErr)
 		}
 	}
-	if !models.AppConfig.AI.DebugLogs {
+	if !models.AppConfig.LLM.DebugLogs {
 		if removeErr := os.Remove(debugLogPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("[%s] Failed to remove stale debug log %s: %v\n", cliName, debugLogPath, removeErr)
 		}

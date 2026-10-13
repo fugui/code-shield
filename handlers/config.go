@@ -198,7 +198,7 @@ func UpdateConfig(c *gin.Context) {
 }
 
 func syncWorkHoursThrottle() {
-	services.Dispatcher.SetWorkHoursThrottle(models.AppConfig.AI.WorkHoursThrottle)
+	services.Dispatcher.SetWorkHoursThrottle(models.AppConfig.Scanner.Throttling.WorkHours)
 }
 
 // GetCategoryConfig 获取指定 Category 的动态配置
@@ -264,7 +264,6 @@ func UpdateCategoryConfig(c *gin.Context) {
 			return
 		}
 		models.AppConfig.LLM = llmCfg
-		models.AppConfig.SyncLegacy()
 		services.Dispatcher.ReloadResources(models.AppConfig.LLM)
 	case "scanner":
 		var scannerCfg models.ScannerConfig
@@ -310,7 +309,6 @@ func UpdateCategoryConfig(c *gin.Context) {
 		return
 	}
 
-	models.AppConfig.SyncLegacy()
 	if cat == "scanner" {
 		syncWorkHoursThrottle()
 	}
@@ -408,7 +406,6 @@ func UpdateFullConfig(c *gin.Context) {
 			return
 		}
 		models.AppConfig.LLM = *req.LLM
-		models.AppConfig.SyncLegacy()
 		services.Dispatcher.ReloadResources(models.AppConfig.LLM)
 		_ = saveCategory("llm", *req.LLM)
 	}
@@ -441,7 +438,6 @@ func UpdateFullConfig(c *gin.Context) {
 		_ = saveCategory("notification", *req.Notification)
 	}
 
-	models.AppConfig.SyncLegacy()
 	if req.Scanner != nil {
 		syncWorkHoursThrottle()
 	}

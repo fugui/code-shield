@@ -18,14 +18,14 @@ func TestOpenCodeInvoker_BuildArgs(t *testing.T) {
 		t.Fatalf("failed to write test prompt file: %v", err)
 	}
 
-	prevFormat := models.AppConfig.AI.OutputFormat
-	prevDebug := models.AppConfig.AI.DebugLogs
+	prevFormat := models.AppConfig.Scanner.OutputFormat
+	prevDebug := models.AppConfig.LLM.DebugLogs
 	t.Cleanup(func() {
-		models.AppConfig.AI.OutputFormat = prevFormat
-		models.AppConfig.AI.DebugLogs = prevDebug
+		models.AppConfig.Scanner.OutputFormat = prevFormat
+		models.AppConfig.LLM.DebugLogs = prevDebug
 	})
-	models.AppConfig.AI.OutputFormat = "json"
-	models.AppConfig.AI.DebugLogs = false
+	models.AppConfig.Scanner.OutputFormat = "json"
+	models.AppConfig.LLM.DebugLogs = false
 
 	invoker := &OpenCodeInvoker{}
 	req := AIRequest{

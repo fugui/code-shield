@@ -220,14 +220,14 @@ func TestDispatcher_WorkHoursThrottle(t *testing.T) {
 		close(d.stopHeartbeat)
 	}()
 
-	models.AppConfig.AI.WorkHoursThrottle = models.WorkHoursThrottleConfig{
+	models.AppConfig.Scanner.Throttling.WorkHours = models.WorkHoursConfig{
 		Enabled:   true,
 		Workdays:  []int{1, 2, 3, 4, 5},
 		StartTime: "09:00",
 		EndTime:   "22:00",
 		Scale:     0.10,
 	}
-	d.SetWorkHoursThrottle(models.AppConfig.AI.WorkHoursThrottle)
+	d.SetWorkHoursThrottle(models.AppConfig.Scanner.Throttling.WorkHours)
 
 	monday10am := time.Date(2026, 8, 17, 10, 0, 0, 0, time.Local)
 	infoWork := d.getEffectiveScaleInfoLocked(monday10am)
@@ -267,7 +267,7 @@ func TestDispatcher_SetWorkHoursThrottleImmediate(t *testing.T) {
 		close(d.stopHeartbeat)
 	}()
 
-	cfg := models.WorkHoursThrottleConfig{
+	cfg := models.WorkHoursConfig{
 		Enabled:   true,
 		Workdays:  []int{3},
 		StartTime: "09:00",
@@ -306,14 +306,14 @@ func TestDispatcher_ManualOverrideWorkHours(t *testing.T) {
 	startHM := now.Add(-1 * time.Hour).Format("15:04")
 	endHM := now.Add(2 * time.Hour).Format("15:04")
 
-	models.AppConfig.AI.WorkHoursThrottle = models.WorkHoursThrottleConfig{
+	models.AppConfig.Scanner.Throttling.WorkHours = models.WorkHoursConfig{
 		Enabled:   true,
 		Workdays:  []int{weekday},
 		StartTime: startHM,
 		EndTime:   endHM,
 		Scale:     0.10,
 	}
-	d.SetWorkHoursThrottle(models.AppConfig.AI.WorkHoursThrottle)
+	d.SetWorkHoursThrottle(models.AppConfig.Scanner.Throttling.WorkHours)
 
 	infoWork := d.getEffectiveScaleInfoLocked(now)
 	if infoWork.ThrottleMode != "work_hours" || infoWork.EffectiveScale != 0.10 {

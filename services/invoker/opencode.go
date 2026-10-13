@@ -107,7 +107,7 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, func(), error) {
 		args = append(args, "--model", req.ModelName)
 	}
 
-	if models.AppConfig.AI.DebugLogs {
+	if models.AppConfig.LLM.DebugLogs {
 		args = append(args, "--print-logs", "--log-level", "INFO")
 	}
 

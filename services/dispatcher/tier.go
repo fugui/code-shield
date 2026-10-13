@@ -83,7 +83,10 @@ func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, override
 	}
 
 	if backend == "" {
-		backend = models.AppConfig.AI.Backend
+		backend = models.AppConfig.LLM.DefaultResource
+	}
+	if backend == "" {
+		backend = "claude"
 	}
 
 	acq := &TierAcquisition{

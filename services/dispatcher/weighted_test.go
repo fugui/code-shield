@@ -12,10 +12,10 @@ import (
 
 // TestDispatcher_WeightedProportionalAllocation 验证容量为 30 和 8 的两个池子分配 10 个请求时呈现严格的 8:2 加权比例
 func TestDispatcher_WeightedProportionalAllocation(t *testing.T) {
-	origThrottle := models.AppConfig.AI.WorkHoursThrottle
-	models.AppConfig.AI.WorkHoursThrottle.Enabled = false
+	origThrottle := models.AppConfig.Scanner.Throttling.WorkHours
+	models.AppConfig.Scanner.Throttling.WorkHours.Enabled = false
 	defer func() {
-		models.AppConfig.AI.WorkHoursThrottle = origThrottle
+		models.AppConfig.Scanner.Throttling.WorkHours = origThrottle
 	}()
 
 	d := &ModelDispatcher{
@@ -76,7 +76,7 @@ func TestDispatcher_WeightedDynamicBalance(t *testing.T) {
 		manualScale:   1.0,
 		stopHeartbeat: make(chan struct{}),
 		enabled:       true,
-		workHours:     models.WorkHoursThrottleConfig{Enabled: false},
+		workHours:     models.WorkHoursConfig{Enabled: false},
 	}
 	d.cond = sync.NewCond(&d.mu)
 	d.resources = []*ModelResource{

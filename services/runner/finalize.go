@@ -123,12 +123,9 @@ func Finalize(ctx *TaskContext, result TaskResult) error {
 
 	// 3. 执行专项治理归并（若启用 IsCampaign）
 	if ctx.TaskType.IsCampaign {
-		backend := models.AppConfig.AI.ToolBackends.FindingMatch
-		if backend == "" {
-			backend = "native"
-		}
+		backend := models.AppConfig.ToolResource("finding_match")
 		if !invoker.IsValidAIBackend(backend) {
-			backend = models.AppConfig.AI.Backend
+			backend = models.AppConfig.LLM.DefaultResource
 		}
 		if backend == "" {
 			backend = "claude"

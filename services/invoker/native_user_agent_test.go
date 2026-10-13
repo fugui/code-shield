@@ -19,11 +19,13 @@ func TestNativeInvokerSetsUserAgent(t *testing.T) {
 
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints:      []models.NativeEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:             "native",
+		Driver:         "native",
+		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     0,
 		RetryBackoffMs: 1,
-	}
+	}}
 
 	invoker := NewNativeInvoker()
 	err := invoker.Invoke(AIRequest{
