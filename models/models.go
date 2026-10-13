@@ -1228,23 +1228,6 @@ func UpdateActiveTaskReport(db *gorm.DB, reportID uint, updates map[string]inter
 	return affected, err
 }
 
-// KeyIssue 核心问题追踪
-type KeyIssue struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	RepoID       uint       `json:"repo_id"`
-	TaskReportID uint       `json:"task_report_id"`
-	Repo         Repository `gorm:"foreignKey:RepoID" json:"repo"`
-	TaskReport   TaskReport `gorm:"foreignKey:TaskReportID" json:"task_report"`
-	IssueType    string     `gorm:"not null" json:"issue_type"` // multithreading, lock, memory_leak, library
-	Title        string     `gorm:"not null" json:"title"`
-	FilePath     string     `json:"file_path"`
-	LineNumber   string     `json:"line_number"`
-	Status       string     `gorm:"default:open" json:"status"` // open, in_progress, resolved
-	AssigneeID   *uint      `json:"assignee_id"`
-	Assignee     *User      `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-}
-
 type SystemConfig struct {
 	ID               uint       `gorm:"primaryKey" json:"id"` // Always 1
 	AutoNotify       bool       `gorm:"default:false" json:"auto_notify"`
@@ -1476,14 +1459,10 @@ type CategoryConfusionMatrix struct {
 	CreatedAt    time.Time      `gorm:"index" json:"created_at"`
 }
 
-// MigrateDefectSlotSchema 适配 PostgreSQL 生产环境与 SQLite 单测环境的槽位 Schema 迁移
-func MigrateDefectSlotSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&Defect{}, &DefectAlias{}); err != nil {
-		return err
-	}
+// EnsureDefectSlotIndexes 适配 PostgreSQL 生产环境与 SQLite 单测环境的槽位索引保障
+func EnsureDefectSlotIndexes(db *gorm.DB) error {
 	if db.Dialector.Name() == "postgres" {
-		// PostgreSQL 生产环境：废除旧指纹唯一约束，建立基于 ACTIVE 状态 SlotKey 的强唯一索引与加速索引
-		_ = db.Exec(`DROP INDEX IF EXISTS uq_defects_current_identity;`).Error
+		// PostgreSQL 生产环境：建立基于 ACTIVE 状态 SlotKey 的强唯一索引与加速索引
 		if err := db.Exec(`
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_defect_active_slot_idx
 			ON defects (repo_id, task_type_id, slot_key)

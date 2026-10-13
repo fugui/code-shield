@@ -210,36 +210,6 @@ func TestEnsureBaseAgent(t *testing.T) {
 	}
 }
 
-func TestCleanupLegacyTaskAgents(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	agentDir := filepath.Join(home, ".config", "opencode", "agents")
-	if err := os.MkdirAll(agentDir, 0755); err != nil {
-		t.Fatalf("failed to create agents dir: %v", err)
-	}
-
-	legacy := []string{"shield-code-review-analysis.md", "shield-memory-leak-synthesis.md"}
-	kept := []string{"shield-base-scanner.md", "shield-custom.md", "other-agent.md"}
-	for _, f := range append(legacy, kept...) {
-		if err := os.WriteFile(filepath.Join(agentDir, f), []byte("x"), 0644); err != nil {
-			t.Fatalf("failed to create fixture %s: %v", f, err)
-		}
-	}
-
-	CleanupLegacyTaskAgents()
-
-	for _, f := range legacy {
-		if _, err := os.Stat(filepath.Join(agentDir, f)); !os.IsNotExist(err) {
-			t.Fatalf("expected legacy agent %s to be removed, got err=%v", f, err)
-		}
-	}
-	for _, f := range kept {
-		if _, err := os.Stat(filepath.Join(agentDir, f)); err != nil {
-			t.Fatalf("expected %s to be kept: %v", f, err)
-		}
-	}
-}
-
 func TestPrepareIsolatedDataDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
