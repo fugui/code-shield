@@ -11,24 +11,31 @@ import (
 
 var (
 	pyStdAssertPattern        = regexp.MustCompile(`(?m)^\s*assert\s+|self\.assert|pytest\.raises|mocker\.`)
+	pyStrongAssertPattern     = regexp.MustCompile(`(?m)^\s*assert\s+.+?==|\bself\.assertEqual|\bpytest\.raises|\b(assert_called_once_with|assert_called_with|assert_has_calls)\b`)
+	pyWeakAssertPattern       = regexp.MustCompile(`(?m)^\s*assert\s+(?:[a-zA-Z0-9_.]+\s+is\s+not\s+None|[a-zA-Z0-9_.]+\s*$|not\s+[a-zA-Z0-9_.]+\s*$)|\bself\.assertIsNotNone|\bself\.assertTrue`)
 	pyMockAssertPattern       = regexp.MustCompile(`\b(assert_called|assert_called_once|assert_called_with|assert_called_once_with|assert_any_call|assert_has_calls|assert_not_called)\b`)
 	pyMockTypoPattern         = regexp.MustCompile(`\b(asser_called|assert_caled|assert_called_wth|assert_calld)\b`)
 	pyLiteralTautologyPattern = regexp.MustCompile(`\bassert\s+(True|1|not\s+False|\([Tt]rue\))\b`)
-	pyAssertEqPattern         = regexp.MustCompile(`\bassert\s+([a-zA-Z0-9_]+)\s*==\s*([a-zA-Z0-9_]+)\b`)
 	pyHelperPattern           = regexp.MustCompile(`\b(verify_[A-Za-z0-9_]*|check_[A-Za-z0-9_]*|assert_[A-Za-z0-9_]*|validate_[A-Za-z0-9_]*)\s*\(`)
 	pyPrintPattern            = regexp.MustCompile(`(?m)^\s*(print\s*\(|logging\.|logger\.)[^)]*\)?\s*$`)
 	pyDocstringPattern        = regexp.MustCompile(`(?s)"""[\s\S]*?"""|'''[\s\S]*?'''`)
 	pySingleCommentPattern    = regexp.MustCompile(`(?m)#.*$`)
+	pyUnguardedReturnPattern  = regexp.MustCompile(`(?m)^\s*if\s+.+:\s*\n\s*return\b`)
+	pySwallowedExceptPattern  = regexp.MustCompile(`(?m)^\s*except(?:\s+[^:]*)?:\s*\n\s*(?:pass|\.\.\.|logging\.[^;\n]+|logger\.[^;\n]+)\s*$`)
 )
 
-func hasPySelfEqTautology(code string) bool {
-	matches := pyAssertEqPattern.FindAllStringSubmatch(code, -1)
+func hasPyUnguardedReturn(code string) bool {
+	matches := pyUnguardedReturnPattern.FindAllString(code, -1)
 	for _, m := range matches {
-		if len(m) >= 3 && m[1] == m[2] {
+		if !strings.Contains(m, "pytest.fail") && !strings.Contains(m, "self.fail") {
 			return true
 		}
 	}
 	return false
+}
+
+func hasPySwallowedExcept(code string) bool {
+	return pySwallowedExceptPattern.MatchString(code)
 }
 
 // PythonLinterRadar Python 特化轻量雷达探针
@@ -48,15 +55,11 @@ func (r *PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit
 	clean := pyDocstringPattern.ReplaceAllString(source, "")
 	clean = pySingleCommentPattern.ReplaceAllString(clean, "")
 
-	// 提取函数体（去除 def test_xxx(...): 头部）
-	body := clean
-	colonIdx := strings.Index(clean, ":")
-	if colonIdx >= 0 {
-		body = clean[colonIdx+1:]
-	}
+	// 2. 基于首行相对缩进提取纯函数体，避免参数类型注解冒号截断失真
+	body := extractPythonIndentBody(clean)
 	trimmed := strings.TrimSpace(body)
 
-	// 2. Tier 0 极速确诊：仅 pass / ... / 空函数体 / 仅 print 日志
+	// 3. Tier 0 极速确诊：仅 pass / ... / 空函数体 / 仅 print 日志
 	if trimmed == "" || trimmed == "pass" || trimmed == "..." {
 		return plugins.RadarResult{
 			Decision: plugins.DecisionTier0Defect,
@@ -75,12 +78,12 @@ func (r *PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit
 		}
 	}
 
-	// 3. Anti-Cheating Guard 恒真检测与 Mock 笔误排查
+	// 4. Anti-Cheating Guard 恒真检测与 Mock 笔误排查
 	var hints []plugins.StructuralFactHint
-	if pyLiteralTautologyPattern.MatchString(body) || hasPySelfEqTautology(body) {
+	if pyLiteralTautologyPattern.MatchString(body) || hasDeepSelfEqual(body, deepPyEqPattern) {
 		hints = append(hints, plugins.StructuralFactHint{
 			Kind:        "TAUTOLOGY_LITERAL",
-			Description: "检测到字面量恒真断言（如 assert True 或 assert x == x），断言恒真。",
+			Description: "检测到字面量恒真或自等断言（如 assert True 或 assert x == x），断言恒真。",
 		})
 	}
 	if pyMockTypoPattern.MatchString(body) && !pyMockAssertPattern.MatchString(body) {
@@ -90,20 +93,48 @@ func (r *PythonLinterRadar) InspectUnit(codesPath string, unit coverage.PlanUnit
 		})
 	}
 
+	// 5. 控制流异常与静默异常捕获嗅探
+	if hasPyUnguardedReturn(body) {
+		hints = append(hints, plugins.StructuralFactHint{
+			Kind:        "UNGUARDED_EARLY_RETURN",
+			Description: "用例内部存在条件提前 return 分支，可能导致后续断言被跳过形成假通过隐患。",
+		})
+	}
+	if hasPySwallowedExcept(body) {
+		hints = append(hints, plugins.StructuralFactHint{
+			Kind:        "SWALLOWED_EXCEPTION",
+			Description: "检测到 except 块内仅 pass/打日志而未唤起用例失败，存在异常被静默吞噬风险。",
+		})
+	}
+
+	// 6. 断言强度与密度分级
+	strongMatches := pyStrongAssertPattern.FindAllString(body, -1)
+	weakMatches := pyWeakAssertPattern.FindAllString(body, -1)
 	hasStdAssert := pyStdAssertPattern.MatchString(body)
 	hasMockAssert := pyMockAssertPattern.MatchString(body)
 	hasHelper := pyHelperPattern.MatchString(body)
+	effLines := countEffectiveLines(body)
 
-	// 4. Fast Pass 放行：包含标准 assert / pytest / mock 且无作弊嫌疑
-	if (hasStdAssert || hasMockAssert) && len(hints) == 0 {
+	if len(strongMatches) == 0 && len(weakMatches) == 1 && effLines >= 4 {
+		hints = append(hints, plugins.StructuralFactHint{
+			Kind:        "ISOLATED_WEAK_ASSERTION",
+			Description: "用例仅包含单个非空/存在性弱断言，缺乏对核心业务属性与期望值的强比对验证。",
+		})
+	}
+
+	// 7. Fast Pass 放行黄金准则：
+	// - 包含强断言（或极简短用例带弱断言，或规范 mock 期望校验）
+	// - 且无任何恒真作弊、无提前 return、无空 except、无孤立弱断言
+	canFastPass := (len(strongMatches) > 0 || (effLines < 4 && len(weakMatches) > 0) || hasMockAssert) && len(hints) == 0
+	if canFastPass && (hasStdAssert || hasMockAssert) {
 		return plugins.RadarResult{
 			Decision: plugins.DecisionFastPass,
-			Finding:  buildFastPassFinding(unit, "前置门禁校验通过：包含规范断言或Mock校验且无作弊模式。"),
-			Reason:   "contains standard assertions and no cheating patterns",
+			Finding:  buildFastPassFinding(unit, "前置门禁校验通过：包含规范强断言或Mock校验且无控制流异常或弱断言作弊模式。"),
+			Reason:   "contains standard strong assertions/mock checks and passed quality guards",
 		}
 	}
 
-	// 5. Need Verify 争议区
+	// 8. Need Verify 争议区
 	if hasHelper {
 		hints = append(hints, plugins.StructuralFactHint{
 			Kind:        "POTENTIAL_HELPER_VERIFICATION",
