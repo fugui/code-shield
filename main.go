@@ -13,7 +13,6 @@ import (
 	"code-shield/handlers"
 	"code-shield/models"
 	"code-shield/services"
-	"code-shield/services/migration"
 
 	"github.com/gin-gonic/gin"
 )
@@ -51,10 +50,6 @@ func main() {
 	// Initialize database
 	models.InitDB()
 
-	if err := migration.RunEngineConvergence(models.DB, "tasks"); err != nil {
-		log.Fatalf("engine convergence migration failed: %v", err)
-	}
-
 	// 初始化动态配置中心并完成 Seed-Once 检查与数据库 SSOT 加载
 	models.InitDynamicConfigs(models.AppConfig)
 
@@ -73,8 +68,6 @@ func main() {
 	if err := services.EnsureBaseAgent(); err != nil {
 		log.Printf("[Server] Warning: Failed to ensure base scanner agent: %v", err)
 	}
-	// 清理旧版按任务类型生成的 opencode agent 遗留文件
-	services.CleanupLegacyTaskAgents()
 
 	// 初始化任务队列调度状态（从 DB 加载是否暂停/排空）
 	services.InitQueueState()
@@ -184,10 +177,6 @@ func main() {
 				api.GET("/task-types/domain-families", handlers.GetDomainFamilies)
 				api.GET("/task-types/:id", handlers.GetTaskType)
 				api.GET("/task-types/:id/files", handlers.GetTaskTypeFiles)
-
-				api.GET("/issues", handlers.GetIssues)
-				api.POST("/issues", handlers.CreateIssue)
-				api.PATCH("/issues/:id", handlers.UpdateIssue)
 
 				// Dynamic Universal Campaign Routes (参数化通用专项路由)
 				campaignGroup := api.Group("/analysis/:campaign")

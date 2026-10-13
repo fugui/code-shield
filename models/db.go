@@ -36,7 +36,6 @@ func InitDB() {
 		&TaskType{},
 		&TaskTypeRevision{},
 		&TaskReport{},
-		&KeyIssue{},
 		&SystemConfig{},
 		&SystemDynamicConfig{},
 		&ScheduleConfig{},
@@ -62,60 +61,8 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
-	if err := MigrateDefectSlotSchema(DB); err != nil {
-		log.Printf("[DB] MigrateDefectSlotSchema notice: %v", err)
-	}
-	if err := DB.Exec("UPDATE analysis_findings SET category_status = 'LEGACY' WHERE category_status = ''").Error; err != nil {
-		log.Fatalf("failed to mark legacy category status: %v", err)
-	}
-
-	// P0 removes all legacy cross-scan reconciliation storage. These tables and
-	// denormalized lifecycle columns must not survive as a fallback state path.
-	for _, table := range []string{
-		"defect_fingerprint_records",
-		"scan_reconciliations",
-		"reconciliation_links",
-		"defect_entities",
-		"defect_entity_aliases",
-		"defect_entity_relations",
-		"defect_occurrences",
-		"report_file_coverages",
-		"defect_anchor_keys",
-		"defect_entity_state_versions",
-		"defect_entity_events",
-		"defect_assignments",
-	} {
-		if err := DB.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
-			log.Fatalf("failed to drop legacy reconciliation table %s: %v", table, err)
-		}
-	}
-	for _, column := range []string{"fingerprint", "diff_status", "anchor_state", "assignee_id", "assignee", "feedback", "feedback_at"} {
-		if DB.Migrator().HasColumn(&AnalysisFinding{}, column) {
-			if err := DB.Migrator().DropColumn(&AnalysisFinding{}, column); err != nil {
-				log.Fatalf("failed to drop legacy analysis_findings column %s: %v", column, err)
-			}
-		}
-	}
-	for _, column := range []string{"new_defects_count", "existed_defects_count", "resolved_defects_count"} {
-		if DB.Migrator().HasColumn(&TaskReport{}, column) {
-			if err := DB.Migrator().DropColumn(&TaskReport{}, column); err != nil {
-				log.Fatalf("failed to drop legacy task_reports column %s: %v", column, err)
-			}
-		}
-	}
-	// Phase 3 终态 DDL 瘦身：清理已彻底废除的旧几何字段 (occurrence_index, stmt_shape, prev_shape, next_shape)
-	for _, column := range []string{"occurrence_index", "stmt_shape", "prev_shape", "next_shape"} {
-		if DB.Migrator().HasColumn(&Defect{}, column) {
-			if err := DB.Migrator().DropColumn(&Defect{}, column); err != nil {
-				log.Fatalf("failed to drop legacy defects column %s: %v", column, err)
-			}
-		}
-	}
-
-	if err := DB.Model(&TaskType{}).
-		Where("is_campaign = ? AND governance_mode IN ?", true, []string{"", "defect_tracking"}).
-		Update("governance_mode", GovernanceModeFullLedger).Error; err != nil {
-		log.Fatalf("failed to normalize governance modes: %v", err)
+	if err := EnsureDefectSlotIndexes(DB); err != nil {
+		log.Printf("[DB] EnsureDefectSlotIndexes notice: %v", err)
 	}
 
 	if err := EnsureActiveTaskReportUniqueIndex(DB); err != nil {

@@ -76,11 +76,6 @@ func EnsureBaseAgent() error {
 	return invoker.EnsureBaseAgent()
 }
 
-// CleanupLegacyTaskAgents 清理旧版 OpenCode 遗留 Agent
-func CleanupLegacyTaskAgents() {
-	invoker.CleanupLegacyTaskAgents()
-}
-
 // GetAIInvoker 根据名称返回对应的 AIInvoker，未找到则回退到 claude。
 // 当调度器启用时，自动返回经过调度器并发配额管理的包装实例。
 func GetAIInvoker(name string) AIInvoker {

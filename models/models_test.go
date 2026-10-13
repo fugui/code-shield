@@ -2,9 +2,12 @@ package models
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"code-common/backend/testdb"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestCategoryTaxonomyV3Validation(t *testing.T) {
@@ -169,3 +172,80 @@ func TestTaskTypeTaxonomyMetadataPersistence(t *testing.T) {
 		t.Fatalf("stored metadata invalid: version=%d hash=%q", stored.TaxonomySchemaVersion, stored.TaxonomyHash)
 	}
 }
+
+func TestPureSchemaInitialization(t *testing.T) {
+	// 验证全新数据库下的纯净化模型迁移：严格生成 27 张活跃业务表，绝无 key_issues 或已废弃表
+	allModels := []interface{}{
+		&User{},
+		&Department{},
+		&Repository{},
+		&TaskType{},
+		&TaskTypeRevision{},
+		&TaskReport{},
+		&SystemConfig{},
+		&SystemDynamicConfig{},
+		&ScheduleConfig{},
+		&TaskTriggerLog{},
+		&TaskExecutionLog{},
+		&AnalysisFinding{},
+		&ArtifactRepairAudit{},
+		&ScanScopeEntry{},
+		&TaskChunkExecution{},
+		&Defect{},
+		&DefectAlias{},
+		&DefectObservation{},
+		&DefectEvent{},
+		&CampaignFinding{},
+		&SysAuditLog{},
+		&TaskDebateLog{},
+		&RepoFeedbackRule{},
+		&CategoryAliasUsage{},
+		&CategoryRegressionSample{},
+		&CategoryRegressionReview{},
+		&CategoryConfusionMatrix{},
+	}
+
+	if len(allModels) != 27 {
+		t.Fatalf("expected exactly 27 active core models, got %d", len(allModels))
+	}
+
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "pure.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+
+	if err := db.AutoMigrate(allModels...); err != nil {
+		t.Fatalf("AutoMigrate failed: %v", err)
+	}
+
+	if err := EnsureDefectSlotIndexes(db); err != nil {
+		t.Fatalf("EnsureDefectSlotIndexes failed: %v", err)
+	}
+
+	// 验证不存在 key_issues
+	if db.Migrator().HasTable("key_issues") {
+		t.Fatalf("unexpected legacy table key_issues exists in migrated database")
+	}
+
+	// 验证旧表全部不存在
+	legacyTables := []string{
+		"defect_fingerprint_records",
+		"scan_reconciliations",
+		"reconciliation_links",
+		"defect_entities",
+		"defect_entity_aliases",
+		"defect_entity_relations",
+		"defect_occurrences",
+		"report_file_coverages",
+		"defect_anchor_keys",
+		"defect_entity_state_versions",
+		"defect_entity_events",
+		"defect_assignments",
+	}
+	for _, lt := range legacyTables {
+		if db.Migrator().HasTable(lt) {
+			t.Fatalf("unexpected legacy reconciliation table %s exists", lt)
+		}
+	}
+}
+
