@@ -18,7 +18,7 @@ func (a *AgyInvoker) buildArgs(req AIRequest) ([]string, error) {
 	}
 
 	formatVal := "text"
-	if models.AppConfig.AI.OutputFormat == "json" {
+	if models.AppConfig.Scanner.OutputFormat == "json" {
 		formatVal = "json"
 	}
 

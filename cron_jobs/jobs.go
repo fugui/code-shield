@@ -26,7 +26,7 @@ func StartCronJobs() {
 
 	// 注册每天凌晨 03:30 自动执行的磁盘临时文件 GC 清理任务
 	_, err := globalCron.AddFunc("30 3 * * *", func() {
-		retentionDays := models.AppConfig.AI.Debate.LogRetentionDays
+		retentionDays := models.AppConfig.Scanner.Debate.LogRetentionDays
 		if retentionDays <= 0 {
 			retentionDays = 7
 		}

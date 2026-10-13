@@ -492,8 +492,8 @@ func (e *DebateEngine) ProcessBundle(ctx *engines.EngineContext, bundle chunker.
 	log.Printf("[DebateEngine] Bundle [%s]: Hunter identified %d candidates.", bundle.Name, len(hunterOut.Candidates))
 
 	maxCap := 100
-	if models.AppConfig.AI.Debate.MaxCandidatesPerChunk > 0 {
-		maxCap = models.AppConfig.AI.Debate.MaxCandidatesPerChunk
+	if models.AppConfig.Scanner.Debate.MaxCandidatesPerChunk > 0 {
+		maxCap = models.AppConfig.Scanner.Debate.MaxCandidatesPerChunk
 	}
 	if len(hunterOut.Candidates) > maxCap {
 		log.Printf("[DebateEngine] Bundle [%s]: Truncating %d candidates to top %d for debate",
@@ -2085,7 +2085,10 @@ func invokeAITierWithRequestOptions(
 	workCtx ...*invoker.LLMWorkContext,
 ) (string, int64, error) {
 	if backend == "" {
-		backend = models.AppConfig.AI.Backend
+		backend = models.AppConfig.LLM.DefaultResource
+	}
+	if backend == "" {
+		backend = "claude"
 	}
 
 	rawInv, ok := invoker.GetRawInvoker(backend)
@@ -2113,8 +2116,8 @@ func invokeAITierWithRequestOptions(
 	timeoutMin := 30
 	if timeoutSeconds > 0 {
 		timeoutMin = (timeoutSeconds + 59) / 60
-	} else if models.AppConfig.AI.Debate.StageTimeoutSeconds > 0 {
-		timeoutMin = (models.AppConfig.AI.Debate.StageTimeoutSeconds + 59) / 60
+	} else if models.AppConfig.Scanner.Debate.StageTimeoutSeconds > 0 {
+		timeoutMin = (models.AppConfig.Scanner.Debate.StageTimeoutSeconds + 59) / 60
 	}
 
 	var selectedWorkCtx *invoker.LLMWorkContext

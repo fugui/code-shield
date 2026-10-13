@@ -75,8 +75,10 @@ func TestNativeInvokerAutoSchemaFallbackToJSONObject(t *testing.T) {
 
 	origConfig := models.AppConfig
 	t.Cleanup(func() { models.AppConfig = origConfig })
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:     "native",
+		Driver: "native",
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
@@ -84,7 +86,7 @@ func TestNativeInvokerAutoSchemaFallbackToJSONObject(t *testing.T) {
 			Concurrent: 20,
 		}},
 		MaxRetries: 0,
-	}
+	}}
 
 	outputPath := filepath.Join(t.TempDir(), "artifact.json")
 	request := AIRequest{
@@ -127,8 +129,10 @@ func TestNativeInvokerStrictSchemaDoesNotFallback(t *testing.T) {
 
 	origConfig := models.AppConfig
 	t.Cleanup(func() { models.AppConfig = origConfig })
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:     "native",
+		Driver: "native",
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
@@ -136,7 +140,7 @@ func TestNativeInvokerStrictSchemaDoesNotFallback(t *testing.T) {
 			Concurrent: 20,
 		}},
 		MaxRetries: 0,
-	}
+	}}
 
 	request := AIRequest{
 		PromptMsg:  "produce assessment",

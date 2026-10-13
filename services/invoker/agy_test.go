@@ -35,10 +35,10 @@ func TestAgyInvoker_BuildArgs(t *testing.T) {
 		ModelName:  "gemini-3.5-pro",
 	}
 
-	prevOutputFormat := models.AppConfig.AI.OutputFormat
-	t.Cleanup(func() { models.AppConfig.AI.OutputFormat = prevOutputFormat })
+	prevOutputFormat := models.AppConfig.Scanner.OutputFormat
+	t.Cleanup(func() { models.AppConfig.Scanner.OutputFormat = prevOutputFormat })
 
-	models.AppConfig.AI.OutputFormat = "json"
+	models.AppConfig.Scanner.OutputFormat = "json"
 	args, err := invoker.buildArgs(req)
 	if err != nil {
 		t.Fatalf("buildArgs failed: %v", err)

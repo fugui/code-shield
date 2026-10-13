@@ -90,12 +90,12 @@ func TestBuildReadOnlyPromptPayload(t *testing.T) {
 func TestRunCLIProcess_MockFallbackStrictness(t *testing.T) {
 	tempDir := t.TempDir()
 
-	prevMock := models.AppConfig.AI.MockOnMissingCLI
-	t.Cleanup(func() { models.AppConfig.AI.MockOnMissingCLI = prevMock })
+	prevMock := models.AppConfig.Scanner.MockOnMissingCLI
+	t.Cleanup(func() { models.AppConfig.Scanner.MockOnMissingCLI = prevMock })
 
 	// 1. 二进制不存在且 mock 开启（默认）→ 模拟成功并写空发现报告
 	enabled := true
-	models.AppConfig.AI.MockOnMissingCLI = &enabled
+	models.AppConfig.Scanner.MockOnMissingCLI = &enabled
 	out1 := filepath.Join(tempDir, "mock.json")
 	err := RunCLIProcess("non-existent-ai-cli-xyz", []string{"run"}, AIRequest{
 		WorkDir:    tempDir,
@@ -116,7 +116,7 @@ func TestRunCLIProcess_MockFallbackStrictness(t *testing.T) {
 
 	// 2. mock 关闭 → 返回错误且不写输出文件
 	disabled := false
-	models.AppConfig.AI.MockOnMissingCLI = &disabled
+	models.AppConfig.Scanner.MockOnMissingCLI = &disabled
 	out2 := filepath.Join(tempDir, "no-mock.json")
 	err = RunCLIProcess("non-existent-ai-cli-xyz", []string{"run"}, AIRequest{
 		WorkDir:    tempDir,

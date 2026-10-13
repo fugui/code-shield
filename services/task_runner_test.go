@@ -856,10 +856,10 @@ func TestCampaignHooks(t *testing.T) {
 	// 注册并配置 Mock AI Backend
 	mockInvoker := &MockAIInvokerForMatch{}
 	RegisterAIInvoker("mock_match_backend", mockInvoker)
-	oldBackend := models.AppConfig.AI.Backend
-	models.AppConfig.AI.Backend = "mock_match_backend"
+	oldBackend := models.AppConfig.LLM.DefaultResource
+	models.AppConfig.LLM.DefaultResource = "mock_match_backend"
 	defer func() {
-		models.AppConfig.AI.Backend = oldBackend
+		models.AppConfig.LLM.DefaultResource = oldBackend
 	}()
 
 	// 2. 初始化基本实体

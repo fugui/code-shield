@@ -74,14 +74,23 @@ func (n *NativeInvoker) Name() string {
 	return "native"
 }
 
+func getNativeConfig() models.ComputeResourceConfig {
+	if res := models.AppConfig.LLM.FindResource("native"); res != nil {
+		return *res
+	}
+	return models.ComputeResourceConfig{
+		Driver: "native",
+	}
+}
+
 // resolveEndpoints 智能解析当前可用的异构端点候选列表
-func (n *NativeInvoker) resolveEndpoints(targetModel string) []models.NativeEndpointConfig {
-	cfg := models.AppConfig.AI.Native
+func (n *NativeInvoker) resolveEndpoints(targetModel string) []models.ResourceEndpointConfig {
+	cfg := getNativeConfig()
 	if len(cfg.Endpoints) == 0 {
 		return nil
 	}
 
-	var matched []models.NativeEndpointConfig
+	var matched []models.ResourceEndpointConfig
 	if targetModel != "" {
 		for _, ep := range cfg.Endpoints {
 			if strings.EqualFold(ep.Model, targetModel) {
@@ -154,9 +163,9 @@ func selectNonNativeFallbackResource() (string, *models.ComputeResourceConfig) {
 		}
 	}
 
-	// Compatibility with legacy AI.Models configs.
-	legacy := models.AppConfig.AI.Backend
-	if !strings.EqualFold(legacy, "native") {
+	// Fallback to default non-native resource if configured
+	legacy := models.AppConfig.LLM.DefaultResource
+	if legacy != "" && !strings.EqualFold(legacy, "native") {
 		if inv, ok := GetRawInvoker(legacy); ok && inv != nil {
 			return legacy, nil
 		}
@@ -216,7 +225,7 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cfg := models.AppConfig.AI.Native
+	cfg := getNativeConfig()
 	if req.AttemptTimeoutSeconds > 0 {
 		cfg.AttemptTimeoutSeconds = req.AttemptTimeoutSeconds
 	}
@@ -645,7 +654,7 @@ func nativeSeconds(value, fallback int) time.Duration {
 	return time.Duration(value) * time.Second
 }
 
-func nativeAttemptTimeout(cfg models.NativeLLMConfig, parent context.Context) time.Duration {
+func nativeAttemptTimeout(cfg models.ComputeResourceConfig, parent context.Context) time.Duration {
 	timeout := nativeSeconds(cfg.AttemptTimeoutSeconds, 300)
 	if deadline, ok := parent.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
@@ -659,14 +668,14 @@ func isEventStreamResponse(resp *http.Response) bool {
 	return strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream")
 }
 
-func nativeMaxOutputBytes(cfg models.NativeLLMConfig) int {
+func nativeMaxOutputBytes(cfg models.ComputeResourceConfig) int {
 	if cfg.MaxOutputBytes > 0 {
 		return cfg.MaxOutputBytes
 	}
 	return 32 * 1024
 }
 
-func readNativeStreamingChat(resp *http.Response, cfg models.NativeLLMConfig, requestStart time.Time, notify func(level, stream, format string, args ...any)) (string, int64, nativeStreamStats, error) {
+func readNativeStreamingChat(resp *http.Response, cfg models.ComputeResourceConfig, requestStart time.Time, notify func(level, stream, format string, args ...any)) (string, int64, nativeStreamStats, error) {
 	if resp.Body == nil {
 		return "", 0, nativeStreamStats{}, NewClassifiedError(ErrorClassOutputInvalid, "nil response body")
 	}

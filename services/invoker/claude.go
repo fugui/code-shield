@@ -19,7 +19,7 @@ func (c *ClaudeInvoker) buildArgs(req AIRequest) ([]string, error) {
 	}
 
 	formatVal := "text"
-	if models.AppConfig.AI.OutputFormat == "json" {
+	if models.AppConfig.Scanner.OutputFormat == "json" {
 		formatVal = "stream-json"
 	}
 	args := []string{"-p", promptMsg, "--output-format", formatVal, "--disable-slash-commands"}

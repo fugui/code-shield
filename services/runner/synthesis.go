@@ -301,7 +301,10 @@ func ExecuteSynthesisOnce(ctx *TaskContext, synthesisInputPath string, suffixPro
 			CleanSynthesisTempFiles(ctx.ReportPath)
 			backend := candidate.Driver
 			if backend == "" {
-				backend = models.AppConfig.AI.Backend
+				backend = models.AppConfig.LLM.DefaultResource
+			}
+			if backend == "" {
+				backend = "claude"
 			}
 			modelName := candidate.Model
 			if modelName == "" {

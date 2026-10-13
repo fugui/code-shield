@@ -27,7 +27,7 @@ func TestReadNativeStreamingChatIdleTimeout(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	cfg := models.NativeLLMConfig{FirstByteTimeoutSeconds: 1, IdleTimeoutSeconds: 5}
+	cfg := models.ComputeResourceConfig{FirstByteTimeoutSeconds: 1, IdleTimeoutSeconds: 5}
 	_, _, _, err = readNativeStreamingChat(resp, cfg, time.Now(), func(level, stream, format string, args ...any) {})
 	if err == nil {
 		t.Fatal("expected idle timeout error")

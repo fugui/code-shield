@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 func TestAssessmentJSONSchemaModeDefaultsOff(t *testing.T) {
@@ -273,101 +271,9 @@ func TestGetAnalysisRetryConfigDefaults(t *testing.T) {
 	}
 }
 
-func TestNormalizeNativeEndpointsLegacyShorthand(t *testing.T) {
-	configYAML := `
-llm:
-  resources:
-    - id: "native"
-      driver: "native"
-      base_url: "http://legacy.invalid/v1/chat/completions"
-      api_key: "legacy-key"
-      model: "legacy-model"
-      concurrent: 7
-`
-	var cfg Config
-	if err := yaml.Unmarshal([]byte(configYAML), &cfg); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-	cfg.SyncLegacy()
-
-	resource := cfg.FindResource("native")
-	if resource == nil {
-		t.Fatal("expected native resource")
-	}
-	if len(resource.Endpoints) != 1 {
-		t.Fatalf("expected one endpoint, got %+v", resource.Endpoints)
-	}
-	endpoint := resource.Endpoints[0]
-	if endpoint.Name != "default" ||
-		endpoint.BaseURL != "http://legacy.invalid/v1/chat/completions" ||
-		endpoint.APIKey != "legacy-key" ||
-		endpoint.Model != "legacy-model" ||
-		endpoint.Concurrent != 7 {
-		t.Fatalf("unexpected normalized endpoint: %+v", endpoint)
-	}
-}
-
-func TestNormalizeNativeEndpointsFromLegacyAINative(t *testing.T) {
-	configYAML := `
-ai:
-  native:
-    base_url: "http://legacy.invalid/v1/chat/completions"
-    api_key: "legacy-key"
-    default_model: "legacy-model"
-`
-	var cfg Config
-	if err := yaml.Unmarshal([]byte(configYAML), &cfg); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-	cfg.SyncLegacy()
-
-	resource := cfg.FindResource("native")
-	if resource == nil || len(resource.Endpoints) != 1 {
-		t.Fatalf("expected normalized native endpoint, got %+v", resource)
-	}
-	endpoint := resource.Endpoints[0]
-	if endpoint.BaseURL != "http://legacy.invalid/v1/chat/completions" ||
-		endpoint.APIKey != "legacy-key" ||
-		endpoint.Model != "legacy-model" ||
-		endpoint.Concurrent != 20 {
-		t.Fatalf("unexpected legacy endpoint: %+v", endpoint)
-	}
-}
-
-func TestNormalizeNativeEndpointsFromLegacyDatabaseJSON(t *testing.T) {
-	recordJSON := `{
-		"default_resource": "native",
-		"resources": [{
-			"id": "native",
-			"driver": "native",
-			"base_url": "http://database.invalid/v1/chat/completions",
-			"api_key": "database-key",
-			"model": "database-model",
-			"concurrent": 9
-		}]
-	}`
-	var cfg Config
-	if err := json.Unmarshal([]byte(recordJSON), &cfg.LLM); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-	cfg.SyncLegacy()
-
-	resource := cfg.FindResource("native")
-	if resource == nil || len(resource.Endpoints) != 1 {
-		t.Fatalf("expected normalized native endpoint, got %+v", resource)
-	}
-	endpoint := resource.Endpoints[0]
-	if endpoint.BaseURL != "http://database.invalid/v1/chat/completions" ||
-		endpoint.APIKey != "database-key" ||
-		endpoint.Model != "database-model" ||
-		endpoint.Concurrent != 9 {
-		t.Fatalf("unexpected database endpoint: %+v", endpoint)
-	}
-}
-
 func TestGetTierConfigUsesStageTimeoutFallback(t *testing.T) {
 	cfg := Config{}
-	cfg.AI.Backend = "native"
+	cfg.LLM.DefaultResource = "native"
 	cfg.Server.WorkerCount = 8
 	cfg.Scanner.Debate.StageTimeoutSeconds = 1800
 

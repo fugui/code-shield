@@ -102,7 +102,7 @@ func (d *ModelDispatcher) ResourceHealth(resourceID string) (bool, bool) {
 }
 
 // isInsideWorkHours 判定指定时刻是否处于工作时间窗口内
-func isInsideWorkHours(now time.Time, cfg models.WorkHoursThrottleConfig) bool {
+func isInsideWorkHours(now time.Time, cfg models.WorkHoursConfig) bool {
 	if !cfg.Enabled {
 		return false
 	}
@@ -308,7 +308,7 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.workHours = models.AppConfig.AI.WorkHoursThrottle
+	d.workHours = models.AppConfig.Scanner.Throttling.WorkHours
 
 	existingByKey := make(map[string]*ModelResource, len(d.resources))
 	for _, r := range d.resources {

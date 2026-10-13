@@ -24,15 +24,17 @@ func TestNativeInvokerTextStreamMetricsAndMaxTokens(t *testing.T) {
 
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:     "native",
+		Driver: "native",
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
 			Concurrent: 20,
 		}},
 		MaxRetries: 0,
-	}
+	}}
 
 	invoker := NewNativeInvoker()
 	outputPath := filepath.Join(t.TempDir(), "report.md")
@@ -77,15 +79,17 @@ func TestNativeInvokerStreamsDeltasToConsole(t *testing.T) {
 
 	origCfg := models.AppConfig
 	defer func() { models.AppConfig = origCfg }()
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
-		Endpoints: []models.NativeEndpointConfig{{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:     "native",
+		Driver: "native",
+		Endpoints: []models.ResourceEndpointConfig{{
 			Name:       "default",
 			BaseURL:    server.URL,
 			APIKey:     "test-key",
 			Concurrent: 20,
 		}},
 		MaxRetries: 0,
-	}
+	}}
 
 	outputPath := filepath.Join(t.TempDir(), "report.md")
 	obs := NewCallObservability(AIRequest{OutputPath: outputPath}, "native", "native")

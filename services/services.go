@@ -465,12 +465,9 @@ func SanitizeCategory(rawCategory string, allowedCategories []string) string {
 
 // ExtractFeedbackRuleViaNative 使用 Native Thin LLM 提炼误报特征规则，委托至 governance 子包
 func ExtractFeedbackRuleViaNative(filePath, codeSnippet, defectTitle, userReason string) (*ExtractedFeedbackRule, error) {
-	backend := models.AppConfig.AI.ToolBackends.FeedbackExtraction
-	if backend == "" {
-		backend = "native"
-	}
+	backend := models.AppConfig.ToolResource("feedback_extraction")
 	if !IsValidAIBackend(backend) {
-		backend = models.AppConfig.AI.Backend
+		backend = models.AppConfig.LLM.DefaultResource
 	}
 	if backend == "" {
 		backend = "native"
@@ -541,12 +538,9 @@ func executeHooks(ctx *taskContext, findings []models.AnalysisFinding) {
 
 // handleGenericCampaignHook 将任务执行上下文适配并转接至治理领域的 HandleGenericCampaign
 func handleGenericCampaignHook(ctx *taskContext, findings []models.AnalysisFinding) error {
-	backend := models.AppConfig.AI.ToolBackends.FindingMatch
-	if backend == "" {
-		backend = "native"
-	}
+	backend := models.AppConfig.ToolResource("finding_match")
 	if !IsValidAIBackend(backend) {
-		backend = models.AppConfig.AI.Backend
+		backend = models.AppConfig.LLM.DefaultResource
 	}
 	if backend == "" {
 		backend = "claude"

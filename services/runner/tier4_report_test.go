@@ -194,11 +194,13 @@ func TestExecuteSynthesisAIFailureUsesDeterministicReport(t *testing.T) {
 		Resource:       "native",
 		TimeoutSeconds: 300,
 	}
-	models.AppConfig.AI.Native = models.NativeLLMConfig{
+	models.AppConfig.LLM.Resources = []models.ComputeResourceConfig{{
+		ID:             "native",
+		Driver:         "native",
 		Endpoints:      []models.ResourceEndpointConfig{{Name: "default", BaseURL: server.URL, Model: "glm-4-flash", Concurrent: 20}},
 		MaxRetries:     1,
 		RetryBackoffMs: 1,
-	}
+	}}
 
 	tempDir := t.TempDir()
 	reportPath := filepath.Join(tempDir, "report.md")
