@@ -18,9 +18,10 @@ func TestUpsertDefectAliasesReusesExistingStrongKey(t *testing.T) {
 	if err := db.AutoMigrate(&models.DefectAlias{}); err != nil {
 		t.Fatalf("migrate aliases: %v", err)
 	}
+	slotKey := ComputePreciseSlotKey(ComputeCoreSlotKey("src/a.cpp", "foo", "memory", "ptr"), ComputeStmtAnchorHash("delete ptr"))
 	existing := models.DefectAlias{
-		DefectID: 847, RepoID: 224, TaskTypeID: 13, AliasType: AliasK2,
-		AliasValue: "strong-key", AliasClass: AliasStrong,
+		DefectID: 847, RepoID: 224, TaskTypeID: 13, AliasType: AliasSlotHealed,
+		AliasValue: slotKey, AliasClass: AliasStrong,
 		FirstReportID: 19357, LastReportID: 19357, HitCount: 1,
 	}
 	if err := db.Create(&existing).Error; err != nil {
@@ -33,13 +34,16 @@ func TestUpsertDefectAliasesReusesExistingStrongKey(t *testing.T) {
 		Repo:     models.Repository{ID: 224},
 		TaskType: models.TaskType{ID: 13},
 	}
-	identity := Identity{K2: "strong-key", NormPath: "src/a.cpp"}
+	identity := Identity{
+		NormPath: "src/a.cpp", SymbolPath: "foo", DefectClassMajor: "memory",
+		CleanToken: "delete ptr", SlotKey: slotKey,
+	}
 	if err := upsertDefectAliases(db, input, 4618, identity, now); err != nil {
 		t.Fatalf("upsert aliases: %v", err)
 	}
 
 	var count int64
-	if err := db.Model(&models.DefectAlias{}).Where("alias_type = ? AND alias_value = ?", AliasK2, "strong-key").Count(&count).Error; err != nil {
+	if err := db.Model(&models.DefectAlias{}).Where("alias_type = ? AND alias_value = ?", AliasSlotHealed, slotKey).Count(&count).Error; err != nil {
 		t.Fatalf("count aliases: %v", err)
 	}
 	if count != 1 {

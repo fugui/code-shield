@@ -147,10 +147,10 @@ func TestLedgerCampaignStatsRemainBaselineWhenFiltered(t *testing.T) {
 	}
 	defectSeeds := []models.Defect{
 		{Status: DefectStatusActive, CanonicalFingerprint: "stats-memory", IdentityKind: "EXACT",
-			NormPath: "src/memory.cpp", ScopeKey: "memory", StmtShape: "memory", DefectClassMajor: "memory",
+			NormPath: "src/memory.cpp", ScopeKey: "memory", DefectClassMajor: "memory",
 			Severity: "严重", FirstReportID: report.ID, LastSeenReportID: report.ID},
 		{Status: DefectStatusVerifiedPending, CanonicalFingerprint: "stats-race", IdentityKind: "EXACT",
-			NormPath: "src/race.cpp", ScopeKey: "race", StmtShape: "race", DefectClassMajor: "concurrency",
+			NormPath: "src/race.cpp", ScopeKey: "race", DefectClassMajor: "concurrency",
 			Severity: "一般", FirstReportID: report.ID, LastSeenReportID: report.ID},
 	}
 	defectIDs := make([]uint, 0, len(defectSeeds))

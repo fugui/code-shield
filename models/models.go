@@ -1047,12 +1047,12 @@ type TaskChunkExecution struct {
 
 type Defect struct {
 	ID                   uint   `gorm:"primaryKey" json:"id"`
-	RepoID               uint   `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"repo_id"`
-	TaskTypeID           uint   `gorm:"not null;uniqueIndex:uq_defects_current_identity" json:"task_type_id"`
+	RepoID               uint   `gorm:"not null" json:"repo_id"`
+	TaskTypeID           uint   `gorm:"not null" json:"task_type_id"`
 	Status               string `gorm:"size:32;not null;default:'ACTIVE'" json:"status"`
 	StatusReason         string `gorm:"type:text;not null;default:''" json:"status_reason"`
-	CanonicalFingerprint string `gorm:"size:64;not null;uniqueIndex:uq_defects_current_identity" json:"canonical_fingerprint"`
-	IdentityKind         string `gorm:"size:16;not null" json:"identity_kind"`
+	CanonicalFingerprint string `gorm:"size:64;not null;index:idx_defect_canonical_fp" json:"canonical_fingerprint"`
+	IdentityKind         string `gorm:"size:16;not null;default:'SLOT'" json:"identity_kind"`
 	NormPath             string `gorm:"size:512;not null" json:"norm_path"`
 	ScopeSymbol          string `gorm:"size:256;not null;default:''" json:"scope_symbol"`                            // 归一化函数符号
 	TargetEntity         string `gorm:"size:128;not null;default:''" json:"target_entity"`                           // 核心变量或合成受体
@@ -1062,11 +1062,7 @@ type Defect struct {
 	SlotKey              string `gorm:"size:64;not null;default:''" json:"slot_key"`                                 // 二级精准槽位哈希 (含 StmtAnchorHash)
 	ScopeKey             string `gorm:"size:64;not null" json:"scope_key"`
 	SymbolPath           string `gorm:"size:512;not null;default:''" json:"symbol_path"`
-	StmtShape            string `gorm:"size:64;not null" json:"stmt_shape"`
 	CleanToken           string `gorm:"type:text;not null;default:''" json:"clean_token"`
-	PrevShape            string `gorm:"size:64;not null;default:''" json:"prev_shape"`
-	NextShape            string `gorm:"size:64;not null;default:''" json:"next_shape"`
-	OccurrenceIndex      int    `gorm:"not null;default:0" json:"occurrence_index"`
 	DefectClassMajor     string `gorm:"size:64;not null" json:"defect_class_major"`
 	Severity             string `gorm:"size:32;not null;default:''" json:"severity"`
 	LineStart            *int   `json:"line_start"`
@@ -1486,18 +1482,19 @@ func MigrateDefectSlotSchema(db *gorm.DB) error {
 		return err
 	}
 	if db.Dialector.Name() == "postgres" {
-		// PostgreSQL 生产环境局部唯一索引与加速索引
+		// PostgreSQL 生产环境：废除旧指纹唯一约束，建立基于 ACTIVE 状态 SlotKey 的强唯一索引与加速索引
+		_ = db.Exec(`DROP INDEX IF EXISTS uq_defects_current_identity;`).Error
 		if err := db.Exec(`
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_defect_active_slot_idx
 			ON defects (repo_id, task_type_id, slot_key)
-			WHERE status = 'ACTIVE' AND slot_key != '';
+			WHERE status = 'ACTIVE';
 		`).Error; err != nil {
 			return err
 		}
 		if err := db.Exec(`
 			CREATE INDEX IF NOT EXISTS idx_defect_core_slot_key
 			ON defects (repo_id, task_type_id, core_slot_key)
-			WHERE status = 'ACTIVE' AND core_slot_key != '';
+			WHERE status = 'ACTIVE';
 		`).Error; err != nil {
 			return err
 		}
@@ -1508,7 +1505,12 @@ func MigrateDefectSlotSchema(db *gorm.DB) error {
 		`).Error
 	}
 
-	// SQLite 单测环境普通检索索引 (并发由事务锁保证)
+	// SQLite 单测与私有化环境：建立基于 ACTIVE 状态 SlotKey 的唯一索引与检索索引
+	_ = db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_defect_active_slot_sqlite
+		ON defects (repo_id, task_type_id, slot_key)
+		WHERE status = 'ACTIVE';
+	`)
 	_ = db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_defect_core_slot_sqlite
 		ON defects (repo_id, task_type_id, core_slot_key, status);

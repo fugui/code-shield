@@ -29,11 +29,6 @@ const (
 
 	AliasSlotPrecise = "SLOT_PRECISE"
 	AliasSlotHealed  = "SLOT_HEALED"
-	AliasK2          = "K2"
-	AliasF1          = "F1"
-	AliasK1          = "K1"
-	AliasF2          = "F2"
-	AliasF3          = "F3"
 	AliasPath        = "PATH"
 	AliasRename      = "RENAME"
 	AliasHuman       = "HUMAN"
@@ -206,7 +201,7 @@ func RunMatching(input MatchingInput) MatchingResult {
 				continue
 			}
 			score, detail := scoreCandidate(observation.Identity, candidate)
-			strongAlias := hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1)
+			strongAlias := hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed)
 			if detail["evidence_veto"] == 1 && !strongAlias {
 				if !(isPassOnlyObservationGroup(observation) && passAnchorGate(candidate, detail)) {
 					result.Observations[i].ScoreDetail = detail
@@ -259,9 +254,7 @@ func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecisio
 				continue
 			}
 			if !hasSource(edge.candidate, AliasSlotPrecise) &&
-				!hasSource(edge.candidate, AliasSlotHealed) &&
-				!hasSource(edge.candidate, AliasK2) &&
-				!hasSource(edge.candidate, AliasF1) {
+				!hasSource(edge.candidate, AliasSlotHealed) {
 				continue
 			}
 			edge.detail["strong_alias_equal"] = 1
@@ -275,10 +268,8 @@ func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecisio
 			decisions[i].MatchTier = MatchStrong
 			if hasSource(edge.candidate, AliasSlotPrecise) {
 				decisions[i].Reason = "SLOT_PRECISE"
-			} else if hasSource(edge.candidate, AliasSlotHealed) {
-				decisions[i].Reason = "SLOT_HEALED"
 			} else {
-				decisions[i].Reason = "STRONG_ALIAS"
+				decisions[i].Reason = "SLOT_HEALED"
 			}
 			break
 		}
@@ -302,8 +293,7 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 		aliasType string
 		value     string
 	}{
-		{AliasK2, identity.K2}, {AliasF1, identity.F1}, {AliasK1, identity.K1},
-		{AliasF2, identity.F2}, {AliasF3, identity.F3}, {AliasPath, identity.NormPath},
+		{AliasPath, identity.NormPath},
 		{AliasRoot, identity.RootFamily}, {AliasResource, identity.ResourceIdentity}, {AliasChain, identity.ValidationChain},
 	}
 	slotKey := identity.SlotKey
@@ -414,22 +404,14 @@ func sourcePriority(candidate Candidate) int {
 		return 0
 	case hasSource(candidate, AliasSlotHealed):
 		return 1
-	case hasSource(candidate, AliasK2):
-		return 2
-	case hasSource(candidate, AliasF1):
-		return 3
 	case hasSource(candidate, AliasHuman):
-		return 4
-	case hasSource(candidate, AliasK1):
-		return 5
-	case hasSource(candidate, AliasF2):
-		return 6
+		return 2
 	case hasSource(candidate, AliasRename):
-		return 7
+		return 3
 	case hasSource(candidate, AliasResource), hasSource(candidate, AliasChain):
-		return 7
+		return 4
 	default:
-		return 8
+		return 5
 	}
 }
 
@@ -448,9 +430,6 @@ func hardGatePass(identity Identity, candidate Candidate) bool {
 	if hasSource(candidate, AliasRename) {
 		return true
 	}
-	if identity.ScopeKey != "" && identity.ScopeKey == candidate.Defect.ScopeKey && hasSource(candidate, AliasF2) {
-		return true
-	}
 	if hasSource(candidate, AliasHuman) {
 		return true
 	}
@@ -458,11 +437,7 @@ func hardGatePass(identity Identity, candidate Candidate) bool {
 }
 
 func passAnchorGate(candidate Candidate, detail map[string]float64) bool {
-	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) ||
-		hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
-		return true
-	}
-	if detail["stmt_shape_equal"] == 1 {
+	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) {
 		return true
 	}
 	return detail["scope_key_equal"] == 1 &&
@@ -471,16 +446,10 @@ func passAnchorGate(candidate Candidate, detail map[string]float64) bool {
 
 func scoreCandidate(identity Identity, candidate Candidate) (float64, map[string]float64) {
 	detail := map[string]float64{}
-	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) ||
-		hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
+	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) {
 		detail["context_key_equal"] = 1
 	}
-	if identity.StmtShape == candidate.Defect.StmtShape && identity.StmtShape != "" {
-		detail["stmt_shape_equal"] = 1
-		detail["shape_tokens_similarity"] = 1
-	}
 	detail["clean_token_similarity"] = CalculateTokenJaccard(identity.CleanToken, candidate.Defect.CleanToken)
-	detail["context_similarity"] = (boolScore(identity.PrevShape == candidate.Defect.PrevShape) + boolScore(identity.NextShape == candidate.Defect.NextShape)) / 2
 	if identity.DefectClassMajor == candidate.Defect.DefectClassMajor && identity.DefectClassMajor != "" {
 		detail["defect_class_major_equal"] = 1
 	}
@@ -499,11 +468,13 @@ func scoreCandidate(identity Identity, candidate Candidate) (float64, map[string
 		name   string
 		weight float64
 	}{
-		{"context_key_equal", 0.26}, {"stmt_shape_equal", 0.16},
-		{"clean_token_similarity", 0.14}, {"shape_tokens_similarity", 0.10},
-		{"context_similarity", 0.10}, {"defect_class_major_equal", 0.08},
-		{"line_proximity", 0.08}, {"scope_key_equal", 0.04},
-		{"blob_change_consistency", 0.02}, {"severity_compatibility", 0.02},
+		{"context_key_equal", 0.20},
+		{"clean_token_similarity", 0.30},
+		{"scope_key_equal", 0.20},
+		{"defect_class_major_equal", 0.15},
+		{"line_proximity", 0.10},
+		{"blob_change_consistency", 0.03},
+		{"severity_compatibility", 0.02},
 	} {
 		score += item.weight * detail[item.name]
 	}
@@ -511,21 +482,19 @@ func scoreCandidate(identity Identity, candidate Candidate) (float64, map[string
 }
 
 func applyEvidenceGate(identity Identity, candidate Candidate, detail map[string]float64) {
-	anchorGate := (detail["stmt_shape_equal"] == 1 && detail["line_proximity"] >= 0.5) ||
-		(detail["scope_key_equal"] == 1 && detail["clean_token_similarity"] >= 0.8) ||
-		(detail["scope_key_equal"] == 1 && detail["line_proximity"] == 1)
+	anchorGate := (detail["scope_key_equal"] == 1 && detail["clean_token_similarity"] >= 0.8) ||
+		(detail["scope_key_equal"] == 1 && detail["line_proximity"] == 1) ||
+		(detail["clean_token_similarity"] >= 0.8 && detail["line_proximity"] >= 0.5)
 	rootAliasGate := hasSource(candidate, AliasRoot)
 	resourceAliasGate := hasSource(candidate, AliasResource)
 	chainAliasGate := hasSource(candidate, AliasChain)
 	candidateResource := extractIdentityToken(candidate.Defect.CleanToken)
 	candidateChain := validationChainIdentity(candidate.Defect.CleanToken)
-	derivedRootEqual := identity.RootFamily != "" &&
-		identity.RootFamily == rootFamilyHash(candidate.Defect.StmtShape, candidateResource, candidateChain)
 	derivedResourceEqual := identity.ResourceIdentity != "" &&
 		identity.ResourceIdentity == candidateResource && detail["defect_class_major_equal"] == 1
 	derivedChainEqual := identity.ValidationChain != "" && identity.ValidationChain == candidateChain
 	rootGate := detail["defect_class_major_equal"] == 1 &&
-		(detail["stmt_shape_equal"] == 1 || detail["scope_key_equal"] == 1 || rootAliasGate || derivedRootEqual)
+		(detail["scope_key_equal"] == 1 || rootAliasGate)
 	resourceGate := resourceAliasGate || derivedResourceEqual
 	chainGate := chainAliasGate || derivedChainEqual
 	if rootAliasGate {
@@ -538,13 +507,12 @@ func applyEvidenceGate(identity Identity, candidate Candidate, detail map[string
 	detail["evidence_gate"] = boolScore(anchorGate && (rootGate || resourceGate || chainGate))
 
 	sameClass := detail["defect_class_major_equal"] == 1
-	sameStatement := detail["stmt_shape_equal"] == 1
 	sameScope := detail["scope_key_equal"] == 1
 	if !sameClass && !rootAliasGate && !resourceAliasGate && !chainAliasGate &&
-		!derivedRootEqual && !derivedResourceEqual && !derivedChainEqual {
+		!derivedResourceEqual && !derivedChainEqual {
 		detail["veto_reason"] = 1
 	}
-	if sameClass && !sameStatement && !sameScope && !resourceGate && !chainGate {
+	if sameClass && !sameScope && !resourceGate && !chainGate {
 		detail["veto_reason"] = 1
 	}
 	detail["evidence_veto"] = detail["veto_reason"]
@@ -600,8 +568,8 @@ func compareCandidates(left, right scoredCandidate) bool {
 	if left.score != right.score {
 		return left.score > right.score
 	}
-	if left.candidate.Defect.StmtShape != right.candidate.Defect.StmtShape {
-		return left.candidate.Defect.StmtShape < right.candidate.Defect.StmtShape
+	if left.candidate.Defect.SlotKey != right.candidate.Defect.SlotKey {
+		return left.candidate.Defect.SlotKey < right.candidate.Defect.SlotKey
 	}
 	if left.candidate.Defect.NormPath != right.candidate.Defect.NormPath {
 		return left.candidate.Defect.NormPath < right.candidate.Defect.NormPath
@@ -727,7 +695,7 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 			decision.MatchTier = MatchAssign
 			if hasSource(best.candidate, AliasHuman) {
 				decision.MatchTier = MatchHuman
-			} else if hasSource(best.candidate, AliasK2) || hasSource(best.candidate, AliasF1) {
+			} else if hasSource(best.candidate, AliasSlotPrecise) || hasSource(best.candidate, AliasSlotHealed) {
 				decision.MatchTier = MatchStrong
 			} else if best.score >= thresholds.StrongSame {
 				decision.MatchTier = MatchStruct
