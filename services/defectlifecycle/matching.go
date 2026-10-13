@@ -675,7 +675,7 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 		}
 		sort.Slice(candidateIDs, func(left, right int) bool { return candidateIDs[left] < candidateIDs[right] })
 
-		assignments := greedyAssignment(observations, qualified, obsEdges)
+		assignments := greedyAssignment(qualified, obsEdges)
 		for observationIndex, defectID := range assignments {
 			if defectID == 0 {
 				continue
@@ -704,7 +704,7 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 	}
 }
 
-func greedyAssignment(observations []ObservationGroup, observationIndexes []int, obsEdges map[int]map[uint]scoredCandidate) map[int]uint {
+func greedyAssignment(observationIndexes []int, obsEdges map[int]map[uint]scoredCandidate) map[int]uint {
 	type assignmentEdge struct {
 		observationIndex int
 		edge             scoredCandidate
