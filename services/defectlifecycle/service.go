@@ -151,11 +151,21 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 		matchedDefectIDs := assignedDefectIDs(matching.Observations)
 		unmatchedDefects := make([]models.Defect, 0, len(defects))
 		for _, defect := range defects {
-			if !matchedDefectIDs[defect.ID] {
+			if defect.ID > 0 && !matchedDefectIDs[defect.ID] {
 				unmatchedDefects = append(unmatchedDefects, defect)
 			}
 		}
-		passDecisions := matchPassObservations(groups, unmatchedDefects, aliases, input)
+		unmatchedDefectIDs := make(map[uint]bool, len(unmatchedDefects))
+		for _, defect := range unmatchedDefects {
+			unmatchedDefectIDs[defect.ID] = true
+		}
+		unmatchedAliases := make([]models.DefectAlias, 0, len(aliases))
+		for _, alias := range aliases {
+			if alias.DefectID > 0 && unmatchedDefectIDs[alias.DefectID] {
+				unmatchedAliases = append(unmatchedAliases, alias)
+			}
+		}
+		passDecisions := matchPassObservations(groups, unmatchedDefects, unmatchedAliases, input)
 		decisions := append(append([]ObservationDecision(nil), matching.Observations...), passDecisions...)
 
 		// ── Phase 3: 极简短事务提交（<15ms） ──
@@ -296,7 +306,7 @@ func matchPassObservations(groups []ObservationGroup, defects []models.Defect, a
 
 	decisions := make([]ObservationDecision, 0, len(matching.Observations))
 	for _, decision := range matching.Observations {
-		if decision.DefectID != nil {
+		if decision.DefectID != nil && *decision.DefectID > 0 {
 			decisions = append(decisions, decision)
 		}
 	}

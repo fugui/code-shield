@@ -148,12 +148,20 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 	newDefectByFingerprint := make(map[string]uint)
 	newDefectBySlotKey := make(map[string]uint)
 	for _, decision := range committableDecisions(input) {
+		defectID := decision.DefectID
+		if defectID != nil && *defectID == 0 {
+			defectID = nil
+			decision.DefectID = nil
+		}
+		if decision.Verdict == VerdictCleared && defectID == nil {
+			continue
+		}
 		observation := models.DefectObservation{
 			ReportID:            input.Report.ID,
 			RepoID:              input.Repo.ID,
 			TaskTypeID:          input.TaskType.ID,
 			ObservationGroupUID: decision.ObservationGroupUID,
-			DefectID:            decision.DefectID,
+			DefectID:            defectID,
 			Verdict:             decision.Verdict,
 			MatchTier:           decision.MatchTier,
 			Confidence:          decision.Confidence,
@@ -236,9 +244,16 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 				observation.Verdict = matchedVerdict(createdDefect.Status)
 			}
 		}
-		if observation.DefectID != nil {
+		if observation.DefectID != nil && *observation.DefectID == 0 {
+			observation.DefectID = nil
+			decision.DefectID = nil
+		}
+		if observation.Verdict == VerdictCleared && observation.DefectID == nil {
+			continue
+		}
+		if observation.DefectID != nil && *observation.DefectID > 0 {
 			if source, exists := defectByID[*observation.DefectID]; exists &&
-				source.Status == DefectStatusMerged && source.MergedIntoID != nil {
+				source.Status == DefectStatusMerged && source.MergedIntoID != nil && *source.MergedIntoID > 0 {
 				observation.DefectID = source.MergedIntoID
 				decision.DefectID = source.MergedIntoID
 				if target, targetExists := defectByID[*source.MergedIntoID]; targetExists {
@@ -247,7 +262,9 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 					}
 				}
 			}
-			matchedDefects[*observation.DefectID] = true
+			if observation.DefectID != nil && *observation.DefectID > 0 {
+				matchedDefects[*observation.DefectID] = true
+			}
 		}
 		result.Observations = append(result.Observations, observation)
 	}
@@ -257,7 +274,7 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 	}
 	for observationIndex := range result.Observations {
 		observation := &result.Observations[observationIndex]
-		if observation.DefectID == nil || observation.Verdict == VerdictNew {
+		if observation.DefectID == nil || *observation.DefectID == 0 || observation.Verdict == VerdictNew {
 			continue
 		}
 		group := findObservationGroup(input.Observations, observation.ObservationGroupUID)
@@ -265,7 +282,11 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 			continue
 		}
 		identity := group.Identity
-		defect, statusEvent, changed, err := updateMatchedDefect(tx, defectByID[*observation.DefectID], identity, input, observation, now)
+		targetDefect, exists := defectByID[*observation.DefectID]
+		if !exists || targetDefect.ID == 0 {
+			continue
+		}
+		defect, statusEvent, changed, err := updateMatchedDefect(tx, targetDefect, identity, input, observation, now)
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +303,7 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 	result.Events = append(result.Events, unmatchedEvents...)
 
 	for _, observation := range result.Observations {
-		if observation.DefectID == nil {
+		if observation.DefectID == nil || *observation.DefectID == 0 {
 			continue
 		}
 		group := findObservationGroup(input.Observations, observation.ObservationGroupUID)
@@ -374,7 +395,7 @@ func rollbackReportLedger(tx *gorm.DB, report models.TaskReport) error {
 	}
 
 	for _, observation := range observations {
-		if observation.DefectID == nil {
+		if observation.DefectID == nil || *observation.DefectID == 0 {
 			continue
 		}
 		defectID := *observation.DefectID
@@ -481,13 +502,16 @@ func committableDecisions(input LedgerInput) []ObservationDecision {
 	for _, decision := range input.Decisions {
 		group := findObservationGroup(input.Observations, decision.ObservationGroupUID)
 		if group == nil {
-			if decision.Verdict == VerdictCleared {
+			if decision.Verdict == VerdictCleared || decision.DefectID == nil || *decision.DefectID == 0 {
 				continue
 			}
 			decisions = append(decisions, decision)
 			continue
 		}
-		if isPassOnlyObservationGroup(*group) && decision.DefectID == nil {
+		if isPassOnlyObservationGroup(*group) && (decision.DefectID == nil || *decision.DefectID == 0) {
+			continue
+		}
+		if decision.Verdict == VerdictCleared && (decision.DefectID == nil || *decision.DefectID == 0) {
 			continue
 		}
 		if decision.Verdict == VerdictCleared && !passObservationCovered(input, group.Identity) {
@@ -637,12 +661,25 @@ func upsertObservations(tx *gorm.DB, observations []models.DefectObservation) er
 	if len(observations) == 0 {
 		return nil
 	}
+	cleaned := make([]models.DefectObservation, 0, len(observations))
+	for _, obs := range observations {
+		if obs.DefectID != nil && *obs.DefectID == 0 {
+			obs.DefectID = nil
+		}
+		if obs.Verdict == VerdictCleared && obs.DefectID == nil {
+			continue
+		}
+		cleaned = append(cleaned, obs)
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
 	return tx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "report_id"}, {Name: "observation_group_uid"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"defect_id", "verdict", "match_tier", "confidence", "score_detail", "reason",
 		}),
-	}).Create(&observations).Error
+	}).Create(&cleaned).Error
 }
 
 func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, input LedgerInput, observation *models.DefectObservation, now time.Time) (models.Defect, models.DefectEvent, bool, error) {

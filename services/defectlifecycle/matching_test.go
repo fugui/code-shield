@@ -399,3 +399,56 @@ func TestRunMatchingMatchesPreciseSlotKeyDirectly(t *testing.T) {
 		t.Fatalf("expected reason SLOT_PRECISE, got %s", decision.Reason)
 	}
 }
+
+func TestRunMatchingDoesNotProduceZeroDefectIDFromOrphanAlias(t *testing.T) {
+	group := observation("uid-pass-1", "src/a.cpp", "shape-a", "delete ptr")
+	group.Findings = []models.AnalysisFinding{{AssessmentStatus: "pass"}}
+	orphanAlias := models.DefectAlias{DefectID: 999, RepoID: 1, TaskTypeID: 2, AliasType: AliasF1, AliasValue: group.Identity.F1, AliasClass: AliasStrong}
+	zeroAlias := models.DefectAlias{DefectID: 0, RepoID: 1, TaskTypeID: 2, AliasType: AliasK2, AliasValue: group.Identity.K2, AliasClass: AliasStrong}
+
+	result := RunMatching(MatchingInput{
+		Observations: []ObservationGroup{group},
+		Defects:      []models.Defect{defect(10, "ACTIVE")},
+		Aliases:      []models.DefectAlias{orphanAlias, zeroAlias},
+		Thresholds:   RuntimeMatchThresholds(),
+	})
+	if len(result.Observations) != 1 {
+		t.Fatalf("expected 1 observation decision, got %d", len(result.Observations))
+	}
+	decision := result.Observations[0]
+	if decision.DefectID != nil && *decision.DefectID == 0 {
+		t.Fatalf("decision.DefectID must never be zero, got &0")
+	}
+	if decision.DefectID != nil && *decision.DefectID == 999 {
+		t.Fatalf("orphan alias must not match defect 999 which is not in input.Defects")
+	}
+}
+
+func TestCommittableDecisionsFiltersZeroDefectIDAndOrphanCleared(t *testing.T) {
+	zeroID := uint(0)
+	validID := uint(10)
+	group := observation("uid-1", "src/a.cpp", "shape-a", "delete ptr")
+	group.Findings = []models.AnalysisFinding{{AssessmentStatus: "pass"}}
+	passOnlyGroup := observation("uid-2", "src/b.cpp", "shape-b", "test pass")
+	passOnlyGroup.Findings = []models.AnalysisFinding{{AssessmentStatus: "pass"}}
+
+	input := LedgerInput{
+		Observations: []ObservationGroup{group, passOnlyGroup},
+		Decisions: []ObservationDecision{
+			{ObservationGroupUID: "uid-1", Verdict: VerdictCleared, DefectID: &zeroID},
+			{ObservationGroupUID: "uid-2", Verdict: VerdictCleared, DefectID: nil},
+			{ObservationGroupUID: "uid-1", Verdict: VerdictCleared, DefectID: &validID},
+		},
+		CoverageState: CoverageComplete,
+		Scope: []models.ScanScopeEntry{
+			{NormPath: "src/a.cpp", Outcome: ScopeScanned},
+		},
+	}
+	committable := committableDecisions(input)
+	if len(committable) != 1 {
+		t.Fatalf("expected only 1 valid committable decision, got %d: %+v", len(committable), committable)
+	}
+	if committable[0].DefectID == nil || *committable[0].DefectID != validID {
+		t.Fatalf("expected defect ID %d, got %+v", validID, committable[0].DefectID)
+	}
+}
