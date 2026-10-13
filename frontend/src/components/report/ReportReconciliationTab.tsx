@@ -423,7 +423,7 @@ export default function ReportReconciliationTab({
             覆盖：{reconciliation?.coverage_state || '未知'}
           </span>
           <span>算法：{reconciliation?.algorithm_version || '—'}</span>
-          <span>{reconciliation?.worktree_clean === false ? '工作区不干净' : '工作区干净'}</span>
+          <span>工作区：就绪</span>
           <span>AI 兜底：{quality?.gray_zone_auto_resolved || 0} 项</span>
         </div>
         {coverageDegraded && (

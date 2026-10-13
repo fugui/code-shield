@@ -378,7 +378,7 @@ function ReportsOverview() {
                             fontWeight: 600,
                             whiteSpace: 'nowrap',
                           }}
-                          title="覆盖率降级：工作区不干净，或存在未完成分片/未扫描文件；报告结果可能不完整"
+                          title="覆盖率降级：存在未完成分片或未扫描文件；报告结果可能不完整"
                         >
                           降级
                         </span>
