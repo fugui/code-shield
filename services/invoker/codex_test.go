@@ -64,8 +64,8 @@ func TestCodexInvoker_BuildArgs(t *testing.T) {
 	if !strings.Contains(argsStr, "--output-last-message") {
 		t.Fatalf("expected --output-last-message flag in args, got %v", args)
 	}
-	if !strings.Contains(argsStr, "--sandbox read-only") {
-		t.Fatalf("expected --sandbox read-only flag in args, got %v", args)
+	if !strings.Contains(argsStr, "--sandbox danger-full-access") {
+		t.Fatalf("expected --sandbox danger-full-access flag in args, got %v", args)
 	}
 	if strings.Contains(argsStr, "--json") {
 		t.Fatalf("expected no --json flag (it emits JSONL events, not model output), got %v", args)

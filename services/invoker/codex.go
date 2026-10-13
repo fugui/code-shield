@@ -17,8 +17,9 @@ func (c *CodexInvoker) Name() string { return "codex" }
 const codexInlinePromptMaxBytes = 96 * 1024
 
 // buildArgs 构建 codex 命令行参数，并返回需要通过 stdin 传输的 Prompt。
-// 输出捕获使用 --output-last-message：由 CLI 直接落盘模型最终消息到独立文件，
-// 不依赖模型在默认 read-only 沙箱下写入 OutputPath（codex 默认 sandbox=read-only、approval=never）。
+// 输出捕获使用 --output-last-message：由 CLI 直接落盘模型最终消息到独立文件。
+// 注意：显式使用 --sandbox danger-full-access，避免在 Linux（特别是 Ubuntu 24.04+）下
+// 因 bwrap / 非特权 user namespace 限制导致执行命令与沙箱失败挂起。只读约束由 Prompt 契约保障。
 // 注意：不使用 --json，因为其输出为 CLI 事件 JSONL（thread.started / item.completed...），并非模型结果。
 func (c *CodexInvoker) buildArgs(req AIRequest) ([]string, string, error) {
 	userPrompt, err := BuildReadOnlyPromptPayload(req, true)
@@ -26,7 +27,7 @@ func (c *CodexInvoker) buildArgs(req AIRequest) ([]string, string, error) {
 		return nil, "", err
 	}
 
-	args := []string{"exec", "--skip-git-repo-check", "--color", "never", "--sandbox", "read-only"}
+	args := []string{"exec", "--skip-git-repo-check", "--color", "never", "--sandbox", "danger-full-access"}
 
 	if req.WorkDir != "" {
 		args = append(args, "-C", req.WorkDir)
