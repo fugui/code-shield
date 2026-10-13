@@ -130,8 +130,14 @@ func TestSummaryCompleteRequiresAllFacts(t *testing.T) {
 
 	got.WorktreeClean = false
 	summary = got.Summary()
+	if !summary.CoverageComplete || summary.CoverageDegraded {
+		t.Fatalf("worktree cleanliness should no longer degrade coverage, got %+v", summary)
+	}
+
+	got.CommitVerified = false
+	summary = got.Summary()
 	if summary.CoverageComplete || !summary.CoverageDegraded {
-		t.Fatalf("dirty worktree must degrade coverage, got %+v", summary)
+		t.Fatalf("unverified commit must degrade coverage, got %+v", summary)
 	}
 }
 

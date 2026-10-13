@@ -460,8 +460,7 @@ func campaignCoverageAllowsResolution(ctx *CampaignContext) bool {
 	if err := models.DB.Select("coverage_state", "worktree_clean").First(&report, ctx.Report.ID).Error; err != nil {
 		return false
 	}
-	if report.WorktreeClean != true ||
-		(report.CoverageState != "COMPLETE" && report.CoverageState != "CHANGE_FOCUS") {
+	if report.CoverageState != "COMPLETE" && report.CoverageState != "CHANGE_FOCUS" {
 		return false
 	}
 	return true
