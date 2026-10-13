@@ -208,7 +208,7 @@ func RunMatching(input MatchingInput) MatchingResult {
 			score, detail := scoreCandidate(observation.Identity, candidate)
 			strongAlias := hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1)
 			if detail["evidence_veto"] == 1 && !strongAlias {
-				if !(isPassOnlyObservationGroup(observation) && passAnchorGate(observation.Identity, candidate, detail)) {
+				if !(isPassOnlyObservationGroup(observation) && passAnchorGate(candidate, detail)) {
 					result.Observations[i].ScoreDetail = detail
 					continue
 				}
@@ -218,14 +218,14 @@ func RunMatching(input MatchingInput) MatchingResult {
 				detail["gate_lifted"] = 1
 			}
 			if score < input.Thresholds.RejectBelow && !strongAlias {
-				if !(isPassOnlyObservationGroup(observation) && passAnchorGate(observation.Identity, candidate, detail)) {
+				if !(isPassOnlyObservationGroup(observation) && passAnchorGate(candidate, detail)) {
 					continue
 				}
 			}
 			scored = append(scored, scoredCandidate{candidate: candidate, score: score, detail: detail})
 		}
 		sort.SliceStable(scored, func(left, right int) bool {
-			return compareCandidates(observation.Identity, scored[left], scored[right])
+			return compareCandidates(scored[left], scored[right])
 		})
 		if len(scored) > remainingEdges {
 			scored = scored[:remainingEdges]
@@ -240,15 +240,15 @@ func RunMatching(input MatchingInput) MatchingResult {
 		}
 	}
 
-	bindStrongAliases(observations, edges, result.Observations, input.Thresholds)
-	assignCandidates(observations, edges, result.Observations, input.Budget.MaxAssignmentWidth, input.Thresholds)
+	bindStrongAliases(edges, result.Observations, input.Thresholds)
+	assignCandidates(observations, edges, result.Observations, input.Thresholds)
 	bindPassObservations(observations, edges, result.Observations)
 	arbitrateUnclaimed(input, observations, edges, result.Observations, &result.AICalls)
 	finalizeUnclaimed(edges, result.Observations, input.Thresholds)
 	return result
 }
 
-func bindStrongAliases(observations []ObservationGroup, edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
+func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
 	for i := range decisions {
 		if decisions[i].DefectID != nil && *decisions[i].DefectID > 0 {
 			continue
@@ -457,7 +457,7 @@ func hardGatePass(identity Identity, candidate Candidate) bool {
 	return hasSource(candidate, AliasRoot) || hasSource(candidate, AliasResource) || hasSource(candidate, AliasChain)
 }
 
-func passAnchorGate(identity Identity, candidate Candidate, detail map[string]float64) bool {
+func passAnchorGate(candidate Candidate, detail map[string]float64) bool {
 	if hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed) ||
 		hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1) {
 		return true
@@ -596,7 +596,7 @@ func roundScore(value float64) float64 {
 	return math.Round(value*10000) / 10000
 }
 
-func compareCandidates(identity Identity, left, right scoredCandidate) bool {
+func compareCandidates(left, right scoredCandidate) bool {
 	if left.score != right.score {
 		return left.score > right.score
 	}
@@ -629,7 +629,7 @@ func bindPassObservations(observations []ObservationGroup, edges [][]scoredCandi
 				if edge.candidate.Defect.ID == 0 {
 					continue
 				}
-				if !passAnchorGate(observations[i].Identity, edge.candidate, edge.detail) {
+				if !passAnchorGate(edge.candidate, edge.detail) {
 					continue
 				}
 				defectID := edge.candidate.Defect.ID
@@ -660,7 +660,7 @@ func derefInt(value *int) int {
 	return *value
 }
 
-func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate, decisions []ObservationDecision, width int, thresholds MatchThresholds) {
+func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
 	partitions := make(map[string][]int)
 	for i := range observations {
 		key := observations[i].Identity.NormPath
@@ -752,7 +752,6 @@ func greedyAssignment(observations []ObservationGroup, observationIndexes []int,
 			return assignmentEdges[left].edge.score > assignmentEdges[right].edge.score
 		}
 		return compareCandidates(
-			observations[assignmentEdges[left].observationIndex].Identity,
 			assignmentEdges[left].edge,
 			assignmentEdges[right].edge,
 		)
@@ -772,7 +771,7 @@ func greedyAssignment(observations []ObservationGroup, observationIndexes []int,
 func bestCandidate(edges []scoredCandidate) *scoredCandidate {
 	var best *scoredCandidate
 	for index := range edges {
-		if best == nil || compareCandidates(Identity{}, edges[index], *best) {
+		if best == nil || compareCandidates(edges[index], *best) {
 			best = &edges[index]
 		}
 	}
