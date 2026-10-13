@@ -125,11 +125,11 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 	}
 
 	defects := []models.Defect{
-		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp1", IdentityKind: "ast", NormPath: "src/core/ptr.c", ScopeKey: "sk1", StmtShape: "shape1", DefectClassMajor: "ptr", Severity: "致命", Status: "ACTIVE"},
-		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp2", IdentityKind: "ast", NormPath: "src/core/buf.c", ScopeKey: "sk2", StmtShape: "shape2", DefectClassMajor: "buf", Severity: "严重", Status: "ACTIVE"},
-		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp3", IdentityKind: "ast", NormPath: "src/core/closed_ptr.c", ScopeKey: "sk3", StmtShape: "shape3", DefectClassMajor: "ptr", Severity: "致命", Status: "RESOLVED"},
-		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp4", IdentityKind: "ast", NormPath: "src/core/closed_buf.c", ScopeKey: "sk4", StmtShape: "shape4", DefectClassMajor: "buf", Severity: "严重", Status: "HUMAN_CLOSED"},
-		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp5", IdentityKind: "ast", NormPath: "src/core/mem.c", ScopeKey: "sk5", StmtShape: "shape5", DefectClassMajor: "mem", Severity: "一般", Status: "RESOLVED"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp1", IdentityKind: "ast", NormPath: "src/core/ptr.c", ScopeKey: "sk1", DefectClassMajor: "ptr", Severity: "致命", Status: "ACTIVE"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp2", IdentityKind: "ast", NormPath: "src/core/buf.c", ScopeKey: "sk2", DefectClassMajor: "buf", Severity: "严重", Status: "ACTIVE"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp3", IdentityKind: "ast", NormPath: "src/core/closed_ptr.c", ScopeKey: "sk3", DefectClassMajor: "ptr", Severity: "致命", Status: "RESOLVED"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp4", IdentityKind: "ast", NormPath: "src/core/closed_buf.c", ScopeKey: "sk4", DefectClassMajor: "buf", Severity: "严重", Status: "HUMAN_CLOSED"},
+		{TaskTypeID: taskType.ID, RepoID: repo.ID, CanonicalFingerprint: "fp5", IdentityKind: "ast", NormPath: "src/core/mem.c", ScopeKey: "sk5", DefectClassMajor: "mem", Severity: "一般", Status: "RESOLVED"},
 	}
 	for i := range defects {
 		assert.NoError(t, db.Create(&defects[i]).Error)
@@ -225,7 +225,6 @@ func TestExportDynamicCampaignDepartments(t *testing.T) {
 		IdentityKind:         "ast",
 		NormPath:             "main.go",
 		ScopeKey:             "sk-main",
-		StmtShape:            "shape-main",
 		DefectClassMajor:     "ptr",
 		Severity:             "致命",
 		Status:               "ACTIVE",

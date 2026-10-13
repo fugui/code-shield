@@ -103,6 +103,14 @@ func InitDB() {
 			}
 		}
 	}
+	// Phase 3 终态 DDL 瘦身：清理已彻底废除的旧几何字段 (occurrence_index, stmt_shape, prev_shape, next_shape)
+	for _, column := range []string{"occurrence_index", "stmt_shape", "prev_shape", "next_shape"} {
+		if DB.Migrator().HasColumn(&Defect{}, column) {
+			if err := DB.Migrator().DropColumn(&Defect{}, column); err != nil {
+				log.Fatalf("failed to drop legacy defects column %s: %v", column, err)
+			}
+		}
+	}
 
 	if err := DB.Model(&TaskType{}).
 		Where("is_campaign = ? AND governance_mode IN ?", true, []string{"", "defect_tracking"}).

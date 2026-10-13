@@ -10,22 +10,38 @@ import (
 func defect(id uint, status string) models.Defect {
 	start := 10
 	end := 12
+	target := "ptr"
+	clean := "delete ptr"
+	stmtAnchorHash := ComputeStmtAnchorHash(clean)
+	coreSlotKey := ComputeCoreSlotKey("src/a.cpp", "scope-a", "memory", target)
+	slotKey := ComputePreciseSlotKey(coreSlotKey, stmtAnchorHash)
 	return models.Defect{
 		ID: id, Status: status, NormPath: "src/a.cpp", ScopeKey: "scope-a",
-		StmtShape: "shape-a", CleanToken: "delete ptr", DefectClassMajor: "memory",
-		Severity: "严重", LineStart: &start, LineEnd: &end, PrevShape: "prev-a", NextShape: "next-a",
-		ScopeBodyHash: "scope-body-a",
+		CleanToken: clean, DefectClassMajor: "memory",
+		Severity: "严重", LineStart: &start, LineEnd: &end,
+		ScopeBodyHash: "scope-body-a", ScopeSymbol: "scope-a",
+		TargetEntity: target, StmtAnchorHash: stmtAnchorHash,
+		CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+		CanonicalFingerprint: slotKey, IdentityKind: "SLOT",
 	}
 }
 
 func observation(uid, path, shape, clean string) ObservationGroup {
+	target, _ := ExtractPhysicalTargetEntity(clean, "", "memory")
+	if target == "" {
+		target = "ptr"
+	}
+	stmtAnchorHash := ComputeStmtAnchorHash(clean)
+	coreSlotKey := ComputeCoreSlotKey(path, "scope-a", "memory", target)
+	slotKey := ComputePreciseSlotKey(coreSlotKey, stmtAnchorHash)
 	return ObservationGroup{
 		UID: uid,
 		Identity: Identity{
 			RepoID: 1, TaskTypeID: 2, NormPath: path, ScopeKey: "scope-a",
 			StmtShape: shape, CleanToken: clean, DefectClassMajor: "memory",
 			LineStart: 10, LineEnd: 12, Severity: "严重", PrevShape: "prev-a", NextShape: "next-a", Confidence: AnchorHigh,
-			K1: "k1-" + uid, K2: "k2-" + uid, F1: "f1-" + uid,
+			TargetEntity: target, StmtAnchorHash: stmtAnchorHash,
+			CoreSlotKey: coreSlotKey, SlotKey: slotKey,
 		},
 	}
 }
@@ -33,7 +49,7 @@ func observation(uid, path, shape, clean string) ObservationGroup {
 func TestRunMatchingClaimsStrongAlias(t *testing.T) {
 	existing := defect(7, "ACTIVE")
 	group := observation("uid-1", "src/a.cpp", "shape-a", "delete ptr")
-	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasF1, AliasValue: group.Identity.F1, AliasClass: AliasStrong}
+	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasSlotHealed, AliasValue: group.Identity.SlotKey, AliasClass: AliasStrong}
 
 	result := RunMatching(MatchingInput{
 		Observations: []ObservationGroup{group},
@@ -58,12 +74,23 @@ func TestRunMatchingClaimsStrongAlias(t *testing.T) {
 func TestRunMatchingAssignsEachDefectOnce(t *testing.T) {
 	first := defect(7, "ACTIVE")
 	second := defect(8, "ACTIVE")
-	second.CleanToken = "delete other"
+	secondClean := "delete other"
+	secondTarget := "other"
+	secondStmtHash := ComputeStmtAnchorHash(secondClean)
+	secondCoreSlot := ComputeCoreSlotKey("src/a.cpp", "scope-a", "memory", secondTarget)
+	secondSlot := ComputePreciseSlotKey(secondCoreSlot, secondStmtHash)
+	second.CleanToken = secondClean
+	second.TargetEntity = secondTarget
+	second.StmtAnchorHash = secondStmtHash
+	second.CoreSlotKey = secondCoreSlot
+	second.SlotKey = secondSlot
+	second.CanonicalFingerprint = secondSlot
+
 	firstGroup := observation("uid-1", "src/a.cpp", "shape-a", "delete ptr")
-	secondGroup := observation("uid-2", "src/a.cpp", "shape-a", "delete ptr")
+	secondGroup := observation("uid-2", "src/a.cpp", "shape-a", secondClean)
 	aliases := []models.DefectAlias{
-		{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasF1, AliasValue: firstGroup.Identity.F1, AliasClass: AliasStrong},
-		{DefectID: 8, RepoID: 1, TaskTypeID: 2, AliasType: AliasF1, AliasValue: secondGroup.Identity.F1, AliasClass: AliasStrong},
+		{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasSlotHealed, AliasValue: firstGroup.Identity.SlotKey, AliasClass: AliasStrong},
+		{DefectID: 8, RepoID: 1, TaskTypeID: 2, AliasType: AliasSlotHealed, AliasValue: secondGroup.Identity.SlotKey, AliasClass: AliasStrong},
 	}
 
 	result := RunMatching(MatchingInput{
@@ -96,7 +123,6 @@ func TestRunMatchingNewWithoutCandidates(t *testing.T) {
 
 func TestRunMatchingGrayBandRequiresAIDifferent(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "sharedstate release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
 	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasPath, AliasValue: group.Identity.NormPath, AliasClass: AliasBucket}
@@ -117,7 +143,6 @@ func TestRunMatchingGrayBandRequiresAIDifferent(t *testing.T) {
 
 func TestRunMatchingGrayBandRemainsProbableWithoutAI(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
 	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasPath, AliasValue: group.Identity.NormPath, AliasClass: AliasBucket}
@@ -135,7 +160,6 @@ func TestRunMatchingGrayBandRemainsProbableWithoutAI(t *testing.T) {
 
 func TestRunMatchingAIReviewFallsBackToMergeAboveScore(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "release resource")
 	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasPath, AliasValue: group.Identity.NormPath, AliasClass: AliasBucket}
@@ -146,7 +170,7 @@ func TestRunMatchingAIReviewFallsBackToMergeAboveScore(t *testing.T) {
 		Aliases:      []models.DefectAlias{alias},
 		Arbitrator:   reviewingArbitrator{},
 		Thresholds: MatchThresholds{
-			StrongSame: 0.90, AssignBand: 0.75, RejectBelow: 0.45,
+			StrongSame: 0.90, AssignBand: 0.85, RejectBelow: 0.45,
 			AutoResolve: true, AIConfidence: 0.70, FallbackMergeScore: 0.60,
 		},
 	})
@@ -164,7 +188,6 @@ func TestRunMatchingAIReviewFallsBackToMergeAboveScore(t *testing.T) {
 
 func TestRunMatchingAIReviewFallsBackToNewBelowScore(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "sharedstate release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
 	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasPath, AliasValue: group.Identity.NormPath, AliasClass: AliasBucket}
@@ -193,7 +216,6 @@ func TestRunMatchingAIReviewFallsBackToNewBelowScore(t *testing.T) {
 
 func TestRunMatchingAIUnavailableKeepsProbable(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
 	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasPath, AliasValue: group.Identity.NormPath, AliasClass: AliasBucket}
@@ -230,7 +252,6 @@ func (failingArbitrator) Arbitrate(ArbitrationRequest) ([]ArbitrationDecision, e
 
 func TestRunMatchingAIReviewKeepsReason(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
 	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasPath, AliasValue: group.Identity.NormPath, AliasClass: AliasBucket}
@@ -273,16 +294,14 @@ func TestRunMatchingStrongAliasRecallsDefectDespiteSnapshotDrift(t *testing.T) {
 	existing := defect(7, "ACTIVE")
 	existing.NormPath = "src/a.cpp"
 	existing.ScopeKey = "scope-other"
-	existing.StmtShape = "shape-other"
 	existing.CleanToken = "unrelated statement"
 	existing.DefectClassMajor = "race"
 	existing.Severity = "建议"
 	start, end := 180, 182
 	existing.LineStart, existing.LineEnd = &start, &end
-	existing.PrevShape, existing.NextShape = "prev-other", "next-other"
 
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
-	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasF1, AliasValue: group.Identity.F1, AliasClass: AliasStrong}
+	alias := models.DefectAlias{DefectID: 7, RepoID: 1, TaskTypeID: 2, AliasType: AliasSlotHealed, AliasValue: group.Identity.SlotKey, AliasClass: AliasStrong}
 	result := RunMatching(MatchingInput{
 		Observations: []ObservationGroup{group},
 		Defects:      []models.Defect{existing},
@@ -302,7 +321,6 @@ func TestRunMatchingStrongAliasRecallsDefectDespiteSnapshotDrift(t *testing.T) {
 
 func TestRunMatchingRootAliasEntersReviewWithoutMerge(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "release resource"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
 	group.Identity.ResourceIdentity = "sharedstate"
@@ -328,7 +346,6 @@ func TestRunMatchingRootAliasEntersReviewWithoutMerge(t *testing.T) {
 
 func TestRunMatchingResourceAliasCanBridgePathDriftForReview(t *testing.T) {
 	existing := defect(7, "ACTIVE")
-	existing.StmtShape = "shape-new"
 	existing.CleanToken = "release resource"
 	existing.NormPath = "src/other.cpp"
 	group := observation("uid-1", "src/a.cpp", "shape-new", "close handle")
@@ -403,8 +420,8 @@ func TestRunMatchingMatchesPreciseSlotKeyDirectly(t *testing.T) {
 func TestRunMatchingDoesNotProduceZeroDefectIDFromOrphanAlias(t *testing.T) {
 	group := observation("uid-pass-1", "src/a.cpp", "shape-a", "delete ptr")
 	group.Findings = []models.AnalysisFinding{{AssessmentStatus: "pass"}}
-	orphanAlias := models.DefectAlias{DefectID: 999, RepoID: 1, TaskTypeID: 2, AliasType: AliasF1, AliasValue: group.Identity.F1, AliasClass: AliasStrong}
-	zeroAlias := models.DefectAlias{DefectID: 0, RepoID: 1, TaskTypeID: 2, AliasType: AliasK2, AliasValue: group.Identity.K2, AliasClass: AliasStrong}
+	orphanAlias := models.DefectAlias{DefectID: 999, RepoID: 1, TaskTypeID: 2, AliasType: AliasSlotHealed, AliasValue: group.Identity.SlotKey, AliasClass: AliasStrong}
+	zeroAlias := models.DefectAlias{DefectID: 0, RepoID: 1, TaskTypeID: 2, AliasType: AliasSlotHealed, AliasValue: group.Identity.SlotKey, AliasClass: AliasStrong}
 
 	result := RunMatching(MatchingInput{
 		Observations: []ObservationGroup{group},

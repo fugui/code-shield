@@ -36,11 +36,12 @@ type DefectSnapshot struct {
 	NormPath            string `json:"norm_path"`
 	ScopeKey            string `json:"scope_key"`
 	SymbolPath          string `json:"symbol_path"`
-	StmtShape           string `json:"stmt_shape"`
+	ScopeSymbol         string `json:"scope_symbol"`
+	TargetEntity        string `json:"target_entity"`
+	StmtAnchorHash      string `json:"stmt_anchor_hash"`
+	CoreSlotKey         string `json:"core_slot_key"`
+	SlotKey             string `json:"slot_key"`
 	CleanToken          string `json:"clean_token"`
-	PrevShape           string `json:"prev_shape"`
-	NextShape           string `json:"next_shape"`
-	OccurrenceIndex     int    `json:"occurrence_index"`
 	DefectClassMajor    string `json:"defect_class_major"`
 	Severity            string `json:"severity"`
 	LineStart           *int   `json:"line_start"`
@@ -59,8 +60,9 @@ func newDefectSnapshot(defect models.Defect) DefectSnapshot {
 	return DefectSnapshot{
 		Status: defect.Status, StatusReason: defect.StatusReason,
 		NormPath: defect.NormPath, ScopeKey: defect.ScopeKey, SymbolPath: defect.SymbolPath,
-		StmtShape: defect.StmtShape, CleanToken: defect.CleanToken, PrevShape: defect.PrevShape,
-		NextShape: defect.NextShape, OccurrenceIndex: defect.OccurrenceIndex,
+		ScopeSymbol: defect.ScopeSymbol, TargetEntity: defect.TargetEntity,
+		StmtAnchorHash: defect.StmtAnchorHash, CoreSlotKey: defect.CoreSlotKey, SlotKey: defect.SlotKey,
+		CleanToken:       defect.CleanToken,
 		DefectClassMajor: defect.DefectClassMajor, Severity: defect.Severity,
 		LineStart: defect.LineStart, LineEnd: defect.LineEnd, BlobHash: defect.BlobHash,
 		ScopeBodyHash: defect.ScopeBodyHash, LastSeenReportID: defect.LastSeenReportID,
@@ -145,7 +147,6 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 	matchedDefects := make(map[uint]bool)
 	now := input.CommittedAt
 
-	newDefectByFingerprint := make(map[string]uint)
 	newDefectBySlotKey := make(map[string]uint)
 	for _, decision := range committableDecisions(input) {
 		defectID := decision.DefectID
@@ -176,7 +177,6 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 			if group != nil {
 				identity = group.Identity
 			}
-			fingerprint, _ := canonicalIdentity(identity)
 			slotKey := identity.SlotKey
 			if slotKey == "" && identity.NormPath != "" && identity.DefectClassMajor != "" {
 				targetEntity := identity.TargetEntity
@@ -191,8 +191,8 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 				coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
 				slotKey = ComputePreciseSlotKey(coreSlot, stmtHash)
 			}
-			defectID, exists := newDefectByFingerprint[fingerprint]
-			if !exists && slotKey != "" {
+			defectID, exists := uint(0), false
+			if slotKey != "" {
 				defectID, exists = newDefectBySlotKey[slotKey]
 			}
 			if !exists {
@@ -206,7 +206,6 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 					return nil, err
 				}
 				defectID = createdDefect.ID
-				newDefectByFingerprint[fingerprint] = defectID
 				if createdDefect.SlotKey != "" {
 					newDefectBySlotKey[createdDefect.SlotKey] = defectID
 				}
@@ -227,7 +226,6 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 					}
 				}
 			}
-			newDefectByFingerprint[fingerprint] = defectID
 			if slotKey != "" {
 				newDefectBySlotKey[slotKey] = defectID
 			}
@@ -429,9 +427,10 @@ func rollbackReportLedger(tx *gorm.DB, report models.TaskReport) error {
 			updates := map[string]interface{}{
 				"status": snapshot.Status, "status_reason": snapshot.StatusReason,
 				"norm_path": snapshot.NormPath, "scope_key": snapshot.ScopeKey,
-				"symbol_path": snapshot.SymbolPath, "stmt_shape": snapshot.StmtShape,
-				"clean_token": snapshot.CleanToken, "prev_shape": snapshot.PrevShape,
-				"next_shape": snapshot.NextShape, "occurrence_index": snapshot.OccurrenceIndex,
+				"symbol_path":  snapshot.SymbolPath,
+				"scope_symbol": snapshot.ScopeSymbol, "target_entity": snapshot.TargetEntity,
+				"stmt_anchor_hash": snapshot.StmtAnchorHash, "core_slot_key": snapshot.CoreSlotKey, "slot_key": snapshot.SlotKey,
+				"clean_token":        snapshot.CleanToken,
 				"defect_class_major": snapshot.DefectClassMajor, "severity": snapshot.Severity,
 				"line_start": snapshot.LineStart, "line_end": snapshot.LineEnd,
 				"blob_hash": snapshot.BlobHash, "scope_body_hash": snapshot.ScopeBodyHash,
@@ -534,36 +533,80 @@ func passObservationCovered(input LedgerInput, identity Identity) bool {
 }
 
 func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *models.AnalysisFinding) (models.Defect, error) {
-	fingerprint, fingerprintKind := canonicalIdentity(identity)
 	if tx.Dialector.Name() == "postgres" {
 		lockKey := fmt.Sprintf("%d:%d", input.Repo.ID, input.TaskType.ID)
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
 			return models.Defect{}, fmt.Errorf("acquire defect namespace lock: %w", err)
 		}
 	}
-	var existing models.Defect
-	err := tx.Where("repo_id = ? AND task_type_id = ? AND canonical_fingerprint = ?",
-		input.Repo.ID, input.TaskType.ID, fingerprint).First(&existing).Error
-	if err == nil {
-		return existing, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return models.Defect{}, fmt.Errorf("check existing defect: %w", err)
-	}
 	scope := scopeEntryByPath(input.Scope, identity.NormPath)
 	lineStart, lineEnd := identity.LineStart, identity.LineEnd
+
+	// 计算并归一化两级槽位坐标
+	scopeSymbol := ""
+	if identity.SymbolPath != "" {
+		scopeSymbol = NormalizeScopeSymbol(identity.SymbolPath)
+	}
+	if scopeSymbol == "" && finding != nil && finding.ScopeSymbol != "" {
+		scopeSymbol = NormalizeScopeSymbol(finding.ScopeSymbol)
+	}
+	targetEntity := identity.TargetEntity
+	if targetEntity == "" && finding != nil && finding.TargetSymbol != "" {
+		targetEntity = finding.TargetSymbol
+	}
+	if targetEntity == "" && finding != nil {
+		targetEntity, _ = ExtractPhysicalTargetEntity(finding.CodeSnippet, "", identity.DefectClassMajor)
+	}
+	if targetEntity == "" && identity.CleanToken != "" {
+		targetEntity, _ = ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
+	}
+	stmtAnchorHash := identity.StmtAnchorHash
+	if stmtAnchorHash == "" && identity.CleanToken != "" {
+		stmtAnchorHash = ComputeStmtAnchorHash(identity.CleanToken)
+	}
+	coreSlotKey := identity.CoreSlotKey
+	if coreSlotKey == "" && identity.NormPath != "" && identity.DefectClassMajor != "" {
+		coreSlotKey = ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
+	}
+	slotKey := identity.SlotKey
+	if slotKey == "" && coreSlotKey != "" {
+		slotKey = ComputePreciseSlotKey(coreSlotKey, stmtAnchorHash)
+	}
+
+	// Phase 3 终态强约束：优先根据 SlotKey 检索当前活跃缺陷，杜绝重复创建
+	if slotKey != "" {
+		var slotExisting models.Defect
+		err := tx.Where("repo_id = ? AND task_type_id = ? AND slot_key = ? AND status = ?",
+			input.Repo.ID, input.TaskType.ID, slotKey, DefectStatusActive).First(&slotExisting).Error
+		if err == nil {
+			return slotExisting, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.Defect{}, fmt.Errorf("check existing active slot defect: %w", err)
+		}
+	}
+
+	fingerprint := slotKey
+	if fingerprint == "" {
+		fingerprint, _ = canonicalIdentity(identity)
+	}
+
 	defect := models.Defect{
 		RepoID: input.Repo.ID, TaskTypeID: input.TaskType.ID,
 		Status: DefectStatusActive, StatusReason: "created from NEW observation",
-		CanonicalFingerprint: fingerprint, IdentityKind: fingerprintKind,
-		NormPath: identity.NormPath, ScopeKey: identity.ScopeKey,
-		SymbolPath: identity.SymbolPath, StmtShape: identity.StmtShape,
-		CleanToken: identity.CleanToken, PrevShape: identity.PrevShape, NextShape: identity.NextShape,
-		OccurrenceIndex: identity.OccurrenceIndex, DefectClassMajor: identity.DefectClassMajor,
+		CanonicalFingerprint: fingerprint, IdentityKind: "SLOT",
+		NormPath: identity.NormPath, ScopeSymbol: scopeSymbol, TargetEntity: targetEntity,
+		StmtAnchorHash: stmtAnchorHash, Confidence: identity.Confidence,
+		CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+		ScopeKey: identity.ScopeKey, SymbolPath: identity.SymbolPath,
+		CleanToken: identity.CleanToken, DefectClassMajor: identity.DefectClassMajor,
 		Severity: identity.Severity, LineStart: &lineStart, LineEnd: &lineEnd,
 		ScopeBodyHash: identity.ScopeBodyHash,
 		FirstReportID: input.Report.ID, LastSeenReportID: input.Report.ID,
 		LastMatchedReportID: input.Report.ID, RowVersion: 1,
+	}
+	if defect.Confidence == "" {
+		defect.Confidence = AnchorHigh
 	}
 	if finding != nil {
 		defect.Title = finding.Title
@@ -571,50 +614,6 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 		defect.CodeSnippet = finding.CodeSnippet
 		defect.Suggestion = finding.Suggestion
 		defect.DetailSummary = finding.Detail
-		if finding.ScopeSymbol != "" {
-			defect.ScopeSymbol = NormalizeScopeSymbol(finding.ScopeSymbol)
-		}
-		if finding.TargetSymbol != "" {
-			defect.TargetEntity = finding.TargetSymbol
-		}
-	}
-	if defect.ScopeSymbol == "" && identity.SymbolPath != "" {
-		defect.ScopeSymbol = NormalizeScopeSymbol(identity.SymbolPath)
-	}
-	if defect.TargetEntity == "" && identity.TargetEntity != "" {
-		defect.TargetEntity = identity.TargetEntity
-	}
-	if defect.TargetEntity == "" && identity.DefectClassMajor != "" {
-		defect.TargetEntity, _ = ExtractPhysicalTargetEntity(defect.CodeSnippet, "", identity.DefectClassMajor)
-	}
-	if defect.StmtAnchorHash == "" && identity.StmtAnchorHash != "" {
-		defect.StmtAnchorHash = identity.StmtAnchorHash
-	}
-	if defect.StmtAnchorHash == "" && defect.CleanToken != "" {
-		defect.StmtAnchorHash = ComputeStmtAnchorHash(defect.CleanToken)
-	}
-	if defect.CoreSlotKey == "" && identity.CoreSlotKey != "" {
-		defect.CoreSlotKey = identity.CoreSlotKey
-	}
-	if defect.CoreSlotKey == "" && defect.NormPath != "" && defect.DefectClassMajor != "" {
-		defect.CoreSlotKey = ComputeCoreSlotKey(defect.NormPath, defect.ScopeSymbol, defect.DefectClassMajor, defect.TargetEntity)
-	}
-	if defect.SlotKey == "" && identity.SlotKey != "" {
-		defect.SlotKey = identity.SlotKey
-	}
-	if defect.SlotKey == "" && defect.CoreSlotKey != "" {
-		defect.SlotKey = ComputePreciseSlotKey(defect.CoreSlotKey, defect.StmtAnchorHash)
-	}
-	if defect.SlotKey != "" {
-		var slotExisting models.Defect
-		err := tx.Where("repo_id = ? AND task_type_id = ? AND slot_key = ? AND status = ?",
-			input.Repo.ID, input.TaskType.ID, defect.SlotKey, DefectStatusActive).First(&slotExisting).Error
-		if err == nil {
-			return slotExisting, nil
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.Defect{}, fmt.Errorf("check existing active slot defect: %w", err)
-		}
 	}
 	if scope != nil {
 		defect.BlobHash = scope.BlobHash
@@ -626,6 +625,9 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 }
 
 func canonicalIdentity(identity Identity) (string, string) {
+	if identity.SlotKey != "" {
+		return identity.SlotKey, "SLOT"
+	}
 	switch {
 	case identity.K2 != "":
 		return identity.K2, "K2"
@@ -636,7 +638,7 @@ func canonicalIdentity(identity Identity) (string, string) {
 	case identity.F2 != "":
 		return identity.F2, "F2"
 	default:
-		return identityHash(identity.NormPath, identity.ScopeKey, identity.StmtShape, fmt.Sprint(identity.OccurrenceIndex), identity.DefectClassMajor), "K1"
+		return identityHash(identity.NormPath, identity.ScopeKey, identity.DefectClassMajor), "SLOT"
 	}
 }
 
@@ -713,9 +715,8 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 	snapshot := newDefectSnapshot(defect)
 	updates := map[string]interface{}{
 		"norm_path": identity.NormPath, "scope_key": identity.ScopeKey,
-		"symbol_path": identity.SymbolPath, "stmt_shape": identity.StmtShape,
-		"clean_token": identity.CleanToken, "prev_shape": identity.PrevShape,
-		"next_shape": identity.NextShape, "occurrence_index": identity.OccurrenceIndex,
+		"symbol_path":        identity.SymbolPath,
+		"clean_token":        identity.CleanToken,
 		"defect_class_major": identity.DefectClassMajor, "severity": identity.Severity,
 		"line_start": lineStart, "line_end": lineEnd,
 		"scope_body_hash":     identity.ScopeBodyHash,
@@ -799,9 +800,10 @@ func identityChanged(defect models.Defect, identity Identity) bool {
 	lineEndChanged := (defect.LineEnd == nil && identity.LineEnd != 0) ||
 		(defect.LineEnd != nil && *defect.LineEnd != identity.LineEnd)
 	return defect.NormPath != identity.NormPath || defect.ScopeKey != identity.ScopeKey ||
-		defect.SymbolPath != identity.SymbolPath || defect.StmtShape != identity.StmtShape ||
-		defect.CleanToken != identity.CleanToken || defect.PrevShape != identity.PrevShape ||
-		defect.NextShape != identity.NextShape || defect.OccurrenceIndex != identity.OccurrenceIndex ||
+		defect.SymbolPath != identity.SymbolPath ||
+		defect.TargetEntity != identity.TargetEntity || defect.StmtAnchorHash != identity.StmtAnchorHash ||
+		defect.SlotKey != identity.SlotKey ||
+		defect.CleanToken != identity.CleanToken ||
 		defect.DefectClassMajor != identity.DefectClassMajor || defect.Severity != identity.Severity ||
 		lineStartChanged || lineEndChanged || defect.ScopeBodyHash != identity.ScopeBodyHash
 }
@@ -936,30 +938,26 @@ func upsertDefectAliases(tx *gorm.DB, input LedgerInput, defectID uint, identity
 		value     string
 		class     string
 	}{
-		{AliasK2, identity.K2, AliasStrong},
-		{AliasF1, identity.F1, AliasStrong},
-		{AliasK1, identity.K1, AliasBucket},
-		{AliasF2, identity.F2, AliasBucket},
-		{AliasF3, identity.F3, AliasBucket},
 		{AliasPath, identity.NormPath, AliasBucket},
 		{AliasRoot, identity.RootFamily, AliasBucket},
 		{AliasResource, identity.ResourceIdentity, AliasBucket},
 		{AliasChain, identity.ValidationChain, AliasBucket},
 	}
 	// 记录两级槽位自愈别名
-	if identity.NormPath != "" && identity.DefectClassMajor != "" {
+	slotKey := identity.SlotKey
+	if slotKey == "" && identity.NormPath != "" && identity.DefectClassMajor != "" {
 		targetEntity, _ := ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
 		stmtHash := ComputeStmtAnchorHash(identity.CleanToken)
 		scopeSymbol := NormalizeScopeSymbol(identity.SymbolPath)
 		coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
-		slotKey := ComputePreciseSlotKey(coreSlot, stmtHash)
-		if slotKey != "" {
-			values = append(values, struct {
-				aliasType string
-				value     string
-				class     string
-			}{"SLOT_HEALED", slotKey, AliasStrong})
-		}
+		slotKey = ComputePreciseSlotKey(coreSlot, stmtHash)
+	}
+	if slotKey != "" {
+		values = append(values, struct {
+			aliasType string
+			value     string
+			class     string
+		}{AliasSlotHealed, slotKey, AliasStrong})
 	}
 	if input.RenameTargets != nil {
 		if target, ok := input.RenameTargets[identity.NormPath]; ok && target != "" {

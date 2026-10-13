@@ -53,11 +53,7 @@ type aiFixDefect struct {
 	NormPath             string `json:"norm_path"`
 	ScopeKey             string `json:"scope_key"`
 	SymbolPath           string `json:"symbol_path"`
-	StmtShape            string `json:"stmt_shape"`
 	CleanToken           string `json:"clean_token"`
-	PrevShape            string `json:"prev_shape"`
-	NextShape            string `json:"next_shape"`
-	OccurrenceIndex      int    `json:"occurrence_index"`
 	DefectClassMajor     string `json:"defect_class_major"`
 	Severity             string `json:"severity"`
 	LineStart            *int   `json:"line_start"`
@@ -377,11 +373,7 @@ func newAIFixDefect(defect models.Defect) aiFixDefect {
 		NormPath:             defect.NormPath,
 		ScopeKey:             defect.ScopeKey,
 		SymbolPath:           defect.SymbolPath,
-		StmtShape:            defect.StmtShape,
 		CleanToken:           defect.CleanToken,
-		PrevShape:            defect.PrevShape,
-		NextShape:            defect.NextShape,
-		OccurrenceIndex:      defect.OccurrenceIndex,
 		DefectClassMajor:     defect.DefectClassMajor,
 		Severity:             defect.Severity,
 		LineStart:            defect.LineStart,

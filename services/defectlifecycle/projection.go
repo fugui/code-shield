@@ -420,7 +420,7 @@ func candidateMatchTier(candidate Candidate) string {
 	switch {
 	case hasSource(candidate, AliasHuman):
 		return MatchHuman
-	case hasSource(candidate, AliasK2) || hasSource(candidate, AliasF1):
+	case hasSource(candidate, AliasSlotPrecise) || hasSource(candidate, AliasSlotHealed):
 		return MatchStrong
 	case hasSource(candidate, AliasRename):
 		return MatchStruct

@@ -62,9 +62,9 @@ func TestConfirmProbableCreatesDefectAndTransferAliasesOnMerge(t *testing.T) {
 	target := models.Defect{
 		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
 		StatusReason: "target", CanonicalFingerprint: targetFingerprint + "-target", IdentityKind: "K1",
-		NormPath: targetIdentity.NormPath, ScopeKey: targetIdentity.ScopeKey,
-		SymbolPath: targetIdentity.SymbolPath, StmtShape: targetIdentity.StmtShape,
-		CleanToken: targetIdentity.CleanToken, OccurrenceIndex: targetIdentity.OccurrenceIndex,
+		SymbolPath: targetIdentity.SymbolPath, TargetEntity: targetIdentity.TargetEntity,
+		StmtAnchorHash: targetIdentity.StmtAnchorHash, CoreSlotKey: targetIdentity.CoreSlotKey, SlotKey: targetIdentity.SlotKey,
+		CleanToken:       targetIdentity.CleanToken,
 		DefectClassMajor: targetIdentity.DefectClassMajor, Severity: targetIdentity.Severity,
 		LineStart: &targetIdentity.LineStart, LineEnd: &targetIdentity.LineEnd,
 		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID, RowVersion: 1,
@@ -132,7 +132,7 @@ func TestBindObservationActivatesCoverageGapDefect(t *testing.T) {
 		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusCoverageGap,
 		StatusReason: "coverage gap", CanonicalFingerprint: "target-fingerprint", IdentityKind: "K1",
 		NormPath: "src/a.cpp", ScopeKey: "target-scope", SymbolPath: "calculate",
-		StmtShape: "use-value", DefectClassMajor: "memory", Severity: "严重",
+		DefectClassMajor: "memory", Severity: "严重",
 		LineStart: &lineStart, LineEnd: &lineEnd,
 		FirstReportID: report.ID, LastSeenReportID: report.ID, RowVersion: 3,
 	}
