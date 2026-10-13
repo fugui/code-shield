@@ -31,6 +31,8 @@ review-reports/
 /reports/
 task-reports/
 /services/data/
+tmp/
+data/
 
 # Reconciliation intermediate artifacts
 recon-*.json
