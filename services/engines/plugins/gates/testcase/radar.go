@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gorm.io/datatypes"
@@ -158,4 +159,208 @@ func buildFastPassFinding(unit coverage.PlanUnit, reason string) *models.Analysi
 		Title:              fmt.Sprintf("测试用例合格：%s", displayName),
 		Detail:             detail,
 	}
+}
+
+// extractBraceBodyBalanced 使用纯 Go 词法状态机平衡匹配顶层大括号，避免嵌套闭包与字面量误导
+func extractBraceBodyBalanced(source string) string {
+	firstBrace := strings.Index(source, "{")
+	if firstBrace < 0 {
+		return source
+	}
+
+	depth := 0
+	inString := false
+	inChar := false
+	inLineComment := false
+	inBlockComment := false
+	var strQuote byte
+
+	startIdx := -1
+	endIdx := -1
+
+	for i := 0; i < len(source); i++ {
+		ch := source[i]
+		next := byte(0)
+		if i+1 < len(source) {
+			next = source[i+1]
+		}
+
+		if inLineComment {
+			if ch == '\n' {
+				inLineComment = false
+			}
+			continue
+		}
+		if inBlockComment {
+			if ch == '*' && next == '/' {
+				inBlockComment = false
+				i++
+			}
+			continue
+		}
+		if inString {
+			if ch == '\\' {
+				i++ // 跳过转义字符
+			} else if ch == strQuote {
+				inString = false
+			}
+			continue
+		}
+		if inChar {
+			if ch == '\\' {
+				i++
+			} else if ch == '\'' {
+				inChar = false
+			}
+			continue
+		}
+
+		// 检查注释开始
+		if ch == '/' && next == '/' {
+			inLineComment = true
+			i++
+			continue
+		}
+		if ch == '/' && next == '*' {
+			inBlockComment = true
+			i++
+			continue
+		}
+
+		// 检查字符串/字符开始
+		if ch == '"' || ch == '`' {
+			inString = true
+			strQuote = ch
+			continue
+		}
+		if ch == '\'' {
+			inChar = true
+			continue
+		}
+
+		// 括号计数
+		if ch == '{' {
+			if depth == 0 {
+				startIdx = i + 1
+			}
+			depth++
+		} else if ch == '}' {
+			depth--
+			if depth == 0 {
+				endIdx = i
+				break
+			}
+		}
+	}
+
+	if startIdx >= 0 && endIdx >= startIdx {
+		return source[startIdx:endIdx]
+	}
+	// 回退到朴素截取
+	lastBrace := strings.LastIndex(source, "}")
+	if firstBrace >= 0 && lastBrace > firstBrace {
+		return source[firstBrace+1 : lastBrace]
+	}
+	return source
+}
+
+// extractPythonIndentBody 基于缩进块提取 Python 函数体，避免参数类型注解冒号的误截断
+func extractPythonIndentBody(source string) string {
+	lines := strings.Split(source, "\n")
+	if len(lines) == 0 {
+		return source
+	}
+
+	defLineIdx := -1
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if strings.HasPrefix(trimmed, "def ") {
+			defLineIdx = i
+			break
+		}
+	}
+	if defLineIdx < 0 {
+		colonIdx := strings.Index(source, ":")
+		if colonIdx >= 0 {
+			return source[colonIdx+1:]
+		}
+		return source
+	}
+
+	// 找到包含函数定义结束冒号的那一行
+	colonLineIdx := defLineIdx
+	for i := defLineIdx; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasSuffix(trimmed, ":") {
+			colonLineIdx = i
+			break
+		}
+	}
+
+	// 确定第一条函数体内语句的缩进长度
+	baseIndent := -1
+	var bodyLines []string
+	for i := colonLineIdx + 1; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			bodyLines = append(bodyLines, line)
+			continue
+		}
+		// 计算当前行前导空格数
+		curIndent := len(line) - len(strings.TrimLeft(line, " \t"))
+		if baseIndent < 0 {
+			baseIndent = curIndent
+		}
+		if curIndent < baseIndent {
+			// 缩进回退，说明函数体已结束
+			break
+		}
+		bodyLines = append(bodyLines, line)
+	}
+
+	if len(bodyLines) == 0 {
+		// 回退到原朴素截取
+		colonIdx := strings.Index(source, ":")
+		if colonIdx >= 0 {
+			return source[colonIdx+1:]
+		}
+		return source
+	}
+	return strings.Join(bodyLines, "\n")
+}
+
+// countEffectiveLines 统计有效代码行数（剔除空行和纯注释行）
+func countEffectiveLines(code string) int {
+	lines := strings.Split(code, "\n")
+	count := 0
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "/*") || strings.HasPrefix(trimmed, "*") {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+var (
+	deepCppEqPattern = regexp.MustCompile(`\b(?:EXPECT_EQ|ASSERT_EQ)\s*\(\s*([^,]+?)\s*,\s*([^,)]+?)\s*\)`)
+	deepGoEqPattern  = regexp.MustCompile(`\bassert\.Equal\s*\(\s*[^,]+,\s*([^,]+?)\s*,\s*([^,)]+?)\s*\)`)
+	deepPyEqPattern  = regexp.MustCompile(`(?m)^\s*(?:assert\s+|self\.assertEqual\s*\(\s*)(.+?)\s*==\s*([^)]+?)\s*(?:\)|$)`)
+)
+
+// hasDeepSelfEqual 识别带点号或复杂表达式的自等比较恒真（如 resp.data.id == resp.data.id）
+func hasDeepSelfEqual(code string, pattern *regexp.Regexp) bool {
+	matches := pattern.FindAllStringSubmatch(code, -1)
+	for _, m := range matches {
+		if len(m) >= 3 {
+			left := strings.TrimSpace(m[1])
+			right := strings.TrimSpace(m[2])
+			if left != "" && left == right {
+				return true
+			}
+		}
+	}
+	return false
 }

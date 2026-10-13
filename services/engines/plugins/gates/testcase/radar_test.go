@@ -83,6 +83,58 @@ func TestCppRadarDecisions(t *testing.T) {
 			wantDecision: plugins.DecisionNeedVerify,
 			wantHintKind: "HELPER_ASSERTION_CALL",
 		},
+		{
+			name: "isolated weak assertion",
+			code: `TEST(OrderTest, WeakAssertOnly) {
+    Order order;
+    order.setPrice(100);
+    order.calculateTax();
+    order.applyDiscount();
+    EXPECT_TRUE(order.isValid());
+}`,
+			startLine:    1,
+			endLine:      7,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "ISOLATED_WEAK_ASSERTION",
+		},
+		{
+			name: "unguarded early return",
+			code: `TEST(OrderTest, UnguardedReturn) {
+    Order order;
+    if (order.isNil()) {
+        return;
+    }
+    EXPECT_EQ(order.getTotal(), 100);
+}`,
+			startLine:    1,
+			endLine:      7,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "UNGUARDED_EARLY_RETURN",
+		},
+		{
+			name: "swallowed catch",
+			code: `TEST(OrderTest, SwallowedCatch) {
+    Order order;
+    try {
+        order.process();
+    } catch (...) {}
+    EXPECT_EQ(order.getTotal(), 100);
+}`,
+			startLine:    1,
+			endLine:      7,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "SWALLOWED_EXCEPTION",
+		},
+		{
+			name: "lambda brace balanced",
+			code: `TEST(OrderTest, LambdaBrace) {
+    auto calc = [](int x) { return x * 2; };
+    EXPECT_EQ(calc(10), 20);
+}`,
+			startLine:    1,
+			endLine:      4,
+			wantDecision: plugins.DecisionFastPass,
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,6 +233,52 @@ func TestPythonRadarDecisions(t *testing.T) {
 			endLine:      3,
 			wantDecision: plugins.DecisionNeedVerify,
 			wantHintKind: "POTENTIAL_HELPER_VERIFICATION",
+		},
+		{
+			name: "isolated weak assertion",
+			code: `def test_user_profile():
+    user = create_user("Alice")
+    user.set_age(20)
+    user.set_city("Beijing")
+    assert user is not None`,
+			startLine:    1,
+			endLine:      5,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "ISOLATED_WEAK_ASSERTION",
+		},
+		{
+			name: "unguarded early return",
+			code: `def test_unguarded_return():
+    res = fetch_data()
+    if not res:
+        return
+    assert res == 100`,
+			startLine:    1,
+			endLine:      5,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "UNGUARDED_EARLY_RETURN",
+		},
+		{
+			name: "swallowed except",
+			code: `def test_swallowed_except():
+    try:
+        do_operation()
+    except Exception:
+        pass
+    assert 1 == 1`,
+			startLine:    1,
+			endLine:      6,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "SWALLOWED_EXCEPTION",
+		},
+		{
+			name: "type annotation colon",
+			code: `def test_with_type_annotation(cfg: dict = {}):
+    res = process_config(cfg)
+    assert res == "success"`,
+			startLine:    1,
+			endLine:      3,
+			wantDecision: plugins.DecisionFastPass,
 		},
 	}
 
@@ -285,6 +383,58 @@ func TestGoRadarDecisions(t *testing.T) {
 }`,
 			startLine:    1,
 			endLine:      3,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "TAUTOLOGY_LITERAL",
+		},
+		{
+			name: "isolated weak assertion",
+			code: `func TestWeakOnly(t *testing.T) {
+    user := NewUser("Bob")
+    user.SetRole("Admin")
+    user.UpdateStatus(1)
+    assert.NotNil(t, user)
+}`,
+			startLine:    1,
+			endLine:      6,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "ISOLATED_WEAK_ASSERTION",
+		},
+		{
+			name: "unguarded early return",
+			code: `func TestUnguardedReturn(t *testing.T) {
+    res := fetchData()
+    if res == nil {
+        return
+    }
+    assert.Equal(t, 1, res.ID)
+}`,
+			startLine:    1,
+			endLine:      7,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "UNGUARDED_EARLY_RETURN",
+		},
+		{
+			name: "swallowed error",
+			code: `func TestSwallowedError(t *testing.T) {
+    res, err := doSomething()
+    if err != nil {
+        return
+    }
+    assert.Equal(t, 1, res.ID)
+}`,
+			startLine:    1,
+			endLine:      7,
+			wantDecision: plugins.DecisionNeedVerify,
+			wantHintKind: "SWALLOWED_EXCEPTION",
+		},
+		{
+			name: "deep property self equal",
+			code: `func TestDeepSelfEqual(t *testing.T) {
+    resp := getResponse()
+    assert.Equal(t, resp.Data.Id, resp.Data.Id)
+}`,
+			startLine:    1,
+			endLine:      4,
 			wantDecision: plugins.DecisionNeedVerify,
 			wantHintKind: "TAUTOLOGY_LITERAL",
 		},

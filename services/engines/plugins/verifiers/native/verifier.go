@@ -258,13 +258,16 @@ func buildThinDefectFinding(unit coverage.PlanUnit, resp TriageLLMResponse, snip
 	case "UTE_EMPTY_TEST":
 		catLabel = "断言有效性-空测试"
 		suggestion = "请为测试用例补充实质性断言语句，验证被测方法关键返回值或状态变更。"
-	case "UTE_SILENT_CATCH":
+	case "UTE_SILENT_CATCH", "UTE_INVALID_CAPTURE":
+		catCode = "UTE_INVALID_CAPTURE"
 		catLabel = "断言有效性-无效捕获"
 		suggestion = "请在 catch 块中唤起测试失败（如 fail() 或 ADD_FAILURE()），避免吞噬被测逻辑抛出的异常。"
-	case "UTE_INCOMPLETE_EXPECT":
+	case "UTE_INCOMPLETE_EXPECT", "UTE_INCOMPLETE_EXPECTATION":
+		catCode = "UTE_INCOMPLETE_EXPECTATION"
 		catLabel = "断言有效性-预期结果不完整"
 		suggestion = "请补充对业务关键载荷或核心属性的断言校验。"
-	case "UTE_ILLEGAL_EXIT":
+	case "UTE_ILLEGAL_EXIT", "UTE_INVALID_EARLY_RETURN":
+		catCode = "UTE_INVALID_EARLY_RETURN"
 		catLabel = "提前返回-非法退出"
 		suggestion = "请重构测试逻辑，移除提早返回的条件分支，确保后续断言稳定执行。"
 	case "UTE_SILENT_SKIP":
@@ -273,6 +276,14 @@ func buildThinDefectFinding(unit coverage.PlanUnit, resp TriageLLMResponse, snip
 	case "UTE_MISSING_MOCK":
 		catLabel = "断言有效性-Mock遗漏"
 		suggestion = "请对 Mock 对象的关键行为与交互进行显式 verify 校验。"
+	case "UTE_ALWAYS_TRUE":
+		catCode = "UTE_ALWAYS_TRUE"
+		catLabel = "断言有效性-永真断言"
+		suggestion = "请删除或重构形式化恒真断言/无效覆盖桩，补充真实被测逻辑的输入输出边界验证。"
+	case "UTE_TAUTOLOGY_ASSERTION":
+		catCode = "UTE_TAUTOLOGY_ASSERTION"
+		catLabel = "断言有效性-永真断言"
+		suggestion = "请删除或重构形式化恒真断言/无效覆盖桩，补充真实被测逻辑的输入输出边界验证。"
 	case "UTE_OTHER":
 		catLabel = "其它"
 		suggestion = "请检查并重构测试用例，排除无效测试逻辑。"

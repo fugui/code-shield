@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"code-shield/models"
 	"code-shield/services/coverage"
 	"code-shield/services/engines"
 	"code-shield/services/engines/chunker"
@@ -114,11 +115,11 @@ func TestPreflightGateFastPassFindingPropagation(t *testing.T) {
 
 	engine := &DebateEngine{}
 	ctx := &engines.EngineContext{
-		Ctx:          context.Background(),
-		CodesPath:    tmpDir,
-		ReportID:     1001,
-		TaskTypeID:   206,
-		RepoID:       88,
+		Ctx:        context.Background(),
+		CodesPath:  tmpDir,
+		ReportID:   1001,
+		TaskTypeID: 206,
+		RepoID:     88,
 		Plugins: plugins.PluginsConfig{
 			PreflightGate: &plugins.TaskPluginDeclaration{
 				ID: "test_case_radar",
@@ -159,5 +160,131 @@ func TestPreflightGateFastPassFindingPropagation(t *testing.T) {
 	}
 	if findings[0].Title != "测试用例合格：CalcTest.ValidAdd" {
 		t.Fatalf("unexpected finding title: %q", findings[0].Title)
+	}
+}
+
+type mockConcurrentVerifier struct {
+	calledCount int
+}
+
+func (m *mockConcurrentVerifier) ID() string {
+	return "mock_concurrent_verifier"
+}
+
+func (m *mockConcurrentVerifier) Verify(codesPath string, unit coverage.PlanUnit, hints []plugins.StructuralFactHint, promptTemplate string, timeoutSec float64) (plugins.RadarResult, error) {
+	return plugins.RadarResult{
+		Decision: plugins.DecisionTier0Defect,
+		Finding: &models.AnalysisFinding{
+			PrimaryUnitID: unit.ID,
+			Severity:      "严重",
+			Category:      "断言有效性-预期结果不完整",
+			CategoryCode:  "UTE_INCOMPLETE_EXPECTATION",
+			Title:         "复核确认为缺陷",
+		},
+	}, nil
+}
+
+func TestPreflightGateConcurrentThinVerifier(t *testing.T) {
+	tmpDir := t.TempDir()
+	relPath := "test_concurrent.go"
+	absPath := filepath.Join(tmpDir, relPath)
+
+	// 编写包含 5 个仅带弱断言的 Go 测试用例
+	content := `package test
+import "testing"
+import "github.com/stretchr/testify/assert"
+
+func TestUnit1(t *testing.T) {
+    x := 1
+    y := 2
+    z := 3
+    w := x + y + z
+    assert.NotNil(t, w)
+}
+func TestUnit2(t *testing.T) {
+    x := 1
+    y := 2
+    z := 3
+    w := x + y + z
+    assert.NotNil(t, w)
+}
+func TestUnit3(t *testing.T) {
+    x := 1
+    y := 2
+    z := 3
+    w := x + y + z
+    assert.NotNil(t, w)
+}
+func TestUnit4(t *testing.T) {
+    x := 1
+    y := 2
+    z := 3
+    w := x + y + z
+    assert.NotNil(t, w)
+}
+func TestUnit5(t *testing.T) {
+    x := 1
+    y := 2
+    z := 3
+    w := x + y + z
+    assert.NotNil(t, w)
+}
+`
+	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	mockVerifier := &mockConcurrentVerifier{}
+	_ = plugins.RegisterThinVerifier(mockVerifier)
+
+	engine := &DebateEngine{}
+	ctx := &engines.EngineContext{
+		Ctx:        context.Background(),
+		CodesPath:  tmpDir,
+		ReportID:   2001,
+		TaskTypeID: 206,
+		RepoID:     99,
+		Plugins: plugins.PluginsConfig{
+			PreflightGate: &plugins.TaskPluginDeclaration{
+				ID: "test_case_radar",
+			},
+			ThinVerifier: &plugins.TaskPluginDeclaration{
+				ID: "mock_concurrent_verifier",
+			},
+		},
+	}
+
+	var units []coverage.PlanUnit
+	lineRanges := [][2]int{{4, 11}, {12, 18}, {19, 25}, {26, 32}, {33, 39}}
+	for i, r := range lineRanges {
+		units = append(units, coverage.PlanUnit{
+			ID:          filepath.Join("unit", string(rune('1'+i))),
+			Kind:        coverage.PlanUnitEntity,
+			Path:        relPath,
+			DisplayName: "TestUnit",
+			StartLine:   r[0],
+			EndLine:     r[1],
+		})
+	}
+
+	bundle := chunker.SemanticBundle{
+		Name:         "bundle-concurrent-001",
+		PrimaryUnits: units,
+	}
+
+	findings, records, remaining, allDone := engine.applyPreflightGates(ctx, &bundle)
+	if !allDone || len(remaining) != 0 {
+		t.Fatalf("expected allDone=true, remaining=%d", len(remaining))
+	}
+	if len(findings) != 5 {
+		t.Fatalf("expected 5 defect findings, got %d", len(findings))
+	}
+	if len(records) != 5 {
+		t.Fatalf("expected 5 defect records, got %d", len(records))
+	}
+	for _, rec := range records {
+		if rec.Status != "DEFECT" {
+			t.Fatalf("expected record status DEFECT, got %s", rec.Status)
+		}
 	}
 }
