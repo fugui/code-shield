@@ -373,8 +373,12 @@ func GetEngineStrict(mode string) (TaskEngine, error) {
 func BuildScanCoverage(ctx *EngineContext, details []ChunkDetails, plan *coverage.ScanPlan) *coverage.Coverage {
 	chunks := make([]coverage.Chunk, 0, len(details))
 	for _, detail := range details {
+		uid := sanitizeChunkUID(detail.ChunkUID)
+		if uid == "" {
+			uid = sanitizeChunkUID(detail.ChunkName)
+		}
 		chunks = append(chunks, coverage.Chunk{
-			UID:          detail.ChunkName,
+			UID:          uid,
 			Status:       detail.Status,
 			Error:        detail.ErrorMessage,
 			ErrorClass:   detail.ErrorClass,
@@ -414,6 +418,18 @@ func BuildScanCoverage(ctx *EngineContext, details []ChunkDetails, plan *coverag
 	built.CommitVerified = commitVerified
 	built.WorktreeClean = worktreeClean
 	return &built
+}
+
+func sanitizeChunkUID(uid string) string {
+	const maxLen = 64
+	if len(uid) <= maxLen {
+		return uid
+	}
+	runes := []rune(uid)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen])
+	}
+	return uid
 }
 
 // ParsePluginsConfig 从原始 JSON 中反序列化插件声明配置
