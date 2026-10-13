@@ -80,7 +80,7 @@ models/db.go (L68-L119)       migration.RunEngineConvergence models/config.go
 | **DIM-4** | 废弃实体与孤儿接口 | `models/models.go` (L1231-L1246)<br>`models/db.go` (L39)<br>`handlers/issue.go` (全文件)<br>`main.go` (L188-L190)<br>`handlers/task_type.go` (L398-L400) | `KeyIssue` 结构体、GORM 映射、增删改查路由 `/issues` 及关联删除逻辑 | 前端路由已重定向至 `/reports`；系统已全面采用 `Defect` 槽位账本体系，从不调用该接口 | **彻底删除实体、GORM注册、路由及控制器** |
 | **DIM-5** | 配置双轨镜像与兼容结构体 | `models/config.go` (`SyncLegacy`, `Config.AI`, 兼容字段, 别名)<br>`services/dispatcher/`<br>`services/runner/`<br>`services/engines/debate/` 等 | 130 行 `SyncLegacy` 双向复制，私有 `legacy*` 反序列化 Hack，8 个别名结构体，业务层直接引用 `AppConfig.AI` | YAML 与 Web 配置中心已全面采用 CS-NATIVE-02；统一收敛至 `LLM` 与 `Scanner` 原生字段 | **业务调用点归一化，删除 SyncLegacy、Config.AI 及兼容结构体** |
 | **DIM-6** | 续扫 Checkpoint 旧版本容错 | `models/config.go` (L249-L257, L432-L434)<br>`services/engines/debate/resume.go` (L25, L225, L251) | 兼容旧开发期的 V2/V3 bundle checkpoint 及 `LegacyV2Policy` 配置项 | 当前标准 schema version 为 5；全新环境不会产生历史版本 checkpoint | **删除 LegacyV2Policy，严格校验版本** |
-| **DIM-7** | 宿主机遗留 Agent 文件清理 | `main.go` (L77)<br>`services/invoker/agent_sync.go` (L38-L58) | 启动时遍历扫描并删除 `~/.config/opencode/agents/` 下按旧任务命名的 md 文件 | 新架构已统一使用单基座 Agent；全新生产服务器/容器环境无历史文件残留 | **移除启动调用与清理函数** |
+| **DIM-7** | 宿主机遗留 Agent 文件清理 | `main.go` (L77)<br>`services/services.go` (L79-L82)<br>`services/invoker/agent_sync.go` (L56-L84)<br>`services/invoker/opencode_test.go` (L213-L239) | 启动时遍历扫描并删除 `~/.config/opencode/agents/` 下按旧任务命名的 md 文件及对应测试 | 新架构已统一使用单基座 Agent；全新生产服务器/容器环境无历史文件残留 | **移除启动调用、包装函数、清理实现与单元测试** |
 | **DIM-8** | 槽位迁移函数职责理顺与命名规范 | `models/models.go` (L1479-L1523)<br>`models/db.go` (L65-L67) | 函数名为 `MigrateDefectSlotSchema`，内部重复执行 AutoMigrate 并执行历史 DROP INDEX | 09 号 Phase 3 已完成终态收敛，该函数本质为初始化物理索引，不应承担 Migration 语义 | **重构为 EnsureDefectSlotIndexes，精简仅保留索引保障** |
 
 ---
@@ -189,7 +189,10 @@ Phase 1: 零风险启动与脚本清理 ──► Phase 2: 废弃实体与路由
      * 删除第 54-56 行调用 `migration.RunEngineConvergence(models.DB, "tasks")`；
      * 删除第 77 行调用 `services.CleanupLegacyTaskAgents()`。
   5. 物理删除 `services/migration/` 整个包（及其单测）。
-  6. 修改 `services/invoker/agent_sync.go`：删除已不再调用的 `CleanupLegacyTaskAgents` 函数。
+  6. 清除遗留 Agent 清理逻辑及废弃测试：
+     * 删除 `services/invoker/agent_sync.go` (L56-L84) 中的 `CleanupLegacyTaskAgents` 实现；
+     * 删除 `services/services.go` (L79-L82) 中的包装函数；
+     * 删除 `services/invoker/opencode_test.go` (L213-L239) 中的废弃测试 `TestCleanupLegacyTaskAgents`。
   7. 固化老环境离线迁移工具：将应用层剥离的 DDL/DML 清理逻辑沉淀为 [`scripts/migrations/v2.0_cleanup_legacy_db.sql`](file:///home/fugui/codes/code-shield/scripts/migrations/v2.0_cleanup_legacy_db.sql) 与 [`scripts/migrations/v2.0_cleanup_legacy_sqlite.sql`](file:///home/fugui/codes/code-shield/scripts/migrations/v2.0_cleanup_legacy_sqlite.sql)，供存量老环境在停机维护时手工执行。
 * **验证准则**：
   * 执行 `go test ./...` 模块级测试全部通过；
@@ -211,7 +214,15 @@ Phase 1: 零风险启动与脚本清理 ──► Phase 2: 废弃实体与路由
 ### 4.3 第三阶段：配置体系收敛与真值源归一
 * **目标**：代码彻底告别 `AppConfig.AI` 影子镜像，实现 `CS-NATIVE-02` 规范唯一真值源。
 * **改动清单**：
-  1. 梳理全工程对 `models.AppConfig.AI.` 的读取点（`services/dispatcher/`、`services/runner/`、`services/engines/debate/` 等），逐一重构至 `models.AppConfig.LLM.` 或 `models.AppConfig.Scanner.`；
+  1. 梳理全工程对 `models.AppConfig.AI.` 的读取点，逐一重构至对应真值源：
+     * `AI.Backend` ➔ `LLM.DefaultResource`
+     * `AI.Models` ➔ `LLM.Resources`
+     * `AI.DebugLogs` ➔ `LLM.DebugLogs`
+     * `AI.Native` ➔ `LLM.FindResource("native")`
+     * `AI.WorkHoursThrottle` ➔ `Scanner.Throttling.WorkHours`
+     * `AI.OutputFormat` ➔ `Scanner.OutputFormat`
+     * `AI.Debate.*` ➔ `Scanner.Debate.*`
+     * `AI.ToolBackends.*` ➔ `Scanner.Artifact.*Resource`（未配置时默认回退 `LLM.DefaultResource`）
   2. 修改 `models/config.go`：
      * 删除 `SyncLegacy()` 方法；
      * 删除 `Config.AI` 字段与 `type AIConfig struct`；
