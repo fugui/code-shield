@@ -250,10 +250,14 @@ func RunMatching(input MatchingInput) MatchingResult {
 
 func bindStrongAliases(observations []ObservationGroup, edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
 	for i := range decisions {
-		if decisions[i].DefectID != nil {
+		if decisions[i].DefectID != nil && *decisions[i].DefectID > 0 {
 			continue
 		}
+		decisions[i].DefectID = nil
 		for _, edge := range edges[i] {
+			if edge.candidate.Defect.ID == 0 {
+				continue
+			}
 			if !hasSource(edge.candidate, AliasSlotPrecise) &&
 				!hasSource(edge.candidate, AliasSlotHealed) &&
 				!hasSource(edge.candidate, AliasK2) &&
@@ -262,7 +266,8 @@ func bindStrongAliases(observations []ObservationGroup, edges [][]scoredCandidat
 			}
 			edge.detail["strong_alias_equal"] = 1
 			edge.score = math.Max(edge.score, thresholds.StrongSame)
-			decisions[i].DefectID = &edge.candidate.Defect.ID
+			defectID := edge.candidate.Defect.ID
+			decisions[i].DefectID = &defectID
 			decisions[i].Score = edge.score
 			decisions[i].Confidence = edge.score
 			decisions[i].ScoreDetail = edge.detail
@@ -289,7 +294,9 @@ type scoredCandidate struct {
 func retrieveCandidates(identity Identity, aliasIndex map[string][]models.DefectAlias, input MatchingInput, limit int) ([]Candidate, bool) {
 	defectsByID := make(map[uint]models.Defect, len(input.Defects))
 	for _, defect := range input.Defects {
-		defectsByID[defect.ID] = defect
+		if defect.ID > 0 {
+			defectsByID[defect.ID] = defect
+		}
 	}
 	values := []struct {
 		aliasType string
@@ -326,13 +333,20 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 	candidates := make(map[uint]*Candidate)
 	budgetExceeded := false
 	addAlias := func(alias models.DefectAlias) {
+		if alias.DefectID == 0 {
+			return
+		}
 		if len(candidates) >= limit {
 			budgetExceeded = true
 			return
 		}
+		defect, existsDefect := defectsByID[alias.DefectID]
+		if !existsDefect || defect.ID == 0 {
+			return
+		}
 		candidate, exists := candidates[alias.DefectID]
 		if !exists {
-			candidate = &Candidate{Defect: defectsByID[alias.DefectID], Sources: map[string]struct{}{}}
+			candidate = &Candidate{Defect: defect, Sources: map[string]struct{}{}}
 			candidates[alias.DefectID] = candidate
 		}
 		candidate.Sources[alias.AliasType] = struct{}{}
@@ -607,12 +621,19 @@ func bindPassObservations(observations []ObservationGroup, edges [][]scoredCandi
 			continue
 		}
 		decision := &decisions[i]
+		if decision.DefectID != nil && *decision.DefectID == 0 {
+			decision.DefectID = nil
+		}
 		if decision.DefectID == nil {
 			for _, edge := range edges[i] {
+				if edge.candidate.Defect.ID == 0 {
+					continue
+				}
 				if !passAnchorGate(observations[i].Identity, edge.candidate, edge.detail) {
 					continue
 				}
-				decision.DefectID = &edge.candidate.Defect.ID
+				defectID := edge.candidate.Defect.ID
+				decision.DefectID = &defectID
 				decision.Score = edge.score
 				decision.Confidence = edge.score
 				decision.ScoreDetail = edge.detail
@@ -620,7 +641,8 @@ func bindPassObservations(observations []ObservationGroup, edges [][]scoredCandi
 				break
 			}
 		}
-		if decision.DefectID == nil {
+		if decision.DefectID == nil || *decision.DefectID == 0 {
+			decision.DefectID = nil
 			continue
 		}
 		decision.Verdict = VerdictCleared
@@ -687,9 +709,16 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 
 		assignments := greedyAssignment(observations, qualified, obsEdges)
 		for observationIndex, defectID := range assignments {
+			if defectID == 0 {
+				continue
+			}
 			best := obsEdges[observationIndex][defectID]
+			if best.candidate.Defect.ID == 0 {
+				continue
+			}
 			decision := &decisions[observationIndex]
-			decision.DefectID = &best.candidate.Defect.ID
+			candID := best.candidate.Defect.ID
+			decision.DefectID = &candID
 			decision.Score = best.score
 			decision.Confidence = best.score
 			decision.ScoreDetail = best.detail
@@ -766,7 +795,7 @@ func arbitrateUnclaimed(input MatchingInput, observations []ObservationGroup, ed
 		return
 	}
 	for i := range decisions {
-		if decisions[i].DefectID != nil || len(edges[i]) == 0 || *aiCalls >= input.Budget.MaxAICalls {
+		if (decisions[i].DefectID != nil && *decisions[i].DefectID > 0) || len(edges[i]) == 0 || *aiCalls >= input.Budget.MaxAICalls {
 			continue
 		}
 		best := edges[i][0]
@@ -796,13 +825,14 @@ func arbitrateUnclaimed(input MatchingInput, observations []ObservationGroup, ed
 				continue
 			}
 			for _, edge := range edges[i] {
-				if edge.candidate.Defect.ID != decision.DefectID {
+				if edge.candidate.Defect.ID != decision.DefectID || edge.candidate.Defect.ID == 0 {
 					continue
 				}
 				if decision.Decision == ArbitrationSame && decision.Confidence >= input.Thresholds.AIConfidence {
 					accepted = true
 					autoFallback = false
-					decisions[i].DefectID = &edge.candidate.Defect.ID
+					candID := edge.candidate.Defect.ID
+					decisions[i].DefectID = &candID
 					decisions[i].Score = edge.score
 					decisions[i].Confidence = roundScore(decision.Confidence)
 					decisions[i].ScoreDetail = edge.detail
@@ -830,11 +860,15 @@ func arbitrateUnclaimed(input MatchingInput, observations []ObservationGroup, ed
 }
 
 func applyGrayZoneFallback(edge *scoredCandidate, decision *ObservationDecision, thresholds MatchThresholds, allowMerge bool) {
-	if decision.DefectID != nil || !thresholds.AutoResolve {
+	if (decision.DefectID != nil && *decision.DefectID > 0) || !thresholds.AutoResolve {
 		return
 	}
 	if allowMerge && edge.score >= thresholds.FallbackMergeScore {
-		decision.DefectID = &edge.candidate.Defect.ID
+		if edge.candidate.Defect.ID == 0 {
+			return
+		}
+		candID := edge.candidate.Defect.ID
+		decision.DefectID = &candID
 		decision.Score = edge.score
 		decision.Confidence = edge.score
 		decision.ScoreDetail = edge.detail
@@ -856,7 +890,7 @@ func applyGrayZoneFallback(edge *scoredCandidate, decision *ObservationDecision,
 func assignedDefectIDs(decisions []ObservationDecision) map[uint]bool {
 	assigned := make(map[uint]bool)
 	for _, decision := range decisions {
-		if decision.DefectID != nil {
+		if decision.DefectID != nil && *decision.DefectID > 0 {
 			assigned[*decision.DefectID] = true
 		}
 	}
@@ -866,9 +900,10 @@ func assignedDefectIDs(decisions []ObservationDecision) map[uint]bool {
 func finalizeUnclaimed(edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
 	assignedDefects := assignedDefectIDs(decisions)
 	for i := range decisions {
-		if decisions[i].DefectID != nil {
+		if decisions[i].DefectID != nil && *decisions[i].DefectID > 0 {
 			continue
 		}
+		decisions[i].DefectID = nil
 		if len(edges[i]) == 0 {
 			decisions[i].Verdict = VerdictNew
 			decisions[i].MatchTier = MatchUnclaimed
@@ -886,7 +921,7 @@ func finalizeUnclaimed(edges [][]scoredCandidate, decisions []ObservationDecisio
 			if thresholds.AutoResolve {
 				applyGrayZoneFallback(&best, &decisions[i], thresholds,
 					len(edges[i]) == 1 && !assignedDefects[best.candidate.Defect.ID])
-				if decisions[i].DefectID != nil {
+				if decisions[i].DefectID != nil && *decisions[i].DefectID > 0 {
 					assignedDefects[*decisions[i].DefectID] = true
 				}
 			} else {
@@ -896,7 +931,8 @@ func finalizeUnclaimed(edges [][]scoredCandidate, decisions []ObservationDecisio
 			continue
 		}
 		if fallbackApplied {
-			if decisions[i].DefectID == nil {
+			if decisions[i].DefectID == nil || *decisions[i].DefectID == 0 {
+				decisions[i].DefectID = nil
 				decisions[i].Verdict = VerdictNew
 			} else {
 				decisions[i].Verdict = matchedVerdict(edges[i][0].candidate.Defect.Status)
@@ -914,7 +950,7 @@ func finalizeUnclaimed(edges [][]scoredCandidate, decisions []ObservationDecisio
 		if thresholds.AutoResolve {
 			applyGrayZoneFallback(&best, &decisions[i], thresholds,
 				len(edges[i]) == 1 && !assignedDefects[best.candidate.Defect.ID])
-			if decisions[i].DefectID != nil {
+			if decisions[i].DefectID != nil && *decisions[i].DefectID > 0 {
 				assignedDefects[*decisions[i].DefectID] = true
 			}
 			continue
