@@ -20,6 +20,10 @@
   * `services/`（`dispatcher/`、`invoker/`、`runner/`、`engines/debate/resume.go`）
 * **前置条件与核心前提**：
   * **全新发布环境 (Clean Slate Deployment)**：系统正式 Release 发版时，生产环境全部 PostgreSQL / SQLite 数据库实例与存储卷均为空白全新部署，绝不存在任何现网历史遗留数据。
+  * **老环境原地升级支持 (In-Place Upgrade Support)**：为兼顾存量开发机与现有测试环境的平滑演进，系统将启动期 DDL/DML 探测逻辑沉淀为独立的离线运维迁移脚本：
+    * PostgreSQL 生产环境：[`scripts/migrations/v2.0_cleanup_legacy_db.sql`](file:///home/fugui/codes/code-shield/scripts/migrations/v2.0_cleanup_legacy_db.sql)
+    * SQLite 本地/单机环境：[`scripts/migrations/v2.0_cleanup_legacy_sqlite.sql`](file:///home/fugui/codes/code-shield/scripts/migrations/v2.0_cleanup_legacy_sqlite.sql)
+    存量环境运维人员仅需在升级停机窗口手工执行一次脚本，即可彻底清理 13 张历史旧表与 14 个废弃列，使应用层彻底解耦启动期 DDL 探测。
   * **任务元数据规范已冻结**：`tasks/` 目录下全部 10 个内置任务类型的 `meta.json` 已全部升级至以 `scan_profile`、`debate_full` 及标准化字典序排版为基础的最新规范。
   * **配置规范已就绪**：系统配置文件已全面切换至 `CS-NATIVE-02` 动静分层标准（顶层划分为 `server`, `storage`, `database`, `auth`, `llm`, `scanner`, `governance`, `notification`）。
 
@@ -186,6 +190,7 @@ Phase 1: 零风险启动与脚本清理 ──► Phase 2: 废弃实体与路由
      * 删除第 77 行调用 `services.CleanupLegacyTaskAgents()`。
   5. 物理删除 `services/migration/` 整个包（及其单测）。
   6. 修改 `services/invoker/agent_sync.go`：删除已不再调用的 `CleanupLegacyTaskAgents` 函数。
+  7. 固化老环境离线迁移工具：将应用层剥离的 DDL/DML 清理逻辑沉淀为 [`scripts/migrations/v2.0_cleanup_legacy_db.sql`](file:///home/fugui/codes/code-shield/scripts/migrations/v2.0_cleanup_legacy_db.sql) 与 [`scripts/migrations/v2.0_cleanup_legacy_sqlite.sql`](file:///home/fugui/codes/code-shield/scripts/migrations/v2.0_cleanup_legacy_sqlite.sql)，供存量老环境在停机维护时手工执行。
 * **验证准则**：
   * 执行 `go test ./...` 模块级测试全部通过；
   * 执行 `go build -o code-shield-server main.go` 编译成功；
