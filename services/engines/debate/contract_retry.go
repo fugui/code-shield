@@ -57,7 +57,15 @@ func buildContractRetryPrompt(prompt string, contract OutputContract, cause erro
 	var sb strings.Builder
 	sb.WriteString(strings.TrimRight(prompt, "\n"))
 	sb.WriteString("\n\n## Output Contract Correction\n")
-	sb.WriteString(fmt.Sprintf("上一次输出未通过服务端校验：%v。\n", cause))
+	causeStr := ""
+	if cause != nil {
+		causeStr = cause.Error()
+	}
+	if strings.Contains(strings.ToLower(causeStr), "markdown") {
+		sb.WriteString("上一次输出是 Markdown 文本而非标准 JSON。系统要求全自动结构化处理，严禁输出任何 Markdown 标题、分析文字或代码围栏，必须输出符合契约的纯 UTF-8 JSON。\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("上一次输出未通过服务端校验：%v。\n", cause))
+	}
 	sb.WriteString("请重新输出一个完整结果；不要引用上次错误结果，不要添加解释文字，不要输出 Markdown 代码围栏。\n")
 	sb.WriteString("必须严格遵循以下唯一输出契约：\n\n")
 	sb.WriteString(RenderOutputContract(contract))

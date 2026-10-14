@@ -28,3 +28,20 @@ func TestSplitStatsAreTrackedAndCapped(t *testing.T) {
 		t.Fatalf("stats = depth=%d count=%d, want depth=2 count=2", stats.Depth, stats.Count)
 	}
 }
+
+func TestSplitStatsContractRepairs(t *testing.T) {
+	ctx := beginSplitStats(context.Background())
+	stats := splitStatsFromContext(ctx)
+	if stats == nil {
+		t.Fatal("stats is nil")
+	}
+	stats.ContractRepairs += 2
+	stats.SchemaRepairAttempts += 2
+	stats.SchemaRepairSuccesses += 1
+	stats.JSONSyntaxRepairs += 1
+
+	recovered := splitStatsFromContext(ctx)
+	if recovered.ContractRepairs != 2 || recovered.SchemaRepairAttempts != 2 || recovered.SchemaRepairSuccesses != 1 || recovered.JSONSyntaxRepairs != 1 {
+		t.Fatalf("unexpected stats: %+v", recovered)
+	}
+}

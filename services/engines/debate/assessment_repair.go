@@ -74,6 +74,16 @@ func buildDirectedAssessmentRepairPrompt(request assessment.DirectedRepairReques
 	var sb strings.Builder
 	sb.WriteString("你是 JSON Artifact 修复器。只修复 JSON 结构、类型、unit_ref、枚举和转义错误；")
 	sb.WriteString("不得新增、删除 assessment unit，不得修改 outcome、summary、reason、evidence、domain、issues 等业务结论。\n\n")
+	hasMarkdownIssue := false
+	for _, issue := range request.Issues {
+		if strings.Contains(issue.Code, "MARKDOWN") || strings.Contains(strings.ToLower(issue.Message), "markdown") {
+			hasMarkdownIssue = true
+			break
+		}
+	}
+	if hasMarkdownIssue {
+		sb.WriteString("【重要警告】上一次输出是 Markdown 文本而非标准 JSON。请将内容提取并转换为符合下方 JSON Schema 的标准 JSON，严禁保留 Markdown 标题、分析过程或代码围栏。\n\n")
+	}
 	sb.WriteString("## Validation Issues\n```json\n")
 	issues, _ := json.MarshalIndent(request.Issues, "", "  ")
 	sb.Write(issues)

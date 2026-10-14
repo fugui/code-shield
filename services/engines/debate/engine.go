@@ -284,6 +284,7 @@ bundleLoop:
 					details.Attempts = len(stats.ResourceChain)
 					details.Retries = stats.FreshRetries + stats.ResourceFailovers
 				}
+				details.ContractRepairs = stats.ContractRepairs
 				details.ResourceFailovers = stats.ResourceFailovers
 				details.ResourceChain = append([]string(nil), stats.ResourceChain...)
 				details.ErrorClasses = append([]string(nil), stats.ErrorClasses...)

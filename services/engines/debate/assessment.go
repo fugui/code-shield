@@ -406,6 +406,10 @@ func (e *DebateEngine) consumePluginArtifact(
 			stats.ArtifactSchemaHash = artifactRepairMetrics.SchemaHash
 			stats.ResponseFormatMode = artifactRepairMetrics.ResponseFormatMode
 			stats.ResponseFormatFallbacks = observation.ResponseFormatFallbacks
+			stats.ContractRepairs += artifactRepairMetrics.LLMRepairAttempts
+			stats.SchemaRepairAttempts += artifactRepairMetrics.LLMRepairAttempts
+			stats.SchemaRepairSuccesses += artifactRepairMetrics.LLMRepairSuccesses
+			stats.JSONSyntaxRepairs += artifactRepairMetrics.LocalRepairs
 		}
 		if validateErr != nil {
 			if errors.Is(validateErr, assessment.ErrArtifactEmpty) {
