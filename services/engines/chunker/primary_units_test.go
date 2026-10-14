@@ -46,7 +46,8 @@ func TestSplitPrimaryUnitsBundleInHalf(t *testing.T) {
 	parent := SemanticBundle{
 		Name:         "entity-001",
 		PrimaryFiles: []string{"pkg/test_suite.go"},
-		AllFiles:     []string{"pkg/test_suite.go"},
+		HeaderFiles:  []string{"pkg/test_suite.h"},
+		AllFiles:     []string{"pkg/test_suite.go", "pkg/test_suite.h"},
 		PrimaryUnits: units,
 	}
 
@@ -60,10 +61,10 @@ func TestSplitPrimaryUnitsBundleInHalf(t *testing.T) {
 	if halves[0].Name != "entity-001-split1" || halves[1].Name != "entity-001-split2" {
 		t.Fatalf("unexpected names: %s, %s", halves[0].Name, halves[1].Name)
 	}
-	if len(halves[0].AllFiles) != 1 || halves[0].AllFiles[0] != "pkg/test_suite.go" {
+	if len(halves[0].AllFiles) != 2 || halves[0].AllFiles[0] != "pkg/test_suite.go" || halves[0].AllFiles[1] != "pkg/test_suite.h" {
 		t.Fatalf("unexpected AllFiles in half 1: %+v", halves[0].AllFiles)
 	}
-	if len(halves[1].AllFiles) != 1 || halves[1].AllFiles[0] != "pkg/test_suite.go" {
+	if len(halves[1].AllFiles) != 2 || halves[1].AllFiles[0] != "pkg/test_suite.go" || halves[1].AllFiles[1] != "pkg/test_suite.h" {
 		t.Fatalf("unexpected AllFiles in half 2: %+v", halves[1].AllFiles)
 	}
 	if halves[0].PrimaryUnits[0].ID != "u" || halves[1].PrimaryUnits[0].ID != "uuuuu" {

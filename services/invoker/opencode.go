@@ -115,8 +115,8 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, func(), error) {
 }
 
 func writeOpenCodePromptFile(payload string) (string, func(), error) {
-	promptDir := filepath.Join(os.TempDir(), "opencode")
-	if err := os.MkdirAll(promptDir, 0777); err != nil {
+	promptDir := filepath.Join(os.TempDir(), fmt.Sprintf("opencode-%d", os.Getuid()))
+	if err := os.MkdirAll(promptDir, 0700); err != nil {
 		return "", func() {}, fmt.Errorf("failed to create opencode prompt dir: %w", err)
 	}
 

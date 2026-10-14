@@ -62,11 +62,11 @@ func (e *DebateEngine) runSpecializedAssessment(
 		return interceptFindings, interceptRecords, 0, err
 	}
 	llmFindings, llmRecords, tokens, err := e.runSpecializedAssessmentWithBudget(&stageCtx, bundle, outPath, budgetSeconds, attemptSeconds, execution, plan)
-	if err != nil {
-		return interceptFindings, interceptRecords, tokens, err
-	}
 	finalFindings := append(interceptFindings, llmFindings...)
 	finalRecords := append(interceptRecords, llmRecords...)
+	if err != nil {
+		return finalFindings, finalRecords, tokens, err
+	}
 	return finalFindings, finalRecords, tokens, nil
 }
 
@@ -195,8 +195,10 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 				ctx, bundle, outPath, budgetSeconds, attemptSeconds, execution, tierPlan,
 				nil, nil, tokens, err, class,
 			)
-			if splitErr == nil {
+			if len(findings) > 0 {
 				assessmentFindings = findings
+			}
+			if len(records) > 0 {
 				assessmentRecords = records
 			}
 			return true, "", splitTokens, splitErr
@@ -238,7 +240,7 @@ func (e *DebateEngine) splitSpecializedAssessmentBundle(
 	for i, subBundle := range subBundles {
 		remainingSeconds := hunterRemainingSeconds(ctx.Ctx, budgetSeconds)
 		if remainingSeconds <= 0 {
-			return nil, nil, totalTokens, fmt.Errorf("specialized assessment split budget exhausted before bundle %d/%d: %w", i+1, len(subBundles), ctx.Ctx.Err())
+			return mergedFindings, mergedRecords, totalTokens, fmt.Errorf("specialized assessment split budget exhausted before bundle %d/%d: %w", i+1, len(subBundles), ctx.Ctx.Err())
 		}
 		subExecution := execution
 		if len(subBundle.PrimaryUnits) > 0 && execution != nil && execution.promptRefs != nil {
@@ -252,11 +254,11 @@ func (e *DebateEngine) splitSpecializedAssessmentBundle(
 			ctx, subBundle, assessmentSplitOutputPath(outPath, i+1), remainingSeconds, attemptSeconds, subExecution, tierPlan,
 		)
 		totalTokens += subTokens
-		if subErr != nil {
-			return nil, nil, totalTokens, fmt.Errorf("specialized assessment split bundle %d/%d failed: %w", i+1, len(subBundles), subErr)
-		}
 		mergedFindings = append(mergedFindings, subFindings...)
 		mergedRecords = append(mergedRecords, subRecords...)
+		if subErr != nil {
+			return mergedFindings, mergedRecords, totalTokens, fmt.Errorf("specialized assessment split bundle %d/%d failed: %w", i+1, len(subBundles), subErr)
+		}
 	}
 	cleanupSplitArtifacts(outPath)
 	return mergedFindings, mergedRecords, totalTokens, nil

@@ -384,3 +384,121 @@ TEST(CalcTest, ComplexNeedsLLM) {
 			len(pbFindings), len(pbRecords))
 	}
 }
+
+func TestRunSpecializedAssessmentPreservesPartialLLMAndPreflightFindingsOnSubBundleFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	relPath := "test_partial_split.cpp"
+	absPath := filepath.Join(tmpDir, relPath)
+
+	content := `TEST(CalcTest, EmptyStub) {
+}
+
+TEST(CalcTest, ComplexOne) {
+    auto res = ComputeSomething(1, 2);
+    StepTwo(res);
+    StepThree(res);
+    EXPECT_TRUE(res.IsValid());
+}
+
+TEST(CalcTest, ComplexTwo) {
+    auto res = ComputeSomething(3, 4);
+    StepTwo(res);
+    StepThree(res);
+    EXPECT_TRUE(res.IsValid());
+}
+`
+	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// 模拟 invoker 行为：
+	// Call 1: 父分片调用 -> 超时触发 split
+	// Call 2: 子分片 1 -> 成功返回合格 assessment 结果
+	// Call 3: 子分片 2 -> 超时失败
+	primary := registerRecoveryInvoker(t, "preflight-partial-split-llm", func(call int) error {
+		if call == 1 || call == 3 {
+			return invoker.NewClassifiedError(invoker.ErrorClassTimeout, "timed out")
+		}
+		return nil
+	})
+	primary.payload = func(call int) string {
+		if call == 2 {
+			return `{"schema":"code-shield.unit-assessments.v2","assessments":[
+				{"unit_ref":"u001","outcome":"pass","summary":"safe and valid"}
+			]}`
+		}
+		return ""
+	}
+
+	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
+		MaxTotalAttempts:       1,
+		MaxAttemptsPerResource: 1,
+		SplitOn:                []string{"timeout"},
+	})
+
+	engine := &DebateEngine{}
+	ctx := &engines.EngineContext{
+		Ctx:               context.Background(),
+		CodesPath:         tmpDir,
+		EngineMode:        "debate_full",
+		AssessmentProfile: "entityreview",
+		AllowedCategories: []string{"无问题", "断言有效性-空测试"},
+		Plugins: plugins.PluginsConfig{
+			PreflightGate: &plugins.TaskPluginDeclaration{
+				ID: "test_case_radar",
+			},
+		},
+	}
+
+	emptyUnit := coverage.PlanUnit{
+		ID:          "unit-empty",
+		Kind:        coverage.PlanUnitEntity,
+		Path:        relPath,
+		DisplayName: "CalcTest.EmptyStub",
+		StartLine:   1,
+		EndLine:     2,
+	}
+	complex1 := coverage.PlanUnit{
+		ID:          "unit-c1",
+		Kind:        coverage.PlanUnitEntity,
+		Path:        relPath,
+		DisplayName: "CalcTest.ComplexOne",
+		StartLine:   4,
+		EndLine:     9,
+	}
+	complex2 := coverage.PlanUnit{
+		ID:          "unit-c2",
+		Kind:        coverage.PlanUnitEntity,
+		Path:        relPath,
+		DisplayName: "CalcTest.ComplexTwo",
+		StartLine:   11,
+		EndLine:     16,
+	}
+
+	bundle := chunker.SemanticBundle{
+		Name:         "bundle-partial-split",
+		PrimaryFiles: []string{relPath},
+		AllFiles:     []string{relPath},
+		PrimaryUnits: []coverage.PlanUnit{emptyUnit, complex1, complex2},
+	}
+
+	findings, records, _, err := engine.runSpecializedAssessment(ctx, bundle, filepath.Join(tmpDir, "assessment.json"))
+	if err == nil {
+		t.Fatal("expected error due to sub-bundle failure, got nil")
+	}
+	// 预期：保留 2 个 findings (1 个 preflight 缺陷 EmptyStub + 1 个子分片 1 的 LLM finding)
+	if len(findings) != 2 {
+		t.Fatalf("expected 2 findings (1 preflight + 1 LLM) preserved, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].CalibrationRule != "UT_EMPTY_STUB" || findings[1].PrimaryUnitID != "unit-c1" {
+		t.Fatalf("unexpected findings preserved: %+v", findings)
+	}
+	// 预期：保留 2 个 records（1 个来自 Preflight 的 DEFECT，1 个来自子分片 1 的成功 LLM record）
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records (1 preflight + 1 LLM) preserved, got %d: %+v", len(records), records)
+	}
+	if records[0].PrimaryUnitID != "unit-empty" || records[1].PrimaryUnitID != "unit-c1" {
+		t.Fatalf("unexpected records preserved: %+v", records)
+	}
+}
+
