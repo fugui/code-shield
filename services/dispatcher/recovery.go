@@ -90,6 +90,16 @@ func shouldTierSplit(classes []string, class invoker.ErrorClass) bool {
 	return recoveryAllows(classes, class)
 }
 
+func sameResourceRetryAllowed(recovery models.TierRecoveryConfig, class invoker.ErrorClass) bool {
+	if recoveryAllows(recovery.RetryOn, class) {
+		return true
+	}
+	if class == invoker.ErrorClassContractMismatch || class == invoker.ErrorClassJSONInvalid {
+		return recoveryAllows(recovery.ContractRepairOn, class)
+	}
+	return false
+}
+
 func candidateFailoverAllowed(recovery models.TierRecoveryConfig, class invoker.ErrorClass) bool {
 	if recovery.MaxCandidateFailovers <= 0 {
 		return false
@@ -175,6 +185,12 @@ func RunTierInvocationWithRecovery(
 			string(invoker.ErrorClassOutputMissing),
 		}
 	}
+	if len(recovery.ContractRepairOn) == 0 {
+		recovery.ContractRepairOn = []string{
+			string(invoker.ErrorClassContractMismatch),
+			string(invoker.ErrorClassJSONInvalid),
+		}
+	}
 	if recovery.MaxAttemptsPerResource < 1 {
 		recovery.MaxAttemptsPerResource = maxAttempts
 	}
@@ -229,7 +245,7 @@ func RunTierInvocationWithRecovery(
 		}
 
 		if (class == invoker.ErrorClassContractMismatch || class == invoker.ErrorClassJSONInvalid) &&
-			!recoveryAllows(recovery.RetryOn, class) &&
+			!sameResourceRetryAllowed(recovery, class) &&
 			!shouldTierSplit(recovery.SplitOn, class) {
 			return rawOutput, candidate, tokens, lastErr
 		}
@@ -244,7 +260,7 @@ func RunTierInvocationWithRecovery(
 			}
 		}
 
-		if recoveryAllows(recovery.RetryOn, class) &&
+		if sameResourceRetryAllowed(recovery, class) &&
 			attempt < maxAttempts &&
 			stats.attemptsOn(candidate.ResourceID) < recovery.MaxAttemptsPerResource {
 			if waitErr := waitTierRecoveryBackoff(ctx, recovery, attempt); waitErr != nil {

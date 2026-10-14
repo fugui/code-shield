@@ -206,9 +206,10 @@ func TestResourceBreakerExpires(t *testing.T) {
 	}
 }
 
-func TestTierRecoveryContractMismatchDefaultFailsWithoutRetryOrSplit(t *testing.T) {
+func TestTierRecoveryContractMismatchDisabledFailsWithoutRetryOrSplit(t *testing.T) {
 	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
 		MaxTotalAttempts: 2,
+		ContractRepairOn: []string{"none"},
 	})
 	calls := 0
 	splitCalled := false
@@ -225,13 +226,45 @@ func TestTierRecoveryContractMismatchDefaultFailsWithoutRetryOrSplit(t *testing.
 		}),
 	)
 	if err == nil {
-		t.Fatal("expected contract mismatch error when neither retry_on nor split_on is configured")
+		t.Fatal("expected contract mismatch error when neither retry_on nor contract_repair_on is configured")
 	}
 	if calls != 1 {
 		t.Fatalf("calls = %d, want 1", calls)
 	}
 	if splitCalled {
 		t.Fatal("split recovery should not be called when split_on does not contain contract_mismatch")
+	}
+}
+
+func TestTierRecoveryContractMismatchDefaultRetriesSameResource(t *testing.T) {
+	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
+		MaxTotalAttempts:       2,
+		MaxAttemptsPerResource: 2,
+		RetryBackoffMs:         1,
+	})
+	calls := 0
+	stats := &TierRecoveryStats{}
+	out, candidate, _, err := RunTierInvocationWithRecovery(
+		context.Background(), "tier1_hunter", 10, stats,
+		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
+			calls++
+			if calls == 1 {
+				return "", 0, invoker.NewClassifiedError(invoker.ErrorClassContractMismatch, "contract mismatch")
+			}
+			return "recovered-output", 15, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 || out != "recovered-output" {
+		t.Fatalf("calls = %d, out = %q, want calls=2 out=recovered-output", calls, out)
+	}
+	if candidate.ResourceID != "recovery-primary" {
+		t.Fatalf("resource = %s, want recovery-primary", candidate.ResourceID)
+	}
+	if stats.FreshRetries != 1 || stats.ResourceFailovers != 0 {
+		t.Fatalf("stats = %+v, want FreshRetries=1 ResourceFailovers=0", stats)
 	}
 }
 
