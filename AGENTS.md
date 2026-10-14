@@ -19,19 +19,34 @@
 ```text
 code-shield/
 ├── main.go                     # API 路由集中注册与服务启动入口
-├── Makefile                    # 统一构建、测试、门禁与打包入口
+├── Makefile                    # 统一构建、测试、门禁 (lint-arch) 与打包入口
 ├── config.yaml[.example]       # 运行时配置文件模板
-├── models/                     # GORM 数据模型及全局配置单例 (config.go)
-├── handlers/                   # HTTP 控制器与鉴权中间件 (AuthMiddleware)
-├── services/                   # 核心业务服务与调度层
-│   ├── dispatcher/             # 持久化任务队列与抢占调度、分片失败恢复 (recovery)
-│   ├── engines/                # AI 扫描执行引擎 (single / chunked / debate / assessment)
-│   ├── invoker/                # 底层 CLI 执行驱动适配 (Claude / OpenCode / Codex)
-│   └── runner/                 # 子进程与执行器
-└── frontend/                   # React 18 前端 SPA
-    ├── src/pages/              # 路由页面视图
-    ├── src/components/         # 业务公共组件
-    └── src/styles/             # 本地样式文件
+├── models/                     # GORM 数据模型及全局配置单例 (config.go, db.go, models.go)
+├── handlers/                   # HTTP 控制器与鉴权中间件 (AuthMiddleware, workbench, task, report 等)
+├── cron_jobs/                  # 定时任务调度器与日常巡检清理作业
+├── tasks/                      # 内置 10 大专项检视策略 (change-review, deep-review, ut-effectiveness 等)
+├── services/                   # 核心领域服务架构层
+│   ├── dispatcher/             # 持久化任务队列抢占调度、租约控制、失败恢复 (recovery)、算力阶梯
+│   ├── engines/                # AI 扫描执行引擎族
+│   │   ├── single/             # 小型仓库单体分析引擎
+│   │   ├── chunked/            # 大型项目自动分片并发分析引擎
+│   │   ├── debate/             # 双模型多轮对抗辩论引擎
+│   │   ├── assessment/         # 测试用例有效性评估与契约自愈引擎
+│   │   ├── planner/            # 任务分析规划引擎
+│   │   ├── profile/            # 仓库特征画像分析引擎
+│   │   └── chunker/            # 代码 AST 语法树智能分片器
+│   ├── invoker/                # 底层 AI 执行驱动适配器 (Claude / OpenCode / Codex / Native / AGY)
+│   ├── runner/                 # 任务流水线执行编排 (analysis 切片分析 / synthesis 汇总 / git 同步 / 恢复)
+│   ├── defectlifecycle/        # 缺陷全生命周期追踪 (指纹锚点 anchor, 台账 ledger, 行号稳定器 stabilizer, 会战 campaign)
+│   ├── governance/             # 缺陷类目治理中心 (分类学 taxonomy, 语义匹配, 误报校准 calibrator, 反馈学习)
+│   ├── coverage/               # 扫描覆盖度计算与分析对齐机制 (reconciliation)
+│   ├── queue/                  # 持久化任务队列模型与执行状态快照
+│   └── reports/                # 企业级多格式报告导出中心 (Excel / Markdown / JSON / Archive)
+├── docs/                       # 系统架构、RFC、方法论与开发指南中心
+└── frontend/                   # React 18 前端工程 (纯原生 Vanilla CSS，无第三方 UI 框架)
+    ├── src/pages/              # 业务路由页面 (Workbench, Campaign, Reports, Scan, ConfigCenter 等)
+    ├── src/components/         # 业务公共组件 (report 报告中心, defects 缺陷, execution 轨迹看板)
+    └── src/styles/             # 本地与全局样式
 ```
 
 ---

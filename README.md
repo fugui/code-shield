@@ -7,27 +7,35 @@
 ## 🌟 核心特性
 
 ### 🤖 强大的 AI 驱动代码检视
-- **三大无状态 AI 执行器支持**：原生适配 **Claude Code CLI**、**OpenCode CLI** 与 **Codex CLI**，统一无状态 Prompt 注入与多 LLM 调度模型。
+- **全方位无状态 AI 执行器支持**：原生适配 **Claude Code CLI**、**OpenCode CLI**、**Codex CLI**、**Native API** 与 **Antigravity (AGY) CLI**，统一无状态 Prompt 注入与多 LLM 调度模型。
   - **Claude**：支持系统提示词内联注入与流式 JSON 解析。
   - **OpenCode**：采用轻量级全局基座 Agent + 任务规约内联注入，实现完全无状态调用；权限批准使用文档化参数 `--auto`。
   - **Codex**：支持 OpenAI Codex CLI headless 免交互模式与模型动态路由；输出通过 `--output-last-message` 由 CLI 直接落盘，兼容默认只读沙箱环境。
+  - **Native API & AGY**：支持直接对接标准 LLM 原生接口与 Google Antigravity 执行器。
   - ⚠️ **安全边界**：扫描引擎会使用 bash 工具并自动批准权限（OpenCode `--auto`），并非严格只读。对不可信代码仓库进行扫描时，请将服务部署在容器 / 低权限用户 / 无外网等进程级隔离环境中。
+- **内置 10 大专项检视策略**：提供开箱即用的任务模板（`tasks/` 目录），涵盖增量评审 (`change-review`)、全仓深度检视 (`deep-review`)、内存泄漏 (`memory-leak`)、多线程并发 (`thread-create`)、浮点比较 (`float-comparison`)、cJSON解析 (`cjson-scan`)、Coredump风险 (`coredump-risk`)、无序集合 (`unordered-collection`) 及单测有效性/质量评估 (`ut-effectiveness`, `ut-quality`)。
 - **自定义任务类型**：支持动态创建和管理多套检视策略，灵活配置 Analysis（切片分析）与 Synthesis（汇总阶段）提示词模板。
 - **动态解析与定位**：智能识别 LLM 输出的单行、连续行范围及离散行号，支持在工作台一键复制精确文件名与行号。
 
 ### ⚙️ 多层级执行引擎与调度架构
-- **单引擎 (single)**：适用于小型代码仓，将代码整体提交给 AI 进行单次上下文分析。
-- **分片引擎 (chunked)**：适用于大型单体项目，按目录树深度自动分片，多协程并发（默认 5）向 AI 提交，最后自动汇总。前端实时渲染分片进度（如 `分析中 (12/89)`）。
-- **持久化任务队列 (DB-backed Queue)**：彻底由内存队列升级为基于 PostgreSQL 的数据库持久化拉取与抢占模型，支持 `max_queue_size` 排队容量管控，服务重启任务不丢失。
+- **单体分析引擎 (single)**：适用于小型代码仓，将代码整体提交给 AI 进行单次上下文分析。
+- **分片并发引擎 (chunked)**：适用于大型单体项目，按目录树深度自动分片，多协程并发（默认 5）向 AI 提交，最后自动汇总。前端实时渲染分片进度（如 `分析中 (12/89)`）。
+- **双模型对抗引擎 (debate)**：引入生成模型与评审模型多轮对弈辩论，显著抑制大模型幻觉与误报。
+- **有效性评估引擎 (assessment)**：面向单元测试设计，包含契约约束与定向修复自愈管线。
+- **规划与画像引擎 (planner / profile)**：智能分析仓库规模与特征，自动化编排分片深度与分析策略。
+- **持久化任务队列 (DB-backed Queue)**：基于 PostgreSQL 的数据库持久化拉取与抢占模型，支持 `max_queue_size` 排队容量管控，服务重启任务不丢失。
 - **分片失败恢复机制 (Chunk Recovery)**：支持对单次扫描中偶发失败的分片进行局部精确补扫恢复，在执行日志中高优标记并由调度队列原子抢占运行。
 - **工作时间自动限流 (Work Hours Throttle)**：支持配置工作日及工作时间段内的并发比例（如白天限流 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速扫描，兼顾生产负载与扫描吞吐。
 - **多 LLM 负载均衡映射**：支持配置多 LLM 服务器端点与并发上限，按模型类型精确分流。
 
-### 📊 全方位项目与缺陷管理
-- **系统数据看板**：可视化展示近期缺陷分布趋势、底层模型请求次数、平均延迟及耗时数据。
-- **关键问题 (Issues) 追踪**：将高优安全隐患与缺陷自动提升为 Issue 跟踪闭环，默认指派人为当前处理人，支持按团队、部门、严重级别多维检索。
+### 📊 缺陷全生命周期追踪与治理中心
+- **确定性指纹锚点与行号稳定器 (Anchor & Stabilizer)**：计算缺陷代码结构特征生成确定性指纹，配合跨版本行号稳定器，代码改动后仍能精准对齐历史缺陷。
+- **缺陷台账 (Ledger) 与开发者工作台 (Workbench)**：闭环跟踪历史存量与增量缺陷，支持指派、处理状态流转与误报反馈。
+- **专项治理攻坚会战 (Campaign)**：支持按团队、部门及专项类目设立治理会战大盘，一键导出专项 Excel 战报。
+- **缺陷类目分类学治理 (Taxonomy & Feedback)**：基于结构化分类学进行缺陷规范化归类、语义标准化、误报校准（Calibrator）与反馈闭环。
+- **全流程覆盖度对齐 (Coverage & Reconciliation)**：精准统计检视文件/行覆盖度并与真实代码树对齐。
 - **规范化分页交互**：全量接入 `@code/common` 标准分页体系（URL 双向绑定、5 页滑动窗口、15/25/50/100 阶梯选项）。
-- **报告一键导出**：支持专项分析报告导出为企业级排版的 Excel/CSV 文件，自适应中文字符列宽。
+- **多格式报告导出中心**：支持专项分析报告导出为企业级排版的 Excel/CSV、Markdown、JSON 及归档包，自适应中文字符列宽。
 
 ### ⏰ 自动化调度与操作审计
 - **定时调度**：支持 Cron 表达式配置日常巡检计划，支持运行时参数覆盖（如 `SkipTests` 跳过测试代码）。
@@ -182,41 +190,66 @@ server {
 
 ```text
 code-shield/
-├── config.yaml             # 系统配置文件
-├── main.go                 # 程序入口与集中式路由配置
-├── models/                 # 数据模型（引用 code-common/backend）
-│   ├── config.go           # 本地配置解析
-│   ├── db.go               # GORM v2 数据库连接初始化
-│   └── models.go           # Task / Schedule / Issue / AuditLog 等模型
-├── handlers/               # HTTP API 控制层
-│   ├── auth.go             # 鉴权与当前用户信息
-│   ├── audit_log.go        # 触发日志与审计接口
-│   ├── task.go             # 扫描任务创建、取消、重试、恢复
-│   ├── task_type.go        # 任务类型与提示词管理
-│   ├── schedule.go         # 定时调度管理
-│   ├── repo.go             # 代码仓管理
-│   ├── issue.go            # 缺陷与问题追踪
-│   └── excel_exporter.go   # Excel 导出控制器
-├── services/               # 核心业务组件与引擎
-│   ├── queue.go            # 基于 DB 的持久化抢占式任务队列
-│   ├── dispatcher.go       # 并发流控与工作时间限流分发器
-│   ├── task_runner.go      # 任务生命周期执行状态机
-│   ├── engine_single.go    # 单体分析执行引擎
-│   ├── engine_chunked.go   # 自动切片并发分析执行引擎
-│   ├── opencode_cli.go     # OpenCode CLI 驱动适配器
-│   ├── claude_cli.go       # Claude CLI 驱动适配器
-│   ├── codex_cli.go        # Codex CLI 驱动适配器（--output-last-message 落盘）
-│   ├── cli_common.go       # 通用 Prompt 组装与 CLI 进程生命周期管理
-│   ├── agent_sync.go       # OpenCode 基座 Agent 配置与遗留文件清理
-│   └── reports/            # 任务报告领域聚合与多格式导出引擎
-│       ├── report_service.go # 报告元信息/总结/问题清单/诊断核心服务
-│       ├── exporter_md.go    # Markdown 导出器
-│       ├── exporter_json.go  # JSON 结构化导出器
-│       └── exporter_excel.go # 出版级 Excel (.xlsx) 导出器
-├── cron_jobs/              # 定时任务调度器
-├── frontend/               # React 前端工程 (接入 @code/common)
-│   ├── src/components/report/ # 现代化任务报告中心组件群 (Viewer/Tabs/Cards)
-└── Makefile                # 自动化编译与运行脚本
+├── main.go                     # API 集中路由配置与服务启动入口
+├── Makefile                    # 统一构建、测试、架构防腐门禁 (lint-arch) 与打包入口
+├── config.yaml[.example]       # 系统配置文件与示例模板
+├── cron_jobs/                  # 定时任务调度器与日常巡检清理作业 (jobs.go)
+├── tasks/                      # 内置 10 大专项检视策略提示词与规约模板库
+│   ├── change-review/          # 增量变更代码审查
+│   ├── deep-review/            # 全仓深度代码质量审查
+│   ├── coredump-risk/          # Coredump 与野指针风险排查
+│   ├── memory-leak/            # 内存泄漏与资源未释放排查
+│   ├── thread-create/          # 多线程与并发竞争看护
+│   ├── float-comparison/       # 浮点数比较精度失真排查
+│   ├── cjson-scan/             # cJSON 解析与边界溢出安全扫描
+│   ├── unordered-collection/   # 无序集合遍历风险扫描
+│   ├── ut-effectiveness/       # 单元测试用例有效性评估
+│   └── ut-quality/             # 单元测试用例设计质量评估
+├── models/                     # GORM 数据模型及全局配置单例
+│   ├── config.go               # 运行时配置解析与动态单例
+│   ├── db.go                   # PostgreSQL 连接池与初始化
+│   ├── models.go               # Task, Schedule, Issue, TriggerLog, TaskType 等模型
+│   ├── ledger_schema.go        # 缺陷台账与指纹锚点持久化结构
+│   └── chunk_execution.go      # 分片原子执行记录与重试状态追踪
+├── handlers/                   # HTTP API 控制层
+│   ├── auth.go                 # 用户鉴权与当前登录态 (AuthMiddleware)
+│   ├── task.go                 # 扫描任务创建、取消、重试与局部恢复
+│   ├── task_type.go            # 任务类型管理与 Prompt 模板编排
+│   ├── report_handler.go       # 任务报告领域聚合与多格式导出入口
+│   ├── defect_handler.go       # 缺陷问题追踪与状态流转
+│   ├── workbench.go            # 开发者治理工作台与缺陷处理接口
+│   ├── campaign_generic.go     # 专项治理攻坚会战大盘与统计接口
+│   ├── campaign_excel.go       # 会战专项 Excel 战报导出
+│   ├── category_governance.go  # 缺陷类目分类学治理与规则映射
+│   ├── feedback_handler.go     # 误报反馈与分类校准接口
+│   ├── schedule.go             # 定时调度计划管理
+│   ├── repo.go                 # 代码仓库管理与分支同步
+│   ├── user.go / department.go # 组织架构、团队与权限管理
+│   ├── config.go               # 动态配置中心与运行时更新
+│   ├── debug.go                # 系统运行诊断与测试接口
+│   └── trigger_log.go          # 触发日志与安全操作审计
+├── services/                   # 核心领域业务服务与引擎架构
+│   ├── dispatcher/             # 持久化任务队列抢占调度、租约控制、失败恢复 (recovery)、算力阶梯
+│   ├── engines/                # AI 扫描执行引擎族
+│   │   ├── single/             # 小型仓库单体分析引擎
+│   │   ├── chunked/            # 大型项目自动分片并发分析引擎
+│   │   ├── debate/             # 双模型多轮对抗辩论引擎 (抑制幻觉与误报)
+│   │   ├── assessment/         # 测试用例有效性评估与契约自愈定向修复引擎
+│   │   ├── planner/            # 任务切片与分析规划器
+│   │   ├── profile/            # 代码仓特征画像分析引擎
+│   │   └── chunker/            # 基于 AST 语法的智能代码切片器
+│   ├── invoker/                # 底层 AI 执行驱动适配器 (Claude / OpenCode / Codex / Native / AGY)
+│   ├── runner/                 # 任务流水线执行编排 (analysis 切片分析 / synthesis 汇总 / git 同步 / 续扫)
+│   ├── defectlifecycle/        # 缺陷全生命周期追踪 (指纹锚点 anchor, 台账 ledger, 行号稳定器 stabilizer)
+│   ├── governance/             # 缺陷类目治理中心 (分类学 taxonomy, 语义匹配, 误报校准 calibrator, 反馈学习)
+│   ├── coverage/               # 扫描覆盖度计算与代码树对齐机制 (reconciliation)
+│   ├── queue/                  # 持久化任务队列模型与执行状态快照
+│   └── reports/                # 企业级多格式报告导出中心 (Excel / Markdown / JSON / Archive)
+├── docs/                       # 系统架构、RFC、方法论与开发指南中心
+└── frontend/                   # React 18 前端 SPA (纯原生 Vanilla CSS，无第三方 UI 框架捆绑)
+    ├── src/pages/              # 业务路由页面 (Workbench, Campaign, Reports, Scan, ConfigCenter 等)
+    ├── src/components/         # 业务公共组件 (report 报告中心, defects 缺陷, execution 轨迹看板)
+    └── src/styles/             # 本地与全局样式
 ```
 
 ---
