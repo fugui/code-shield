@@ -499,8 +499,8 @@ func TestSpecializedAssessmentRejectsDriftUncheckedRepair(t *testing.T) {
 	repair := registerRecoveryInvoker(t, models.AppConfig.Scanner.Artifact.SchemaRepairResource, func(call int) error { return nil })
 	repair.payload = func(int) string { return assessmentPayload() }
 	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
-		MaxTotalAttempts:       2,
-		MaxAttemptsPerResource: 2,
+		MaxTotalAttempts:       1,
+		MaxAttemptsPerResource: 1,
 		RetryOn:                []string{"idle_timeout"},
 	})
 
@@ -531,8 +531,8 @@ func TestSpecializedAssessmentExplicitlyFailsAfterRepairAttemptsExhausted(t *tes
 	repair := registerRecoveryInvoker(t, models.AppConfig.Scanner.Artifact.SchemaRepairResource, func(call int) error { return nil })
 	repair.payload = func(int) string { return "{broken" }
 	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
-		MaxTotalAttempts:       3,
-		MaxAttemptsPerResource: 3,
+		MaxTotalAttempts:       1,
+		MaxAttemptsPerResource: 1,
 		RetryOn:                []string{"idle_timeout"},
 	})
 
@@ -548,6 +548,80 @@ func TestSpecializedAssessmentExplicitlyFailsAfterRepairAttemptsExhausted(t *tes
 	}
 	if stats == nil || stats.FreshRetries != 0 || stats.ResourceFailovers != 0 {
 		t.Fatalf("stats=%+v, want repair exhaustion without ordinary retry", stats)
+	}
+}
+
+func TestSpecializedAssessmentContractMismatchRetriesAndRecovers(t *testing.T) {
+	prevRepair := models.AppConfig.Scanner.Artifact
+	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "assessment-retry-recover-repair"
+	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
+	models.AppConfig.Scanner.Artifact.SchemaRepairTimeoutSeconds = 10
+	t.Cleanup(func() { models.AppConfig.Scanner.Artifact = prevRepair })
+
+	primary := registerRecoveryInvoker(t, "assessment-retry-recover", func(call int) error { return nil })
+	primary.payload = func(call int) string {
+		if call == 1 {
+			return `{"schema":"wrong-schema"}`
+		}
+		return assessmentPayload()
+	}
+	repair := registerRecoveryInvoker(t, models.AppConfig.Scanner.Artifact.SchemaRepairResource, func(call int) error { return nil })
+	repair.payload = func(int) string { return "{broken" }
+	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
+		MaxTotalAttempts:       2,
+		MaxAttemptsPerResource: 2,
+		RetryBackoffMs:         1,
+	})
+
+	findings, records, stats, err := runSpecializedAssessmentRecovery(t, []string{"src/a.cpp", "src/b.cpp"}, primary.name)
+	if err != nil {
+		t.Fatalf("expected recovery after retry, got err: %v", err)
+	}
+	if len(records) != 2 || len(findings) != 0 {
+		t.Fatalf("records=%d findings=%d, want 2 records and 0 findings", len(records), len(findings))
+	}
+	if primary.calls != 2 || repair.calls != 1 {
+		t.Fatalf("calls primary=%d repair=%d, want 2 primary attempts and 1 failed repair", primary.calls, repair.calls)
+	}
+	if stats == nil || stats.FreshRetries != 1 || stats.ResourceFailovers != 0 || !sameResourceChain(stats) {
+		t.Fatalf("stats=%+v, want 1 fresh retry on same resource", stats)
+	}
+}
+
+func TestHunterRecoveryContractMismatchRetriesAndRecovers(t *testing.T) {
+	prevRepair := models.AppConfig.Scanner.Artifact
+	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "hunter-retry-recover-repair"
+	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
+	models.AppConfig.Scanner.Artifact.SchemaRepairTimeoutSeconds = 10
+	t.Cleanup(func() { models.AppConfig.Scanner.Artifact = prevRepair })
+
+	primary := registerRecoveryInvoker(t, "hunter-retry-recover", func(call int) error { return nil })
+	primary.payload = func(call int) string {
+		if call == 1 {
+			return `{"schema":"wrong-schema"}`
+		}
+		return fmt.Sprintf(`{"schema":%q,"candidates":[]}`, CandidatesArtifactSchemaV1)
+	}
+	repair := registerRecoveryInvoker(t, models.AppConfig.Scanner.Artifact.SchemaRepairResource, func(call int) error { return nil })
+	repair.payload = func(int) string { return "{broken" }
+	configureRecoveryTier(t, []string{primary.name}, models.TierRecoveryConfig{
+		MaxTotalAttempts:       2,
+		MaxAttemptsPerResource: 2,
+		RetryBackoffMs:         1,
+	})
+
+	out, stats, err := runHunterRecovery(t, []string{"src/a.cpp"}, 10*time.Second, 10)
+	if err != nil || out == nil {
+		t.Fatalf("hunter recovery failed: out=%+v err=%v", out, err)
+	}
+	if primary.calls != 2 {
+		t.Fatalf("primary calls = %d, want 2", primary.calls)
+	}
+	if !sameResourceChain(stats) || stats.ResourceFailovers != 0 {
+		t.Fatalf("resource chain = %#v, want one stable resource", stats.ResourceChain)
+	}
+	if stats.FreshRetries != 1 {
+		t.Fatalf("fresh retries = %d, want 1", stats.FreshRetries)
 	}
 }
 
