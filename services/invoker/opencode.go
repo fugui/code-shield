@@ -115,7 +115,12 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, func(), error) {
 }
 
 func writeOpenCodePromptFile(payload string) (string, func(), error) {
-	file, err := os.CreateTemp("", "code-shield-opencode-prompt-*.md")
+	promptDir := filepath.Join(os.TempDir(), "opencode")
+	if err := os.MkdirAll(promptDir, 0777); err != nil {
+		return "", func() {}, fmt.Errorf("failed to create opencode prompt dir: %w", err)
+	}
+
+	file, err := os.CreateTemp(promptDir, "code-shield-opencode-prompt-*.md")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("failed to create opencode prompt file: %w", err)
 	}
@@ -127,6 +132,12 @@ func writeOpenCodePromptFile(payload string) (string, func(), error) {
 	}
 	cleanup := func() {
 		_ = os.Remove(path)
+	}
+
+	if err := file.Chmod(0644); err != nil {
+		file.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("failed to chmod opencode prompt file: %w", err)
 	}
 
 	if _, err := file.WriteString(payload); err != nil {

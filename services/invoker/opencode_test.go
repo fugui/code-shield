@@ -101,6 +101,17 @@ func TestOpenCodeInvoker_BuildArgsLargePromptUsesFile(t *testing.T) {
 	if !filepath.IsAbs(promptPath) {
 		t.Fatalf("expected absolute prompt path, got %q", promptPath)
 	}
+	expectedDir := filepath.Join(os.TempDir(), "opencode")
+	if filepath.Dir(promptPath) != expectedDir {
+		t.Fatalf("expected prompt file in %q, got %q", expectedDir, promptPath)
+	}
+	stat, err := os.Stat(promptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat.Mode().Perm() != 0644 {
+		t.Fatalf("expected file permission 0644, got %v", stat.Mode().Perm())
+	}
 	content, err := os.ReadFile(promptPath)
 	if err != nil {
 		t.Fatal(err)
