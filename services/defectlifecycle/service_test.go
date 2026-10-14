@@ -108,7 +108,7 @@ func TestPersistScanFactsRetriesSameReportLedger(t *testing.T) {
 	}
 	db := testdb.SetupIsolatedDB(t, "defectlifecycle_same_report_retry",
 		&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.AnalysisFinding{}, &models.ScanScopeEntry{},
-		&models.User{}, &models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+		&models.User{}, &models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{}, &models.TaskChunkExecution{},
 	)
 	repo := models.Repository{Name: "retry-demo", URL: "https://example.com/retry-demo.git"}
 	taskType := models.TaskType{Name: "coredump-retry", DisplayName: "Core Dump Retry"}
@@ -159,7 +159,7 @@ func TestPersistScanFactsCommitsLedgerLifecycle(t *testing.T) {
 	}
 	db := testdb.SetupIsolatedDB(t, "defectlifecycle_ledger",
 		&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.AnalysisFinding{}, &models.ScanScopeEntry{},
-		&models.User{}, &models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+		&models.User{}, &models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{}, &models.TaskChunkExecution{},
 	)
 	repo := models.Repository{Name: "demo", URL: "https://example.com/demo.git"}
 	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}

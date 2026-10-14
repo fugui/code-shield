@@ -212,6 +212,9 @@ func BuildIdentities(repoRoot string, repoID, taskTypeID uint, findings []models
 		symbolPath, scopeKind, arity, scopeKey := scopeIdentity(normPath, symbolPath)
 		class := defectClassMajor(finding.Category)
 		targetEntity, _ := ExtractPhysicalTargetEntity(finding.CodeSnippet, finding.TargetSymbol, class)
+		if targetEntity == "" && cleanToken != "" {
+			targetEntity, _ = ExtractPhysicalTargetEntity(cleanToken, "", class)
+		}
 		stmtHash := ComputeStmtAnchorHash(cleanToken)
 		scopeSymbol := NormalizeScopeSymbol(symbolPath)
 		coreSlotKey := ComputeCoreSlotKey(normPath, scopeSymbol, class, targetEntity)

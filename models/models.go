@@ -1466,14 +1466,14 @@ func EnsureDefectSlotIndexes(db *gorm.DB) error {
 		if err := db.Exec(`
 			CREATE UNIQUE INDEX IF NOT EXISTS uq_defect_active_slot_idx
 			ON defects (repo_id, task_type_id, slot_key)
-			WHERE status = 'ACTIVE';
+			WHERE status = 'ACTIVE' AND slot_key != '';
 		`).Error; err != nil {
 			return err
 		}
 		if err := db.Exec(`
 			CREATE INDEX IF NOT EXISTS idx_defect_core_slot_key
 			ON defects (repo_id, task_type_id, core_slot_key)
-			WHERE status = 'ACTIVE';
+			WHERE status = 'ACTIVE' AND core_slot_key != '';
 		`).Error; err != nil {
 			return err
 		}
@@ -1488,7 +1488,7 @@ func EnsureDefectSlotIndexes(db *gorm.DB) error {
 	_ = db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS uq_defect_active_slot_sqlite
 		ON defects (repo_id, task_type_id, slot_key)
-		WHERE status = 'ACTIVE';
+		WHERE status = 'ACTIVE' AND slot_key != '';
 	`)
 	_ = db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_defect_core_slot_sqlite

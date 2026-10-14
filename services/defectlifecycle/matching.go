@@ -244,13 +244,16 @@ func RunMatching(input MatchingInput) MatchingResult {
 }
 
 func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
+	assignedDefects := make(map[uint]bool)
 	for i := range decisions {
 		if decisions[i].DefectID != nil && *decisions[i].DefectID > 0 {
+			assignedDefects[*decisions[i].DefectID] = true
 			continue
 		}
 		decisions[i].DefectID = nil
 		for _, edge := range edges[i] {
-			if edge.candidate.Defect.ID == 0 {
+			defectID := edge.candidate.Defect.ID
+			if defectID == 0 || assignedDefects[defectID] {
 				continue
 			}
 			if !hasSource(edge.candidate, AliasSlotPrecise) &&
@@ -259,7 +262,6 @@ func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecisio
 			}
 			edge.detail["strong_alias_equal"] = 1
 			edge.score = math.Max(edge.score, thresholds.StrongSame)
-			defectID := edge.candidate.Defect.ID
 			decisions[i].DefectID = &defectID
 			decisions[i].Score = edge.score
 			decisions[i].Confidence = edge.score
@@ -271,6 +273,7 @@ func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecisio
 			} else {
 				decisions[i].Reason = "SLOT_HEALED"
 			}
+			assignedDefects[defectID] = true
 			break
 		}
 	}
@@ -320,6 +323,12 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 	namespaceKey := func(value string) string {
 		return value + "\x00" + fmt.Sprint(identity.RepoID) + "\x00" + fmt.Sprint(identity.TaskTypeID)
 	}
+	activeSlotOwners := make(map[string]uint)
+	for _, d := range input.Defects {
+		if d.Status == DefectStatusActive && d.SlotKey != "" {
+			activeSlotOwners[d.SlotKey] = d.ID
+		}
+	}
 	candidates := make(map[uint]*Candidate)
 	budgetExceeded := false
 	addAlias := func(alias models.DefectAlias) {
@@ -334,6 +343,12 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 		if !existsDefect || defect.ID == 0 {
 			return
 		}
+		// 若该缺陷不是 ACTIVE 状态，且其槽位已被其他活跃缺陷占有，则该非活跃历史记录不可作为候选被复活
+		if defect.Status != DefectStatusActive && defect.SlotKey != "" {
+			if activeID, occupied := activeSlotOwners[defect.SlotKey]; occupied && activeID != defect.ID {
+				return
+			}
+		}
 		candidate, exists := candidates[alias.DefectID]
 		if !exists {
 			candidate = &Candidate{Defect: defect, Sources: map[string]struct{}{}}
@@ -342,18 +357,35 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 		candidate.Sources[alias.AliasType] = struct{}{}
 	}
 	if slotKey != "" {
-		for _, defect := range input.Defects {
-			if defect.Status != DefectStatusActive || defect.SlotKey == "" {
+		var activePreciseDefect *models.Defect
+		var nonActivePreciseDefect *models.Defect
+		for i := range input.Defects {
+			defect := &input.Defects[i]
+			if defect.SlotKey == "" || defect.SlotKey != slotKey ||
+				defect.NormPath != identity.NormPath ||
+				defect.DefectClassMajor != identity.DefectClassMajor {
 				continue
 			}
-			if defect.SlotKey == slotKey &&
-				defect.NormPath == identity.NormPath &&
-				defect.DefectClassMajor == identity.DefectClassMajor {
-				addAlias(models.DefectAlias{
-					DefectID:  defect.ID,
-					AliasType: AliasSlotPrecise,
-				})
+			if defect.Status == DefectStatusActive {
+				if activePreciseDefect == nil || defect.ID > activePreciseDefect.ID {
+					activePreciseDefect = defect
+				}
+			} else if defect.Status != DefectStatusMerged && defect.Status != DefectStatusHumanClosed {
+				if nonActivePreciseDefect == nil || defect.ID > nonActivePreciseDefect.ID {
+					nonActivePreciseDefect = defect
+				}
 			}
+		}
+		if activePreciseDefect != nil {
+			addAlias(models.DefectAlias{
+				DefectID:  activePreciseDefect.ID,
+				AliasType: AliasSlotPrecise,
+			})
+		} else if nonActivePreciseDefect != nil {
+			addAlias(models.DefectAlias{
+				DefectID:  nonActivePreciseDefect.ID,
+				AliasType: AliasSlotPrecise,
+			})
 		}
 	}
 	for _, item := range values {

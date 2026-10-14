@@ -434,10 +434,9 @@ func LedgerTrend(db *gorm.DB, taskTypeID uint, repoIDs []uint) ([]CampaignTrendP
 
 	now := time.Now()
 	trend := emptyTrend()
-	for dayIndex := 29; dayIndex >= 0; dayIndex-- {
-		endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, now.Location()).AddDate(0, 0, dayIndex-29)
+	for position := 0; position < 30; position++ {
+		endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, now.Location()).AddDate(0, 0, position-29)
 		date := endOfDay.Format("2006-01-02")
-		position := 29 - dayIndex
 		trend[position].Date = date
 		for _, defect := range defects {
 			if defect.CreatedAt.After(endOfDay) {
@@ -689,8 +688,8 @@ func campaignStatusToLedger(status string) (string, bool) {
 }
 
 func isLedgerDefectResolved(status string) bool {
-	switch status {
-	case DefectStatusResolved, DefectStatusHumanClosed, DefectStatusObsolete:
+	switch strings.ToUpper(status) {
+	case DefectStatusResolved, DefectStatusHumanClosed, DefectStatusObsolete, "CLOSED", "INVALID":
 		return true
 	default:
 		return false
