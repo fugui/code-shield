@@ -375,11 +375,18 @@ func SplitPrimaryUnitsBundleInHalf(bundle SemanticBundle) []SemanticBundle {
 		if len(files) == 0 {
 			files = append([]string(nil), bundle.AllFiles...)
 		}
+		allFiles := append([]string(nil), files...)
+		for _, h := range bundle.HeaderFiles {
+			if !pathSet[h] {
+				pathSet[h] = true
+				allFiles = append(allFiles, h)
+			}
+		}
 		subBundles = append(subBundles, SemanticBundle{
 			Name:          fmt.Sprintf("%s-split%d", bundle.Name, i+1),
 			PrimaryFiles:  files,
 			HeaderFiles:   bundle.HeaderFiles,
-			AllFiles:      files,
+			AllFiles:      allFiles,
 			MacroContext:  bundle.MacroContext,
 			NegativeRules: bundle.NegativeRules,
 			HeaderOutline: bundle.HeaderOutline,
