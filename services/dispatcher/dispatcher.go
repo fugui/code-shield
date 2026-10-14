@@ -94,12 +94,12 @@ func computeResourceConfigKey(res models.ComputeResourceConfig) string {
 
 // ThrottleInfo 封装当前流控全景状态信息
 type ThrottleInfo struct {
-	EffectiveScale  float64                        `json:"effective_scale"`   // 最终生效比例 (0.0 ~ 3.0)
-	ThrottleMode    string                         `json:"throttle_mode"`     // "work_hours", "manual", "normal"
-	ManualScale     float64                        `json:"manual_scale"`      // 手动设置的比例
-	ScaleExpiresAt  *time.Time                     `json:"scale_expires_at"`  // 手动过期时间
-	IsManual        bool                           `json:"is_manual"`         // 是否正处于手动覆盖中
-	IsWorkHours     bool                           `json:"is_work_hours"`     // 当前是否命中工作时间
+	EffectiveScale  float64                `json:"effective_scale"`   // 最终生效比例 (0.0 ~ 3.0)
+	ThrottleMode    string                 `json:"throttle_mode"`     // "work_hours", "manual", "normal"
+	ManualScale     float64                `json:"manual_scale"`      // 手动设置的比例
+	ScaleExpiresAt  *time.Time             `json:"scale_expires_at"`  // 手动过期时间
+	IsManual        bool                   `json:"is_manual"`         // 是否正处于手动覆盖中
+	IsWorkHours     bool                   `json:"is_work_hours"`     // 当前是否命中工作时间
 	WorkHoursConfig models.WorkHoursConfig `json:"work_hours_config"` // 工作时间自动限流配置
 }
 
@@ -145,14 +145,14 @@ type ModelDispatcher struct {
 	cond               *sync.Cond
 	resources          []*ModelResource
 	enabled            bool
-	manualScale        float64                        // 管理员手动设置的并发折扣系数 [0.0, 3.0]
-	scaleExpiresAt     time.Time                      // 手动设置失效时间
-	scaleTimer         *time.Timer                    // 到期自动恢复定时器
-	stopHeartbeat      chan struct{}                  // 停止心跳通道
+	manualScale        float64                // 管理员手动设置的并发折扣系数 [0.0, 3.0]
+	scaleExpiresAt     time.Time              // 手动设置失效时间
+	scaleTimer         *time.Timer            // 到期自动恢复定时器
+	stopHeartbeat      chan struct{}          // 停止心跳通道
 	workHours          models.WorkHoursConfig // 内部纳管的工作时间限流配置
-	unsupportedWarned  map[string]time.Time           // 记录各 backend 最近一次直通降级告警时间
-	lastEffectiveScale float64                        // 记录上一时刻生效的 scale
-	lastThrottleMode   string                         // 记录上一时刻模式
+	unsupportedWarned  map[string]time.Time   // 记录各 backend 最近一次直通降级告警时间
+	lastEffectiveScale float64                // 记录上一时刻生效的 scale
+	lastThrottleMode   string                 // 记录上一时刻模式
 	activeLeases       map[string]*LLMSlotLease
 	recentLeases       []*LLMSlotLease
 	// skipSuccessfulLeases controls whether successful slot leases are omitted from

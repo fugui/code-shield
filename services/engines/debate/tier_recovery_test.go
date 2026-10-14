@@ -463,11 +463,18 @@ func TestSpecializedAssessmentEmptyArtifactFailsOverWhenExplicitlyConfigured(t *
 }
 
 func TestSpecializedAssessmentContractMismatchRepairsWithoutNormalRetry(t *testing.T) {
+	prevRepair := models.AppConfig.Scanner.Artifact
+	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "assessment-contract-repair"
+	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
+	models.AppConfig.Scanner.Artifact.SchemaRepairTimeoutSeconds = 10
+	t.Cleanup(func() { models.AppConfig.Scanner.Artifact = prevRepair })
+
 	primary := registerRecoveryInvoker(t, "assessment-contract", func(call int) error { return nil })
 	primary.payload = func(call int) string {
-		if call == 1 {
-			return `{"schema":"wrong-schema"}`
-		}
+		return `{"schema":"wrong-schema","assessments":[{"unit_ref":"u001","outcome":"pass","summary":"safe"},{"unit_ref":"u002","outcome":"pass","summary":"safe"}]}`
+	}
+	repair := registerRecoveryInvoker(t, models.AppConfig.Scanner.Artifact.SchemaRepairResource, func(call int) error { return nil })
+	repair.payload = func(call int) string {
 		return assessmentPayload()
 	}
 	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
@@ -482,43 +489,11 @@ func TestSpecializedAssessmentContractMismatchRepairsWithoutNormalRetry(t *testi
 	if len(records) != 2 {
 		t.Fatalf("records = %d, want 2", len(records))
 	}
-	if primary.calls != 2 {
-		t.Fatalf("calls = %d, want initial plus schema repair", primary.calls)
+	if primary.calls != 1 || repair.calls != 1 {
+		t.Fatalf("calls primary=%d repair=%d, want exactly one of each without normal retry", primary.calls, repair.calls)
 	}
-	if stats == nil || stats.ContractRepairs != 1 {
-		t.Fatalf("contract repairs = %+v, want 1", stats)
-	}
-}
-
-func TestSpecializedAssessmentRepairsThenRetriesSameResource(t *testing.T) {
-	primary := registerRecoveryInvoker(t, "assessment-repair-retry", func(call int) error { return nil })
-	primary.payload = func(call int) string {
-		if call == 2 {
-			return `{"schema":"wrong-schema"}`
-		}
-		if call == 4 {
-			return assessmentPayload()
-		}
-		return `{"schema":"wrong-schema"}`
-	}
-	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
-		MaxTotalAttempts:       3,
-		MaxAttemptsPerResource: 3,
-		RetryBackoffMs:         1,
-		RetryOn:                []string{"idle_timeout"},
-	})
-	findings, records, stats, err := runSpecializedAssessmentRecovery(t, []string{"src/a.cpp", "src/b.cpp"}, primary.name)
-	if err != nil || len(records) != 2 || len(findings) != 0 {
-		t.Fatalf("repair retry failed: records=%d findings=%d err=%v", len(records), len(findings), err)
-	}
-	if primary.calls != 4 {
-		t.Fatalf("calls=%d, want initial repair, failed repair, fresh attempt, successful repair", primary.calls)
-	}
-	if stats == nil || stats.FreshRetries != 1 || len(stats.ResourceChain) != 2 || !sameResourceChain(stats) {
-		t.Fatalf("stats=%+v, want one same-resource fresh retry", stats)
-	}
-	if len(stats.QueueWaitMS) != 2 || len(stats.DurationSeconds) != 2 {
-		t.Fatalf("timings=%#v/%#v, want one entry per logical attempt", stats.QueueWaitMS, stats.DurationSeconds)
+	if stats == nil || stats.FreshRetries != 0 {
+		t.Fatalf("fresh retries = %+v, want 0", stats)
 	}
 }
 

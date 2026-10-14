@@ -324,8 +324,8 @@ func TestPipelineExplicitlyFailsAfterTwoRepairFailures(t *testing.T) {
 	}
 }
 
-func TestAssessmentContractRepairDefaultDisabled(t *testing.T) {
-	if (models.Config{}).AssessmentContractRepairEnabled() {
-		t.Fatal("assessment contract repair should default to disabled")
+func TestAssessmentContractRepairDefaultEnabled(t *testing.T) {
+	if !(models.Config{}).AssessmentContractRepairEnabled() {
+		t.Fatal("assessment contract repair should default to enabled")
 	}
 }

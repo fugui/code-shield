@@ -48,4 +48,3 @@ func EnsureBaseAgent() error {
 	log.Printf("[OpenCode] Initialized/Updated base scanner agent at %s\n", agentPath)
 	return nil
 }
-

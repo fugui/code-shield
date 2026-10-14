@@ -236,7 +236,10 @@ func (c Config) ToolResource(toolName string) string {
 }
 
 func (c Config) AssessmentContractRepairEnabled() bool {
-	return c.Scanner.Artifact.AssessmentContractRepairEnabled != nil && *c.Scanner.Artifact.AssessmentContractRepairEnabled
+	if c.Scanner.Artifact.AssessmentContractRepairEnabled != nil {
+		return *c.Scanner.Artifact.AssessmentContractRepairEnabled
+	}
+	return true
 }
 
 func (c Config) AssessmentJSONSchemaMode() string {
