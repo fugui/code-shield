@@ -358,7 +358,20 @@ bundleLoop:
 				}
 				totalHunterTokens += hTokens
 				totalTier2Tokens += t2Tokens
+			} else {
+				if len(findings) > 0 {
+					allFindings = append(allFindings, findings...)
+				}
+				if len(debateLogs) > 0 {
+					allDebateLogs = append(allDebateLogs, debateLogs...)
+				}
+				if ctx.AssessmentProfile != "" && len(assessmentRecords) > 0 {
+					allAssessments = append(allAssessments, assessmentRecords...)
+				}
+				totalHunterTokens += hTokens
+				totalTier2Tokens += t2Tokens
 			}
+
 			if ctx.ProgressReport != nil {
 				ctx.ProgressReport(totalChunks, processedChunks, successChunks)
 			}
@@ -471,10 +484,7 @@ func (e *DebateEngine) ProcessBundle(ctx *engines.EngineContext, bundle chunker.
 		}
 		findings, assessmentRecords, tokens, assessmentErr := e.runSpecializedAssessment(ctx, bundle, assessmentOutPath)
 		if assessmentErr != nil {
-			if isContractMismatch(assessmentErr) {
-				return nil, nil, nil, 0, 0, fmt.Errorf("specialized assessment stage failed: %w", assessmentErr)
-			}
-			return nil, nil, nil, 0, 0, fmt.Errorf("specialized assessment stage failed: %w", assessmentErr)
+			return findings, nil, assessmentRecords, tokens, 0, fmt.Errorf("specialized assessment stage failed: %w", assessmentErr)
 		}
 		return findings, nil, assessmentRecords, tokens, 0, nil
 	}

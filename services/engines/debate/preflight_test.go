@@ -11,6 +11,7 @@ import (
 	"code-shield/services/engines"
 	"code-shield/services/engines/chunker"
 	"code-shield/services/engines/plugins"
+	"code-shield/services/invoker"
 )
 
 func TestPreflightGatePipelineIntegration(t *testing.T) {
@@ -286,5 +287,100 @@ func TestUnit5(t *testing.T) {
 		if rec.Status != "DEFECT" {
 			t.Fatalf("expected record status DEFECT, got %s", rec.Status)
 		}
+	}
+}
+
+func TestRunSpecializedAssessmentPreservesPreflightOnLLMFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	relPath := "test_mixed.cpp"
+	absPath := filepath.Join(tmpDir, relPath)
+
+	// 包含 1 个空测试（会被 preflight 拦截）和 1 个具有孤立弱断言的长用例（进入 LLM 评估）
+	content := `TEST(CalcTest, EmptyStub) {
+}
+
+TEST(CalcTest, ComplexNeedsLLM) {
+    auto res = ComputeSomething(1, 2);
+    StepTwo(res);
+    StepThree(res);
+    EXPECT_TRUE(res.IsValid());
+}
+`
+	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	primary := registerRecoveryInvoker(t, "preflight-llm-fail", func(call int) error {
+		return invoker.NewClassifiedError(invoker.ErrorClassTimeout, "llm timed out")
+	})
+	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
+		MaxTotalAttempts:       1,
+		MaxAttemptsPerResource: 1,
+		SplitOn:                []string{"idle_timeout"}, // 不触发 split，直接走失败路径
+	})
+
+	engine := &DebateEngine{}
+	ctx := &engines.EngineContext{
+		Ctx:               context.Background(),
+		CodesPath:         tmpDir,
+		EngineMode:        "debate_full",
+		AssessmentProfile: "entityreview",
+		AllowedCategories: []string{"无问题", "断言有效性-空测试"},
+		Plugins: plugins.PluginsConfig{
+			PreflightGate: &plugins.TaskPluginDeclaration{
+				ID: "test_case_radar",
+			},
+		},
+	}
+
+	emptyUnit := coverage.PlanUnit{
+		ID:          "unit-empty",
+		Kind:        coverage.PlanUnitEntity,
+		Path:        relPath,
+		DisplayName: "CalcTest.EmptyStub",
+		StartLine:   1,
+		EndLine:     2,
+	}
+	complexUnit := coverage.PlanUnit{
+		ID:          "unit-complex",
+		Kind:        coverage.PlanUnitEntity,
+		Path:        relPath,
+		DisplayName: "CalcTest.ComplexNeedsLLM",
+		StartLine:   4,
+		EndLine:     9,
+	}
+
+	bundle := chunker.SemanticBundle{
+		Name:         "bundle-preflight-fail",
+		PrimaryFiles: []string{relPath},
+		AllFiles:     []string{relPath},
+		PrimaryUnits: []coverage.PlanUnit{emptyUnit, complexUnit},
+	}
+
+	findings, records, _, err := engine.runSpecializedAssessment(ctx, bundle, filepath.Join(tmpDir, "assessment.json"))
+	if err == nil {
+		t.Fatal("expected LLM error, got nil")
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 preflight finding preserved, got %d", len(findings))
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 preflight record preserved, got %d", len(records))
+	}
+	if findings[0].CalibrationRule != "UT_EMPTY_STUB" {
+		t.Fatalf("expected UT_EMPTY_STUB finding, got %+v", findings[0])
+	}
+	if records[0].PrimaryUnitID != "unit-empty" || records[0].Status != "DEFECT" {
+		t.Fatalf("unexpected record: %+v", records[0])
+	}
+
+	// 进一步验证 ProcessBundle 返回的局部结果
+	pbFindings, _, pbRecords, _, _, pbErr := engine.ProcessBundle(ctx, bundle, 0, tmpDir, nil)
+	if pbErr == nil {
+		t.Fatal("expected ProcessBundle to return error, got nil")
+	}
+	if len(pbFindings) != 1 || len(pbRecords) != 1 {
+		t.Fatalf("expected ProcessBundle to preserve 1 finding and 1 record, got %d findings and %d records",
+			len(pbFindings), len(pbRecords))
 	}
 }

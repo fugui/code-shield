@@ -55,15 +55,15 @@ func (e *DebateEngine) runSpecializedAssessment(
 
 	plan, err := dispatcher.GetTierRouter().AcquireTierResourcePlan(stageCtx.Ctx, "tier1_hunter", nil)
 	if err != nil {
-		return nil, nil, 0, err
+		return interceptFindings, interceptRecords, 0, err
 	}
 	execution, err := buildSpecializedAssessmentPlan(&stageCtx, bundle)
 	if err != nil {
-		return nil, nil, 0, err
+		return interceptFindings, interceptRecords, 0, err
 	}
 	llmFindings, llmRecords, tokens, err := e.runSpecializedAssessmentWithBudget(&stageCtx, bundle, outPath, budgetSeconds, attemptSeconds, execution, plan)
 	if err != nil {
-		return nil, nil, 0, err
+		return interceptFindings, interceptRecords, tokens, err
 	}
 	finalFindings := append(interceptFindings, llmFindings...)
 	finalRecords := append(interceptRecords, llmRecords...)
