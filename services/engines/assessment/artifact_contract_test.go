@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"code-shield/services/coverage"
 )
 
 func contractForTest(t *testing.T) ArtifactContract {
@@ -350,5 +352,49 @@ func TestExtractJSONObjectMarkdownDetection(t *testing.T) {
 	_, err := ExtractJSONObject(raw)
 	if !errors.Is(err, ErrOutputIsMarkdownText) {
 		t.Fatalf("err = %v, want ErrOutputIsMarkdownText", err)
+	}
+}
+
+func TestLocalRepairsUnitRefFromDisplayNameOrID(t *testing.T) {
+	contract := contractForTest(t)
+	session, err := NewPromptRefSession("bundle-1", []string{"sha256:abc12345"}, map[string]string{
+		"sha256:abc12345": "TestUserLogin_Success",
+	})
+	if err != nil {
+		t.Fatalf("NewPromptRefSession() error = %v", err)
+	}
+	plan := PlanView{
+		BundleID:          "bundle-1",
+		PromptRefs:        session,
+		AllowedCategories: []string{"内存安全"},
+		Units:             []coverage.PlanUnit{{ID: "sha256:abc12345", DisplayName: "TestUserLogin_Success"}},
+	}
+
+	// 1. LLM 把测试函数名填入 unit_ref
+	rawByName := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"TestUserLogin_Success","outcome":"pass","summary":"ok"}]}`
+	repairedByName, changed := NormalizeArtifactLocally([]byte(rawByName), contract, plan.PromptRefs)
+	if !changed {
+		t.Fatal("expected DisplayName to trigger local normalization")
+	}
+	finalByName, err := ValidateArtifact(repairedByName, contract, plan, passingValidator(t))
+	if err != nil {
+		t.Fatalf("validation error after repair: %v, issues: %#v", err, finalByName.Issues)
+	}
+	if finalByName.Artifact.Assessments[0].UnitRef != "u001" {
+		t.Fatalf("got unit_ref = %q, want u001", finalByName.Artifact.Assessments[0].UnitRef)
+	}
+
+	// 2. LLM 把 sha256 内部哈希填入 unit_ref
+	rawByID := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"sha256:abc12345","outcome":"pass","summary":"ok"}]}`
+	repairedByID, changed := NormalizeArtifactLocally([]byte(rawByID), contract, plan.PromptRefs)
+	if !changed {
+		t.Fatal("expected UnitID to trigger local normalization")
+	}
+	finalByID, err := ValidateArtifact(repairedByID, contract, plan, passingValidator(t))
+	if err != nil {
+		t.Fatalf("validation error after repair: %v, issues: %#v", err, finalByID.Issues)
+	}
+	if finalByID.Artifact.Assessments[0].UnitRef != "u001" {
+		t.Fatalf("got unit_ref = %q, want u001", finalByID.Artifact.Assessments[0].UnitRef)
 	}
 }

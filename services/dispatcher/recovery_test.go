@@ -205,3 +205,89 @@ func TestResourceBreakerExpires(t *testing.T) {
 		t.Fatalf("available=%v open=%v, want breaker closed", available, open)
 	}
 }
+
+func TestTierRecoveryContractMismatchDefaultFailsWithoutRetryOrSplit(t *testing.T) {
+	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
+		MaxTotalAttempts: 2,
+	})
+	calls := 0
+	splitCalled := false
+	stats := &TierRecoveryStats{}
+	_, _, _, err := RunTierInvocationWithRecovery(
+		context.Background(), "tier1_hunter", 10, stats,
+		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
+			calls++
+			return "", 0, invoker.NewClassifiedError(invoker.ErrorClassContractMismatch, "contract mismatch")
+		},
+		WithTierSplitRecovery(func(context.Context, TierCandidate, int64, invoker.ErrorClass, error) (bool, string, int64, error) {
+			splitCalled = true
+			return true, "split-output", 10, nil
+		}),
+	)
+	if err == nil {
+		t.Fatal("expected contract mismatch error when neither retry_on nor split_on is configured")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
+	if splitCalled {
+		t.Fatal("split recovery should not be called when split_on does not contain contract_mismatch")
+	}
+}
+
+func TestTierRecoveryContractMismatchAllowsRetryWhenConfigured(t *testing.T) {
+	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
+		MaxTotalAttempts:       2,
+		MaxAttemptsPerResource: 2,
+		RetryBackoffMs:         1,
+		RetryOn:                []string{"contract_mismatch"},
+	})
+	calls := 0
+	stats := &TierRecoveryStats{}
+	out, _, _, err := RunTierInvocationWithRecovery(
+		context.Background(), "tier1_hunter", 10, stats,
+		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
+			calls++
+			if calls == 1 {
+				return "", 0, invoker.NewClassifiedError(invoker.ErrorClassContractMismatch, "contract mismatch")
+			}
+			return "success", 10, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 || out != "success" {
+		t.Fatalf("calls = %d, out = %q, want calls=2 out=success", calls, out)
+	}
+	if stats.FreshRetries != 1 {
+		t.Fatalf("fresh retries = %d, want 1", stats.FreshRetries)
+	}
+}
+
+func TestTierRecoveryContractMismatchAllowsSplitWhenConfigured(t *testing.T) {
+	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
+		MaxTotalAttempts: 2,
+		SplitOn:          []string{"contract_mismatch"},
+	})
+	calls := 0
+	splitCalled := false
+	stats := &TierRecoveryStats{}
+	out, _, _, err := RunTierInvocationWithRecovery(
+		context.Background(), "tier1_hunter", 10, stats,
+		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
+			calls++
+			return "", 0, invoker.NewClassifiedError(invoker.ErrorClassContractMismatch, "contract mismatch")
+		},
+		WithTierSplitRecovery(func(context.Context, TierCandidate, int64, invoker.ErrorClass, error) (bool, string, int64, error) {
+			splitCalled = true
+			return true, "split-output", 20, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !splitCalled || out != "split-output" {
+		t.Fatalf("splitCalled = %v, out = %q, want splitCalled=true out=split-output", splitCalled, out)
+	}
+}

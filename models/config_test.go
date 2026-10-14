@@ -7,18 +7,10 @@ import (
 	"testing"
 )
 
-func TestAssessmentJSONSchemaModeDefaultsOff(t *testing.T) {
+func TestAssessmentJSONSchemaModeAlwaysAuto(t *testing.T) {
 	config := Config{}
-	if config.AssessmentJSONSchemaMode() != "off" {
-		t.Fatalf("mode = %q, want off", config.AssessmentJSONSchemaMode())
-	}
-	config.Scanner.Artifact.AssessmentJSONSchemaMode = "AUTO"
 	if config.AssessmentJSONSchemaMode() != "auto" {
 		t.Fatalf("mode = %q, want auto", config.AssessmentJSONSchemaMode())
-	}
-	config.Scanner.Artifact.AssessmentJSONSchemaMode = "unsupported"
-	if config.AssessmentJSONSchemaMode() != "off" {
-		t.Fatalf("mode = %q, want off", config.AssessmentJSONSchemaMode())
 	}
 }
 

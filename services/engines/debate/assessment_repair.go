@@ -93,12 +93,13 @@ func buildDirectedAssessmentRepairPrompt(request assessment.DirectedRepairReques
 	schema, _ := json.MarshalIndent(request.Contract.JSONSchema, "", "  ")
 	sb.Write(schema)
 	sb.WriteString("\n```\n\n## Allowed unit_ref Values\n")
+	sb.WriteString("【重要约束】unit_ref 字段只允许填写下方分配的短代号（如 u001, u002），严禁输出测试函数名、测试代码或哈希值：\n")
 	for _, ref := range request.ValidRefs {
 		displayName := strings.TrimSpace(ref.DisplayName)
 		if displayName == "" {
 			displayName = "unknown target"
 		}
-		sb.WriteString(fmt.Sprintf("- %s -> %s (%s)\n", ref.Ref, ref.UnitID, displayName))
+		sb.WriteString(fmt.Sprintf("- %s (对应测试: %s)\n", ref.Ref, displayName))
 	}
 	sb.WriteString("\n## Allowed Enums\n")
 	names := make([]string, 0, len(request.AllowedEnums))

@@ -228,7 +228,9 @@ func RunTierInvocationWithRecovery(
 			return rawOutput, candidate, tokens, nil
 		}
 
-		if class == invoker.ErrorClassContractMismatch || class == invoker.ErrorClassJSONInvalid {
+		if (class == invoker.ErrorClassContractMismatch || class == invoker.ErrorClassJSONInvalid) &&
+			!recoveryAllows(recovery.RetryOn, class) &&
+			!shouldTierSplit(recovery.SplitOn, class) {
 			return rawOutput, candidate, tokens, lastErr
 		}
 

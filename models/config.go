@@ -181,7 +181,6 @@ type ArtifactGuardConfig struct {
 	MaxSchemaRepairAttempts      int     `yaml:"max_schema_repair_attempts" json:"max_schema_repair_attempts"`
 	SchemaRepairTimeoutSeconds   int     `yaml:"schema_repair_timeout_seconds" json:"schema_repair_timeout_seconds"`
 	SchemaRepairResource         string  `yaml:"schema_repair_resource" json:"schema_repair_resource"`
-	AssessmentJSONSchemaMode     string  `yaml:"assessment_json_schema_mode" json:"assessment_json_schema_mode"`
 	AllowCandidateSalvage        *bool   `yaml:"allow_candidate_salvage" json:"allow_candidate_salvage"`
 	MaxQuarantinedCandidateRatio float64 `yaml:"max_quarantined_candidate_ratio" json:"max_quarantined_candidate_ratio"`
 	CategoryRepairEnabled        *bool   `yaml:"category_repair_enabled" json:"category_repair_enabled"`
@@ -234,14 +233,10 @@ func (c Config) ToolResource(toolName string) string {
 	return "native"
 }
 
+// AssessmentJSONSchemaMode 统一约束 Specialized Assessment 输出格式，系统固化采用 auto 模式，
+// 下发结构化 JSON Schema 并在模型不支持时由 NativeInvoker 自适应降级为 json_object，无需外部配置。
 func (c Config) AssessmentJSONSchemaMode() string {
-	value := strings.ToLower(strings.TrimSpace(c.Scanner.Artifact.AssessmentJSONSchemaMode))
-	switch value {
-	case "json_object", "auto", "strict":
-		return value
-	default:
-		return "off"
-	}
+	return "auto"
 }
 
 func (c Config) AllowCandidateSalvage() bool {
