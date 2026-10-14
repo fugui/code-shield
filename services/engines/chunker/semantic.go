@@ -353,10 +353,50 @@ func GetDirectoryChunkName(file string, depth int) string {
 	return filepath.Join(parts[:depth]...)
 }
 
+// SplitPrimaryUnitsBundleInHalf 对包含多个 PrimaryUnits 的专项评估分片按实体单元进行对半切分。
+// 适用于测试用例有效性评估等“单文件包含多个待评测实体”的业务场景。
+func SplitPrimaryUnitsBundleInHalf(bundle SemanticBundle) []SemanticBundle {
+	units := bundle.PrimaryUnits
+	if len(units) < 2 {
+		return nil
+	}
+	splitAt := (len(units) + 1) / 2
+	halves := [][]coverage.PlanUnit{units[:splitAt], units[splitAt:]}
+	subBundles := make([]SemanticBundle, 0, len(halves))
+	for i, half := range halves {
+		pathSet := make(map[string]bool)
+		var files []string
+		for _, u := range half {
+			if u.Path != "" && !pathSet[u.Path] {
+				pathSet[u.Path] = true
+				files = append(files, u.Path)
+			}
+		}
+		if len(files) == 0 {
+			files = append([]string(nil), bundle.AllFiles...)
+		}
+		subBundles = append(subBundles, SemanticBundle{
+			Name:          fmt.Sprintf("%s-split%d", bundle.Name, i+1),
+			PrimaryFiles:  files,
+			HeaderFiles:   bundle.HeaderFiles,
+			AllFiles:      files,
+			MacroContext:  bundle.MacroContext,
+			NegativeRules: bundle.NegativeRules,
+			HeaderOutline: bundle.HeaderOutline,
+			PrimaryUnits:  half,
+		})
+	}
+	return subBundles
+}
+
 // SplitSemanticBundleInHalf splits a semantic bundle into two smaller bundles.
 // It keeps same-basename implementation/header files together so later
 // evidence extraction still sees the source/header pair.
+// If the bundle has multiple PrimaryUnits, it delegates to SplitPrimaryUnitsBundleInHalf.
 func SplitSemanticBundleInHalf(bundle SemanticBundle) []SemanticBundle {
+	if len(bundle.PrimaryUnits) > 1 {
+		return SplitPrimaryUnitsBundleInHalf(bundle)
+	}
 	files := bundle.AllFiles
 	if len(files) == 0 {
 		files = append(append([]string{}, bundle.PrimaryFiles...), bundle.HeaderFiles...)

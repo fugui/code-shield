@@ -11,13 +11,19 @@ import (
 const maxDomainPromptBytes = 512 * 1024
 
 func (Profile) BuildPrompt(ctx assessment.AssessmentContext, bundle assessment.Bundle) (string, *assessment.PromptRefSession, error) {
-	unitIDs := make([]string, 0, len(bundle.Units))
-	displayNames := make(map[string]string, len(bundle.Units))
-	for _, unit := range bundle.Units {
-		unitIDs = append(unitIDs, unit.ID)
-		displayNames[unit.ID] = unit.DisplayName
+	var session *assessment.PromptRefSession
+	var err error
+	if ctx.PromptRefs != nil {
+		session, err = ctx.PromptRefs.SubSession(bundle.ID, bundle.Units)
+	} else {
+		unitIDs := make([]string, 0, len(bundle.Units))
+		displayNames := make(map[string]string, len(bundle.Units))
+		for _, unit := range bundle.Units {
+			unitIDs = append(unitIDs, unit.ID)
+			displayNames[unit.ID] = unit.DisplayName
+		}
+		session, err = assessment.NewPromptRefSession(bundle.ID, unitIDs, displayNames)
 	}
-	session, err := assessment.NewPromptRefSession(bundle.ID, unitIDs, displayNames)
 	if err != nil {
 		return "", nil, err
 	}

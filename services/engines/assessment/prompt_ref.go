@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"code-shield/services/coverage"
 )
 
 type PromptRef struct {
@@ -61,4 +63,30 @@ func (session *PromptRefSession) UnitIDForRef(ref string) (string, error) {
 func (session *PromptRefSession) RefForUnitID(unitID string) (PromptRef, bool) {
 	promptRef, exists := session.byID[unitID]
 	return promptRef, exists
+}
+
+// SubSession creates a subset PromptRefSession preserving the original unit_ref mappings.
+func (session *PromptRefSession) SubSession(bundleID string, units []coverage.PlanUnit) (*PromptRefSession, error) {
+	if session == nil {
+		return nil, fmt.Errorf("parent prompt ref session is nil")
+	}
+	if strings.TrimSpace(bundleID) == "" {
+		bundleID = session.BundleID
+	}
+	sub := &PromptRefSession{
+		BundleID: bundleID,
+		Refs:     make([]PromptRef, 0, len(units)),
+		byRef:    make(map[string]PromptRef, len(units)),
+		byID:     make(map[string]PromptRef, len(units)),
+	}
+	for _, unit := range units {
+		ref, exists := session.byID[unit.ID]
+		if !exists {
+			return nil, fmt.Errorf("%w: unit %q not found in parent prompt ref session", ErrContractRepair, unit.ID)
+		}
+		sub.Refs = append(sub.Refs, ref)
+		sub.byRef[ref.Ref] = ref
+		sub.byID[unit.ID] = ref
+	}
+	return sub, nil
 }
