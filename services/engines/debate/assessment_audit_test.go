@@ -119,15 +119,11 @@ func auditTestContext(bundle string) (*engines.EngineContext, assessment.PromptR
 
 func enableAuditRepair(t *testing.T) {
 	t.Helper()
-	enabled := true
-	previousEnabled := models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled
 	previousResource := models.AppConfig.Scanner.Artifact.SchemaRepairResource
 	previousAttempts := models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &enabled
 	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "native"
 	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
 	t.Cleanup(func() {
-		models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = previousEnabled
 		models.AppConfig.Scanner.Artifact.SchemaRepairResource = previousResource
 		models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = previousAttempts
 	})
@@ -287,33 +283,6 @@ func TestConsumePluginArtifactPersistsDriftedAttempt(t *testing.T) {
 		t.Fatalf("audit = %#v", audit)
 	}
 	assertAuditAttempts(t, audit, "changed-one")
-}
-
-func TestConsumePluginArtifactDisabledLeavesAuditFieldsEmpty(t *testing.T) {
-	repairInvoker := &scriptedRepairInvoker{response: "{broken"}
-	db, engineCtx, session, registration, contract := setupAuditTest(t, repairInvoker)
-	previous := models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled
-	disabled := false
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &disabled
-	t.Cleanup(func() { models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = previous })
-	raw := `{"schema":"code-shield.unit-assessments.v2","assessments":[{"unit_ref":"u001","outcome":"pass","summary":"one"},{"unit_ref":"u002","outcome":"pass","summary":"two"}]}`
-	findings, _, _, err := (&DebateEngine{}).consumePluginArtifact(
-		engineCtx, chunker.SemanticBundle{Name: "audit-bundle"}, raw, 0, &session, registration, contract,
-		assessment.ArtifactPipelineObservation{},
-	)
-	if err != nil {
-		t.Fatalf("consumePluginArtifact() error = %v", err)
-	}
-	if len(findings) != 2 || findings[0].ArtifactSchemaID != "" || findings[0].ArtifactSchemaHash != "" || findings[0].ArtifactRepairMetrics != nil {
-		t.Fatalf("findings = %#v, want empty audit fields", findings)
-	}
-	var count int64
-	if err := db.Model(&models.ArtifactRepairAudit{}).Count(&count).Error; err != nil {
-		t.Fatalf("count audits: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("audit rows = %d, want 0", count)
-	}
 }
 
 func assertAuditAttempts(t *testing.T, audit models.ArtifactRepairAudit, want string) {

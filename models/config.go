@@ -177,18 +177,17 @@ type ResumeConfig struct{}
 // ArtifactGuardConfig controls deterministic normalization and bounded recovery
 // for AI scanner artifacts.
 type ArtifactGuardConfig struct {
-	NormalizationEnabled            *bool   `yaml:"normalization_enabled" json:"normalization_enabled"`
-	MaxSchemaRepairAttempts         int     `yaml:"max_schema_repair_attempts" json:"max_schema_repair_attempts"`
-	SchemaRepairTimeoutSeconds      int     `yaml:"schema_repair_timeout_seconds" json:"schema_repair_timeout_seconds"`
-	SchemaRepairResource            string  `yaml:"schema_repair_resource" json:"schema_repair_resource"`
-	AssessmentContractRepairEnabled *bool   `yaml:"assessment_contract_repair_enabled" json:"assessment_contract_repair_enabled"`
-	AssessmentJSONSchemaMode        string  `yaml:"assessment_json_schema_mode" json:"assessment_json_schema_mode"`
-	AllowCandidateSalvage           *bool   `yaml:"allow_candidate_salvage" json:"allow_candidate_salvage"`
-	MaxQuarantinedCandidateRatio    float64 `yaml:"max_quarantined_candidate_ratio" json:"max_quarantined_candidate_ratio"`
-	CategoryRepairEnabled           *bool   `yaml:"category_repair_enabled" json:"category_repair_enabled"`
-	CategoryRepairResource          string  `yaml:"category_repair_resource" json:"category_repair_resource"`
-	CategoryRepairTimeoutSeconds    int     `yaml:"category_repair_timeout_seconds" json:"category_repair_timeout_seconds"`
-	CategoryRepairMaxCandidates     int     `yaml:"category_repair_max_candidates" json:"category_repair_max_candidates"`
+	NormalizationEnabled         *bool   `yaml:"normalization_enabled" json:"normalization_enabled"`
+	MaxSchemaRepairAttempts      int     `yaml:"max_schema_repair_attempts" json:"max_schema_repair_attempts"`
+	SchemaRepairTimeoutSeconds   int     `yaml:"schema_repair_timeout_seconds" json:"schema_repair_timeout_seconds"`
+	SchemaRepairResource         string  `yaml:"schema_repair_resource" json:"schema_repair_resource"`
+	AssessmentJSONSchemaMode     string  `yaml:"assessment_json_schema_mode" json:"assessment_json_schema_mode"`
+	AllowCandidateSalvage        *bool   `yaml:"allow_candidate_salvage" json:"allow_candidate_salvage"`
+	MaxQuarantinedCandidateRatio float64 `yaml:"max_quarantined_candidate_ratio" json:"max_quarantined_candidate_ratio"`
+	CategoryRepairEnabled        *bool   `yaml:"category_repair_enabled" json:"category_repair_enabled"`
+	CategoryRepairResource       string  `yaml:"category_repair_resource" json:"category_repair_resource"`
+	CategoryRepairTimeoutSeconds int     `yaml:"category_repair_timeout_seconds" json:"category_repair_timeout_seconds"`
+	CategoryRepairMaxCandidates  int     `yaml:"category_repair_max_candidates" json:"category_repair_max_candidates"`
 }
 
 func (c Config) ArtifactGuardEnabled() bool {
@@ -233,13 +232,6 @@ func (c Config) ToolResource(toolName string) string {
 		return strings.TrimSpace(c.LLM.DefaultResource)
 	}
 	return "native"
-}
-
-func (c Config) AssessmentContractRepairEnabled() bool {
-	if c.Scanner.Artifact.AssessmentContractRepairEnabled != nil {
-		return *c.Scanner.Artifact.AssessmentContractRepairEnabled
-	}
-	return true
 }
 
 func (c Config) AssessmentJSONSchemaMode() string {
