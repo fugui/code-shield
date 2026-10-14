@@ -2,10 +2,31 @@ package assessment
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 )
+
+// ErrOutputIsMarkdownText 表示模型返回了 Markdown 或自然语言文本而非合法的 JSON 对象
+var ErrOutputIsMarkdownText = errors.New("AI returned Markdown text instead of JSON")
+
+// LooksLikeMarkdownOrText 判定文本是否以 Markdown（标题、列表、引用）或自然语言开头而非 JSON 对象
+func LooksLikeMarkdownOrText(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "#") ||
+		strings.HasPrefix(trimmed, "* ") ||
+		strings.HasPrefix(trimmed, "- ") ||
+		strings.HasPrefix(trimmed, ">") ||
+		strings.HasPrefix(trimmed, "```markdown") ||
+		strings.HasPrefix(trimmed, "```md") {
+		return true
+	}
+	if len(trimmed) > 0 && !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
+		return true
+	}
+	return false
+}
 
 func ExtractJSONObject(raw []byte) ([]byte, error) {
 	content := strings.TrimSpace(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
@@ -15,6 +36,9 @@ func ExtractJSONObject(raw []byte) ([]byte, error) {
 	content = stripJSONFence(content)
 	start := strings.Index(content, "{")
 	if start < 0 {
+		if LooksLikeMarkdownOrText(content) {
+			return nil, ErrOutputIsMarkdownText
+		}
 		return nil, fmt.Errorf("artifact does not contain a JSON object")
 	}
 	object := content[start:]

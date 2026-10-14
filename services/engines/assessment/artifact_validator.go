@@ -3,6 +3,7 @@ package assessment
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -22,9 +23,13 @@ func ValidateArtifact(raw []byte, contract ArtifactContract, plan PlanView, vali
 	result := ArtifactValidationResult{CleanedJSON: cleaned}
 	if extractErr != nil {
 		result.CleanedJSON = raw
+		issueCode := "JSON_PARSE_FAILED"
+		if errors.Is(extractErr, ErrOutputIsMarkdownText) || strings.Contains(extractErr.Error(), "Markdown") {
+			issueCode = "AI_OUTPUT_MARKDOWN_INSTEAD_OF_JSON"
+		}
 		result.Issues = append(result.Issues, ArtifactIssue{
 			Stage: contract.Stage, Schema: contract.SchemaID, JSONPath: "$", Field: "artifact",
-			Code: "JSON_PARSE_FAILED", Message: extractErr.Error(), Recoverable: true,
+			Code: issueCode, Message: extractErr.Error(), Recoverable: true,
 		})
 		return result, ErrArtifactInvalid
 	}

@@ -48,7 +48,11 @@ func BuildPromptPayload(req AIRequest, includePromptFile bool) (string, error) {
 		sb.WriteString("## Output Delivery\n")
 		sb.WriteString(fmt.Sprintf("请将符合上方契约规范的纯内容完整写入目标普通文件：%s\n", req.OutputPath))
 		sb.WriteString("硬性要求：目标路径必须是普通文件；不得创建同名目录；不得把结果写入其子目录。\n")
-		sb.WriteString("文件内容只能是 UTF-8 JSON 或任务指定的 Markdown；不得包含 BOM、注释、Markdown 代码围栏、日志或解释文字。\n")
+		if strings.EqualFold(req.ResponseFormat, "json") {
+			sb.WriteString("文件内容只能是符合输出契约的 UTF-8 JSON；不得包含 BOM、注释、Markdown 标题或代码围栏、日志或解释文字。\n")
+		} else {
+			sb.WriteString("文件内容只能是 UTF-8 JSON 或任务指定的 Markdown；不得包含 BOM、注释、Markdown 代码围栏、日志或解释文字。\n")
+		}
 		sb.WriteString("如果目标文件已存在，直接覆盖。不得修改业务源码。写入完成后无需输出任何额外解释文字。\n\n")
 	}
 
@@ -87,7 +91,17 @@ func BuildReadOnlyPromptPayload(req AIRequest, includePromptFile bool) (string, 
 	}
 
 	if req.OutputPath != "" {
-		payload += `
+		if strings.EqualFold(req.ResponseFormat, "json") {
+			payload += `
+
+## Response Delivery
+严禁创建、写入、修改或删除任何文件。
+不要执行 shell 重定向、tee、touch、编辑器或任何写盘工具。
+将完整最终结果作为最后一条消息直接返回；内容只能是符合输出契约的 UTF-8 JSON。
+不得包含 BOM、Markdown 标题或代码围栏、注释、日志、审批说明或解释文字。
+`
+		} else {
+			payload += `
 
 ## Response Delivery
 严禁创建、写入、修改或删除任何文件。
@@ -95,6 +109,7 @@ func BuildReadOnlyPromptPayload(req AIRequest, includePromptFile bool) (string, 
 将完整最终结果作为最后一条消息直接返回；内容只能是任务要求的 UTF-8 JSON 或 Markdown。
 不得包含 BOM、Markdown 代码围栏、注释、日志、审批说明或解释文字。
 `
+		}
 	}
 	return payload, nil
 }

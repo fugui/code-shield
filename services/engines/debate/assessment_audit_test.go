@@ -240,6 +240,10 @@ func TestConsumePluginArtifactPersistsLLMRepairAttempt(t *testing.T) {
 		t.Fatalf("audit = %#v", audit)
 	}
 	assertAuditAttempts(t, audit, "u002")
+	stats := splitStatsFromContext(engineCtx.Ctx)
+	if stats == nil || stats.ContractRepairs != 1 || stats.SchemaRepairAttempts != 1 || stats.SchemaRepairSuccesses != 1 {
+		t.Fatalf("splitStats after LLM repair = %+v", stats)
+	}
 }
 
 func TestConsumePluginArtifactPersistsFailedLLMAttempt(t *testing.T) {

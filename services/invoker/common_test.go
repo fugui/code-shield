@@ -80,10 +80,25 @@ func TestBuildReadOnlyPromptPayload(t *testing.T) {
 		"main.go",
 		"## Response Delivery",
 		"严禁创建、写入、修改或删除任何文件",
+		"UTF-8 JSON 或 Markdown",
 	} {
 		if !strings.Contains(payload, want) {
 			t.Fatalf("payload missing %q:\n%s", want, payload)
 		}
+	}
+
+	// 验证 ResponseFormat="json" 时，提示词中明确只能是 JSON 且移除 "或 Markdown"
+	reqJSON := req
+	reqJSON.ResponseFormat = "json"
+	payloadJSON, err := BuildReadOnlyPromptPayload(reqJSON, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(payloadJSON, "或 Markdown") {
+		t.Fatalf("payload with ResponseFormat=json must not mention '或 Markdown':\n%s", payloadJSON)
+	}
+	if !strings.Contains(payloadJSON, "内容只能是符合输出契约的 UTF-8 JSON") {
+		t.Fatalf("payload with ResponseFormat=json missing strict JSON requirement:\n%s", payloadJSON)
 	}
 }
 

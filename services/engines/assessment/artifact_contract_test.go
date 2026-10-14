@@ -321,3 +321,34 @@ func TestPipelineExplicitlyFailsAfterTwoRepairFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestPipelineIdentifiesMarkdownOutput(t *testing.T) {
+	contract := contractForTest(t)
+	plan := planForTest(t, "unit-1")
+	markdownOutput := "# 漏洞评估分析报告\n经检测未发现高危漏洞，代码安全。"
+	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte(markdownOutput), contract, plan, passingValidator(t),
+		ArtifactPipelineOptions{MaxLLMAttempts: 0})
+	if !errors.Is(err, ErrArtifactInvalid) {
+		t.Fatalf("error = %v, want ErrArtifactInvalid", err)
+	}
+	foundIssue := false
+	for _, issue := range metrics.SchemaRepairIssues {
+		if issue.Code == "AI_OUTPUT_MARKDOWN_INSTEAD_OF_JSON" {
+			foundIssue = true
+			if !strings.Contains(issue.Message, "Markdown text instead of JSON") {
+				t.Fatalf("unexpected issue message: %s", issue.Message)
+			}
+		}
+	}
+	if !foundIssue {
+		t.Fatalf("expected issueCode AI_OUTPUT_MARKDOWN_INSTEAD_OF_JSON in metrics: %#v", metrics.SchemaRepairIssues)
+	}
+}
+
+func TestExtractJSONObjectMarkdownDetection(t *testing.T) {
+	raw := []byte("## 评估摘要\n一切正常，未发现缺陷。")
+	_, err := ExtractJSONObject(raw)
+	if !errors.Is(err, ErrOutputIsMarkdownText) {
+		t.Fatalf("err = %v, want ErrOutputIsMarkdownText", err)
+	}
+}

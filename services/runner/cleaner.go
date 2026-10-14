@@ -252,8 +252,13 @@ func RepairJSON(workDir, jsonFilePath, aiBackend string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read malformed JSON: %w", err)
 	}
 
-	repairMsg := "你是一个 JSON 语法修复工具。请修复以下内容中的语法错误（未转义引号、多余逗号、括号缺失等）。" +
-		"只输出纯 JSON，不要 Markdown 代码块标记，不要任何解释文字，保持原始数据结构不变。"
+	trimmedRaw := strings.TrimSpace(string(rawContent))
+	hasMarkdown := strings.HasPrefix(trimmedRaw, "#") || strings.HasPrefix(trimmedRaw, "*") || strings.HasPrefix(trimmedRaw, "-") || strings.HasPrefix(trimmedRaw, ">")
+	repairMsg := "你是一个 JSON 语法修复工具。请修复以下内容中的语法错误（未转义引号、多余逗号、括号缺失等）。"
+	if hasMarkdown {
+		repairMsg += "上一次输出是 Markdown 文本而非标准 JSON，请将其转换为符合数据结构的纯 JSON。"
+	}
+	repairMsg += "只输出纯 JSON，不要 Markdown 代码块标记，不要任何解释文字，保持原始数据结构不变。"
 
 	zeroTemp := 0.0
 	req := invoker.AIRequest{

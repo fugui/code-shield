@@ -11,6 +11,9 @@ import (
 func (Profile) Normalize(raw string, session *assessment.PromptRefSession) (assessment.AssessmentArtifact, error) {
 	cleaned := assessment.CleanJSON([]byte(raw))
 	if !json.Valid(cleaned) {
+		if assessment.LooksLikeMarkdownOrText(raw) {
+			return assessment.AssessmentArtifact{}, fmt.Errorf("%w: AI returned Markdown text instead of JSON", assessment.ErrContractRepair)
+		}
 		return assessment.AssessmentArtifact{}, fmt.Errorf("%w: AI output is not valid JSON", assessment.ErrContractRepair)
 	}
 	artifact := assessment.AssessmentArtifact{}
