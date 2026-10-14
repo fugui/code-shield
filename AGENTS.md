@@ -9,7 +9,7 @@
 **码盾（Code-Shield）** 是一套由 AI 驱动的企业级代码质量与安全自动化看护系统，无缝嵌入 `code-bench` 开发者综合工作台。
 
 * **后端服务**：Go 1.22+, Gin, GORM v2, PostgreSQL
-* **前端工程**：React 18, Vite 5, TypeScript, Ant Design 5, `@code/common`
+* **前端工程**：React 18, Vite 5, TypeScript, Lucide React, `@code/common`（纯原生 Vanilla CSS 自研组件体系，无 AntD 等第三方重量级 UI 框架捆绑）
 * **AI 调度适配**：适配无状态 Claude Code CLI, OpenCode CLI, Codex CLI 等执行器
 
 ---
