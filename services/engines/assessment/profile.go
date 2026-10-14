@@ -49,6 +49,7 @@ type AssessmentContext struct {
 	BundleID          string
 	Attempt           int
 	AllowedCategories []string
+	PromptRefs        *PromptRefSession
 }
 
 type PlanView struct {

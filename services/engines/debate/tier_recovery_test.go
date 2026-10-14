@@ -662,6 +662,186 @@ func TestSpecializedAssessmentTimeoutSplitsMultiFileBundle(t *testing.T) {
 	}
 }
 
+func TestSpecializedAssessmentTimeoutSplitsSingleFileMultiUnitBundle(t *testing.T) {
+	primary := registerRecoveryInvoker(t, "assessment-split-single-file-units", func(call int) error {
+		if call == 1 {
+			return invoker.NewClassifiedError(invoker.ErrorClassTimeout, "assessment timeout")
+		}
+		return nil
+	})
+	primary.payload = func(call int) string {
+		if call == 2 {
+			return `{"schema":"code-shield.unit-assessments.v2","assessments":[
+				{"unit_ref":"u001","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u002","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u003","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u004","outcome":"pass","summary":"safe"}
+			]}`
+		}
+		if call == 3 {
+			return `{"schema":"code-shield.unit-assessments.v2","assessments":[
+				{"unit_ref":"u005","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u006","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u007","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u008","outcome":"pass","summary":"safe"}
+			]}`
+		}
+		return `{"schema":"code-shield.unit-assessments.v2","assessments":[]}`
+	}
+	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
+		MaxTotalAttempts:       3,
+		MaxAttemptsPerResource: 3,
+		SplitOn:                []string{"timeout"},
+		RetryOn:                []string{"timeout"},
+	})
+
+	tempDir := t.TempDir()
+	ctx := &engines.EngineContext{
+		Ctx:               beginSplitStats(context.Background()),
+		CodesPath:         tempDir,
+		EngineMode:        "debate_full",
+		AssessmentProfile: "entityreview",
+		AllowedCategories: []string{"无问题", "断言有效性-空测试"},
+	}
+
+	planUnits := make([]coverage.PlanUnit, 8)
+	for i := 0; i < 8; i++ {
+		planUnits[i] = coverage.PlanUnit{
+			ID:          fmt.Sprintf("tc-%03d", i+1),
+			Kind:        coverage.PlanUnitEntity,
+			Path:        "test/foo_test.go",
+			DisplayName: fmt.Sprintf("TestFoo%d", i+1),
+		}
+	}
+	bundle := chunker.SemanticBundle{
+		Name:         "entity-foo-001",
+		PrimaryFiles: []string{"test/foo_test.go"},
+		AllFiles:     []string{"test/foo_test.go"},
+		PrimaryUnits: planUnits,
+	}
+
+	findings, records, _, err := (&DebateEngine{}).runSpecializedAssessment(ctx, bundle, filepath.Join(tempDir, "assessment.json"))
+	if err != nil {
+		t.Fatalf("assessment split for single file multi units failed: %v", err)
+	}
+	if len(records) != 8 {
+		t.Fatalf("records = %d, want 8", len(records))
+	}
+	if primary.calls != 3 {
+		t.Fatalf("calls = %d, want parent plus two children", primary.calls)
+	}
+	stats := splitStatsFromContext(ctx.Ctx)
+	if stats == nil || stats.Depth != 1 || stats.Count != 1 || stats.ResourceFailovers != 0 {
+		t.Fatalf("split stats=%+v, want one split and zero failovers", stats)
+	}
+	for i := 0; i < 8; i++ {
+		expectedID := fmt.Sprintf("tc-%03d", i+1)
+		if records[i].PrimaryUnitID != expectedID {
+			t.Errorf("record[%d].PrimaryUnitID = %q, want %q", i, records[i].PrimaryUnitID, expectedID)
+		}
+	}
+	_ = findings
+}
+
+func TestSpecializedAssessmentTimeoutSplitsNestedSingleFileMultiUnitBundle(t *testing.T) {
+	primary := registerRecoveryInvoker(t, "assessment-split-nested-units", func(call int) error {
+		if call == 1 || call == 2 {
+			return invoker.NewClassifiedError(invoker.ErrorClassTimeout, "assessment timeout")
+		}
+		return nil
+	})
+	primary.payload = func(call int) string {
+		if call == 3 {
+			// grandchild 1.1: u001..u002
+			return `{"schema":"code-shield.unit-assessments.v2","assessments":[
+				{"unit_ref":"u001","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u002","outcome":"pass","summary":"safe"}
+			]}`
+		}
+		if call == 4 {
+			// grandchild 1.2: u003..u004
+			return `{"schema":"code-shield.unit-assessments.v2","assessments":[
+				{"unit_ref":"u003","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u004","outcome":"pass","summary":"safe"}
+			]}`
+		}
+		if call == 5 {
+			// child 2: u005..u008
+			return `{"schema":"code-shield.unit-assessments.v2","assessments":[
+				{"unit_ref":"u005","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u006","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u007","outcome":"pass","summary":"safe"},
+				{"unit_ref":"u008","outcome":"pass","summary":"safe"}
+			]}`
+		}
+		return `{"schema":"code-shield.unit-assessments.v2","assessments":[]}`
+	}
+
+	prevTier := models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter
+	recoveryCfg := models.TierRecoveryConfig{
+		MaxTotalAttempts:       3,
+		MaxAttemptsPerResource: 3,
+		SplitOn:                []string{"timeout"},
+		RetryOn:                []string{"timeout"},
+	}
+	models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = models.TierBindingConfig{
+		Resource:              primary.name,
+		Resources:             []string{primary.name},
+		TimeoutSeconds:        10,
+		AttemptTimeoutSeconds: 10,
+		MaxSplitDepth:         2,
+		Recovery:              &recoveryCfg,
+	}
+	t.Cleanup(func() { models.AppConfig.Scanner.Debate.Tiers.Tier1Hunter = prevTier })
+
+	tempDir := t.TempDir()
+	ctx := &engines.EngineContext{
+		Ctx:               beginSplitStats(context.Background()),
+		CodesPath:         tempDir,
+		EngineMode:        "debate_full",
+		AssessmentProfile: "entityreview",
+		AllowedCategories: []string{"无问题", "断言有效性-空测试"},
+	}
+
+	planUnits := make([]coverage.PlanUnit, 8)
+	for i := 0; i < 8; i++ {
+		planUnits[i] = coverage.PlanUnit{
+			ID:          fmt.Sprintf("tc-%03d", i+1),
+			Kind:        coverage.PlanUnitEntity,
+			Path:        "test/foo_test.go",
+			DisplayName: fmt.Sprintf("TestFoo%d", i+1),
+		}
+	}
+	bundle := chunker.SemanticBundle{
+		Name:         "entity-foo-001",
+		PrimaryFiles: []string{"test/foo_test.go"},
+		AllFiles:     []string{"test/foo_test.go"},
+		PrimaryUnits: planUnits,
+	}
+
+	findings, records, _, err := (&DebateEngine{}).runSpecializedAssessment(ctx, bundle, filepath.Join(tempDir, "assessment.json"))
+	if err != nil {
+		t.Fatalf("nested assessment split failed: %v", err)
+	}
+	if len(records) != 8 {
+		t.Fatalf("records = %d, want 8", len(records))
+	}
+	if primary.calls != 5 {
+		t.Fatalf("calls = %d, want 5 (parent + child1 + grandchild1.1 + grandchild1.2 + child2)", primary.calls)
+	}
+	stats := splitStatsFromContext(ctx.Ctx)
+	if stats == nil || stats.Depth != 2 || stats.Count != 2 {
+		t.Fatalf("split stats=%+v, want depth=2 count=2", stats)
+	}
+	for i := 0; i < 8; i++ {
+		expectedID := fmt.Sprintf("tc-%03d", i+1)
+		if records[i].PrimaryUnitID != expectedID {
+			t.Errorf("record[%d].PrimaryUnitID = %q, want %q", i, records[i].PrimaryUnitID, expectedID)
+		}
+	}
+	_ = findings
+}
+
 func assessmentBundle(units ...string) chunker.SemanticBundle {
 	planUnits := make([]coverage.PlanUnit, 0, len(units))
 	refs := make([]string, 0, len(units))

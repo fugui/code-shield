@@ -1151,7 +1151,10 @@ func shouldSplitBundleOnRecovery(
 	bundle chunker.SemanticBundle,
 	err error,
 ) bool {
-	if err == nil || len(bundle.AllFiles) <= 1 {
+	if err == nil {
+		return false
+	}
+	if len(bundle.AllFiles) <= 1 && len(bundle.PrimaryUnits) <= 1 {
 		return false
 	}
 	switch class {

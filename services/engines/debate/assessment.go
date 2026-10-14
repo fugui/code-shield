@@ -188,7 +188,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 			class invoker.ErrorClass,
 			err error,
 		) (bool, string, int64, error) {
-			if !shouldSplitBundleOnRecovery(ctx.Ctx, recovery, class, bundle, err) || len(bundle.PrimaryUnits) <= 1 {
+			if !shouldSplitBundleOnRecovery(ctx.Ctx, recovery, class, bundle, err) || (len(bundle.AllFiles) <= 1 && len(bundle.PrimaryUnits) <= 1) {
 				return false, "", tokens, err
 			}
 			findings, records, splitTokens, splitErr := e.splitSpecializedAssessmentBundle(
@@ -219,17 +219,17 @@ func (e *DebateEngine) splitSpecializedAssessmentBundle(
 	err error,
 	class invoker.ErrorClass,
 ) ([]models.AnalysisFinding, []coverage.AssessmentRecord, int64, error) {
-	if !canSplit(ctx.Ctx, models.AppConfig.GetTierConfig("tier1_hunter")) || len(bundle.AllFiles) <= 1 {
-		log.Printf("[DebateEngine] Assessment bundle [%s]: cannot split further: class=%s files=%d (%v)",
-			bundle.Name, class, len(bundle.AllFiles), err)
+	if !canSplit(ctx.Ctx, models.AppConfig.GetTierConfig("tier1_hunter")) || (len(bundle.AllFiles) <= 1 && len(bundle.PrimaryUnits) <= 1) {
+		log.Printf("[DebateEngine] Assessment bundle [%s]: cannot split further: class=%s files=%d units=%d (%v)",
+			bundle.Name, class, len(bundle.AllFiles), len(bundle.PrimaryUnits), err)
 		return findings, records, tokens, err
 	}
 	subBundles := chunker.SplitSemanticBundleInHalf(bundle)
 	if len(subBundles) == 0 {
 		return findings, records, tokens, err
 	}
-	log.Printf("[DebateEngine] Assessment bundle [%s]: %s (%v); splitting %d files into %d smaller bundles",
-		bundle.Name, class, err, len(bundle.AllFiles), len(subBundles))
+	log.Printf("[DebateEngine] Assessment bundle [%s]: %s (%v); splitting %d files, %d units into %d smaller bundles",
+		bundle.Name, class, err, len(bundle.AllFiles), len(bundle.PrimaryUnits), len(subBundles))
 	beginSplit(ctx.Ctx)
 
 	mergedFindings := findings
@@ -240,8 +240,16 @@ func (e *DebateEngine) splitSpecializedAssessmentBundle(
 		if remainingSeconds <= 0 {
 			return nil, nil, totalTokens, fmt.Errorf("specialized assessment split budget exhausted before bundle %d/%d: %w", i+1, len(subBundles), ctx.Ctx.Err())
 		}
+		subExecution := execution
+		if len(subBundle.PrimaryUnits) > 0 && execution != nil && execution.promptRefs != nil {
+			if plan, err := buildSpecializedAssessmentSubPlan(ctx, subBundle, execution); err == nil {
+				subExecution = plan
+			} else {
+				log.Printf("[DebateEngine] Warning: failed to build sub-plan for assessment bundle %s: %v", subBundle.Name, err)
+			}
+		}
 		subFindings, subRecords, subTokens, subErr := e.runSpecializedAssessmentWithBudget(
-			ctx, subBundle, assessmentSplitOutputPath(outPath, i+1), remainingSeconds, attemptSeconds, execution, tierPlan,
+			ctx, subBundle, assessmentSplitOutputPath(outPath, i+1), remainingSeconds, attemptSeconds, subExecution, tierPlan,
 		)
 		totalTokens += subTokens
 		if subErr != nil {
@@ -252,6 +260,39 @@ func (e *DebateEngine) splitSpecializedAssessmentBundle(
 	}
 	cleanupSplitArtifacts(outPath)
 	return mergedFindings, mergedRecords, totalTokens, nil
+}
+
+func buildSpecializedAssessmentSubPlan(
+	ctx *engines.EngineContext,
+	bundle chunker.SemanticBundle,
+	parent *specializedAssessmentPlan,
+) (*specializedAssessmentPlan, error) {
+	if parent == nil {
+		return nil, errors.New("parent assessment plan is nil")
+	}
+	assessmentCtx := assessment.AssessmentContext{
+		EngineContext:     ctx,
+		BundleID:          bundle.Name,
+		AllowedCategories: ctx.AllowedCategories,
+		PromptRefs:        parent.promptRefs,
+	}
+	assessmentBundle := assessment.Bundle{
+		ID:       bundle.Name,
+		Name:     bundle.Name,
+		Units:    bundle.PrimaryUnits,
+		AllFiles: bundle.AllFiles,
+	}
+	prompt, promptRefs, promptErr := parent.registration.Prompt.BuildPrompt(assessmentCtx, assessmentBundle)
+	if promptErr != nil {
+		return nil, promptErr
+	}
+	return &specializedAssessmentPlan{
+		registration: parent.registration,
+		contract:     parent.contract,
+		artifact:     parent.artifact,
+		prompt:       prompt,
+		promptRefs:   promptRefs,
+	}, nil
 }
 
 func assessmentSplitOutputPath(outPath string, index int) string {

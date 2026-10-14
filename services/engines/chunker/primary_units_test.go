@@ -32,3 +32,41 @@ func TestBuildPrimaryUnitBundlesRejectsInvalidIdentity(t *testing.T) {
 		t.Fatalf("error = %v, want invalid identity", err)
 	}
 }
+
+func TestSplitPrimaryUnitsBundleInHalf(t *testing.T) {
+	units := make([]coverage.PlanUnit, 8)
+	for i := 0; i < 8; i++ {
+		units[i] = coverage.PlanUnit{
+			ID:        strings.Repeat("u", i+1),
+			Kind:      coverage.PlanUnitEntity,
+			Path:      "pkg/test_suite.go",
+			StartLine: (i + 1) * 10,
+		}
+	}
+	parent := SemanticBundle{
+		Name:         "entity-001",
+		PrimaryFiles: []string{"pkg/test_suite.go"},
+		AllFiles:     []string{"pkg/test_suite.go"},
+		PrimaryUnits: units,
+	}
+
+	halves := SplitSemanticBundleInHalf(parent)
+	if len(halves) != 2 {
+		t.Fatalf("expected 2 halves, got %d", len(halves))
+	}
+	if len(halves[0].PrimaryUnits) != 4 || len(halves[1].PrimaryUnits) != 4 {
+		t.Fatalf("expected 4 units each, got %d and %d", len(halves[0].PrimaryUnits), len(halves[1].PrimaryUnits))
+	}
+	if halves[0].Name != "entity-001-split1" || halves[1].Name != "entity-001-split2" {
+		t.Fatalf("unexpected names: %s, %s", halves[0].Name, halves[1].Name)
+	}
+	if len(halves[0].AllFiles) != 1 || halves[0].AllFiles[0] != "pkg/test_suite.go" {
+		t.Fatalf("unexpected AllFiles in half 1: %+v", halves[0].AllFiles)
+	}
+	if len(halves[1].AllFiles) != 1 || halves[1].AllFiles[0] != "pkg/test_suite.go" {
+		t.Fatalf("unexpected AllFiles in half 2: %+v", halves[1].AllFiles)
+	}
+	if halves[0].PrimaryUnits[0].ID != "u" || halves[1].PrimaryUnits[0].ID != "uuuuu" {
+		t.Fatalf("unexpected unit splits: %s, %s", halves[0].PrimaryUnits[0].ID, halves[1].PrimaryUnits[0].ID)
+	}
+}
