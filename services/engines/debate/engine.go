@@ -1159,6 +1159,8 @@ func shouldSplitBundleOnRecovery(
 		return recoveryAllows(recovery.SplitOn, class)
 	case invoker.ErrorClassOutputMissing:
 		return recoveryAllows(recovery.SplitOn, class)
+	case invoker.ErrorClassContractMismatch:
+		return recoveryAllows(recovery.SplitOn, class)
 	default:
 		return false
 	}

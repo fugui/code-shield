@@ -164,8 +164,18 @@ func NormalizeArtifactLocally(raw []byte, contract ArtifactContract, session *Pr
 		return raw, false
 	}
 	validRefs := make(map[string]bool, len(session.Refs))
+	refByDisplayName := make(map[string]string, len(session.Refs))
+	refByUnitID := make(map[string]string, len(session.Refs))
 	for _, ref := range session.Refs {
 		validRefs[ref.Ref] = true
+		if name := strings.TrimSpace(ref.DisplayName); name != "" {
+			refByDisplayName[name] = ref.Ref
+			refByDisplayName[strings.ToLower(name)] = ref.Ref
+		}
+		if id := strings.TrimSpace(ref.UnitID); id != "" {
+			refByUnitID[id] = ref.Ref
+			refByUnitID[strings.ToLower(id)] = ref.Ref
+		}
 	}
 	for index, rawItem := range assessments {
 		item, ok := rawItem.(map[string]any)
@@ -195,9 +205,33 @@ func NormalizeArtifactLocally(raw []byte, contract ArtifactContract, session *Pr
 			item["issues"] = rawIssues
 		}
 		unitRef, _ := item["unit_ref"].(string)
-		if strings.TrimSpace(unitRef) == "" && len(session.Refs) == 1 && validRefs[session.Refs[0].Ref] {
-			item["unit_ref"] = session.Refs[0].Ref
-			changed = true
+		trimmedRef := strings.TrimSpace(unitRef)
+		if trimmedRef == "" || !validRefs[trimmedRef] {
+			if trimmedRef == "" && len(session.Refs) == 1 && validRefs[session.Refs[0].Ref] {
+				item["unit_ref"] = session.Refs[0].Ref
+				changed = true
+			} else if matchedRef, ok := refByDisplayName[trimmedRef]; ok {
+				item["unit_ref"] = matchedRef
+				changed = true
+			} else if matchedRef, ok := refByDisplayName[strings.ToLower(trimmedRef)]; ok {
+				item["unit_ref"] = matchedRef
+				changed = true
+			} else if matchedRef, ok := refByUnitID[trimmedRef]; ok {
+				item["unit_ref"] = matchedRef
+				changed = true
+			} else if matchedRef, ok := refByUnitID[strings.ToLower(trimmedRef)]; ok {
+				item["unit_ref"] = matchedRef
+				changed = true
+			} else if primaryID, ok := item["primary_unit_id"].(string); ok && strings.TrimSpace(primaryID) != "" {
+				trimmedPID := strings.TrimSpace(primaryID)
+				if matchedRef, found := refByUnitID[trimmedPID]; found {
+					item["unit_ref"] = matchedRef
+					changed = true
+				} else if matchedRef, found := refByDisplayName[trimmedPID]; found {
+					item["unit_ref"] = matchedRef
+					changed = true
+				}
+			}
 		}
 		assessments[index] = item
 	}
