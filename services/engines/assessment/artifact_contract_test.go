@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"code-shield/models"
 )
 
 func contractForTest(t *testing.T) ArtifactContract {
@@ -321,11 +319,5 @@ func TestPipelineExplicitlyFailsAfterTwoRepairFailures(t *testing.T) {
 		if attempt.Attempt != index+1 || attempt.Raw != "{broken" || attempt.Tokens != 1 || attempt.Accepted || attempt.Error == "" {
 			t.Fatalf("attempt[%d] = %#v, want retained failed raw artifact", index, attempt)
 		}
-	}
-}
-
-func TestAssessmentContractRepairDefaultEnabled(t *testing.T) {
-	if !(models.Config{}).AssessmentContractRepairEnabled() {
-		t.Fatal("assessment contract repair should default to enabled")
 	}
 }

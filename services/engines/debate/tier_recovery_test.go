@@ -395,11 +395,6 @@ func TestSpecializedAssessmentIdleTimeoutRetriesSameResource(t *testing.T) {
 }
 
 func TestSpecializedAssessmentEmptyArtifactRetriesSameResource(t *testing.T) {
-	enabled := true
-	previousEnabled := models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &enabled
-	t.Cleanup(func() { models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = previousEnabled })
-
 	primary := registerRecoveryInvoker(t, "assessment-empty-output", func(call int) error { return nil })
 	primary.payload = func(call int) string {
 		if call == 1 {
@@ -429,11 +424,6 @@ func TestSpecializedAssessmentEmptyArtifactRetriesSameResource(t *testing.T) {
 }
 
 func TestSpecializedAssessmentEmptyArtifactFailsOverWhenExplicitlyConfigured(t *testing.T) {
-	enabled := true
-	previousEnabled := models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &enabled
-	t.Cleanup(func() { models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = previousEnabled })
-
 	primary := registerRecoveryInvoker(t, "assessment-empty-primary", func(call int) error { return nil })
 	primary.payload = func(int) string { return "   " }
 	alternate := registerRecoveryInvoker(t, "assessment-empty-alternate", func(call int) error { return nil })
@@ -498,9 +488,7 @@ func TestSpecializedAssessmentContractMismatchRepairsWithoutNormalRetry(t *testi
 }
 
 func TestSpecializedAssessmentRejectsDriftUncheckedRepair(t *testing.T) {
-	enabled := true
 	prevRepair := models.AppConfig.Scanner.Artifact
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &enabled
 	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "assessment-drift-unchecked-repair"
 	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
 	models.AppConfig.Scanner.Artifact.SchemaRepairTimeoutSeconds = 10
@@ -532,9 +520,7 @@ func TestSpecializedAssessmentRejectsDriftUncheckedRepair(t *testing.T) {
 }
 
 func TestSpecializedAssessmentExplicitlyFailsAfterRepairAttemptsExhausted(t *testing.T) {
-	enabled := true
 	prevRepair := models.AppConfig.Scanner.Artifact
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &enabled
 	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "assessment-exhausted-repair"
 	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 2
 	models.AppConfig.Scanner.Artifact.SchemaRepairTimeoutSeconds = 10
