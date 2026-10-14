@@ -157,7 +157,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 
 	var assessmentFindings []models.AnalysisFinding
 	var assessmentRecords []coverage.AssessmentRecord
-	_, candidate, tokens, invocationErr := runTierInvocationWithRecovery(
+	_, _, tokens, invocationErr := runTierInvocationWithRecovery(
 		ctx.Ctx,
 		"tier1_hunter",
 		attemptSeconds,
@@ -202,49 +202,7 @@ func (e *DebateEngine) runSpecializedAssessmentWithBudget(
 			return true, "", splitTokens, splitErr
 		}),
 	)
-	if shouldRunGenericAssessmentContractRetry(invocationErr) {
-		remainingSeconds := hunterRemainingSeconds(ctx.Ctx, budgetSeconds)
-		maxTotalAttempts := recovery.MaxTotalAttempts
-		if maxTotalAttempts < 1 {
-			maxTotalAttempts = 2
-		}
-		attemptCount := 0
-		if stats := splitStatsFromContext(ctx.Ctx); stats != nil {
-			attemptCount = len(stats.ResourceChain)
-		}
-		if remainingSeconds > 0 && attemptCount < maxTotalAttempts {
-			retryTimeout := min(attemptSeconds, remainingSeconds)
-			retryCtx, cancelRetry := context.WithTimeout(ctx.Ctx, time.Duration(retryTimeout)*time.Second)
-			defer cancelRetry()
-			retryEngineCtx := *ctx
-			retryEngineCtx.Ctx = retryCtx
-
-			retryMetrics := &invoker.InvocationMetrics{}
-			retryFindings, retryRecords, retryTokens, retryErr := e.runSpecializedAssessmentOnce(
-				&retryEngineCtx,
-				bundle,
-				outPath,
-				retryTimeout,
-				candidate,
-				execution,
-				"",
-				retryMetrics,
-			)
-			tokens += retryTokens
-			recordFreshRetryMetrics(ctx.Ctx, candidate, retryMetrics, retryErr)
-			if retryErr == nil {
-				return retryFindings, retryRecords, tokens, nil
-			}
-			invocationErr = retryErr
-		}
-	}
 	return assessmentFindings, assessmentRecords, tokens, invocationErr
-}
-
-func shouldRunGenericAssessmentContractRetry(err error) bool {
-	return err != nil && isContractMismatch(err) &&
-		contractRepairEnabled("tier1_hunter", err) &&
-		!models.AppConfig.AssessmentContractRepairEnabled()
 }
 
 func (e *DebateEngine) splitSpecializedAssessmentBundle(
@@ -380,7 +338,6 @@ func (e *DebateEngine) runSpecializedAssessmentOnce(
 		jsonSchema,
 		workCtx,
 	)
-	queueWaitMs, durationMs := metrics.QueueWaitMs, metrics.DurationMs
 	if err != nil {
 		return nil, nil, tokens, err
 	}
@@ -391,88 +348,10 @@ func (e *DebateEngine) runSpecializedAssessmentOnce(
 		pipelineObservation,
 	)
 	tokens += consumedTokens
-	if consumeErr == nil {
-		return findings, records, tokens, nil
-	}
-	if !isContractMismatch(consumeErr) || !contractRepairEnabled("tier1_hunter", consumeErr) {
-		return nil, nil, tokens, consumeErr
-	}
-	if models.AppConfig.AssessmentContractRepairEnabled() && execution.artifact.SchemaID != "" {
-		return nil, nil, tokens, consumeErr
-	}
-
-	metrics.ContractRepairs++
-	if stats := splitStatsFromContext(ctx.Ctx); stats != nil {
-		stats.ContractRepairs++
-	}
-	repairPrompt := buildAssessmentContractRepairPrompt(execution.prompt, execution.contract, consumeErr)
-	metrics.QueueWaitMs = 0
-	metrics.DurationMs = 0
-	rawOutput, repairTokens, repairErr := callSpecializedAssessmentTier(
-		ctx.Ctx,
-		candidate.Driver,
-		candidate.Model,
-		repairPrompt,
-		ctx.CodesPath,
-		outPath,
-		timeoutSeconds,
-		tierTimeoutPolicy(models.AppConfig.GetTierConfig("tier1_hunter")),
-		metrics,
-		jsonSchema,
-		workCtx,
-	)
-	metrics.QueueWaitMs += queueWaitMs
-	metrics.DurationMs += durationMs
-	tokens += repairTokens
-	if repairErr != nil {
-		return nil, nil, tokens, invoker.WrapClassifiedError(
-			invoker.ErrorClassContractMismatch, repairErr, "assessment schema repair failed",
-		)
-	}
-	findings, records, consumedTokens, consumeErr = e.consumePluginArtifact(
-		ctx, bundle, rawOutput, tokens, execution.promptRefs, execution.registration, execution.artifact,
-		pipelineObservation,
-	)
-	tokens += consumedTokens
 	if consumeErr != nil {
-		return nil, nil, tokens, invoker.WrapClassifiedError(
-			invoker.ErrorClassContractMismatch, consumeErr, "assessment output contract mismatch",
-		)
+		return nil, nil, tokens, consumeErr
 	}
 	return findings, records, tokens, nil
-}
-
-func buildAssessmentContractRepairPrompt(
-	prompt string,
-	contract assessment.OutputContract,
-	cause error,
-) string {
-	var sb strings.Builder
-	sb.WriteString(strings.TrimRight(prompt, "\n"))
-	sb.WriteString("\n\n## Output Contract Repair\n")
-	sb.WriteString(fmt.Sprintf("上一次输出未通过服务端校验：%v。\n", cause))
-	sb.WriteString("请修复 JSON 结构并重新输出完整结果；不得新增解释文字或 Markdown 围栏。\n")
-	if contract.SchemaID != "" {
-		sb.WriteString(fmt.Sprintf("Schema ID: %s\n", contract.SchemaID))
-	}
-	if contract.TopLevel != "" {
-		sb.WriteString(fmt.Sprintf("Top-level key: %s\n", contract.TopLevel))
-	}
-	if len(contract.RequiredFields) > 0 {
-		sb.WriteString(fmt.Sprintf("Required fields: %s\n", strings.Join(contract.RequiredFields, ", ")))
-	}
-	if len(contract.ForbiddenTopLevel) > 0 {
-		sb.WriteString(fmt.Sprintf("Forbidden top-level keys: %s\n", strings.Join(contract.ForbiddenTopLevel, ", ")))
-	}
-	if len(contract.AllowedOutcomes) > 0 {
-		sb.WriteString(fmt.Sprintf("Allowed outcomes: %s\n", strings.Join(contract.AllowedOutcomes, ", ")))
-	}
-	if contract.Example != "" {
-		sb.WriteString("\nExample:\n```json\n")
-		sb.WriteString(contract.Example)
-		sb.WriteString("\n```\n")
-	}
-	return sb.String()
 }
 
 func (e *DebateEngine) consumePluginArtifact(
@@ -507,7 +386,7 @@ func (e *DebateEngine) consumePluginArtifact(
 	}
 	var result assessment.AssessmentResult
 	var artifactRepairMetrics assessment.ArtifactRepairMetrics
-	if models.AppConfig.AssessmentContractRepairEnabled() && artifactContract.SchemaID != "" {
+	if artifactContract.SchemaID != "" {
 		var validateErr error
 		validation, artifactRepairMetrics, validateErr := assessment.ValidateAndRepairArtifact(
 			ctx.Ctx,
@@ -565,7 +444,7 @@ func (e *DebateEngine) consumePluginArtifact(
 	if err != nil {
 		return nil, records, tokens, err
 	}
-	if models.AppConfig.AssessmentContractRepairEnabled() && artifactContract.SchemaID != "" {
+	if artifactContract.SchemaID != "" {
 		if encoded, encodeErr := json.Marshal(artifactRepairMetrics); encodeErr == nil {
 			for index := range findings {
 				findings[index].ArtifactSchemaID = artifactContract.SchemaID

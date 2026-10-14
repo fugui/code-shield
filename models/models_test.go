@@ -248,4 +248,3 @@ func TestPureSchemaInitialization(t *testing.T) {
 		}
 	}
 }
-

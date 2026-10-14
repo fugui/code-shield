@@ -4,22 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"code-shield/models"
 	"code-shield/services/engines/assessment"
-	"code-shield/services/invoker"
 )
-
-func TestGenericAssessmentContractRetryDisabledWhenContractPipelineEnabled(t *testing.T) {
-	enabled := true
-	previous := models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled
-	models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = &enabled
-	t.Cleanup(func() { models.AppConfig.Scanner.Artifact.AssessmentContractRepairEnabled = previous })
-
-	err := invoker.NewClassifiedError(invoker.ErrorClassContractMismatch, "assessment artifact invalid")
-	if shouldRunGenericAssessmentContractRetry(err) {
-		t.Fatal("generic contract retry should be disabled when directed repair is enabled")
-	}
-}
 
 func TestBuildDirectedAssessmentRepairPromptIsStable(t *testing.T) {
 	request := assessment.DirectedRepairRequest{
