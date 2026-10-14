@@ -43,7 +43,7 @@
 ```text
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   前端 (React)   │────▶│  code-shield    │────▶│  CLI (Claude/   │
-│   (Vite/AntD)   │◄────│    (Go/Gin)     │◄────│   OpenCode)     │
+│  (Vite/Vanilla) │◄────│    (Go/Gin)     │◄────│   OpenCode)     │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                  │
                  ┌───────────────┴───────────────┐
@@ -57,7 +57,7 @@
 | 组件 | 技术栈 | 默认端口 | 说明 |
 | :--- | :--- | :--- | :--- |
 | **code-shield** | Go 1.25+, Gin, GORM, PostgreSQL | `8080` | 核心服务，负责 API 接口、持久化队列与扫描调度 |
-| **frontend** | React 18, Vite 5, TS, AntD 5, @code/common | `5173` | Web 控制台，支持 Module Federation 嵌入 `code-bench` |
+| **frontend** | React 18, Vite 5, TS, Lucide, @code/common | `5173` | Web 控制台，支持 Module Federation 嵌入 `code-bench` |
 | **notifier** | Go, Win32 GUI, Outlook COM | `8081` | 独立的邮件投递微服务（Windows 环境） |
 
 > 📚 **系统深度架构与设计文档中心**：详见 **[docs/README.md](docs/README.md)**（涵盖使用指南、核心流水线规范、AI 扫描引擎设计、物理算力调度、确定性指纹、多租户治理与 RFC 提案）。
