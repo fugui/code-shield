@@ -116,6 +116,7 @@ func ListMyDefects(db *gorm.DB, query WorkbenchQuery) (*WorkbenchPage, error) {
 		return nil, err
 	}
 	page.TotalPages = int((page.Total + int64(query.PageSize) - 1) / int64(query.PageSize))
+	page.Items = items
 	return page, nil
 }
 

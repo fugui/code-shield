@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"code-shield/models"
@@ -156,6 +157,13 @@ func commitLedger(tx *gorm.DB, input LedgerInput) (*LedgerResult, error) {
 		}
 		if decision.Verdict == VerdictCleared && defectID == nil {
 			continue
+		}
+		if defectID != nil && *defectID > 0 {
+			if _, exists := defectByID[*defectID]; !exists {
+				defectID = nil
+				decision.DefectID = nil
+				decision.Verdict = VerdictNew
+			}
 		}
 		observation := models.DefectObservation{
 			ReportID:            input.Report.ID,
@@ -437,7 +445,7 @@ func rollbackReportLedger(tx *gorm.DB, report models.TaskReport) error {
 				"last_seen_report_id": snapshot.LastSeenReportID, "last_matched_report_id": snapshot.LastMatchedReportID,
 				"resolved_report_id": snapshot.ResolvedReportID,
 				"missed_count":       snapshot.MissedCount, "dormant_rounds": snapshot.DormantRounds,
-				"row_version": gorm.Expr("row_version + 1"), "updated_at": time.Now(),
+				"row_version": snapshot.RowVersion, "updated_at": time.Now(),
 			}
 			if err := tx.Model(&models.Defect{}).Where("id = ?", defectID).Updates(updates).Error; err != nil {
 				return fmt.Errorf("restore defect snapshot: %w", err)
@@ -619,6 +627,13 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 		defect.BlobHash = scope.BlobHash
 	}
 	if err := tx.Create(&defect).Error; err != nil {
+		if (strings.Contains(err.Error(), "uq_defect_active_slot_idx") || strings.Contains(err.Error(), "uq_defect_active_slot_sqlite")) && slotKey != "" {
+			var slotExisting models.Defect
+			if findErr := tx.Where("repo_id = ? AND task_type_id = ? AND slot_key = ? AND status = ?",
+				input.Repo.ID, input.TaskType.ID, slotKey, DefectStatusActive).First(&slotExisting).Error; findErr == nil && slotExisting.ID > 0 {
+				return slotExisting, nil
+			}
+		}
 		return models.Defect{}, fmt.Errorf("create defect: %w", err)
 	}
 	return defect, nil
@@ -721,7 +736,7 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 		"line_start": lineStart, "line_end": lineEnd,
 		"scope_body_hash":     identity.ScopeBodyHash,
 		"last_seen_report_id": input.Report.ID, "last_matched_report_id": input.Report.ID,
-		"row_version": gorm.Expr("row_version + 1"), "updated_at": now,
+		"updated_at": now,
 	}
 	if scope != nil {
 		updates["blob_hash"] = scope.BlobHash
@@ -758,15 +773,73 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 		updates["core_slot_key"] = coreSlot
 		updates["slot_key"] = preciseSlot
 	}
+	targetSlotKey := defect.SlotKey
+	if targetSlotKey == "" {
+		if sk, ok := updates["slot_key"].(string); ok {
+			targetSlotKey = sk
+		}
+	}
+
+	// 关键槽位防冲突与自愈保护：
+	// 若当前 defect 即将变为 ACTIVE，但同命名空间该槽位已存在其他活跃缺陷，说明该槽位已被认领
+	if status == DefectStatusActive && targetSlotKey != "" {
+		var activeOther models.Defect
+		err := tx.Where("repo_id = ? AND task_type_id = ? AND slot_key = ? AND status = ? AND id != ?",
+			defect.RepoID, defect.TaskTypeID, targetSlotKey, DefectStatusActive, defect.ID).First(&activeOther).Error
+		if err == nil && activeOther.ID > 0 {
+			// 将当前 defect 标记为 MERGED，自动并入已存在的活跃缺陷，杜绝双活冲突
+			status = DefectStatusMerged
+			updates["status"] = DefectStatusMerged
+			updates["status_reason"] = fmt.Sprintf("auto-merged into active slot defect %d", activeOther.ID)
+			updates["merged_into_id"] = activeOther.ID
+			defect.MergedIntoID = &activeOther.ID
+			observation.DefectID = &activeOther.ID
+			observation.Reason = "SLOT_CONFLICT_AUTO_MERGED"
+		}
+	}
+
 	if status != defect.Status {
 		updates["status"] = status
 		updates["status_reason"] = observation.Reason
+		if status == DefectStatusMerged && defect.MergedIntoID != nil {
+			updates["merged_into_id"] = *defect.MergedIntoID
+		}
 	}
 	if status == DefectStatusResolved {
 		updates["resolved_report_id"] = input.Report.ID
 	}
+
+	hasStateChange := (status != defect.Status) || identityChanged(defect, identity)
+	if hasStateChange {
+		updates["row_version"] = gorm.Expr("row_version + 1")
+	}
+
 	query := tx.Model(&models.Defect{}).Where("id = ? AND row_version = ?", defect.ID, defect.RowVersion)
 	if err := query.Updates(updates).Error; err != nil {
+		if (strings.Contains(err.Error(), "uq_defect_active_slot_idx") || strings.Contains(err.Error(), "uq_defect_active_slot_sqlite")) && targetSlotKey != "" {
+			var conflictDefect models.Defect
+			if findErr := tx.Where("repo_id = ? AND task_type_id = ? AND slot_key = ? AND status = ? AND id != ?",
+				defect.RepoID, defect.TaskTypeID, targetSlotKey, DefectStatusActive, defect.ID).First(&conflictDefect).Error; findErr == nil && conflictDefect.ID > 0 {
+				mergeUpdates := map[string]interface{}{
+					"status":         DefectStatusMerged,
+					"status_reason":  fmt.Sprintf("auto-merged on slot conflict with defect %d", conflictDefect.ID),
+					"merged_into_id": conflictDefect.ID,
+					"row_version":    gorm.Expr("row_version + 1"),
+					"updated_at":     now,
+				}
+				if mErr := tx.Model(&models.Defect{}).Where("id = ?", defect.ID).Updates(mergeUpdates).Error; mErr == nil {
+					defect.Status = DefectStatusMerged
+					defect.MergedIntoID = &conflictDefect.ID
+					observation.DefectID = &conflictDefect.ID
+					return defect, models.DefectEvent{
+						DefectID: defect.ID, ReportID: &input.Report.ID, EventType: EventTypeStatusChanged,
+						FromStatus: defect.Status, ToStatus: DefectStatusMerged, ActorType: "SYSTEM",
+						Reason:   fmt.Sprintf("auto-merged on slot conflict with defect %d", conflictDefect.ID),
+						Evidence: datatypes.JSON("{}"), CreatedAt: now,
+					}, true, nil
+				}
+			}
+		}
 		return models.Defect{}, models.DefectEvent{}, false, fmt.Errorf("update matched defect: %w", err)
 	}
 	if query.RowsAffected == 0 {
@@ -776,10 +849,12 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 	defect.Status = status
 	defect.LastSeenReportID = input.Report.ID
 	defect.LastMatchedReportID = input.Report.ID
-	defect.RowVersion++
+	if hasStateChange {
+		defect.RowVersion++
+	}
 	event := models.DefectEvent{}
 	changed := false
-	if status != previousStatus || identityChanged(defect, identity) {
+	if hasStateChange {
 		evidence, evidenceErr := evidenceWithSnapshot(snapshot)
 		if evidenceErr != nil {
 			return models.Defect{}, models.DefectEvent{}, false, fmt.Errorf("serialize matched defect snapshot: %w", evidenceErr)
@@ -795,13 +870,17 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 }
 
 func identityChanged(defect models.Defect, identity Identity) bool {
+	identityTarget := identity.TargetEntity
+	if identityTarget == "" && identity.CleanToken != "" {
+		identityTarget, _ = ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
+	}
 	lineStartChanged := (defect.LineStart == nil && identity.LineStart != 0) ||
 		(defect.LineStart != nil && *defect.LineStart != identity.LineStart)
 	lineEndChanged := (defect.LineEnd == nil && identity.LineEnd != 0) ||
 		(defect.LineEnd != nil && *defect.LineEnd != identity.LineEnd)
 	return defect.NormPath != identity.NormPath || defect.ScopeKey != identity.ScopeKey ||
 		defect.SymbolPath != identity.SymbolPath ||
-		defect.TargetEntity != identity.TargetEntity || defect.StmtAnchorHash != identity.StmtAnchorHash ||
+		defect.TargetEntity != identityTarget || defect.StmtAnchorHash != identity.StmtAnchorHash ||
 		defect.SlotKey != identity.SlotKey ||
 		defect.CleanToken != identity.CleanToken ||
 		defect.DefectClassMajor != identity.DefectClassMajor || defect.Severity != identity.Severity ||
