@@ -558,10 +558,24 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassContentFiltered, result.TerminationReason, runErr)
 			return result, classifiedErr
 		}
+		if isRateLimitedError(rawErrMsg) {
+			rawSummary := truncateString(strings.Join(strings.Fields(rawErrMsg), " "), 200)
+			classifiedErr := NewClassifiedError(ErrorClassRateLimited, "%s: rate limited (%s)", errMsg, rawSummary)
+			result.TerminationReason = "rate_limited"
+			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassRateLimited, result.TerminationReason, runErr)
+			return result, classifiedErr
+		}
 		if isAuthOrModelUnavailableError(strings.ToLower(rawErrMsg)) {
 			classifiedErr := NewClassifiedError(ErrorClassAuth, "%s", errMsg)
 			result.TerminationReason = "cli_failure"
 			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassAuth, result.TerminationReason, runErr)
+			return result, classifiedErr
+		}
+		if isNetworkTransientError(rawErrMsg) {
+			rawSummary := truncateString(strings.Join(strings.Fields(rawErrMsg), " "), 200)
+			classifiedErr := NewClassifiedError(ErrorClassNetworkTransient, "%s: network error (%s)", errMsg, rawSummary)
+			result.TerminationReason = "network_transient"
+			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassNetworkTransient, result.TerminationReason, runErr)
 			return result, classifiedErr
 		}
 		classifiedErr := NewClassifiedError(ErrorClassUnknown, "%s", errMsg)
@@ -804,6 +818,7 @@ func isSafetyFilterBlocked(text string) (bool, string) {
 	lower := strings.ToLower(text)
 	if strings.Contains(lower, "blocked by gemini's filters") ||
 		strings.Contains(lower, "safety filter triggered") ||
+		strings.Contains(lower, "content filter triggered") ||
 		(strings.Contains(lower, "try rephrasing your prompt") && strings.Contains(lower, "policies")) ||
 		strings.Contains(lower, "content policy violation") ||
 		strings.Contains(lower, "violation of safety policy") {
@@ -818,3 +833,82 @@ func isSafetyFilterBlocked(text string) (bool, string) {
 	}
 	return false, ""
 }
+
+// formatCLIErrorMessage 格式化 CLI 执行错误，提取关键退出码并附带原始错误紧凑摘要
+func formatCLIErrorMessage(cliName string, exitCode int, rawErrMsg string) string {
+	base := fmt.Sprintf("AI execution failed: %s exit code %d", cliName, exitCode)
+	trimmed := strings.TrimSpace(rawErrMsg)
+	if trimmed == "" {
+		return base
+	}
+	compact := strings.Join(strings.Fields(trimmed), " ")
+	if compact == "" || strings.EqualFold(compact, base) {
+		return base
+	}
+	summary := truncateString(compact, 250)
+	return fmt.Sprintf("%s: %s", base, summary)
+}
+
+// isRateLimitedError 识别大模型或网关触发的 429、并发限制、速率配额超限等瞬时限流模式
+func isRateLimitedError(text string) bool {
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	markers := []string{
+		"429",
+		"too many requests",
+		"too many concurrent requests",
+		"rate limit",
+		"ratelimit",
+		"rate_limit",
+		"concurrency_limit_exceeded",
+		"concurrency limit",
+		"concurrent request limit",
+		"server is busy",
+		"system is busy",
+		"server busy",
+		"resource_exhausted",
+		"resource exhausted",
+		"quota exceeded (concurrent)",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNetworkTransientError 识别网络抖动、连接重置、网关 502/503/504 等瞬时网络错误
+func isNetworkTransientError(text string) bool {
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	markers := []string{
+		"connection reset",
+		"connection refused",
+		"connection closed",
+		"broken pipe",
+		"network error",
+		"network unreachable",
+		"502 bad gateway",
+		"503 service unavailable",
+		"504 gateway timeout",
+		"bad gateway",
+		"service unavailable",
+		"gateway timeout",
+		"temporary failure in name resolution",
+		"tls handshake timeout",
+		"i/o timeout",
+		"upstream connect error",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+

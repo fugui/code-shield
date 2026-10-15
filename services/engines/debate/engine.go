@@ -303,6 +303,25 @@ bundleLoop:
 			bundleCtx.Ctx = beginSplitStats(ctx.Ctx)
 			bundleCategory := engines.CategoryStageMetrics{}
 			findings, debateLogs, assessmentRecords, hTokens, t2Tokens, bundleErr := e.ProcessBundle(&bundleCtx, bnd, idx, chunkDir, &bundleCategory)
+			if bundleErr != nil && ctx.Ctx.Err() == nil {
+				class := invoker.ClassifyError(bundleErr)
+				if class == invoker.ErrorClassRateLimited || class == invoker.ErrorClassNetworkTransient || class == invoker.ErrorClassUnknown {
+					backoff := 3 * time.Second
+					if class == invoker.ErrorClassRateLimited {
+						backoff = 5 * time.Second
+					}
+					log.Printf("[DebateEngine] Bundle [%s] failed (class=%s, err=%v), retrying bundle after %v...\n",
+						bnd.Name, class, bundleErr, backoff)
+					select {
+					case <-ctx.Ctx.Done():
+					case <-time.After(backoff):
+						bundleCtx = *ctx
+						bundleCtx.Ctx = beginSplitStats(ctx.Ctx)
+						bundleCategory = engines.CategoryStageMetrics{}
+						findings, debateLogs, assessmentRecords, hTokens, t2Tokens, bundleErr = e.ProcessBundle(&bundleCtx, bnd, idx, chunkDir, &bundleCategory)
+					}
+				}
+			}
 			bundleEndTime := time.Now()
 			bundleSnapshotHash, snapshotHashErr := chunked.ChunkSnapshotHash(ctx.CodesPath, bnd.AllFiles)
 			if snapshotHashErr != nil {

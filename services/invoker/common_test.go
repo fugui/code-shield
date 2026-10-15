@@ -646,3 +646,49 @@ func TestRunCLIProcess_InvalidWorkDir(t *testing.T) {
 		t.Errorf("expected workdir not exist error, got: %v", err)
 	}
 }
+
+func TestIsRateLimitedError(t *testing.T) {
+	tests := []struct {
+		text string
+		want bool
+	}{
+		{"429 Too Many Requests", true},
+		{"error: concurrency_limit_exceeded, please slow down", true},
+		{"Rate limit reached for model deepseek-v4-flash", true},
+		{"resource_exhausted: quota exceeded (concurrent)", true},
+		{"upstream server is busy", true},
+		{"invalid api key", false},
+		{"syntax error in input file", false},
+	}
+	for _, tt := range tests {
+		got := isRateLimitedError(tt.text)
+		if got != tt.want {
+			t.Errorf("isRateLimitedError(%q) = %v, want %v", tt.text, got, tt.want)
+		}
+	}
+}
+
+func TestRunCLIProcess_RateLimitedClassification(t *testing.T) {
+	tempDir := t.TempDir()
+	outPath := filepath.Join(tempDir, "rl_test.json")
+
+	script := "echo 'HTTP 429: concurrency_limit_exceeded' >&2; exit 1"
+	_, err := RunCLIProcessWithResult("sh", []string{"-c", script}, AIRequest{
+		WorkDir:    tempDir,
+		PromptMsg:  "test rl",
+		OutputPath: outPath,
+		TimeoutMin: 1,
+	}, "模拟报告")
+
+	if err == nil {
+		t.Fatalf("expected rate limit error, got nil")
+	}
+	class := ClassifyError(err)
+	if class != ErrorClassRateLimited {
+		t.Fatalf("ClassifyError() = %q, want %q", class, ErrorClassRateLimited)
+	}
+	if !strings.Contains(err.Error(), "rate limited") {
+		t.Errorf("expected 'rate limited' in error message, got: %v", err)
+	}
+}
+

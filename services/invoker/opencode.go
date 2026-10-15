@@ -245,6 +245,15 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		req.Metrics.Continuations++
 	}
 
+	if ClassifyError(firstErr) == ErrorClassRateLimited || isRateLimitedError(firstErr.Error()) {
+		log.Printf("[OpenCode] Rate limited on first attempt; applying backoff before continuation: session=%s\n", result.SessionID)
+		select {
+		case <-parentOrDefault(req.ParentContext).Done():
+			return parentOrDefault(req.ParentContext).Err()
+		case <-time.After(2500 * time.Millisecond):
+		}
+	}
+
 	retryCtx, cancel := context.WithTimeout(parentOrDefault(req.ParentContext), budget)
 	defer cancel()
 
@@ -420,16 +429,14 @@ func canContinueAfterOpenCodeFailure(err error, result CLIProcessResult) bool {
 		return true
 	}
 	switch ClassifyError(err) {
-	case ErrorClassCanceled, ErrorClassAuth, ErrorClassContentFiltered:
+	case ErrorClassCanceled, ErrorClassAuth, ErrorClassContentFiltered, ErrorClassConfig:
 		return false
-	case ErrorClassIdleTimeout, ErrorClassTimeout:
-		return true
-	case ErrorClassNetworkTransient:
+	case ErrorClassIdleTimeout, ErrorClassTimeout, ErrorClassNetworkTransient, ErrorClassRateLimited:
 		return true
 	}
 
 	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "cancelled") {
+	if strings.Contains(message, "cancelled") || strings.Contains(message, "canceled") {
 		return false
 	}
 	if blocked, _ := isSafetyFilterBlocked(err.Error()); blocked {
@@ -439,9 +446,8 @@ func canContinueAfterOpenCodeFailure(err error, result CLIProcessResult) bool {
 		return false
 	}
 
-	return isIdleTimeoutError(message) ||
-		isExecutionTimeoutError(message) ||
-		isTransientToolFailureError(message)
+	// 除明确致命的硬错误外，只要具备有效 SessionID，默认允许尝试轻量级会话续跑
+	return true
 }
 
 func isOutputMissingError(err error) bool {
@@ -489,7 +495,6 @@ func isAuthOrModelUnavailableError(message string) bool {
 		"model not found",
 		"provider not found",
 		"quota exceeded",
-		"rate limit",
 		"billing",
 	} {
 		if strings.Contains(message, marker) {
