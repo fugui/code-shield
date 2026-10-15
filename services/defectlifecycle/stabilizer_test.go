@@ -296,3 +296,97 @@ void QueryUser(const std::string& name) {
 		t.Errorf("Stabilizer average latency %v exceeds 1.5ms threshold", avgDuration)
 	}
 }
+
+func TestCalibratePhysicalLine_OutOfBounds(t *testing.T) {
+	lines := make([]string, 308)
+	for i := 0; i < 308; i++ {
+		lines[i] = fmt.Sprintf("line_%d();", i+1)
+	}
+	lines[149] = "pSession->release(); // trigger here" // line 150
+
+	// 1. 行号超出文件范围 (401 > 308)，但 trigger 在第 150 行全文反查命中
+	calibrated := CalibratePhysicalLine(lines, 401, "pSession->release()")
+	if calibrated != 150 {
+		t.Errorf("expected calibrated line 150, got %d", calibrated)
+	}
+
+	// 2. 行号超出文件范围 (401 > 308)，且 trigger 不在文件中，应保底夹紧到 308
+	calibrated2 := CalibratePhysicalLine(lines, 401, "non_existent_trigger()")
+	if calibrated2 != 308 {
+		t.Errorf("expected clamped line 308, got %d", calibrated2)
+	}
+
+	// 3. 行号为 0，trigger 在第 150 行全文命中
+	calibrated3 := CalibratePhysicalLine(lines, 0, "pSession->release()")
+	if calibrated3 != 150 {
+		t.Errorf("expected calibrated line 150, got %d", calibrated3)
+	}
+
+	// 4. 行号为 0，且 trigger 不存在，应保底为 1
+	calibrated4 := CalibratePhysicalLine(lines, 0, "non_existent_trigger()")
+	if calibrated4 != 1 {
+		t.Errorf("expected line 1, got %d", calibrated4)
+	}
+}
+
+func TestStabilize_OutOfBoundsLineNumber(t *testing.T) {
+	tempDir := t.TempDir()
+	srcRelPath := "demo.cpp"
+	fullPath := filepath.Join(tempDir, srcRelPath)
+
+	lines := make([]string, 308)
+	for i := 0; i < 308; i++ {
+		lines[i] = fmt.Sprintf("int step_%d = %d;", i+1, i+1)
+	}
+	lines[149] = "char* p = nullptr; *p = 'x';"
+	if err := os.WriteFile(fullPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := []models.AnalysisFinding{
+		{
+			ID:          1,
+			FilePath:    srcRelPath,
+			LineNumber:  "401", // 越界行号
+			TriggerLine: "*p = 'x';",
+			Category:    "CWE-476",
+			Title:       "空指针解引用",
+		},
+		{
+			ID:          2,
+			FilePath:    srcRelPath,
+			LineNumber:  "401-405", // 越界行号区间
+			TriggerLine: "unknown_call();",
+			Category:    "CWE-476",
+			Title:       "未判空解引用",
+		},
+	}
+
+	stabilizer := NewIngestionStabilizer()
+	dtos, err := stabilizer.Stabilize(StabilizeFindingsInput{
+		RepoRoot: tempDir,
+		Findings: findings,
+	})
+	if err != nil {
+		t.Fatalf("Stabilize failed: %v", err)
+	}
+	if len(dtos) != 2 {
+		t.Fatalf("expected 2 DTOs, got %d", len(dtos))
+	}
+
+	// 样本 1：命中全文反查 line 150
+	if dtos[0].LineStart != 150 {
+		t.Errorf("expected DTO[0] LineStart 150, got %d", dtos[0].LineStart)
+	}
+	if dtos[0].CodeSnippet == "" {
+		t.Errorf("expected non-empty CodeSnippet for DTO[0]")
+	}
+
+	// 样本 2：未命中 trigger，夹紧到第 308 行，且切片必须安全无 panic
+	if dtos[1].LineStart != 308 || dtos[1].LineEnd != 308 {
+		t.Errorf("expected DTO[1] clamped to line 308, got LineStart=%d, LineEnd=%d", dtos[1].LineStart, dtos[1].LineEnd)
+	}
+	if dtos[1].CodeSnippet == "" {
+		t.Errorf("expected non-empty CodeSnippet for DTO[1]")
+	}
+}
