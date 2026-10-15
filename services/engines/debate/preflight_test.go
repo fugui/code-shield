@@ -501,4 +501,3 @@ TEST(CalcTest, ComplexTwo) {
 		t.Fatalf("unexpected records preserved: %+v", records)
 	}
 }
-

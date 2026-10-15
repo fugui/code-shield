@@ -116,6 +116,16 @@ func TestNativeSingleRoundVerifierDecisions(t *testing.T) {
 	if resErr.Decision != plugins.DecisionPass {
 		t.Fatalf("resErr.Decision = %s, want %s", resErr.Decision, plugins.DecisionPass)
 	}
+
+	// 5. 默认超时兜底 (timeoutSec <= 0 回退为 defaultVerifierTimeout)
+	verifier.SetInvokerForTest(&mockInvoker{outcome: "PASS", reason: "pass with default timeout"})
+	resDefaultTimeout, err := verifier.Verify(tmpDir, unit, nil, "", 0)
+	if err != nil {
+		t.Fatalf("Verify with default timeout failed: %v", err)
+	}
+	if resDefaultTimeout.Decision != plugins.DecisionFastPass {
+		t.Fatalf("resDefaultTimeout.Decision = %s, want %s", resDefaultTimeout.Decision, plugins.DecisionFastPass)
+	}
 }
 
 func TestThinVerifierRegistration(t *testing.T) {
