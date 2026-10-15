@@ -324,3 +324,32 @@ func TestTierRecoveryContractMismatchAllowsSplitWhenConfigured(t *testing.T) {
 		t.Fatalf("splitCalled = %v, out = %q, want splitCalled=true out=split-output", splitCalled, out)
 	}
 }
+
+func TestTierRecoveryUnknownAllowsProbeRetry(t *testing.T) {
+	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
+		MaxTotalAttempts:       3,
+		MaxAttemptsPerResource: 3,
+		RetryBackoffMs:         1,
+		RetryOn:                []string{"unknown"},
+	})
+	calls := 0
+	stats := &TierRecoveryStats{}
+	_, _, _, err := RunTierInvocationWithRecovery(
+		context.Background(), "tier1_hunter", 10, stats,
+		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
+			calls++
+			return "", 0, invoker.NewClassifiedError(invoker.ErrorClassUnknown, "mysterious failure")
+		},
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// 期望未知错误受到保护限制：仅重试 1 次（共调用 2 次），不会无意义耗尽 3 次
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (1 initial + 1 probe retry)", calls)
+	}
+	if stats.FreshRetries != 1 {
+		t.Fatalf("FreshRetries = %d, want 1", stats.FreshRetries)
+	}
+}
+

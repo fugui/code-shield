@@ -260,9 +260,13 @@ func RunTierInvocationWithRecovery(
 			}
 		}
 
+		maxAttemptsForClass := recovery.MaxAttemptsPerResource
+		if class == invoker.ErrorClassUnknown && maxAttemptsForClass > 2 {
+			maxAttemptsForClass = 2
+		}
 		if sameResourceRetryAllowed(recovery, class) &&
 			attempt < maxAttempts &&
-			stats.attemptsOn(candidate.ResourceID) < recovery.MaxAttemptsPerResource {
+			stats.attemptsOn(candidate.ResourceID) < maxAttemptsForClass {
 			if waitErr := waitTierRecoveryBackoff(ctx, recovery, attempt); waitErr != nil {
 				return rawOutput, candidate, tokens, invoker.WrapClassifiedError(
 					invoker.ErrorClassCanceled, waitErr, "%s recovery canceled", tierName,
