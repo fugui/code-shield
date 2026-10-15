@@ -776,18 +776,61 @@ func buildRunningDiagnosticsDTO(activeCtx *runner.TaskContext, report *models.Ta
 	}
 
 	var chunkDTOs []ChunkDiagnosticDetail
-	for _, c := range activeCtx.Summary.Analysis.Chunks {
-		chunkDTOs = append(chunkDTOs, ChunkDiagnosticDetail{
-			ChunkName:       c.ChunkName,
-			Status:          c.Status,
-			DurationSeconds: c.DurationSeconds,
-			Attempts:        c.Attempts,
-			Retries:         c.Retries,
-			FilesCount:      len(c.Files),
-			ErrorMessage:    c.ErrorMessage,
-			ErrorClass:      c.ErrorClass,
-			Files:           c.Files,
-		})
+	plannedChunks := activeCtx.GetPlannedChunksSnapshot()
+	if len(plannedChunks) > 0 {
+		for _, c := range plannedChunks {
+			chunkDTOs = append(chunkDTOs, ChunkDiagnosticDetail{
+				ChunkName:       c.ChunkName,
+				Status:          c.Status,
+				DurationSeconds: c.DurationSeconds,
+				Attempts:        1,
+				FilesCount:      len(c.Files),
+				FindingsCount:   c.FindingCount,
+				ErrorMessage:    c.ErrorMessage,
+				Files:           c.Files,
+			})
+		}
+	} else {
+		for _, c := range activeCtx.Summary.Analysis.Chunks {
+			chunkDTOs = append(chunkDTOs, ChunkDiagnosticDetail{
+				ChunkName:       c.ChunkName,
+				Status:          c.Status,
+				DurationSeconds: c.DurationSeconds,
+				Attempts:        c.Attempts,
+				Retries:         c.Retries,
+				FilesCount:      len(c.Files),
+				FindingsCount:   c.NormalizedIssueCount,
+				ErrorMessage:    c.ErrorMessage,
+				ErrorClass:      c.ErrorClass,
+				Files:           c.Files,
+			})
+		}
+	}
+
+	rawLiveFindings := activeCtx.GetLiveFindingsSnapshot()
+	liveFindings := make([]LiveFindingItemDTO, len(rawLiveFindings))
+	for i, f := range rawLiveFindings {
+		liveFindings[i] = LiveFindingItemDTO{
+			ChunkName: f.ChunkName,
+			Severity:  f.Severity,
+			Title:     f.Title,
+			FilePath:  f.FilePath,
+			Line:      f.Line,
+			Category:  f.Category,
+			Detail:    f.Detail,
+		}
+	}
+
+	rawLiveDebates := activeCtx.GetLiveDebatesSnapshot()
+	liveDebates := make([]LiveDebateItemDTO, len(rawLiveDebates))
+	for i, d := range rawLiveDebates {
+		liveDebates[i] = LiveDebateItemDTO{
+			Timestamp: d.Timestamp,
+			ChunkName: d.ChunkName,
+			Agent:     d.Agent,
+			Verdict:   d.Verdict,
+			Summary:   d.Summary,
+		}
 	}
 
 	return &DiagnosticsDTO{
@@ -795,6 +838,8 @@ func buildRunningDiagnosticsDTO(activeCtx *runner.TaskContext, report *models.Ta
 		PipelineSteps:      pipelineSteps,
 		PhaseTimers:        phaseTimers,
 		RecentEvents:       recentEvents,
+		LiveFindings:       liveFindings,
+		LiveDebates:        liveDebates,
 		EstimatedRemaining: estimatedRemaining,
 		IsRunning:          true,
 		TotalDuration:      totalDuration,

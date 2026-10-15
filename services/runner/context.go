@@ -415,11 +415,48 @@ type TaskActivityEvent struct {
 	Message   string    `json:"message"`
 }
 
+// PlannedChunkRuntime 记录分片在运行态的完整生命周期与指标
+type PlannedChunkRuntime struct {
+	ChunkUID        string    `json:"chunk_uid"`
+	ChunkName       string    `json:"chunk_name"`
+	PrimaryUnitID   string    `json:"primary_unit_id"`
+	Files           []string  `json:"files"`
+	Status          string    `json:"status"` // "pending", "running", "success", "failed"
+	StartTime       time.Time `json:"start_time"`
+	EndTime         time.Time `json:"end_time"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	FindingCount    int       `json:"finding_count"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// LiveFindingDTO 实时检出的候选缺陷简要
+type LiveFindingDTO struct {
+	ChunkName string `json:"chunk_name"`
+	Severity  string `json:"severity"` // "high", "medium", "low"
+	Title     string `json:"title"`
+	FilePath  string `json:"file_path"`
+	Line      string `json:"line"`
+	Category  string `json:"category"`
+	Detail    string `json:"detail"`
+}
+
+// LiveDebateDTO 三方对抗辩论关键动作
+type LiveDebateDTO struct {
+	Timestamp time.Time `json:"timestamp"`
+	ChunkName string    `json:"chunk_name"`
+	Agent     string    `json:"agent"`             // "hunter", "challenger", "judge"
+	Verdict   string    `json:"verdict,omitempty"` // "confirmed", "disputed", "dismissed"
+	Summary   string    `json:"summary"`
+}
+
 // TaskRuntimeTracker 封装任务运行期动态打点与事件追踪
 type TaskRuntimeTracker struct {
-	mu           sync.RWMutex
-	PhaseTimers  map[string]*PhaseTimer
-	RecentEvents []TaskActivityEvent
+	mu            sync.RWMutex
+	PhaseTimers   map[string]*PhaseTimer
+	RecentEvents  []TaskActivityEvent
+	PlannedChunks []PlannedChunkRuntime
+	LiveFindings  []LiveFindingDTO
+	LiveDebates   []LiveDebateDTO
 }
 
 func (ctx *TaskContext) ensureRuntime() *TaskRuntimeTracker {
@@ -481,8 +518,78 @@ func (rt *TaskRuntimeTracker) appendEventLocked(stage, level, message string, t 
 		Level:     level,
 		Message:   message,
 	})
-	if len(rt.RecentEvents) > 30 {
-		rt.RecentEvents = rt.RecentEvents[len(rt.RecentEvents)-30:]
+	if len(rt.RecentEvents) > 50 {
+		rt.RecentEvents = rt.RecentEvents[len(rt.RecentEvents)-50:]
+	}
+}
+
+// RegisterPlannedChunks 预注册规划好的分片元数据
+func (ctx *TaskContext) RegisterPlannedChunks(chunks []PlannedChunkRuntime) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.PlannedChunks = make([]PlannedChunkRuntime, len(chunks))
+	copy(rt.PlannedChunks, chunks)
+}
+
+// MarkChunkStarted 标记分片开始执行
+func (ctx *TaskContext) MarkChunkStarted(chunkName string) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	now := time.Now()
+	for i := range rt.PlannedChunks {
+		if rt.PlannedChunks[i].ChunkName == chunkName {
+			rt.PlannedChunks[i].Status = "running"
+			rt.PlannedChunks[i].StartTime = now
+			break
+		}
+	}
+}
+
+// MarkChunkCompleted 标记分片执行完成
+func (ctx *TaskContext) MarkChunkCompleted(chunkName, status string, duration float64, findingCount int, errMsg string) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	now := time.Now()
+	for i := range rt.PlannedChunks {
+		if rt.PlannedChunks[i].ChunkName == chunkName {
+			rt.PlannedChunks[i].Status = status
+			rt.PlannedChunks[i].EndTime = now
+			rt.PlannedChunks[i].DurationSeconds = duration
+			rt.PlannedChunks[i].FindingCount = findingCount
+			rt.PlannedChunks[i].ErrorMessage = errMsg
+			break
+		}
+	}
+}
+
+// AddLiveFindings 批量追加实时检出的候选缺陷
+func (ctx *TaskContext) AddLiveFindings(findings []LiveFindingDTO) {
+	if len(findings) == 0 {
+		return
+	}
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.LiveFindings = append(rt.LiveFindings, findings...)
+	if len(rt.LiveFindings) > 200 {
+		rt.LiveFindings = rt.LiveFindings[len(rt.LiveFindings)-200:]
+	}
+}
+
+// AddLiveDebate 追加辩论事件
+func (ctx *TaskContext) AddLiveDebate(event LiveDebateDTO) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	rt.LiveDebates = append(rt.LiveDebates, event)
+	if len(rt.LiveDebates) > 100 {
+		rt.LiveDebates = rt.LiveDebates[len(rt.LiveDebates)-100:]
 	}
 }
 
@@ -513,6 +620,102 @@ func (ctx *TaskContext) GetRecentEventsSnapshot() []TaskActivityEvent {
 	res := make([]TaskActivityEvent, len(ctx.Runtime.RecentEvents))
 	copy(res, ctx.Runtime.RecentEvents)
 	return res
+}
+
+func (ctx *TaskContext) GetPlannedChunksSnapshot() []PlannedChunkRuntime {
+	if ctx.Runtime == nil {
+		return nil
+	}
+	ctx.Runtime.mu.RLock()
+	defer ctx.Runtime.mu.RUnlock()
+	res := make([]PlannedChunkRuntime, len(ctx.Runtime.PlannedChunks))
+	now := time.Now()
+	for i, c := range ctx.Runtime.PlannedChunks {
+		cp := c
+		if cp.Status == "running" && !cp.StartTime.IsZero() {
+			cp.DurationSeconds = now.Sub(cp.StartTime).Seconds()
+		}
+		res[i] = cp
+	}
+	return res
+}
+
+func (ctx *TaskContext) GetLiveFindingsSnapshot() []LiveFindingDTO {
+	if ctx.Runtime == nil {
+		return nil
+	}
+	ctx.Runtime.mu.RLock()
+	defer ctx.Runtime.mu.RUnlock()
+	res := make([]LiveFindingDTO, len(ctx.Runtime.LiveFindings))
+	copy(res, ctx.Runtime.LiveFindings)
+	return res
+}
+
+func (ctx *TaskContext) GetLiveDebatesSnapshot() []LiveDebateDTO {
+	if ctx.Runtime == nil {
+		return nil
+	}
+	ctx.Runtime.mu.RLock()
+	defer ctx.Runtime.mu.RUnlock()
+	res := make([]LiveDebateDTO, len(ctx.Runtime.LiveDebates))
+	copy(res, ctx.Runtime.LiveDebates)
+	return res
+}
+
+// 确保 TaskContext 实现 engines.RuntimeObserver 接口
+var _ engines.RuntimeObserver = (*TaskContext)(nil)
+
+func (ctx *TaskContext) OnPlannedChunks(chunks []engines.RuntimeChunkUpdate) {
+	planned := make([]PlannedChunkRuntime, len(chunks))
+	for i, c := range chunks {
+		planned[i] = PlannedChunkRuntime{
+			ChunkUID:        c.ChunkUID,
+			ChunkName:       c.ChunkName,
+			PrimaryUnitID:   c.PrimaryUnitID,
+			Files:           c.Files,
+			Status:          c.Status,
+			StartTime:       c.StartTime,
+			EndTime:         c.EndTime,
+			DurationSeconds: c.DurationSeconds,
+			FindingCount:    c.FindingCount,
+			ErrorMessage:    c.ErrorMessage,
+		}
+	}
+	ctx.RegisterPlannedChunks(planned)
+}
+
+func (ctx *TaskContext) OnChunkStarted(chunkName string) {
+	ctx.MarkChunkStarted(chunkName)
+}
+
+func (ctx *TaskContext) OnChunkCompleted(update engines.RuntimeChunkUpdate) {
+	ctx.MarkChunkCompleted(update.ChunkName, update.Status, update.DurationSeconds, update.FindingCount, update.ErrorMessage)
+}
+
+func (ctx *TaskContext) OnLiveFindings(findings []engines.RuntimeFindingUpdate) {
+	live := make([]LiveFindingDTO, len(findings))
+	for i, f := range findings {
+		live[i] = LiveFindingDTO{
+			ChunkName: f.ChunkName,
+			Severity:  f.Severity,
+			Title:     f.Title,
+			FilePath:  f.FilePath,
+			Line:      f.Line,
+			Category:  f.Category,
+			Detail:    f.Detail,
+		}
+	}
+	ctx.AddLiveFindings(live)
+}
+
+func (ctx *TaskContext) OnLiveDebate(event engines.RuntimeDebateUpdate) {
+	ctx.AddLiveDebate(LiveDebateDTO{
+		Timestamp: event.Timestamp,
+		ChunkName: event.ChunkName,
+		Agent:     event.Agent,
+		Verdict:   event.Verdict,
+		Summary:   event.Summary,
+	})
 }
 
 type InvocationObservation struct {

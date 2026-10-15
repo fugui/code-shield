@@ -455,10 +455,49 @@ export interface SynthesisDiagnosticSummary {
   error_message?: string;
 }
 
+export interface LiveFindingItem {
+  chunk_name: string;
+  severity: string;
+  title: string;
+  file_path: string;
+  line: string;
+  category: string;
+  detail: string;
+}
+
+export interface LiveDebateItem {
+  timestamp: string;
+  chunk_name: string;
+  agent: string;
+  verdict?: string;
+  summary: string;
+}
+
+export interface PhaseDuration {
+  name: string;
+  start_time: string;
+  end_time?: string;
+  duration_seconds: number;
+  status: string;
+}
+
+export interface TaskActivityEvent {
+  timestamp: string;
+  stage: string;
+  level: string;
+  message: string;
+}
+
 // 运行轨迹与诊断
 export interface TaskDiagnostics {
   meta: TaskReportMeta;
   pipeline_steps: PipelineStep[];
+  phase_timers?: Record<string, PhaseDuration>;
+  recent_events?: TaskActivityEvent[];
+  live_findings?: LiveFindingItem[];
+  live_debates?: LiveDebateItem[];
+  estimated_remaining?: number;
+  is_running?: boolean;
   total_duration: number;
   analysis_duration: number;
   attempts: number;

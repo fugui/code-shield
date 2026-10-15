@@ -136,6 +136,21 @@ func (e *DebateEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 	semaphore := make(chan struct{}, models.AppConfig.GetChunkConcurrency())
 	totalChunks := len(bundles)
 
+	// 预注册规划好的分片元数据，供前端工作台秒级展示 8 个分片清单与代码覆盖
+	plannedChunks := make([]engines.RuntimeChunkUpdate, totalChunks)
+	for i, b := range bundles {
+		plannedChunks[i] = engines.RuntimeChunkUpdate{
+			ChunkUID:      coverage.StableChunkID(chunkPolicyIDForContext(ctx), b.AllFiles),
+			ChunkName:     b.Name,
+			PrimaryUnitID: primaryUnitIDForBundle(b),
+			Files:         append([]string(nil), b.AllFiles...),
+			Status:        "pending",
+		}
+	}
+	if ctx.RuntimeObserver != nil {
+		ctx.RuntimeObserver.OnPlannedChunks(plannedChunks)
+	}
+
 	chunkDetailsList := make([]engines.ChunkDetails, totalChunks)
 	processedChunks := 0
 	successChunks := 0
@@ -202,6 +217,35 @@ func (e *DebateEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 		successChunks++
 		reusedCount++
 		mu.Unlock()
+
+		if ctx.RuntimeObserver != nil {
+			ctx.RuntimeObserver.OnChunkCompleted(engines.RuntimeChunkUpdate{
+				ChunkUID:        detail.ChunkUID,
+				ChunkName:       detail.ChunkName,
+				PrimaryUnitID:   detail.PrimaryUnitID,
+				Files:           detail.Files,
+				Status:          "success",
+				StartTime:       detail.StartTime,
+				EndTime:         detail.EndTime,
+				DurationSeconds: 0,
+				FindingCount:    len(cp.Result.Findings),
+			})
+			if len(cp.Result.Findings) > 0 {
+				var liveFindings []engines.RuntimeFindingUpdate
+				for _, f := range cp.Result.Findings {
+					liveFindings = append(liveFindings, engines.RuntimeFindingUpdate{
+						ChunkName: b.Name,
+						Severity:  f.Severity,
+						Title:     f.Title,
+						FilePath:  f.FilePath,
+						Line:      f.LineNumber,
+						Category:  f.CategoryCode,
+						Detail:    f.Detail,
+					})
+				}
+				ctx.RuntimeObserver.OnLiveFindings(liveFindings)
+			}
+		}
 	}
 
 	// bundle 列表是稳定顺序，checkpoint 复用明细必须回到原始索引位，保证 coverage 不漂移。
@@ -247,6 +291,10 @@ bundleLoop:
 		go func(bnd chunker.SemanticBundle, idx int) {
 			defer wg.Done()
 			defer func() { <-semaphore }()
+
+			if ctx.RuntimeObserver != nil {
+				ctx.RuntimeObserver.OnChunkStarted(bnd.Name)
+			}
 
 			log.Printf("[DebateEngine] Processing bundle %d/%d [%s] (Files: %d)\n", idx, totalChunks, bnd.Name, len(bnd.AllFiles))
 
@@ -321,8 +369,64 @@ bundleLoop:
 				details.Status = "failed"
 				details.ErrorMessage = bundleErr.Error()
 				details.ErrorClass = string(invoker.ClassifyError(bundleErr))
+
+				if ctx.RuntimeObserver != nil {
+					ctx.RuntimeObserver.OnChunkCompleted(engines.RuntimeChunkUpdate{
+						ChunkUID:        details.ChunkUID,
+						ChunkName:       details.ChunkName,
+						PrimaryUnitID:   details.PrimaryUnitID,
+						Files:           details.Files,
+						Status:          "failed",
+						StartTime:       bundleStartTime,
+						EndTime:         bundleEndTime,
+						DurationSeconds: details.DurationSeconds,
+						FindingCount:    0,
+						ErrorMessage:    bundleErr.Error(),
+					})
+				}
 			} else {
 				details.Status = "success"
+				if ctx.RuntimeObserver != nil {
+					ctx.RuntimeObserver.OnChunkCompleted(engines.RuntimeChunkUpdate{
+						ChunkUID:        details.ChunkUID,
+						ChunkName:       details.ChunkName,
+						PrimaryUnitID:   details.PrimaryUnitID,
+						Files:           details.Files,
+						Status:          "success",
+						StartTime:       bundleStartTime,
+						EndTime:         bundleEndTime,
+						DurationSeconds: details.DurationSeconds,
+						FindingCount:    len(findings),
+					})
+					if len(findings) > 0 {
+						var liveFindings []engines.RuntimeFindingUpdate
+						for _, f := range findings {
+							liveFindings = append(liveFindings, engines.RuntimeFindingUpdate{
+								ChunkName: bnd.Name,
+								Severity:  f.Severity,
+								Title:     f.Title,
+								FilePath:  f.FilePath,
+								Line:      f.LineNumber,
+								Category:  f.CategoryCode,
+								Detail:    f.Detail,
+							})
+						}
+						ctx.RuntimeObserver.OnLiveFindings(liveFindings)
+					}
+					for _, dl := range debateLogs {
+						t := dl.CreatedAt
+						if t.IsZero() {
+							t = time.Now()
+						}
+						ctx.RuntimeObserver.OnLiveDebate(engines.RuntimeDebateUpdate{
+							Timestamp: t,
+							ChunkName: bnd.Name,
+							Agent:     "judge",
+							Verdict:   dl.Verdict,
+							Summary:   fmt.Sprintf("分片[%s] 候选#%s: 最终仲裁 %s (耗时 %dms)", bnd.Name, dl.CandidateID, dl.Verdict, dl.DurationMs),
+						})
+					}
+				}
 				if snapshotHashErr == nil {
 					if err := WriteBundleResumeCheckpoint(
 						chunkDir,

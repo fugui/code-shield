@@ -306,12 +306,34 @@ type TaskActivityEventDTO struct {
 	Message   string    `json:"message"`
 }
 
+// LiveFindingItemDTO 实时检出的候选缺陷
+type LiveFindingItemDTO struct {
+	ChunkName string `json:"chunk_name"`
+	Severity  string `json:"severity"` // "high", "medium", "low"
+	Title     string `json:"title"`
+	FilePath  string `json:"file_path"`
+	Line      string `json:"line"`
+	Category  string `json:"category"`
+	Detail    string `json:"detail"`
+}
+
+// LiveDebateItemDTO 三方对抗辩论关键动作
+type LiveDebateItemDTO struct {
+	Timestamp time.Time `json:"timestamp"`
+	ChunkName string    `json:"chunk_name"`
+	Agent     string    `json:"agent"`             // "hunter", "challenger", "judge"
+	Verdict   string    `json:"verdict,omitempty"` // "confirmed", "disputed", "dismissed"
+	Summary   string    `json:"summary"`
+}
+
 // DiagnosticsDTO 运行轨迹与诊断 DTO
 type DiagnosticsDTO struct {
 	Meta                     ReportMetaDTO               `json:"meta"`
 	PipelineSteps            []PipelineStep              `json:"pipeline_steps"`
 	PhaseTimers              map[string]PhaseDurationDTO `json:"phase_timers,omitempty"`
 	RecentEvents             []TaskActivityEventDTO      `json:"recent_events,omitempty"`
+	LiveFindings             []LiveFindingItemDTO        `json:"live_findings,omitempty"`
+	LiveDebates              []LiveDebateItemDTO         `json:"live_debates,omitempty"`
 	EstimatedRemaining       float64                     `json:"estimated_remaining,omitempty"`
 	IsRunning                bool                        `json:"is_running"`
 	TotalDuration            float64                     `json:"total_duration"`
