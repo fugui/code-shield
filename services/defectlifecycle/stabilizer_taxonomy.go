@@ -90,21 +90,46 @@ func ReduceControlledDefectClass(category string, title string) string {
 // CalibratePhysicalLine 触发词引导的双轨行号精准校准 (消灭 68% 行号漂移与 15% 行号缺失)
 func CalibratePhysicalLine(lines []string, rawLineNumber int, triggerLine string) int {
 	cleanTrigger := CleanSourceToken(triggerLine)
-	if len(lines) == 0 {
+	total := len(lines)
+	if total == 0 {
 		if rawLineNumber > 0 {
 			return rawLineNumber
 		}
 		return 1
 	}
 
-	// 情况 A: 行号存在，优先在 [L-15, L+15] 内近距离寻找
-	if rawLineNumber > 0 {
-		return LocateTriggerNearby(lines, cleanTrigger, rawLineNumber, 15)
+	// 情况 A: 行号存在且在合理范围内，优先在 [L-15, L+15] 内近距离寻找
+	if rawLineNumber > 0 && rawLineNumber <= total {
+		calibrated := LocateTriggerNearby(lines, cleanTrigger, rawLineNumber, 15)
+		if calibrated > 0 && calibrated <= total {
+			if cleanTrigger != "" {
+				tok := CleanSourceToken(lines[calibrated-1])
+				if tok == cleanTrigger || strings.Contains(tok, cleanTrigger) || strings.Contains(cleanTrigger, tok) {
+					return calibrated
+				}
+				// 附近未找到，尝试全文反查
+				if found := findCleanTriggerInLines(lines, cleanTrigger); found > 0 {
+					return found
+				}
+			}
+			return calibrated
+		}
 	}
 
-	// 情况 B: 行号为空 (现网 15% 样本)，全文反查
+	// 情况 B: 行号越界 (rawLineNumber > total) 或行号为空 (rawLineNumber <= 0)
+	// 尝试全文反查 cleanTrigger
 	if cleanTrigger != "" {
-		return LocateTriggerInLines(lines, cleanTrigger)
+		if found := findCleanTriggerInLines(lines, cleanTrigger); found > 0 {
+			return found
+		}
+	}
+
+	// 回退保底：必须夹紧在 [1, total] 范围内
+	if rawLineNumber > 0 {
+		if rawLineNumber > total {
+			return total
+		}
+		return rawLineNumber
 	}
 
 	return 1

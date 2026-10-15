@@ -191,6 +191,8 @@ func LocateTriggerNearby(lines []string, cleanTrigger string, targetLine int, wi
 	total := len(lines)
 	if targetLine <= 0 {
 		targetLine = 1
+	} else if targetLine > total {
+		targetLine = total
 	}
 
 	start := targetLine - windowSize
@@ -239,10 +241,10 @@ func LocateTriggerNearby(lines []string, cleanTrigger string, targetLine int, wi
 	return targetLine
 }
 
-// LocateTriggerInLines 在整篇文件中模糊反查 cleanTrigger 所在真实行号 (解决行号为空的场景)
-func LocateTriggerInLines(lines []string, cleanTrigger string) int {
+// findCleanTriggerInLines 全文搜索 cleanTrigger 所在真实行号，未找到返回 0
+func findCleanTriggerInLines(lines []string, cleanTrigger string) int {
 	if cleanTrigger == "" || len(lines) == 0 {
-		return 1
+		return 0
 	}
 
 	// 1. 全文精确匹配
@@ -253,16 +255,22 @@ func LocateTriggerInLines(lines []string, cleanTrigger string) int {
 	}
 
 	// 2. 全文包含匹配
-	bestLine := 1
 	for i, line := range lines {
 		tok := CleanSourceToken(line)
 		if tok != "" && (strings.Contains(tok, cleanTrigger) || strings.Contains(cleanTrigger, tok)) {
-			bestLine = i + 1
-			break
+			return i + 1
 		}
 	}
 
-	return bestLine
+	return 0
+}
+
+// LocateTriggerInLines 在整篇文件中模糊反查 cleanTrigger 所在真实行号 (解决行号为空的场景)
+func LocateTriggerInLines(lines []string, cleanTrigger string) int {
+	if found := findCleanTriggerInLines(lines, cleanTrigger); found > 0 {
+		return found
+	}
+	return 1
 }
 
 // ExtractScopeAndBodyFromLines 从目标行向上逆向扫描提取物理函数作用域签名及函数体代码

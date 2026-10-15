@@ -121,11 +121,17 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 		if calibratedLine <= 0 {
 			calibratedLine = 1
 		}
+		if len(lines) > 0 && calibratedLine > len(lines) {
+			calibratedLine = len(lines)
+		}
 
 		lineStart := calibratedLine
 		lineEnd := calibratedLine
 		if rawLineEnd > rawLineStart {
 			lineEnd = lineStart + (rawLineEnd - rawLineStart)
+		}
+		if len(lines) > 0 && lineEnd > len(lines) {
+			lineEnd = len(lines)
 		}
 
 		// 2. 作用域规范化与反查
@@ -155,7 +161,14 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 			if end > len(lines) {
 				end = len(lines)
 			}
-			snippet = strings.Join(lines[start-1:end], "\n")
+			if start > end {
+				start = end
+			}
+			if start >= 1 && end >= start {
+				snippet = strings.Join(lines[start-1:end], "\n")
+			} else {
+				snippet = f.CodeSnippet
+			}
 		} else {
 			snippet = f.CodeSnippet
 		}
