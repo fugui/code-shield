@@ -289,10 +289,31 @@ type ChunkDiagnosticDetail struct {
 	Files                    []string  `json:"files,omitempty"`
 }
 
+// PhaseDurationDTO 阶段耗时统计
+type PhaseDurationDTO struct {
+	Name            string     `json:"name"`
+	StartTime       time.Time  `json:"start_time"`
+	EndTime         *time.Time `json:"end_time,omitempty"`
+	DurationSeconds float64    `json:"duration_seconds"`
+	Status          string     `json:"status"` // "running", "completed", "failed", "pending"
+}
+
+// TaskActivityEventDTO 实时执行事件
+type TaskActivityEventDTO struct {
+	Timestamp time.Time `json:"timestamp"`
+	Stage     string    `json:"stage"` // "prepare", "planning", "analysis", "calibration", "synthesis", "archive"
+	Level     string    `json:"level"` // "info", "warn", "error", "success"
+	Message   string    `json:"message"`
+}
+
 // DiagnosticsDTO 运行轨迹与诊断 DTO
 type DiagnosticsDTO struct {
 	Meta                     ReportMetaDTO               `json:"meta"`
 	PipelineSteps            []PipelineStep              `json:"pipeline_steps"`
+	PhaseTimers              map[string]PhaseDurationDTO `json:"phase_timers,omitempty"`
+	RecentEvents             []TaskActivityEventDTO      `json:"recent_events,omitempty"`
+	EstimatedRemaining       float64                     `json:"estimated_remaining,omitempty"`
+	IsRunning                bool                        `json:"is_running"`
 	TotalDuration            float64                     `json:"total_duration"`
 	AnalysisDuration         float64                     `json:"analysis_duration"`
 	Attempts                 int                         `json:"attempts"`

@@ -1,11 +1,42 @@
 import React from 'react';
 
-export interface PipelineStepperProps {
-  log: any;
-  report: any;
+export interface TaskReportSummaryInfo {
+  status?: string;
+  total_chunks?: number;
+  processed_chunks?: number;
 }
 
-export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report }) => {
+export interface TaskLogSummaryInfo {
+  status: string;
+  engine_mode?: string;
+}
+
+export interface DiagnosticsPhaseInfo {
+  name?: string;
+  duration_seconds?: number;
+  status?: string;
+}
+
+export interface DiagnosticsSummaryData {
+  is_running?: boolean;
+  analysis_duration?: number;
+  phase_timers?: Record<string, DiagnosticsPhaseInfo>;
+}
+
+export interface PipelineStepperProps {
+  log: TaskLogSummaryInfo;
+  report?: TaskReportSummaryInfo | null;
+  summary?: DiagnosticsSummaryData | null;
+  liveSeconds?: number;
+}
+
+const formatStepDuration = (seconds: number | null | undefined): string => {
+  if (seconds == null || seconds <= 0) return '';
+  const s = Math.round(seconds);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+};
+
+export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report, summary, liveSeconds = 0 }) => {
   const activeStatus =
     report?.status && report.status !== 'queued' && report.status !== 'pending'
       ? report.status
@@ -69,31 +100,58 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
     step5 = 'current';
   }
 
+  // 提取各阶段实际或实时耗时
+  const timers = summary?.phase_timers || {};
+  const prepDur = timers.prepare?.duration_seconds ?? 0;
+  const anaDur = timers.analysis?.duration_seconds ?? summary?.analysis_duration ?? 0;
+  const calDur = timers.calibration?.duration_seconds ?? 0;
+  const synDur = timers.synthesis?.duration_seconds ?? 0;
+  const arcDur = timers.archive?.duration_seconds ?? 0;
+
+  const getDurationBadge = (status: StepStatus, fixedDur: number) => {
+    if (status === 'current') {
+      const dur = fixedDur > 0 ? fixedDur : liveSeconds;
+      return dur > 0 ? `⚡ ${formatStepDuration(dur)}` : '⚡ 运行中';
+    }
+    if (status === 'completed' && fixedDur > 0) {
+      return `⏱️ ${formatStepDuration(fixedDur)}`;
+    }
+    if (status === 'failed') {
+      return '✕ 异常';
+    }
+    return '';
+  };
+
   const steps = [
     {
       title: '代码准备',
       desc: '拉取与环境预检',
       status: step1,
+      durationBadge: getDurationBadge(step1, prepDur),
     },
     {
       title: isDebate ? '分片对抗辩论' : '分片检视',
       desc: totalChunks > 0 ? `${processedChunks}/${totalChunks} 分片完成` : isDebate ? '三方对抗与仲裁' : '并发静态扫描',
       status: step2,
+      durationBadge: getDurationBadge(step2, anaDur),
     },
     {
       title: '校准与增量比对',
       desc: '确定性严重度校准',
       status: step3,
+      durationBadge: getDurationBadge(step3, calDur),
     },
     {
       title: 'AI 全仓报告综合',
       desc: isDebate ? 'Tier 4 报告排版生成' : '全仓报告排版生成',
       status: step4,
+      durationBadge: getDurationBadge(step4, synDur),
     },
     {
       title: '缺陷同步与归档',
       desc: '状态闭环与通知推送',
       status: step5,
+      durationBadge: getDurationBadge(step5, arcDur),
     },
   ];
 
@@ -103,8 +161,8 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
         width: '100%',
         marginBottom: '1rem',
         padding: '0.85rem 1.1rem',
-        background: 'var(--color-bg-surface, var(--card-bg, #ffffff))',
-        border: '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))',
+        background: 'var(--color-bg-surface, #ffffff)',
+        border: '1px solid var(--color-border-primary, #e2e8f0)',
         borderRadius: '8px',
         boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04))',
       }}
@@ -120,7 +178,23 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
           justifyContent: 'space-between',
         }}
       >
-        <span>🚦 任务流水线执行进度</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span>🚦 任务流水线执行进度</span>
+          {summary?.is_running && (
+            <span
+              style={{
+                fontSize: '0.7rem',
+                color: 'var(--color-primary, #2563eb)',
+                background: 'rgba(37, 99, 235, 0.1)',
+                padding: '0.1rem 0.45rem',
+                borderRadius: '10px',
+                fontWeight: 600,
+              }}
+            >
+              实时追踪中
+            </span>
+          )}
+        </span>
         <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted, #94a3b8)' }}>
           {isDebate ? '多智能体三方对抗架构' : '语义感知分片架构'}
         </span>
@@ -128,7 +202,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
           gap: '0.65rem',
         }}
       >
@@ -145,7 +219,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
           if (isDone) {
             iconBg = 'rgba(16, 185, 129, 0.12)';
             iconColor = 'var(--color-success, #10b981)';
-            borderColor = 'rgba(16, 185, 129, 0.3)';
+            borderColor = 'rgba(16, 185, 129, 0.35)';
             titleColor = 'var(--color-text-primary, #0f172a)';
           } else if (isCurr) {
             iconBg = 'rgba(37, 99, 235, 0.12)';
@@ -155,7 +229,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
           } else if (isFail) {
             iconBg = 'rgba(239, 68, 68, 0.12)';
             iconColor = 'var(--color-danger, #ef4444)';
-            borderColor = 'rgba(239, 68, 68, 0.3)';
+            borderColor = 'rgba(239, 68, 68, 0.35)';
             titleColor = 'var(--color-danger, #ef4444)';
           }
 
@@ -166,10 +240,11 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '0.55rem',
-                padding: '0.45rem 0.6rem',
+                padding: '0.5rem 0.65rem',
                 borderRadius: '6px',
                 background: isCurr ? 'var(--color-bg-muted, rgba(248, 250, 252, 0.8))' : 'transparent',
                 border: `1px solid ${borderColor}`,
+                boxShadow: isCurr ? '0 0 0 1px var(--color-primary, #2563eb)' : 'none',
                 transition: 'all 0.2s ease',
               }}
             >
@@ -191,10 +266,27 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
               >
                 {isDone ? '✓' : isFail ? '✕' : isCurr ? '●' : idx + 1}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: isCurr ? 700 : 600, color: titleColor, lineHeight: 1.3 }}>
-                  {step.title}
-                </span>
+              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.2rem' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: isCurr ? 700 : 600, color: titleColor, lineHeight: 1.3 }}>
+                    {step.title}
+                  </span>
+                  {step.durationBadge && (
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 600,
+                        padding: '0.05rem 0.3rem',
+                        borderRadius: '3px',
+                        background: isCurr ? 'rgba(37, 99, 235, 0.15)' : isDone ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                        color: isCurr ? 'var(--color-primary, #2563eb)' : isDone ? 'var(--color-success, #10b981)' : 'var(--color-text-muted, #94a3b8)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {step.durationBadge}
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted, #64748b)', marginTop: '2px', lineHeight: 1.2 }}>
                   {step.desc}
                 </span>
@@ -206,3 +298,4 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({ log, report })
     </div>
   );
 };
+

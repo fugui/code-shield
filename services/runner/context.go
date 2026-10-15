@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"encoding/json"
+	"sync"
 
 	"code-shield/models"
 	"code-shield/services/coverage"
@@ -393,6 +394,125 @@ type TaskContext struct {
 	LastInvocation    *InvocationObservation
 	Summary           TaskSummaryReport
 	Findings          []models.AnalysisFinding
+
+	Runtime           *TaskRuntimeTracker
+}
+
+// PhaseTimer 阶段打点计时器
+type PhaseTimer struct {
+	Name      string     `json:"name"`
+	StartTime time.Time  `json:"start_time"`
+	EndTime   *time.Time `json:"end_time,omitempty"`
+	Duration  float64    `json:"duration_seconds"`
+	Status    string     `json:"status"` // "running", "completed", "failed"
+}
+
+// TaskActivityEvent 实时执行事件
+type TaskActivityEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Stage     string    `json:"stage"`
+	Level     string    `json:"level"` // "info", "warn", "error", "success"
+	Message   string    `json:"message"`
+}
+
+// TaskRuntimeTracker 封装任务运行期动态打点与事件追踪
+type TaskRuntimeTracker struct {
+	mu           sync.RWMutex
+	PhaseTimers  map[string]*PhaseTimer
+	RecentEvents []TaskActivityEvent
+}
+
+func (ctx *TaskContext) ensureRuntime() *TaskRuntimeTracker {
+	if ctx.Runtime == nil {
+		ctx.Runtime = &TaskRuntimeTracker{
+			PhaseTimers: make(map[string]*PhaseTimer),
+		}
+	}
+	return ctx.Runtime
+}
+
+func (ctx *TaskContext) StartPhase(phase, name, eventMsg string) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	now := time.Now()
+	rt.PhaseTimers[phase] = &PhaseTimer{
+		Name:      name,
+		StartTime: now,
+		Status:    "running",
+	}
+	if eventMsg != "" {
+		rt.appendEventLocked(phase, "info", eventMsg, now)
+	}
+}
+
+func (ctx *TaskContext) EndPhase(phase, status, eventMsg string) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	now := time.Now()
+	if timer, ok := rt.PhaseTimers[phase]; ok {
+		timer.EndTime = &now
+		timer.Duration = now.Sub(timer.StartTime).Seconds()
+		timer.Status = status
+	}
+	if eventMsg != "" {
+		level := "info"
+		if status == "failed" {
+			level = "error"
+		} else if status == "completed" {
+			level = "success"
+		}
+		rt.appendEventLocked(phase, level, eventMsg, now)
+	}
+}
+
+func (ctx *TaskContext) AddEvent(stage, level, message string) {
+	rt := ctx.ensureRuntime()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.appendEventLocked(stage, level, message, time.Now())
+}
+
+func (rt *TaskRuntimeTracker) appendEventLocked(stage, level, message string, t time.Time) {
+	rt.RecentEvents = append(rt.RecentEvents, TaskActivityEvent{
+		Timestamp: t,
+		Stage:     stage,
+		Level:     level,
+		Message:   message,
+	})
+	if len(rt.RecentEvents) > 30 {
+		rt.RecentEvents = rt.RecentEvents[len(rt.RecentEvents)-30:]
+	}
+}
+
+func (ctx *TaskContext) GetPhaseTimersSnapshot() map[string]PhaseTimer {
+	if ctx.Runtime == nil {
+		return nil
+	}
+	ctx.Runtime.mu.RLock()
+	defer ctx.Runtime.mu.RUnlock()
+	res := make(map[string]PhaseTimer, len(ctx.Runtime.PhaseTimers))
+	now := time.Now()
+	for k, v := range ctx.Runtime.PhaseTimers {
+		cp := *v
+		if cp.Status == "running" {
+			cp.Duration = now.Sub(cp.StartTime).Seconds()
+		}
+		res[k] = cp
+	}
+	return res
+}
+
+func (ctx *TaskContext) GetRecentEventsSnapshot() []TaskActivityEvent {
+	if ctx.Runtime == nil {
+		return nil
+	}
+	ctx.Runtime.mu.RLock()
+	defer ctx.Runtime.mu.RUnlock()
+	res := make([]TaskActivityEvent, len(ctx.Runtime.RecentEvents))
+	copy(res, ctx.Runtime.RecentEvents)
+	return res
 }
 
 type InvocationObservation struct {
