@@ -260,7 +260,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
       next.has(id) ? next.delete(id) : next.add(id);
 
       const log = logs.find(l => l.id === id);
-      if (isExpanding && log?.task_report?.id && !summaries[log.task_report.id]) {
+      if (isExpanding && log?.task_report?.id) {
         fetchSummary(log.task_report.id);
       }
 
@@ -293,9 +293,25 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
   useEffect(() => {
     const delay = hasActiveTasks ? 4000 : 15000;
-    const interval = setInterval(fetchLogs, delay);
+    const interval = setInterval(() => {
+      fetchLogs();
+      // 同步刷新已展开的处于活跃状态的任务快照
+      if (hasActiveTasks) {
+        expandedIds.forEach(id => {
+          const l = logs.find(item => item.id === id);
+          if (l?.task_report?.id) {
+            const isRun =
+              ['running', 'cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(l.status) ||
+              ['cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(l.task_report.status);
+            if (isRun) {
+              fetchSummary(l.task_report.id);
+            }
+          }
+        });
+      }
+    }, delay);
     return () => clearInterval(interval);
-  }, [fetchLogs, hasActiveTasks]);
+  }, [fetchLogs, hasActiveTasks, expandedIds, logs]);
 
   useEffect(() => {
     const configInterval = setInterval(fetchConfig, 15000);

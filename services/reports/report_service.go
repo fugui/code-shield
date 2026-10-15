@@ -6,6 +6,7 @@ import (
 	"code-shield/services/engines/assessment"
 	assessmentprofiles "code-shield/services/engines/assessment/profiles"
 	"code-shield/services/engines/planner"
+	"code-shield/services/runner"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -690,6 +691,119 @@ func matchesFindingStatus(item FindingItemDTO, queryStatus string, isEntityMode 
 			(item.AssessmentOutcome == "" && item.Status == "open"))
 }
 
+// buildRunningDiagnosticsDTO 根据正在执行的任务内存上下文构建实时诊断快照
+func buildRunningDiagnosticsDTO(activeCtx *runner.TaskContext, report *models.TaskReport, meta ReportMetaDTO) *DiagnosticsDTO {
+	now := time.Now()
+	startTime := activeCtx.Summary.StartTime
+	if startTime.IsZero() {
+		startTime = report.CreatedAt
+	}
+	totalDuration := now.Sub(startTime).Seconds()
+	if totalDuration < 0 {
+		totalDuration = 0
+	}
+
+	rawTimers := activeCtx.GetPhaseTimersSnapshot()
+	phaseTimers := make(map[string]PhaseDurationDTO, len(rawTimers))
+	for k, v := range rawTimers {
+		phaseTimers[k] = PhaseDurationDTO{
+			Name:            v.Name,
+			StartTime:       v.StartTime,
+			EndTime:         v.EndTime,
+			DurationSeconds: v.Duration,
+			Status:          v.Status,
+		}
+	}
+
+	rawEvents := activeCtx.GetRecentEventsSnapshot()
+	recentEvents := make([]TaskActivityEventDTO, len(rawEvents))
+	for i, e := range rawEvents {
+		recentEvents[i] = TaskActivityEventDTO{
+			Timestamp: e.Timestamp,
+			Stage:     e.Stage,
+			Level:     e.Level,
+			Message:   e.Message,
+		}
+	}
+
+	step1Status := "upcoming"
+	step1Dur := 0.0
+	if p, ok := rawTimers["prepare"]; ok {
+		step1Status = p.Status
+		step1Dur = p.Duration
+	}
+
+	step2Status := "upcoming"
+	step2Dur := 0.0
+	if p, ok := rawTimers["analysis"]; ok {
+		step2Status = p.Status
+		step2Dur = p.Duration
+	}
+
+	step3Status := "upcoming"
+	step3Dur := 0.0
+	if p, ok := rawTimers["calibration"]; ok {
+		step3Status = p.Status
+		step3Dur = p.Duration
+	}
+
+	step4Status := "upcoming"
+	step4Dur := 0.0
+	if p, ok := rawTimers["synthesis"]; ok {
+		step4Status = p.Status
+		step4Dur = p.Duration
+	}
+
+	step5Status := "upcoming"
+	step5Dur := 0.0
+	if p, ok := rawTimers["archive"]; ok {
+		step5Status = p.Status
+		step5Dur = p.Duration
+	}
+
+	pipelineSteps := []PipelineStep{
+		{Name: "代码准备与环境预检", Status: step1Status, DurationSeconds: step1Dur},
+		{Name: "分片静态检视与辩论", Status: step2Status, DurationSeconds: step2Dur},
+		{Name: "确定性严重度校准", Status: step3Status, DurationSeconds: step3Dur},
+		{Name: "AI 全仓报告综合生成", Status: step4Status, DurationSeconds: step4Dur},
+		{Name: "缺陷归并与状态归档", Status: step5Status, DurationSeconds: step5Dur},
+	}
+
+	estimatedRemaining := 0.0
+	if report.TotalChunks > 0 && report.ProcessedChunks > 0 && report.ProcessedChunks < report.TotalChunks && step2Dur > 0 {
+		avgChunkTime := step2Dur / float64(report.ProcessedChunks)
+		estimatedRemaining = avgChunkTime * float64(report.TotalChunks-report.ProcessedChunks)
+	}
+
+	var chunkDTOs []ChunkDiagnosticDetail
+	for _, c := range activeCtx.Summary.Analysis.Chunks {
+		chunkDTOs = append(chunkDTOs, ChunkDiagnosticDetail{
+			ChunkName:       c.ChunkName,
+			Status:          c.Status,
+			DurationSeconds: c.DurationSeconds,
+			Attempts:        c.Attempts,
+			Retries:         c.Retries,
+			FilesCount:      len(c.Files),
+			ErrorMessage:    c.ErrorMessage,
+			ErrorClass:      c.ErrorClass,
+			Files:           c.Files,
+		})
+	}
+
+	return &DiagnosticsDTO{
+		Meta:               meta,
+		PipelineSteps:      pipelineSteps,
+		PhaseTimers:        phaseTimers,
+		RecentEvents:       recentEvents,
+		EstimatedRemaining: estimatedRemaining,
+		IsRunning:          true,
+		TotalDuration:      totalDuration,
+		AnalysisDuration:   step2Dur,
+		ArtifactComplete:   true,
+		Chunks:             chunkDTOs,
+	}
+}
+
 // GetReportDiagnostics 获取运行轨迹与诊断
 func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 	report, err := GetTaskReportEntity(taskID)
@@ -698,6 +812,12 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 	}
 
 	meta := BuildMetaDTO(report)
+
+	// 若任务仍处于运行期，直接利用内存运行上下文秒级提供实时轨迹与分片进展
+	if activeCtx := runner.GetActiveTaskContext(taskID); activeCtx != nil {
+		return buildRunningDiagnosticsDTO(activeCtx, report, meta), nil
+	}
+
 	dto := &DiagnosticsDTO{
 		Meta:             meta,
 		ArtifactComplete: true,
@@ -1033,10 +1153,38 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 				step1Name = "语义分片与确定性规则初筛"
 			}
 
+			synthDur := getStepDuration(summaryMap, "synthesis")
+			mergeDur := getStepDuration(summaryMap, "merging")
+
 			dto.PipelineSteps = []PipelineStep{
+				{Name: "代码准备与环境预检", Status: "success", DurationSeconds: 0},
 				{Name: step1Name, Status: getStepStatus(summaryMap, "analysis"), DurationSeconds: dto.AnalysisDuration},
-				{Name: "确定性校准与综合报告生成", Status: getStepStatus(summaryMap, "synthesis"), DurationSeconds: getStepDuration(summaryMap, "synthesis")},
-				{Name: "缺陷指纹对比与闭环入库", Status: getStepStatus(summaryMap, "merging"), DurationSeconds: getStepDuration(summaryMap, "merging")},
+				{Name: "确定性严重度校准", Status: "success", DurationSeconds: 0},
+				{Name: "AI 全仓报告综合生成", Status: getStepStatus(summaryMap, "synthesis"), DurationSeconds: synthDur},
+				{Name: "缺陷归并与状态归档", Status: getStepStatus(summaryMap, "merging"), DurationSeconds: mergeDur},
+			}
+
+			if dto.PhaseTimers == nil {
+				dto.PhaseTimers = make(map[string]PhaseDurationDTO)
+				dto.PhaseTimers["analysis"] = PhaseDurationDTO{
+					Name:            step1Name,
+					DurationSeconds: dto.AnalysisDuration,
+					Status:          getStepStatus(summaryMap, "analysis"),
+				}
+				if synthDur > 0 {
+					dto.PhaseTimers["synthesis"] = PhaseDurationDTO{
+						Name:            "AI 全仓报告综合生成",
+						DurationSeconds: synthDur,
+						Status:          getStepStatus(summaryMap, "synthesis"),
+					}
+				}
+				if mergeDur > 0 {
+					dto.PhaseTimers["archive"] = PhaseDurationDTO{
+						Name:            "缺陷归并与状态归档",
+						DurationSeconds: mergeDur,
+						Status:          getStepStatus(summaryMap, "merging"),
+					}
+				}
 			}
 		}
 	}

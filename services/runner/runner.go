@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -79,6 +80,13 @@ func CancelAllRunningTasks() {
 		log.Printf("[TaskRunner] Cancelling task for ReportID %d\n", id)
 		ctx.Cancel()
 	}
+}
+
+// GetActiveTaskContext 获取正在执行的任务上下文引用
+func GetActiveTaskContext(reportID uint) *TaskContext {
+	activeTasksMu.Lock()
+	defer activeTasksMu.Unlock()
+	return activeTasks[reportID]
 }
 
 // GetRunningTasks 获取当前内存中所有正在执行的任务快照列表
@@ -182,8 +190,11 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 		ctx.Report.ID, repoURL, ctx.TaskType.Name, ctx.Report.EngineMode)
 
 	// Stage 1: 准备与代码同步
+	ctx.AddEvent("system", "info", fmt.Sprintf("任务调度就绪，Worker 启动执行 (模式: %s)", ctx.Report.EngineMode))
+	ctx.StartPhase("prepare", "代码拉取与环境预检", fmt.Sprintf("开始拉取代码仓: %s", repoURL))
 	codesPath, err := PrepareAndSync(ctx.Ctx, ctx.Repo, ctx.Report.ID, repoURL)
 	if err != nil {
+		ctx.EndPhase("prepare", "failed", fmt.Sprintf("代码拉取失败: %v", err))
 		MarkFailed(ctx, err.Error())
 		return err
 	}
@@ -191,10 +202,16 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 
 	headCommit, headErr := planner.ResolveRepositoryHead(ctx.Ctx, codesPath)
 	if headErr != nil {
+		ctx.EndPhase("prepare", "failed", fmt.Sprintf("解析代码仓 HEAD 失败: %v", headErr))
 		MarkFailed(ctx, headErr.Error())
 		return headErr
 	}
 	ctx.Report.HeadCommit = headCommit
+	commitShort := headCommit
+	if len(commitShort) > 8 {
+		commitShort = commitShort[:8]
+	}
+	ctx.EndPhase("prepare", "completed", fmt.Sprintf("代码就绪 (Commit: %s)", commitShort))
 	if models.DB != nil {
 		if _, err := models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
 			"head_commit": headCommit,
@@ -205,12 +222,16 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	}
 
 	// Stage 2: Scan Profile scope planner
+	ctx.StartPhase("planning", "范围规划与门禁筛选", "正在执行扫描范围规划与前置依赖筛选")
 	scanPlan, primaryPlan, parsedProfile, gateErr := RunScanProfileGate(ctx)
 	if gateErr != nil {
+		ctx.EndPhase("planning", "failed", fmt.Sprintf("范围规划门禁未通过: %v", gateErr))
 		return gateErr
 	}
+	ctx.EndPhase("planning", "completed", fmt.Sprintf("规划完成: 确定 %d 个主要分析单元", len(primaryPlan.PrimaryUnits())))
 
 	// Stage 3 & 4: 装配只读 EngineContext 并驱动静态分析引擎
+	ctx.StartPhase("analysis", "分片静态检视与对抗辩论", fmt.Sprintf("启动引擎分析 (模式: %s, 规划单元: %d)", ctx.Report.EngineMode, len(primaryPlan.PrimaryUnits())))
 	UpdateTaskStatus(ctx.Report.ID, models.StatusAnalyzing)
 	overallStartTime := time.Now()
 	engineConfig, engineConfigErr := json.Marshal(profile.EngineConfig{ScanProfile: parsedProfile.Profile})
@@ -277,6 +298,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 
 		ProgressReport: func(total, processed, success int) {
 			UpdateTaskProgress(ctx.Report.ID, total, processed, success, "")
+			ctx.AddEvent("analysis", "info", fmt.Sprintf("分片进展: %d/%d 分片已完成", processed, total))
 		},
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return ExecuteAnalysis(ctx, fileList)
@@ -307,6 +329,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	}
 
 	if models.DB != nil {
+		ctx.StartPhase("calibration", "严重度校准与事实入库", "执行事实持久化与确定性严重度校准")
 		stabilizer := defectlifecycle.NewIngestionStabilizer()
 		stabilizedDTOs, _ := stabilizer.Stabilize(defectlifecycle.StabilizeFindingsInput{
 			RepoRoot: ctx.CodesPath,
@@ -326,9 +349,11 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 			Arbitrator:         defectlifecycle.NewRuntimeArbitrator(ctx.Report.ID, ctx.Repo.Name, ctx.TaskType.DisplayName),
 		})
 		if persistErr != nil {
+			ctx.EndPhase("calibration", "failed", fmt.Sprintf("事实持久化失败: %v", persistErr))
 			MarkFailed(ctx, persistErr.Error())
 			return persistErr
 		}
+		ctx.EndPhase("calibration", "completed", "缺陷入库与生命周期基线对齐完成")
 	}
 
 	if result != nil {
@@ -346,6 +371,8 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 				failedChunks++
 			}
 		}
+
+		ctx.EndPhase("analysis", "completed", fmt.Sprintf("分片分析完成 (成功: %d, 失败: %d, 检出缺陷: %d)", successfulChunks, failedChunks, len(ctx.Findings)))
 
 		ctx.Summary.Analysis.StartTime = overallStartTime
 		ctx.Summary.Analysis.EndTime = overallEndTime
@@ -418,22 +445,33 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	}
 
 	if runErr != nil {
+		ctx.EndPhase("analysis", "failed", fmt.Sprintf("分析引擎异常终止: %v", runErr))
 		MarkFailed(ctx, runErr.Error())
 		return runErr
 	}
 
+	ctx.StartPhase("synthesis", "AI 全仓报告综合生成", "启动 AI 全仓报告总结与排版生成")
 	UpdateTaskStatus(ctx.Report.ID, models.StatusSynthesis)
 	if synthErr := ExecuteSynthesis(ctx, ctx.Findings, ctx.Coverage); synthErr != nil {
+		ctx.EndPhase("synthesis", "failed", fmt.Sprintf("报告综合生成失败: %v", synthErr))
 		MarkFailed(ctx, synthErr.Error())
 		return synthErr
 	}
+	ctx.EndPhase("synthesis", "completed", "全仓报告排版与总结生成完成")
 
 	// Stage 5: 后处理评分计算（必须基于归并后的全量总集计算）
+	ctx.StartPhase("archive", "缺陷归并与最终归档", "执行缺陷评分计算、状态同步与通知归档")
 	UpdateTaskStatus(ctx.Report.ID, models.StatusPostProcessing)
 	effectiveFindings := GetEffectiveFindings(ctx)
 	ctx.Findings = effectiveFindings
 	taskResult := RunPostProcess(effectiveFindings, ctx.TaskType)
 
 	// Stage 6: 事务最终化、治理归并与交付通告
-	return Finalize(ctx, taskResult)
+	finalizeErr := Finalize(ctx, taskResult)
+	if finalizeErr == nil {
+		ctx.EndPhase("archive", "completed", "任务执行成功，状态已闭环")
+	} else {
+		ctx.EndPhase("archive", "failed", fmt.Sprintf("最终归档异常: %v", finalizeErr))
+	}
+	return finalizeErr
 }
