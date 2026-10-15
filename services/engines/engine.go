@@ -101,11 +101,55 @@ type EngineContext struct {
 	Coverage                  *coverage.Coverage                                                                   // set by engines before synthesis
 	NegativeRules             []string                                                                             // 预加载的免扫/负样本例外规则
 	ProgressReport            func(total, processed, success int)                                                  // 进度回调，解耦直接操作 DB
+	RuntimeObserver           RuntimeObserver                                                                      // 运行态实时观察者接口
 	Invoker                   invoker.AIInvoker                                                                    // 算力分配后的调用驱动
 	CategoryAliasRecorder     func(models.CategoryAliasUsage)                                                      // optional alias lifecycle recorder
 	AIExecutor                func(fileList []string, customPromptSuffix, promptFilePath, outputPath string) error // 底层通用 AI 执行器
 	AnalysisExecutor          func(fileList []string) ([]models.AnalysisFinding, error)                            // 单片/单仓分析执行器
 	ChunkAnalysisExecutor     func(ChunkExecutionRequest) (ChunkExecutionResult, error)                            // 分片专用隔离执行器
+}
+
+// RuntimeChunkUpdate 分片动态更新
+type RuntimeChunkUpdate struct {
+	ChunkUID        string    `json:"chunk_uid"`
+	ChunkName       string    `json:"chunk_name"`
+	PrimaryUnitID   string    `json:"primary_unit_id"`
+	Files           []string  `json:"files"`
+	Status          string    `json:"status"` // "pending", "running", "success", "failed"
+	StartTime       time.Time `json:"start_time"`
+	EndTime         time.Time `json:"end_time"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	FindingCount    int       `json:"finding_count"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// RuntimeFindingUpdate 实时检出的候选缺陷简要
+type RuntimeFindingUpdate struct {
+	ChunkName string `json:"chunk_name"`
+	Severity  string `json:"severity"` // "high", "medium", "low"
+	Title     string `json:"title"`
+	FilePath  string `json:"file_path"`
+	Line      string `json:"line"`
+	Category  string `json:"category"`
+	Detail    string `json:"detail"`
+}
+
+// RuntimeDebateUpdate 三方辩论实况
+type RuntimeDebateUpdate struct {
+	Timestamp time.Time `json:"timestamp"`
+	ChunkName string    `json:"chunk_name"`
+	Agent     string    `json:"agent"`             // "hunter", "challenger", "judge"
+	Verdict   string    `json:"verdict,omitempty"` // "confirmed", "disputed", "dismissed"
+	Summary   string    `json:"summary"`
+}
+
+// RuntimeObserver 运行态实时观察者接口，供引擎边执行边向任务上下文流式推送状态
+type RuntimeObserver interface {
+	OnPlannedChunks(chunks []RuntimeChunkUpdate)
+	OnChunkStarted(chunkName string)
+	OnChunkCompleted(update RuntimeChunkUpdate)
+	OnLiveFindings(findings []RuntimeFindingUpdate)
+	OnLiveDebate(event RuntimeDebateUpdate)
 }
 
 // EngineResult 引擎纯内存计算与扫描输出结果

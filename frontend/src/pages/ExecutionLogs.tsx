@@ -238,8 +238,10 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     }
   };
 
-  const fetchSummary = async (reportId: number) => {
-    setLoadingSummaries(prev => ({ ...prev, [reportId]: true }));
+  const fetchSummary = async (reportId: number, isSilent = false) => {
+    if (!isSilent) {
+      setLoadingSummaries(prev => ({ ...prev, [reportId]: true }));
+    }
     try {
       const res = await fetch(apiUrl(`/api/tasks/${reportId}/report/diagnostics`));
       if (res.ok) {
@@ -249,7 +251,9 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     } catch (err) {
       console.error('Failed to fetch diagnostics summary:', err);
     } finally {
-      setLoadingSummaries(prev => ({ ...prev, [reportId]: false }));
+      if (!isSilent) {
+        setLoadingSummaries(prev => ({ ...prev, [reportId]: false }));
+      }
     }
   };
 
@@ -261,7 +265,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
 
       const log = logs.find(l => l.id === id);
       if (isExpanding && log?.task_report?.id) {
-        fetchSummary(log.task_report.id);
+        fetchSummary(log.task_report.id, false);
       }
 
       return next;
@@ -295,7 +299,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     const delay = hasActiveTasks ? 4000 : 15000;
     const interval = setInterval(() => {
       fetchLogs();
-      // 同步刷新已展开的处于活跃状态的任务快照
+      // 同步静默刷新已展开的处于活跃状态的任务快照，避免 UI 闪烁
       if (hasActiveTasks) {
         expandedIds.forEach(id => {
           const l = logs.find(item => item.id === id);
@@ -304,7 +308,7 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
               ['running', 'cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(l.status) ||
               ['cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(l.task_report.status);
             if (isRun) {
-              fetchSummary(l.task_report.id);
+              fetchSummary(l.task_report.id, true);
             }
           }
         });

@@ -300,6 +300,7 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 			UpdateTaskProgress(ctx.Report.ID, total, processed, success, "")
 			ctx.AddEvent("analysis", "info", fmt.Sprintf("分片进展: %d/%d 分片已完成", processed, total))
 		},
+		RuntimeObserver: ctx,
 		AnalysisExecutor: func(fileList []string) ([]models.AnalysisFinding, error) {
 			return ExecuteAnalysis(ctx, fileList)
 		},

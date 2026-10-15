@@ -8,6 +8,8 @@ export interface ExecutionChunkDetail {
   duration_seconds?: number;
   retries?: number;
   files?: string[];
+  files_count?: number;
+  findings_count?: number;
   error_message?: string;
 }
 
@@ -16,6 +18,24 @@ export interface ExecutionActivityEvent {
   stage?: string;
   level?: string;
   message?: string;
+}
+
+export interface ExecutionLiveFinding {
+  chunk_name: string;
+  severity: string;
+  title: string;
+  file_path: string;
+  line: string;
+  category?: string;
+  detail?: string;
+}
+
+export interface ExecutionLiveDebate {
+  timestamp?: string;
+  chunk_name: string;
+  agent: string;
+  verdict?: string;
+  summary: string;
 }
 
 export interface ExecutionDiagnosticsModel {
@@ -30,6 +50,8 @@ export interface ExecutionDiagnosticsModel {
   }>;
   recent_events?: ExecutionActivityEvent[];
   chunks?: ExecutionChunkDetail[];
+  live_findings?: ExecutionLiveFinding[];
+  live_debates?: ExecutionLiveDebate[];
 }
 
 export interface ExecutionLogItemProps {
@@ -103,9 +125,11 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
   const report = log.task_report;
   const hasReport = !!report;
   const isRunning = ['running', 'cloning', 'pre_processing', 'analyzing', 'synthesis', 'post_processing', 'merging'].includes(log.status);
-  const isPending = log.status === 'pending' || log.status === 'queued';
   const liveTimer = useLiveTimer(log.start_time, isRunning);
   const [copiedLog, setCopiedLog] = useState(false);
+  const [activeTab, setActiveTab] = useState<'findings' | 'debate' | 'timeline'>('findings');
+  const [selectedChunkFilter, setSelectedChunkFilter] = useState<string | null>(null);
+  const [expandedChunkFiles, setExpandedChunkFiles] = useState<Record<string, boolean>>({});
   const eventLogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -114,7 +138,16 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
     }
   }, [expanded, summary?.recent_events]);
 
-  const handleCopyLogs = (events: any[]) => {
+  const toggleChunkFiles = (chunkName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedChunkFiles(prev => ({ ...prev, [chunkName]: !prev[chunkName] }));
+  };
+
+  const handleSelectChunk = (chunkName: string) => {
+    setSelectedChunkFilter(prev => (prev === chunkName ? null : chunkName));
+  };
+
+  const handleCopyLogs = (events: ExecutionActivityEvent[]) => {
     if (!events || events.length === 0) return;
     const text = events
       .map(e => `[${formatDate(e.timestamp)}] [${e.stage?.toUpperCase() || 'INFO'}] ${e.message}`)
@@ -456,7 +489,7 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                   </div>
                 )}
 
-                {/* 分片检视与对抗辩论透视看板 */}
+                {/* 语义分片与代码透视看板 */}
                 <div
                   style={{
                     background: 'var(--color-bg-surface, #ffffff)',
@@ -469,7 +502,7 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>
-                        🧩 分片检视与对抗辩论透视
+                        📦 语义分片监控矩阵
                       </span>
                       {(summary?.estimated_remaining ?? 0) > 0 && isRunning && (
                         <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #64748b)', background: 'var(--color-bg-muted, #f1f5f9)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
@@ -496,87 +529,169 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                     />
                   </div>
 
-                  {/* 交互式分片方格矩阵 */}
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #94a3b8)', marginBottom: '0.5rem' }}>
+                    💡 点击分片卡片可联动过滤右侧检出缺陷与辩论实况
+                  </div>
+
+                  {/* 分片列表 */}
                   {(() => {
                     const chunks = summary?.chunks || [];
-                    const failedChunk = chunks.find((c: any) => c.status === 'failed');
-
-                    if (chunks.length === 0 && (report.total_chunks ?? 0) === 0) {
+                    if (chunks.length === 0) {
                       return (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #94a3b8)', padding: '0.5rem 0', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #94a3b8)', padding: '1rem 0', textAlign: 'center' }}>
                           {isRunning ? '正在拉取代码并进行 AST 语法规划拆解...' : '单仓模式或无分片明细'}
                         </div>
                       );
                     }
 
                     return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: '5px',
-                            background: 'var(--color-bg-muted, #f8fafc)',
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid var(--color-border-primary, #e2e8f0)',
-                            maxHeight: '120px',
-                            overflowY: 'auto',
-                          }}
-                        >
-                          {chunks.map((c: any, idx: number) => {
-                            const isChunkFailed = c.status === 'failed';
-                            const isChunkSuccess = c.status === 'success';
-                            const bg = isChunkFailed
-                              ? 'var(--color-danger, #ef4444)'
-                              : isChunkSuccess
-                              ? 'var(--color-success, #10b981)'
-                              : 'var(--color-primary, #2563eb)';
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '380px', overflowY: 'auto', paddingRight: '2px' }}>
+                        {chunks.map((c: ExecutionChunkDetail, idx: number) => {
+                          const isChunkRunning = c.status === 'running';
+                          const isChunkSuccess = c.status === 'success';
+                          const isChunkFailed = c.status === 'failed';
+                          const isSelected = selectedChunkFilter === c.chunk_name;
+                          const showFiles = expandedChunkFiles[c.chunk_name];
+                          const findingCount = c.findings_count || 0;
 
-                            return (
-                              <div
-                                key={c.chunk_name || idx}
-                                style={{
-                                  width: '16px',
-                                  height: '16px',
-                                  borderRadius: '3px',
-                                  background: bg,
-                                  cursor: 'pointer',
-                                  transition: 'transform 0.1s ease',
-                                }}
-                                title={`分片: ${c.chunk_name}\n状态: ${c.status === 'success' ? '成功' : c.status === 'failed' ? '失败' : '处理中'}\n耗时: ${formatDuration(c.duration_seconds)}\n重试: ${c.retries || 0} 次\n文件: ${(c.files || []).join(', ') || '-'}`}
-                              />
-                            );
-                          })}
-                        </div>
+                          let statusBg = 'var(--color-bg-muted, #f1f5f9)';
+                          let statusColor = 'var(--color-text-muted, #64748b)';
+                          let statusLabel = '排队中';
 
-                        {failedChunk && (
-                          <div
-                            style={{
-                              background: 'rgba(239, 68, 68, 0.1)',
-                              color: 'var(--color-danger, #ef4444)',
-                              border: '1px solid rgba(239, 68, 68, 0.25)',
-                              padding: '0.5rem 0.65rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              lineHeight: '1.4',
-                            }}
-                          >
-                            <span style={{ fontWeight: 600 }}>🚨 异常分片 [{failedChunk.chunk_name}]: </span>
-                            <span style={{ fontFamily: 'monospace' }}>{failedChunk.error_message || '执行异常'}</span>
-                          </div>
-                        )}
+                          if (isChunkRunning) {
+                            statusBg = 'rgba(37, 99, 235, 0.12)';
+                            statusColor = 'var(--color-primary, #2563eb)';
+                            statusLabel = '⚡ 辩论中';
+                          } else if (isChunkSuccess) {
+                            statusBg = 'rgba(16, 185, 129, 0.12)';
+                            statusColor = 'var(--color-success, #10b981)';
+                            statusLabel = '✓ 完成';
+                          } else if (isChunkFailed) {
+                            statusBg = 'rgba(239, 68, 68, 0.12)';
+                            statusColor = 'var(--color-danger, #ef4444)';
+                            statusLabel = '✕ 失败';
+                          }
+
+                          return (
+                            <div
+                              key={c.chunk_name || idx}
+                              onClick={() => handleSelectChunk(c.chunk_name)}
+                              style={{
+                                border: isSelected ? '1.5px solid var(--color-primary, #2563eb)' : '1px solid var(--color-border-primary, #e2e8f0)',
+                                background: isSelected ? 'rgba(37, 99, 235, 0.05)' : 'var(--color-bg-surface, #ffffff)',
+                                borderRadius: '6px',
+                                padding: '0.5rem 0.65rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flex: 1 }}>
+                                  <span
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 600,
+                                      padding: '0.1rem 0.35rem',
+                                      borderRadius: '4px',
+                                      background: statusBg,
+                                      color: statusColor,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-primary, #0f172a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.chunk_name}>
+                                    {c.chunk_name}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                  {findingCount > 0 && (
+                                    <span
+                                      style={{
+                                        fontSize: '0.68rem',
+                                        fontWeight: 600,
+                                        padding: '0.1rem 0.35rem',
+                                        borderRadius: '4px',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        color: 'var(--color-danger, #ef4444)',
+                                      }}
+                                    >
+                                      🚨 {findingCount}
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary, #64748b)', fontVariantNumeric: 'tabular-nums' }}>
+                                    {isChunkRunning
+                                      ? ((c.duration_seconds ?? 0) > 0 ? formatDuration(c.duration_seconds ?? 0) : liveTimer.durationText)
+                                      : ((c.duration_seconds ?? 0) > 0 ? formatDuration(c.duration_seconds ?? 0) : '-')}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 文件覆盖透视 */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.35rem', fontSize: '0.7rem', color: 'var(--color-text-muted, #64748b)' }}>
+                                <span>包含 {c.files_count || (c.files ? c.files.length : 0)} 个代码文件</span>
+                                {c.files && c.files.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={e => toggleChunkFiles(c.chunk_name, e)}
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: 'var(--color-primary, #2563eb)',
+                                      fontSize: '0.7rem',
+                                      cursor: 'pointer',
+                                      padding: '0 0.2rem',
+                                    }}
+                                  >
+                                    {showFiles ? '收起文件 ▴' : '展开文件 ▾'}
+                                  </button>
+                                )}
+                              </div>
+
+                              {showFiles && c.files && c.files.length > 0 && (
+                                <div
+                                  style={{
+                                    marginTop: '0.35rem',
+                                    padding: '0.35rem 0.5rem',
+                                    background: 'var(--color-bg-muted, #f8fafc)',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--color-border-primary, #e2e8f0)',
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.68rem',
+                                    lineHeight: '1.4',
+                                    maxHeight: '90px',
+                                    overflowY: 'auto',
+                                    color: 'var(--color-text-secondary, #334155)',
+                                  }}
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  {c.files.map((f: string, fi: number) => (
+                                    <div key={fi} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f}>
+                                      • {f}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {isChunkFailed && c.error_message && (
+                                <div style={{ marginTop: '0.3rem', fontSize: '0.7rem', color: 'var(--color-danger, #ef4444)', fontFamily: 'monospace' }}>
+                                  {c.error_message}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })()}
                 </div>
               </div>
 
-              {/* Right Panel: Diagnostics Waterfall & Live Activity Stream */}
+              {/* Right Panel: Mission Control Deck (多维动态控制台) */}
               <div
                 style={{
-                  flex: '1.2',
-                  minWidth: '360px',
+                  flex: '1.3',
+                  minWidth: '380px',
                   background: 'var(--color-bg-surface, #ffffff)',
                   border: '1px solid var(--color-border-primary, #e2e8f0)',
                   borderRadius: '8px',
@@ -587,7 +702,7 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                   boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.02))',
                 }}
               >
-                {/* 标题与计时 */}
+                {/* 顶部 Tab 切换与耗时 */}
                 <div
                   style={{
                     display: 'flex',
@@ -595,12 +710,65 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                     justifyContent: 'space-between',
                     borderBottom: '1px solid var(--color-border-primary, #e2e8f0)',
                     paddingBottom: '0.5rem',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
                   }}
                 >
-                  <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
-                    🔬 运行轨迹与全流程耗时
-                  </h4>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', fontSize: '0.78rem' }}>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('findings')}
+                      style={{
+                        padding: '0.25rem 0.55rem',
+                        fontSize: '0.78rem',
+                        fontWeight: activeTab === 'findings' ? 700 : 500,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: activeTab === 'findings' ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
+                        color: activeTab === 'findings' ? 'var(--color-primary, #2563eb)' : 'var(--color-text-secondary, #64748b)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      🚨 实时检出缺陷 {(summary?.live_findings || []).length > 0 && `(${(summary?.live_findings || []).length})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('debate')}
+                      style={{
+                        padding: '0.25rem 0.55rem',
+                        fontSize: '0.78rem',
+                        fontWeight: activeTab === 'debate' ? 700 : 500,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: activeTab === 'debate' ? 'rgba(124, 58, 237, 0.12)' : 'transparent',
+                        color: activeTab === 'debate' ? '#7c3aed' : 'var(--color-text-secondary, #64748b)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      🤖 三方辩论实况 {(summary?.live_debates || []).length > 0 && `(${(summary?.live_debates || []).length})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('timeline')}
+                      style={{
+                        padding: '0.25rem 0.55rem',
+                        fontSize: '0.78rem',
+                        fontWeight: activeTab === 'timeline' ? 700 : 500,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: activeTab === 'timeline' ? 'var(--color-bg-muted, #f1f5f9)' : 'transparent',
+                        color: activeTab === 'timeline' ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-secondary, #64748b)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      ⏱️ 阶段耗时与系统事件
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem' }}>
                     <span style={{ color: 'var(--color-text-secondary, #64748b)' }}>总耗时:</span>
                     <strong style={{ color: isRunning ? 'var(--color-primary, #2563eb)' : 'var(--color-text-primary, #0f172a)', fontVariantNumeric: 'tabular-nums' }}>
                       {isRunning ? `⚡ ${liveTimer.durationText}` : formatDuration(summary?.total_duration ?? 0)}
@@ -608,13 +776,48 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                   </div>
                 </div>
 
+                {/* 选定分片联动过滤提示 */}
+                {selectedChunkFilter && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(37, 99, 235, 0.08)',
+                      border: '1px solid rgba(37, 99, 235, 0.2)',
+                      padding: '0.3rem 0.6rem',
+                      borderRadius: '5px',
+                      fontSize: '0.75rem',
+                      color: 'var(--color-primary, #2563eb)',
+                    }}
+                  >
+                    <span>
+                      🎯 正在聚焦查看分片：<strong>{selectedChunkFilter}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChunkFilter(null)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--color-primary, #2563eb)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        padding: 0,
+                      }}
+                    >
+                      ✕ 取消筛选
+                    </button>
+                  </div>
+                )}
+
                 {loadingSummary && !summary ? (
-                  <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted, #64748b)', fontSize: '0.8rem' }}>
+                  <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted, #64748b)', fontSize: '0.8rem' }}>
                     <span
                       style={{
                         display: 'inline-block',
-                        width: '12px',
-                        height: '12px',
+                        width: '14px',
+                        height: '14px',
                         border: '2px solid rgba(100,116,139,0.3)',
                         borderRadius: '50%',
                         borderTopColor: 'var(--color-primary, #2563eb)',
@@ -622,105 +825,244 @@ export const ExecutionLogItem: React.FC<ExecutionLogItemProps> = ({
                         marginRight: '6px',
                       }}
                     />
-                    正在同步实时运行轨迹...
+                    正在同步任务运行上下文...
                   </div>
                 ) : (
                   <>
-                    {/* 阶段耗时瀑布分解 */}
-                    <div>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)', marginBottom: '0.4rem' }}>
-                        📊 各阶段耗时分解
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {waterfallStages.map((st, i) => {
-                          const pct = maxWaterfall > 0 && st.dur > 0 ? Math.min(100, Math.round((st.dur / maxWaterfall) * 100)) : 0;
-                          return (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', gap: '0.5rem' }}>
-                              <span style={{ width: '110px', color: 'var(--color-text-secondary, #475569)', flexShrink: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                {st.label}
-                              </span>
-                              <div style={{ flex: 1, height: '6px', background: 'var(--color-bg-muted, #f1f5f9)', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div
-                                  style={{
-                                    width: `${pct}%`,
-                                    height: '100%',
-                                    background: st.color,
-                                    borderRadius: '3px',
-                                    transition: 'width 0.4s ease',
-                                  }}
-                                />
-                              </div>
-                              <span style={{ width: '48px', textAlign: 'right', color: st.dur > 0 ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-muted, #94a3b8)', fontVariantNumeric: 'tabular-nums', fontWeight: st.dur > 0 ? 600 : 400 }}>
-                                {st.dur > 0 ? formatDuration(st.dur) : '-'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    {/* Tab 1: 实时已检出缺陷 */}
+                    {activeTab === 'findings' && (() => {
+                      const liveFindings = summary?.live_findings || [];
+                      const displayFindings = selectedChunkFilter
+                        ? liveFindings.filter((f: ExecutionLiveFinding) => f.chunk_name === selectedChunkFilter)
+                        : liveFindings;
 
-                    {/* 实时活动日志流水 */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>
-                          📜 实时流水线活动日志
-                        </span>
-                        {Boolean(summary?.recent_events && summary.recent_events.length > 0) && (
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLogs(summary?.recent_events || [])}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'var(--color-primary, #2563eb)',
-                              fontSize: '0.7rem',
-                              cursor: 'pointer',
-                              padding: 0,
-                            }}
-                          >
-                            {copiedLog ? '✓ 已复制' : '复制日志'}
-                          </button>
-                        )}
-                      </div>
-                      <div
-                        ref={eventLogRef}
-                        style={{
-                          background: 'var(--color-bg-muted, #f8fafc)',
-                          border: '1px solid var(--color-border-primary, #e2e8f0)',
-                          borderRadius: '6px',
-                          padding: '0.5rem 0.65rem',
-                          maxHeight: '140px',
-                          overflowY: 'auto',
-                          fontFamily: 'monospace',
-                          fontSize: '0.72rem',
-                          lineHeight: '1.5',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.2rem',
-                        }}
-                      >
-                        {summary?.recent_events && summary.recent_events.length > 0 ? (
-                          summary.recent_events.map((ev: any, idx: number) => {
-                            const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '';
-                            const isErr = ev.level === 'error';
-                            const isSucc = ev.level === 'success';
-                            const color = isErr ? 'var(--color-danger, #ef4444)' : isSucc ? 'var(--color-success, #10b981)' : 'var(--color-text-secondary, #334155)';
+                      if (displayFindings.length === 0) {
+                        return (
+                          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-muted, #94a3b8)', fontSize: '0.8rem', lineHeight: 1.6 }}>
+                            {isRunning ? (
+                              <>
+                                <div style={{ fontSize: '1.25rem', marginBottom: '0.4rem' }}>🛡️</div>
+                                <div>多智能体分片静态检视与辩论进行中...</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #64748b)' }}>
+                                  一旦某个分片检出候选缺陷，将即刻在此处流式聚合展示，无需等待全仓扫描完成。
+                                </div>
+                              </>
+                            ) : (
+                              <div>✅ 经三方智能体深度对抗辩论与语义校准，未检出该类型缺陷。</div>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto' }}>
+                          {displayFindings.map((f: ExecutionLiveFinding, idx: number) => {
+                            const isHigh = f.severity?.toLowerCase() === 'high';
+                            const isMed = f.severity?.toLowerCase() === 'medium';
+                            const sevColor = isHigh ? 'var(--color-danger, #ef4444)' : isMed ? 'var(--color-warning, #f59e0b)' : 'var(--color-primary, #2563eb)';
+                            const sevBg = isHigh ? 'rgba(239, 68, 68, 0.1)' : isMed ? 'rgba(245, 158, 11, 0.1)' : 'rgba(37, 99, 235, 0.1)';
 
                             return (
-                              <div key={idx} style={{ color, wordBreak: 'break-all' }}>
-                                <span style={{ color: 'var(--color-text-muted, #94a3b8)', marginRight: '6px' }}>[{timeStr}]</span>
-                                <span style={{ fontWeight: 600, marginRight: '6px' }}>[{ev.stage?.toUpperCase() || 'INFO'}]</span>
-                                <span>{ev.message}</span>
+                              <div
+                                key={idx}
+                                style={{
+                                  border: '1px solid var(--color-border-primary, #e2e8f0)',
+                                  background: 'var(--color-bg-surface, #ffffff)',
+                                  borderRadius: '6px',
+                                  padding: '0.6rem 0.75rem',
+                                  boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.02))',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px', background: sevBg, color: sevColor }}>
+                                      {f.severity?.toUpperCase() || 'INFO'}
+                                    </span>
+                                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-primary, #0f172a)' }}>
+                                      {f.title}
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted, #94a3b8)', background: 'var(--color-bg-muted, #f1f5f9)', padding: '0.05rem 0.3rem', borderRadius: '3px' }}>
+                                    {f.chunk_name}
+                                  </span>
+                                </div>
+                                <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--color-text-secondary, #64748b)', marginBottom: '0.25rem' }}>
+                                  📄 {f.file_path}{f.line ? `:${f.line}` : ''}
+                                </div>
+                                {f.detail && (
+                                  <div style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary, #334155)', lineHeight: 1.4 }}>
+                                    {f.detail}
+                                  </div>
+                                )}
                               </div>
                             );
-                          })
-                        ) : (
-                          <div style={{ color: 'var(--color-text-muted, #94a3b8)', fontStyle: 'italic', textAlign: 'center', padding: '0.5rem 0' }}>
-                            {isRunning ? '任务执行中，等待新事件派发...' : '暂无详细事件流记录'}
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Tab 2: 三方对抗辩论实况 */}
+                    {activeTab === 'debate' && (() => {
+                      const liveDebates = summary?.live_debates || [];
+                      const displayDebates = selectedChunkFilter
+                        ? liveDebates.filter((d: ExecutionLiveDebate) => d.chunk_name === selectedChunkFilter)
+                        : liveDebates;
+
+                      if (displayDebates.length === 0) {
+                        return (
+                          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-muted, #94a3b8)', fontSize: '0.8rem', lineHeight: 1.6 }}>
+                            <div style={{ fontSize: '1.25rem', marginBottom: '0.4rem' }}>🤖</div>
+                            <div>三方智能体（Hunter / Challenger / Judge）对抗思辨中...</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted, #64748b)' }}>
+                              各分片进入深度裁决后，将实时呈现思辨决策过程。
+                            </div>
                           </div>
-                        )}
+                        );
+                      }
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '350px', overflowY: 'auto' }}>
+                          {displayDebates.map((d: ExecutionLiveDebate, idx: number) => {
+                            const isConfirmed = d.verdict === 'CONFIRMED';
+                            const isRejected = d.verdict === 'REJECTED';
+                            const vColor = isConfirmed ? 'var(--color-danger, #ef4444)' : isRejected ? 'var(--color-success, #10b981)' : '#7c3aed';
+                            const vBg = isConfirmed ? 'rgba(239, 68, 68, 0.1)' : isRejected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(124, 58, 237, 0.1)';
+
+                            return (
+                              <div
+                                key={idx}
+                                style={{
+                                  border: '1px solid var(--color-border-primary, #e2e8f0)',
+                                  background: 'var(--color-bg-surface, #ffffff)',
+                                  borderRadius: '6px',
+                                  padding: '0.55rem 0.75rem',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary, #475569)' }}>
+                                      ⚖️ 裁决报告
+                                    </span>
+                                    {d.verdict && (
+                                      <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px', background: vBg, color: vColor }}>
+                                        {d.verdict}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted, #94a3b8)' }}>
+                                    {d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : ''}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '0.74rem', color: 'var(--color-text-primary, #1e293b)', lineHeight: 1.4 }}>
+                                  {d.summary}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Tab 3: 阶段耗时与系统事件 */}
+                    {activeTab === 'timeline' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {/* 阶段耗时瀑布分解 */}
+                        <div>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)', marginBottom: '0.4rem' }}>
+                            📊 各阶段耗时分解
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {waterfallStages.map((st, i) => {
+                              const pct = maxWaterfall > 0 && st.dur > 0 ? Math.min(100, Math.round((st.dur / maxWaterfall) * 100)) : 0;
+                              return (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', gap: '0.5rem' }}>
+                                  <span style={{ width: '110px', color: 'var(--color-text-secondary, #475569)', flexShrink: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                    {st.label}
+                                  </span>
+                                  <div style={{ flex: 1, height: '6px', background: 'var(--color-bg-muted, #f1f5f9)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        width: `${pct}%`,
+                                        height: '100%',
+                                        background: st.color,
+                                        borderRadius: '3px',
+                                        transition: 'width 0.4s ease',
+                                      }}
+                                    />
+                                  </div>
+                                  <span style={{ width: '48px', textAlign: 'right', color: st.dur > 0 ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-muted, #94a3b8)', fontVariantNumeric: 'tabular-nums', fontWeight: st.dur > 0 ? 600 : 400 }}>
+                                    {st.dur > 0 ? formatDuration(st.dur) : '-'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 实时活动日志流水 */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>
+                              📜 实时流水线活动日志
+                            </span>
+                            {Boolean(summary?.recent_events && summary.recent_events.length > 0) && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyLogs(summary?.recent_events || [])}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'var(--color-primary, #2563eb)',
+                                  fontSize: '0.7rem',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                              >
+                                {copiedLog ? '✓ 已复制' : '复制日志'}
+                              </button>
+                            )}
+                          </div>
+                          <div
+                            ref={eventLogRef}
+                            style={{
+                              background: 'var(--color-bg-muted, #f8fafc)',
+                              border: '1px solid var(--color-border-primary, #e2e8f0)',
+                              borderRadius: '6px',
+                              padding: '0.5rem 0.65rem',
+                              maxHeight: '140px',
+                              overflowY: 'auto',
+                              fontFamily: 'monospace',
+                              fontSize: '0.72rem',
+                              lineHeight: '1.5',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.2rem',
+                            }}
+                          >
+                            {summary?.recent_events && summary.recent_events.length > 0 ? (
+                              summary.recent_events.map((ev: ExecutionActivityEvent, idx: number) => {
+                                const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : '';
+                                const isErr = ev.level === 'error';
+                                const isSucc = ev.level === 'success';
+                                const color = isErr ? 'var(--color-danger, #ef4444)' : isSucc ? 'var(--color-success, #10b981)' : 'var(--color-text-secondary, #334155)';
+
+                                return (
+                                  <div key={idx} style={{ color, wordBreak: 'break-all' }}>
+                                    <span style={{ color: 'var(--color-text-muted, #94a3b8)', marginRight: '6px' }}>[{timeStr}]</span>
+                                    <span style={{ fontWeight: 600, marginRight: '6px' }}>[{ev.stage?.toUpperCase() || 'INFO'}]</span>
+                                    <span>{ev.message}</span>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div style={{ color: 'var(--color-text-muted, #94a3b8)', fontStyle: 'italic', textAlign: 'center', padding: '0.5rem 0' }}>
+                                {isRunning ? '任务执行中，等待新事件派发...' : '暂无详细事件流记录'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </>
                 )}
               </div>
