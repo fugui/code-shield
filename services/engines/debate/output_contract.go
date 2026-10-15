@@ -313,7 +313,9 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- `trigger_line` 必须引用命中的真实源码行原文，禁止空字符串或省略。\n")
 		sb.WriteString("- `category_code` 必须与 `category` 一一对应配对，禁止自造分类或短码。\n")
 		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【故障机理】导致未捕获致命异常、段错误/Panic、关键控制分支偏离、死循环/收敛失败、状态破坏、数据漂移/计算失真、资源耗尽或安全越权的具体物理机制与致命后果。禁止空泛陈述。\n")
-		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的缺陷隐患或异常偏差，必须返回顶层空候选列表，即 `{\"schema\": \"" + contract.SchemaID + "\", \"candidates\": []}`；严禁为了输出而生搬硬套、严禁将 `candidates` 设为 null、严禁输出含有空字段的占位对象。\n")
+		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的缺陷隐患或异常偏差，必须返回顶层空候选列表，即 `{\"schema\": \"")
+		sb.WriteString(contract.SchemaID)
+		sb.WriteString("\", \"candidates\": []}`；严禁为了输出而生搬硬套、严禁将 `candidates` 设为 null、严禁输出含有空字段的占位对象。\n")
 	}
 	if contract.Profile == OutputProfileJudge {
 		sb.WriteString("- `evidence[].kind` 枚举：`target_source` | `related_source` | `caller` | `definition` | `macro` | `absence_probe`\n")
