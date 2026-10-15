@@ -168,7 +168,9 @@ func ListCampaignDefects(db *gorm.DB, query CampaignQuery) (*CampaignPage, error
 		Categories:    make([]string, 0),
 	}
 	for _, item := range items {
-		page.SeverityStats[item.Severity]++
+		if !isLedgerDefectResolved(item.Status) {
+			page.SeverityStats[item.Severity]++
+		}
 		page.StatusStats[item.Status]++
 		if item.Category != "" {
 			if page.CategoryStats[item.Category] == 0 {
@@ -333,7 +335,7 @@ func ListLedgerRepoSummaries(db *gorm.DB, taskTypeID uint) ([]CampaignRepoSummar
 	scanTimes := make([]scanTimeRow, 0)
 	if err := db.Model(&models.TaskReport{}).
 		Select("repo_id, max(created_at) as created_at").
-		Where("task_type_id = ? AND status IN ?", taskTypeID, []string{"success", "skipped"}).
+		Where("task_type_id = ? AND status IN ?", taskTypeID, []string{"success", "degraded", "skipped"}).
 		Group("repo_id").Scan(&scanTimes).Error; err != nil {
 		return nil, fmt.Errorf("load ledger scan times: %w", err)
 	}
@@ -361,16 +363,16 @@ func ListLedgerRepoSummaries(db *gorm.DB, taskTypeID uint) ([]CampaignRepoSummar
 			item.Resolved++
 		} else {
 			item.Open++
-		}
-		switch defect.Severity {
-		case "致命", "阻塞":
-			item.Blocking++
-		case "严重":
-			item.Critical++
-		case "一般", "主要", "提示":
-			item.Major++
-		case "建议":
-			item.Suggestion++
+			switch defect.Severity {
+			case "致命", "阻塞":
+				item.Blocking++
+			case "严重":
+				item.Critical++
+			case "一般", "主要", "提示":
+				item.Major++
+			case "建议":
+				item.Suggestion++
+			}
 		}
 	}
 

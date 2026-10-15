@@ -30,5 +30,6 @@ func RuntimeLifecyclePolicy() LifecyclePolicy {
 		ObsoleteAfterDormant: models.AppConfig.Lifecycle.ObsoleteAfterDormant,
 		RequireCoverage:      models.AppConfig.Lifecycle.RequireCoverage,
 		RequireChange:        models.AppConfig.Lifecycle.RequireChange,
+		AutoResolveMissing:   models.AppConfig.Lifecycle.AutoResolveMissingEnabled(),
 	}
 }

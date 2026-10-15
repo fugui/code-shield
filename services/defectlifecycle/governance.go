@@ -64,9 +64,6 @@ func mutateProbable(db *gorm.DB, reportID uint, groupUID string, input Governanc
 			First(&observation).Error; err != nil {
 			return fmt.Errorf("load probable observation: %w", err)
 		}
-		if observation.DefectID != nil {
-			return fmt.Errorf("observation is already bound to defect %d", *observation.DefectID)
-		}
 		if observation.Verdict != VerdictProbable {
 			return fmt.Errorf("observation %s is not PROBABLE", groupUID)
 		}

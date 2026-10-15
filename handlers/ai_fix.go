@@ -63,8 +63,6 @@ type aiFixDefect struct {
 	LastMatchedReportID  uint   `json:"last_matched_report_id"`
 	MissedCount          int    `json:"missed_count"`
 	DormantRounds        int    `json:"dormant_rounds"`
-	HumanLocked          bool   `json:"human_locked"`
-	HumanDecision        string `json:"human_decision"`
 	MergedIntoID         *uint  `json:"merged_into_id"`
 }
 
@@ -383,8 +381,6 @@ func newAIFixDefect(defect models.Defect) aiFixDefect {
 		LastMatchedReportID:  defect.LastMatchedReportID,
 		MissedCount:          defect.MissedCount,
 		DormantRounds:        defect.DormantRounds,
-		HumanLocked:          defect.HumanLocked,
-		HumanDecision:        defect.HumanDecision,
 		MergedIntoID:         defect.MergedIntoID,
 	}
 }

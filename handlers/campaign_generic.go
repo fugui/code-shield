@@ -232,69 +232,25 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 		SuggestCount  int  `gorm:"column:suggest_count"`
 	}
 	findingMap := make(map[uint]DbFindingStat, len(repos))
-	if isEntityMode {
-		// Entity assessment treats every record as a ledger entry, including closed cases.
-		var entityStats []DbFindingStat
-		if err := models.DB.Model(&models.CampaignFinding{}).
-			Select(`
-				repo_id,
-				COUNT(*) FILTER (WHERE status IN ('open', 'analyzing')) AS active_count,
-				COUNT(*) FILTER (WHERE status IN ('resolved', 'closed', 'invalid')) AS resolved_count,
-				COUNT(*) FILTER (WHERE severity = '合格') AS pass_count,
-				COUNT(*) FILTER (WHERE severity IN ('致命', '阻塞')) AS blocking_count,
-				COUNT(*) FILTER (WHERE severity = '严重') AS critical_count,
-				COUNT(*) FILTER (WHERE severity IN ('一般', '主要', '提示')) AS major_count,
-				COUNT(*) FILTER (WHERE severity = '建议') AS suggest_count
-			`).
-			Where("task_type_id = ?", tt.ID).
-			Group("repo_id").
-			Scan(&entityStats).Error; err != nil {
-			return nil, err
-		}
-		for _, stat := range entityStats {
-			findingMap[stat.RepoID] = stat
-		}
-	} else {
-		// Defect tracking only needs severity buckets for unclosed findings. Scanning
-		// the two smaller lifecycle partitions avoids re-reading all resolved history.
-		var activeStats []DbFindingStat
-		if err := models.DB.Model(&models.CampaignFinding{}).
-			Select(`
-				repo_id,
-				COUNT(*) AS active_count,
-				COUNT(*) FILTER (WHERE severity = '合格') AS pass_count,
-				COUNT(*) FILTER (WHERE severity IN ('致命', '阻塞')) AS blocking_count,
-				COUNT(*) FILTER (WHERE severity = '严重') AS critical_count,
-				COUNT(*) FILTER (WHERE severity IN ('一般', '主要', '提示')) AS major_count,
-				COUNT(*) FILTER (WHERE severity = '建议') AS suggest_count
-			`).
-			Where("task_type_id = ? AND status IN ?", tt.ID, []string{"open", "analyzing"}).
-			Group("repo_id").
-			Scan(&activeStats).Error; err != nil {
-			return nil, err
-		}
-		for _, stat := range activeStats {
-			findingMap[stat.RepoID] = stat
-		}
-
-		type DbResolvedStat struct {
-			RepoID        uint `gorm:"column:repo_id"`
-			ResolvedCount int  `gorm:"column:resolved_count"`
-		}
-		var resolvedStats []DbResolvedStat
-		if err := models.DB.Model(&models.CampaignFinding{}).
-			Select("repo_id, COUNT(*) AS resolved_count").
-			Where("task_type_id = ? AND status IN ?", tt.ID, []string{"resolved", "closed", "invalid"}).
-			Group("repo_id").
-			Scan(&resolvedStats).Error; err != nil {
-			return nil, err
-		}
-		for _, stat := range resolvedStats {
-			item := findingMap[stat.RepoID]
-			item.RepoID = stat.RepoID
-			item.ResolvedCount = stat.ResolvedCount
-			findingMap[stat.RepoID] = item
-		}
+	var entityStats []DbFindingStat
+	if err := models.DB.Model(&models.CampaignFinding{}).
+		Select(`
+			repo_id,
+			COUNT(*) FILTER (WHERE status IN ('open', 'analyzing')) AS active_count,
+			COUNT(*) FILTER (WHERE status IN ('resolved', 'closed', 'invalid')) AS resolved_count,
+			COUNT(*) FILTER (WHERE severity = '合格') AS pass_count,
+			COUNT(*) FILTER (WHERE status IN ('open', 'analyzing') AND severity IN ('致命', '阻塞')) AS blocking_count,
+			COUNT(*) FILTER (WHERE status IN ('open', 'analyzing') AND severity = '严重') AS critical_count,
+			COUNT(*) FILTER (WHERE status IN ('open', 'analyzing') AND severity IN ('一般', '主要', '提示')) AS major_count,
+			COUNT(*) FILTER (WHERE status IN ('open', 'analyzing') AND severity = '建议') AS suggest_count
+		`).
+		Where("task_type_id = ?", tt.ID).
+		Group("repo_id").
+		Scan(&entityStats).Error; err != nil {
+		return nil, err
+	}
+	for _, stat := range entityStats {
+		findingMap[stat.RepoID] = stat
 	}
 
 	// 3. Fetch last scan times from reports
@@ -305,7 +261,7 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 	var scanTimes []DbScanTime
 	models.DB.Model(&models.TaskReport{}).
 		Select("repo_id, max(created_at) as created_at").
-		Where("task_type_id = ? AND status IN ?", tt.ID, []string{"success", "skipped"}).
+		Where("task_type_id = ? AND status IN ?", tt.ID, []string{"success", "degraded", "skipped"}).
 		Group("repo_id").
 		Scan(&scanTimes)
 
@@ -343,7 +299,7 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 		resolvedCount := finding.ResolvedCount
 
 		// 实体模式下的总实体数与合格率
-		totalEntities := passCount + blocking + critical + major + hint + suggestion
+		totalEntities := openCount + resolvedCount
 		passRate := 0.0
 		if totalEntities > 0 {
 			passRate = (float64(passCount) / float64(totalEntities)) * 100.0
@@ -512,7 +468,7 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 
 	// 1. 影响等级统计
 	var dbSevStats []DbAggStat
-	sevQuery := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ?", tt.ID)
+	sevQuery := models.DB.Model(&models.CampaignFinding{}).Where("task_type_id = ? AND status IN ?", tt.ID, []string{"open", "analyzing"})
 	if parsedRepoID > 0 {
 		sevQuery = sevQuery.Where("repo_id = ?", parsedRepoID)
 	}

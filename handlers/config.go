@@ -89,6 +89,10 @@ func normalizeGovernancePolicy(cfg models.GovernancePolicyConfig) models.Governa
 	if !cfg.Lifecycle.RequireChange {
 		cfg.Lifecycle.RequireChange = true
 	}
+	if cfg.Lifecycle.AutoResolveMissing == nil {
+		enabled := true
+		cfg.Lifecycle.AutoResolveMissing = &enabled
+	}
 	return cfg
 }
 
