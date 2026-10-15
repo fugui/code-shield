@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultVerifierTimeout = 3.5
+	defaultVerifierTimeout = 60.0
 	builtinTriagePrompt    = `你是一名代码质量与测试有效性仲裁员。请判定以下测试用例是否包含实质性测试验证。
 ## 源码 ({{.Language}}):
 ` + "```" + `{{.Language}}

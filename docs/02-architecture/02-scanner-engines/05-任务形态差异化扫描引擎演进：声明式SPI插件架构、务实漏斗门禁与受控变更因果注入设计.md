@@ -36,7 +36,7 @@ flowchart LR
 2. **单测质量审查：基于 `test_case_radar` 门禁插件的三阶梯队漏斗（Tiered Funnel）**
    * **Tier 0 极速确诊（物理空桩与微空桩）**：对 100% 确定事实（如纯空函数 `{}`、仅含局部变量声明或无被测调用的微空桩）实施毫秒级静态拦截；
    * **Fast Pass（极速放行 + 防作弊护栏）**：显式包含标准 `ASSERT/EXPECT`、`EXPECT_CALL` 的合规单测直接通过（包含 Table-Driven Tests 嵌套闭包断言识别）；针对形式化防守单测引入局部恒真检测，排除作弊后**静默放行 80%+ 规范用例，不消耗任何 LLM 算力**；
-   * **Tier 1 轻量单轮复核（Thin LLM Gate + 弹性熔断与自愈）**：针对“未检测到显式断言、可疑恒真参数、存在未知 Helper”的争议用例，调用基于 HTTP REST 的 **原生 Thin LLM 引擎** 执行 1~2 秒单轮语义复核。复核提示词由任务元数据动态装配（绝不硬编码在 Go 常量中）。设置 3.5s 超时、三态熔断自愈（Closed/Open/Half-Open）以及**异步补偿对账机制（Compensating Sweep）**，既杜绝静态误杀、坚决不阻塞 CI，又防止高负载下作弊用例永久逃逸；**绝不拉起昂贵的 3-Agent 对抗辩论**；
+   * **Tier 1 轻量单轮复核（Thin LLM Gate + 弹性熔断与自愈）**：针对“未检测到显式断言、可疑恒真参数、存在未知 Helper”的争议用例，调用基于 HTTP REST 的 **原生 Thin LLM 引擎** 执行单轮语义复核。复核提示词由任务元数据动态装配（绝不硬编码在 Go 常量中）。设置 60s 超时、三态熔断自愈（Closed/Open/Half-Open）以及**异步补偿对账机制（Compensating Sweep）**，既杜绝静态误杀、坚决不阻塞 CI，又防止高负载下作弊用例永久逃逸；**绝不拉起昂贵的 3-Agent 对抗辩论**；
    * **Tier 2 对抗辩论退避**：多智能体辩论仅保留给明确指定的深层架构/内存扫描任务，单测审查默认不进入 Tier 2。
 3. **变更检视：基于 `downstream_causal_slice` 插件的受控因果切片（Controlled Causal Impact Slices）**
    * **职责明确分工**：语法错误、参数类型/个数不匹配完全由**编译器与 CI 构建步骤确定性拦截**；大模型专攻编译器无法感知的**隐式语义契约破坏**（如未捕获的新增错误码、状态机时序破坏、资源未释放）；
@@ -171,7 +171,7 @@ NameEntityReview: {
 | **P3** | **语义归模型，语法归编译器 (Semantic vs Compiler Boundary)** | 接口类型失配、形参缺失等由编译器/CI 确定性拦截；大模型专属审计隐式语义契约（错误码未处理、时序破坏、内存逃逸）。 | 大模型充当低精度“虚拟编译器”，对编译器已拦截的代码反复报错。 |
 | **P4** | **受控紧凑因果切片 (Controlled Compact Slices)** | 变更检视仅提取 Top-3 核心调用点、紧凑局部代码块（10~15 行），严禁注入动辄数百行的完整封闭函数。 | 突破 32KB Prompt 上限导致截断；引发下游陈旧缺陷跨文件误归因。 |
 | **P5** | **信息对称与统一契约 (Information Symmetry & SSOT)** | 调用点因果切片在对抗辩论中对 Hunter、Challenger、Judge 全链路透明；结论统一输出标准 `AssessmentsArtifactSchemaV2` 并附带精准指纹。 | 攻防双方信息不对等导致盲目反驳；缺陷台账无法完成跨轮增量对账。 |
-| **P6** | **弹性熔断与 SLA 兜底优先 (Resilient Circuit Breaker & Fallback)** | 当符号检索耗时超标（> 3s）或 Thin LLM 连续抖动/超时（> 3.5s）时，必须执行确定性降级放行或退避，坚决捍卫 CI SLA。 | 单个 LLM 接口阻塞或大仓深层检索引发流水线全局卡死。 |
+| **P6** | **弹性熔断与 SLA 兜底优先 (Resilient Circuit Breaker & Fallback)** | 当符号检索耗时超标（> 3s）或 Thin LLM 连续抖动/超时（> 60s）时，必须执行确定性降级放行或退避，坚决捍卫 CI SLA。 | 单个 LLM 接口阻塞或大仓深层检索引发流水线全局卡死。 |
 | **P7** | **局部切片防截断失真 (Anti-Truncation Distortions & Outer Summary)** | 受控切片必须附带外层结构特征摘要（try-catch、透传 error、RAII guard），为 Challenger 提供客观反驳事实，杜绝断章取义。 | 模型断章取义下游 10 行局部代码，误将全局已妥善拦截的异常判为缺陷。 |
 | **P8** | **声明式 SPI 与零业务硬编码 (Declarative SPI & Zero Hardcoding)** | 核心调度流水线严禁包含特定任务类型（如 `ut-effectiveness`）或实体类型（如 `test_case`）的条件硬编码特判；所有差异化行为必须抽象为通用 SPI 插件，并在 `meta.json` 中声明式装配。 | 每增加一个新扫描任务都必须修改核心调度源码；代码中满地散落单测专用正则与分支判定。 |
 
@@ -258,7 +258,7 @@ flowchart TD
     },
     "thin_verifier": {
       "id": "native_single_round",
-      "timeout_seconds": 3.5,
+      "timeout_seconds": 60.0,
       "prompt_file": "tasks/ut-effectiveness/triage_prompt.md"
     }
   }
@@ -464,7 +464,7 @@ flowchart TD
 
     subgraph S3 [阶段三: 原生 Thin LLM 单轮复核与弹性熔断自愈]
         F --> G[调用 NativeInvoker HTTP REST API<br/>单轮单提示词极速判别 1~2s]
-        G --> H{调用是否正常 (超时 <= 3.5s)?}
+        G --> H{调用是否正常 (超时 <= 60s)?}
         H -->|正常响应| I{是否具备有效验证语义?}
         I -->|是: 确认存在 Helper/隐式校验| J[复核判定: PASS 消除误杀]
         I -->|否: 确认为作弊桩/无效单测| K[复核判定: DEFECT 准确定罪]
@@ -890,7 +890,7 @@ func buildTier0Result(unit coverage.PlanUnit, ruleID string, summary string) ass
 针对进入 `DecisionNeedVerify` 的单测（仅占全量 15%~20%），系统直接通过 [`services/invoker/native.go`](file:///home/fugui/codes/code-shield/services/invoker/native.go) 的 `NativeInvoker` 发起 HTTP/2 单轮轻量调用，并实施**强隔离弹性熔断与异步最终一致性补偿**。
 
 #### 1. 弹性熔断三态生命周期与超时护栏（Circuit Breaker Lifecycle）
-* **硬超时限制**：单次 Thin LLM 请求设置 **3.5 秒严格超时**，最多允许重试 1 次。
+* **硬超时限制**：单次 Thin LLM 请求设置 **60 秒超时**，最多允许重试 1 次。
 * **熔断开启条件（Circuit Open）**：若 Thin LLM 连续遭遇 3 次超时或 HTTP 5xx 错误，触发熔断器转入 Open 状态，进入 **60 秒冷却期（Cooling Period）**。
 * **门禁即时降级准则**：在 Open 状态下，当前批次及后续争议单测自动降级为 `DecisionDegradedPass`，在流水线日志中标注 `[DEGRADED_UNVERIFIED]` 并正常放行，**绝对不允许卡死或拖垮 CI 门禁流水线**。
 * **Half-Open 自愈探活（Self-Healing Probe）**：冷却期满后，熔断器自动转入 **Half-Open（半开）状态**，允许接入下一个争议单测作为探活请求：

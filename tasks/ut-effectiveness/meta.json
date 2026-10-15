@@ -84,7 +84,7 @@
     },
     "thin_verifier": {
       "id": "native_single_round",
-      "timeout_seconds": 3.5,
+      "timeout_seconds": 60.0,
       "prompt_file": "tasks/ut-effectiveness/triage_prompt.md"
     }
   },
