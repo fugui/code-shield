@@ -503,6 +503,11 @@ type LifecyclePolicyConfig struct {
 	ObsoleteAfterDormant int      `yaml:"obsolete_after_dormant_rounds" json:"obsolete_after_dormant_rounds"`
 	RequireCoverage      bool     `yaml:"require_coverage" json:"require_coverage"`
 	RequireChange        bool     `yaml:"require_change" json:"require_change"`
+	AutoResolveMissing   *bool    `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+}
+
+func (c LifecyclePolicyConfig) AutoResolveMissingEnabled() bool {
+	return c.AutoResolveMissing == nil || *c.AutoResolveMissing
 }
 
 // NotificationConfig 通知配置
@@ -964,6 +969,10 @@ func LoadConfig(filename string) error {
 	}
 	if !cfg.Lifecycle.RequireChange {
 		cfg.Lifecycle.RequireChange = true
+	}
+	if cfg.Lifecycle.AutoResolveMissing == nil {
+		enabled := true
+		cfg.Lifecycle.AutoResolveMissing = &enabled
 	}
 	cfg.Governance.Identity = cfg.Identity
 	cfg.Governance.Arbitration = cfg.Arbitration

@@ -221,6 +221,7 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 				RenameTargets: input.RenameTargets,
 				Lifecycle:     RuntimeLifecyclePolicy(),
 				CommittedAt:   committedAt,
+				RepoRoot:      input.RepoRoot,
 			})
 			if ledgerErr != nil {
 				return ledgerErr

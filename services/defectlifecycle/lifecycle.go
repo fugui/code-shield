@@ -7,4 +7,5 @@ type LifecyclePolicy struct {
 	ObsoleteAfterDormant int
 	RequireCoverage      bool
 	RequireChange        bool
+	AutoResolveMissing   bool
 }

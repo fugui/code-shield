@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -95,6 +97,7 @@ type LedgerInput struct {
 	RenameTargets    map[string]string
 	Lifecycle        LifecyclePolicy
 	CommittedAt      time.Time
+	RepoRoot         string
 }
 
 type LedgerResult struct {
@@ -899,6 +902,40 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 		default:
 			continue
 		}
+
+		if input.Lifecycle.AutoResolveMissing && input.RepoRoot != "" && defect.NormPath != "" {
+			fullPath := filepath.Join(input.RepoRoot, filepath.Clean(defect.NormPath))
+			if _, err := os.Stat(fullPath); errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+				status := DefectStatusResolved
+				reason := "source file does not exist"
+				updates := map[string]interface{}{
+					"row_version":   gorm.Expr("row_version + 1"),
+					"updated_at":    now,
+					"status":        status,
+					"status_reason": reason,
+				}
+				query := tx.Model(&models.Defect{}).Where("id = ? AND row_version = ?", defect.ID, defect.RowVersion)
+				if err := query.Updates(updates).Error; err != nil {
+					return nil, fmt.Errorf("auto-resolve missing file defect: %w", err)
+				}
+				if query.RowsAffected == 0 {
+					return nil, fmt.Errorf("defect %d changed during auto-resolve missing", defect.ID)
+				}
+				defect.RowVersion++
+				evidence, evidenceErr := evidenceWithSnapshot(newDefectSnapshot(defect))
+				if evidenceErr != nil {
+					return nil, fmt.Errorf("serialize auto-resolve missing snapshot: %w", evidenceErr)
+				}
+				events = append(events, models.DefectEvent{
+					DefectID: defect.ID, ReportID: &input.Report.ID, EventType: EventTypeStatusChanged,
+					FromStatus: defect.Status, ToStatus: status, ActorType: "SYSTEM",
+					Reason: reason, Evidence: evidence, CreatedAt: now,
+				})
+				defect.Status = status
+				continue
+			}
+		}
+
 		covered := false
 		if input.Evaluator != nil {
 			covered = input.Evaluator.IsCovered(defect.NormPath)

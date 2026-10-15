@@ -1,6 +1,8 @@
 package defectlifecycle
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -323,5 +325,104 @@ func TestCommitLedgerDeduplicatesMultipleNewObservationsWithSameSlotKey(t *testi
 	db.Model(&models.Defect{}).Count(&count)
 	if count != 1 {
 		t.Fatalf("expected 1 defect in db, got %d", count)
+	}
+}
+
+func TestAdvanceUnmatchedDefectsAutoResolvesMissingSourceFile(t *testing.T) {
+	db := setupTestDB(t)
+
+	repo := models.Repository{Name: "demo", URL: "https://example.com/demo.git"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("create task type: %v", err)
+	}
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	if err := db.Create(&report).Error; err != nil {
+		t.Fatalf("create report: %v", err)
+	}
+
+	tempDir := t.TempDir()
+	// 创建一个真实存在的文件
+	existingFile := filepath.Join(tempDir, "src", "existing.cpp")
+	if err := os.MkdirAll(filepath.Dir(existingFile), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(existingFile, []byte("int main(){}"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	missingDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fingerprint-missing", IdentityKind: "K1",
+		NormPath: "src/removed.cpp", Severity: "严重",
+		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
+		RowVersion: 1,
+	}
+	existingDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fingerprint-existing", IdentityKind: "K1",
+		NormPath: "src/existing.cpp", Severity: "严重",
+		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
+		RowVersion: 1,
+	}
+	for _, defect := range []*models.Defect{&missingDefect, &existingDefect} {
+		if err := db.Create(defect).Error; err != nil {
+			t.Fatalf("create defect: %v", err)
+		}
+	}
+
+	input := LedgerInput{
+		Report: report, Repo: repo, TaskType: taskType, RepoRoot: tempDir,
+		Lifecycle: LifecyclePolicy{
+			AutoResolveMissing: true,
+			HighRiskSeverities: []string{"致命", "严重"},
+			ResolvedRounds:     2,
+		},
+	}
+	defects := []models.Defect{missingDefect, existingDefect}
+	var events []models.DefectEvent
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var txErr error
+		events, txErr = advanceUnmatchedDefects(tx, defects, map[uint]bool{}, input, time.Now())
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("advance unmatched defects: %v", err)
+	}
+
+	var updatedMissing, updatedExisting models.Defect
+	if err := db.First(&updatedMissing, missingDefect.ID).Error; err != nil {
+		t.Fatalf("load missing defect: %v", err)
+	}
+	if err := db.First(&updatedExisting, existingDefect.ID).Error; err != nil {
+		t.Fatalf("load existing defect: %v", err)
+	}
+
+	// 缺失文件应直接置为 RESOLVED，且不会等待两轮 missed
+	if updatedMissing.Status != DefectStatusResolved {
+		t.Fatalf("expected missing file defect to be RESOLVED, got %s", updatedMissing.Status)
+	}
+	if updatedMissing.StatusReason != "source file does not exist" {
+		t.Fatalf("expected status reason 'source file does not exist', got %s", updatedMissing.StatusReason)
+	}
+
+	// 现有物理文件不应被误关为 RESOLVED
+	if updatedExisting.Status == DefectStatusResolved {
+		t.Fatalf("expected existing file defect not to be RESOLVED")
+	}
+
+	// 验证事件记录
+	foundEvent := false
+	for _, ev := range events {
+		if ev.DefectID == missingDefect.ID && ev.ToStatus == DefectStatusResolved {
+			foundEvent = true
+			break
+		}
+	}
+	if !foundEvent {
+		t.Fatalf("expected STATUS_CHANGED event for missing defect")
 	}
 }

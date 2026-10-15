@@ -220,7 +220,7 @@ func GetExecutionLogs(c *gin.Context) {
 	} else if statusGroup == "pending" {
 		query = query.Where("status = ?", "pending")
 	} else if statusGroup == "completed" {
-		query = query.Where("status IN ?", []string{"success", "failed", "skipped"})
+		query = query.Where("status IN ?", []string{"success", "degraded", "failed", "skipped"})
 	}
 
 	var total int64
@@ -278,7 +278,7 @@ func GetExecutionLogs(c *gin.Context) {
 // ClearCompletedExecutionLogs deletes all finished logs
 func ClearCompletedExecutionLogs(c *gin.Context) {
 	result := models.DB.
-		Where("status IN ?", []string{"success", "failed", "skipped"}).
+		Where("status IN ?", []string{"success", "degraded", "failed", "skipped"}).
 		Delete(&models.TaskExecutionLog{})
 
 	if result.Error != nil {
