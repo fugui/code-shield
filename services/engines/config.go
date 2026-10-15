@@ -2,8 +2,7 @@ package engines
 
 const (
 	// DefaultChunkMaxFiles 默认单分片文件数上限。
-	// 经架构调优收敛至 8 个文件（6~8 文件黄金区间），有效防止大模型上下文注意力衰减与长尾文件漏扫。
-	DefaultChunkMaxFiles = 8
+	DefaultChunkMaxFiles = 4
 	DefaultChunkDepth    = 1
 )
 

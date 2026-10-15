@@ -210,19 +210,19 @@ func TestPlanFilesRecordsIncrementalSkipsAndDiffTouch(t *testing.T) {
 	}
 }
 
-func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
+func TestSemanticChunker_MaxFilesDefault(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	srcDir := filepath.Join(tmpDir, "src")
 	os.MkdirAll(srcDir, 0755)
 
-	// 创建 18 个源文件，断言默认按 8 个文件拆分后生成 3 个分片 (8 + 8 + 2)
-	for i := 1; i <= 18; i++ {
+	// 创建 10 个源文件，断言默认按 4 个文件拆分后生成 3 个分片 (4 + 4 + 2)
+	for i := 1; i <= 10; i++ {
 		filePath := filepath.Join(srcDir, filepath.FromSlash(filepath.Clean(filepath.Join(".", "file_"+string(rune('a'+i-1))+".cpp"))))
 		_ = os.WriteFile(filePath, []byte("int test() { return 0; }"), 0644)
 	}
 
-	// 传入 MaxFiles: 0，测试自动生效默认值 8
+	// 传入 MaxFiles: 0，测试自动生效默认值 4
 	cfg := engines.ChunkConfig{
 		MaxFiles: 0,
 		Depth:    1,
@@ -234,15 +234,15 @@ func TestSemanticChunker_MaxFilesDefault8(t *testing.T) {
 	}
 
 	if len(bundles) != 3 {
-		t.Fatalf("Expected 3 bundles for 18 files with default MaxFiles=8, got %d", len(bundles))
+		t.Fatalf("Expected 3 bundles for 10 files with default MaxFiles=4, got %d", len(bundles))
 	}
 
-	// 验证前两个分片大小为 8，第三个分片大小为 2
-	if len(bundles[0].AllFiles) != 8 {
-		t.Errorf("Expected bundle 0 to have 8 files, got %d", len(bundles[0].AllFiles))
+	// 验证前两个分片大小为 4，第三个分片大小为 2
+	if len(bundles[0].AllFiles) != 4 {
+		t.Errorf("Expected bundle 0 to have 4 files, got %d", len(bundles[0].AllFiles))
 	}
-	if len(bundles[1].AllFiles) != 8 {
-		t.Errorf("Expected bundle 1 to have 8 files, got %d", len(bundles[1].AllFiles))
+	if len(bundles[1].AllFiles) != 4 {
+		t.Errorf("Expected bundle 1 to have 4 files, got %d", len(bundles[1].AllFiles))
 	}
 	if len(bundles[2].AllFiles) != 2 {
 		t.Errorf("Expected bundle 2 to have 2 files, got %d", len(bundles[2].AllFiles))
