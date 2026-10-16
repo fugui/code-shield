@@ -1,6 +1,8 @@
 # AGENTS.md - 码盾 (Code-Shield) 🛡️ 智能体与开发者指南
 
-本文档是专为参与 **Code-Shield** 开发的 AI 助手与团队成员制定的行动指引、架构规范与工程约束。
+本文档专为参与 **Code-Shield** 开发的 AI 助手与团队成员制定，聚焦 Code-Shield 专有的系统架构、核心领域划分与防腐工程约束。
+
+> 💡 **基础规章约定**：工作区通用编码风格、Design Tokens 语义化变量、标准分页规范、中文沟通及 Conventional Commits 提交规范，请统一严格遵循工作区通用准则（参见 `code-common/rules/GEMINI.md`）。
 
 ---
 
@@ -60,65 +62,28 @@ code-shield/
 
 ---
 
-## 🎨 4. 代码风格与设计约束
-
-### 4.1 后端 (Go)
-* **严格错误处理**：必须显式且严格地处理所有 `error`，**严禁使用 `_ = err` 忽略任何错误**，一律采用 `if err != nil { return ... }`。
-* **数据模型归口**：所有数据库持久化 Model 必须集中放置在 `models/` 目录下。
-* **接口安全分类**：在 `main.go` 中注册路由时，除公开开放接口外，业务 API 必须统一挂载 `handlers.AuthMiddleware()` 进行 JWT 保护。
-
-### 4.2 前端 (React / TypeScript)
-* **深浅主题 Tokens (SSOT)**：样式颜色必须统一使用 `theme.css` 的语义变量（如 `var(--color-bg-surface)`、`var(--color-text-primary)`、`var(--color-border-primary)`），**严禁硬编码 `#fff`、`#000` 等绝对色值**。
-* **样式抽象 (BEM)**：禁止滥用 JSX `style={{ ... }}`（真动态计算属性除外）；严禁在 JS 中模拟 hover，必须使用原生 CSS `:hover`。
-* **通用分页规范**：具备表格分页的页面，必须集成 `@code/common` 标准分页规范：
-  * 使用 `useSearchParams` 实现 URL 状态同步。
-  * 选项阶梯固定为 `15`、`25`、`50`、`100`，默认值为 `25`。
-  * 控件固定为 `[首页] [上一页] [5页连续数字滑动窗口] [下一页] [末页] [条/页下拉框]`。
-* **类型安全**：严禁滥用 `any`，所有 API 交互及组件 Props 均须定义清晰的 TypeScript `interface`。
-
----
-
-## 🛠️ 5. 常用开发与测试命令
+## 🛠️ 4. Code-Shield 专有开发与测试命令
 
 * **全量编译打包**：
   ```bash
   make build
   ```
-* **独立编译后端**：
+* **独立编译后端与前端**：
   ```bash
   make backend
-  ```
-* **独立编译前端**：
-  ```bash
   make frontend
   ```
 * **运行架构防腐门禁检查 (ArchGuard)**：
   ```bash
   make lint-arch
   ```
-* **运行 Go 单元测试**：
+* **运行特定领域模块测试**：
   ```bash
-  go test ./...
-  # 运行特定模块测试，例如：
   go test -v ./models/...
   go test -v ./services/dispatcher/...
+  go test -v ./services/defectlifecycle/...
   ```
 * **前端静态检查与风格校验**：
   ```bash
   make lint
   ```
-
----
-
-## ⚙️ 6. 运行环境与后台进程生命周期
-
-* **网络访问基准**：本地调试与测试网络请求统一使用物理 IP **`192.168.56.18`**，**切勿使用 `127.0.0.1` 或 `localhost`**。
-* **进程及时释放**：在完成代码编译运行与状态验证后，**必须在回复用户前主动释放并关闭所有启动的后台测试进程和服务**，严禁留存后台进程占用物理端口（例如 `8080`、`8082` 等），避免引发启动冲突。
-
----
-
-## 🚀 7. 开发流与交付准则
-
-1. **语言要求**：所有交流、代码注释及提交日志统一使用**中文**。
-2. **约定式提交**：Git 提交信息必须符合 Conventional Commits 规范，如 `feat: 新增分片失败补扫调度逻辑`、`fix: 修复数据模型解析错误`。
-3. **交付流程**：每次代码修改完成后，必须进行代码检视，并确保 `make lint-arch`、单元测试及编译全部通过。
