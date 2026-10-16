@@ -354,6 +354,7 @@ bundleLoop:
 				details.ContractRepairs = stats.ContractRepairs
 				details.ResourceFailovers = stats.ResourceFailovers
 				details.ResourceChain = append([]string(nil), stats.ResourceChain...)
+				details.StageChain = append([]string(nil), stats.StageChain...)
 				details.ErrorClasses = append([]string(nil), stats.ErrorClasses...)
 				details.QueueWaitMS = append([]int64(nil), stats.QueueWaitMS...)
 				details.AttemptDurationSeconds = append([]float64(nil), stats.DurationSeconds...)
@@ -1209,6 +1210,7 @@ type splitStats struct {
 	ResourceFailovers        int
 	DriverFailovers          int
 	ResourceChain            []string
+	StageChain               []string
 	ErrorClasses             []string
 	QueueWaitMS              []int64
 	DurationSeconds          []float64
@@ -1328,6 +1330,7 @@ func recordDispatcherRecoveryStats(ctx context.Context, source *dispatcher.TierR
 		stats.ResourceFailovers += source.ResourceFailovers
 		stats.DriverFailovers += source.DriverFailovers
 		stats.ResourceChain = append(stats.ResourceChain, source.ResourceChain...)
+		stats.StageChain = append(stats.StageChain, source.StageChain...)
 		stats.ErrorClasses = append(stats.ErrorClasses, source.ErrorClasses...)
 		stats.QueueWaitMS = append(stats.QueueWaitMS, source.QueueWaitMS...)
 		stats.DurationSeconds = append(stats.DurationSeconds, source.DurationSeconds...)

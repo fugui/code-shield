@@ -15,6 +15,7 @@ type TierRecoveryStats struct {
 	ResourceFailovers  int
 	DriverFailovers    int
 	ResourceChain      []string
+	StageChain         []string
 	ErrorClasses       []string
 	QueueWaitMS        []int64
 	DurationSeconds    []float64
@@ -42,16 +43,23 @@ func WithTierSplitRecovery(split TierRecoverySplitFunc) TierRecoveryOption {
 	}
 }
 
-func (s *TierRecoveryStats) trackResource(resourceID string) {
+func (s *TierRecoveryStats) trackAttempt(resourceID, tierName string) {
 	if s == nil || resourceID == "" {
 		return
 	}
 	s.ResourceChain = append(s.ResourceChain, resourceID)
+	if tierName != "" {
+		s.StageChain = append(s.StageChain, tierName)
+	}
 	if s.AttemptsByResource == nil {
 		s.AttemptsByResource = map[string]int{}
 	}
 	s.AttemptsByResource[resourceID]++
 	s.LastResourceID = resourceID
+}
+
+func (s *TierRecoveryStats) trackResource(resourceID string) {
+	s.trackAttempt(resourceID, "")
 }
 
 func (s *TierRecoveryStats) attemptsOn(resourceID string) int {
@@ -206,7 +214,7 @@ func RunTierInvocationWithRecovery(
 			)
 		}
 		candidate := plan.Selected
-		stats.trackResource(candidate.ResourceID)
+		stats.trackAttempt(candidate.ResourceID, tierName)
 		if !candidate.Available {
 			lastErr = invoker.NewClassifiedError(
 				invoker.ErrorClassResourceUnavailable,

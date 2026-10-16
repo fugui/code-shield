@@ -418,6 +418,7 @@ export interface ChunkDiagnosticDetail {
   resource_failovers?: number;
   driver_failovers: number;
   resource_chain?: string[];
+  stage_chain?: string[];
   error_classes?: string[];
   queue_wait_ms?: number[];
   attempt_duration_seconds?: number[];
@@ -448,6 +449,7 @@ export interface SynthesisDiagnosticSummary {
   resource_failovers: number;
   driver_failovers: number;
   resource_chain?: string[];
+  stage_chain?: string[];
   error_classes?: string[];
   queue_wait_ms?: number[];
   attempt_duration_seconds?: number[];

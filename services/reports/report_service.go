@@ -1020,6 +1020,14 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 									}
 								}
 							}
+							var stageChain []string
+							if rawChain, ok := cMap["stage_chain"].([]interface{}); ok {
+								for _, item := range rawChain {
+									if stage, ok := item.(string); ok {
+										stageChain = append(stageChain, stage)
+									}
+								}
+							}
 							var errorClasses []string
 							if rawClasses, ok := cMap["error_classes"].([]interface{}); ok {
 								for _, item := range rawClasses {
@@ -1129,6 +1137,7 @@ func GetReportDiagnostics(taskID uint) (*DiagnosticsDTO, error) {
 								ResourceFailovers:        resourceFailovers,
 								DriverFailovers:          driverFailovers,
 								ResourceChain:            resourceChain,
+								StageChain:               stageChain,
 								ErrorClasses:             errorClasses,
 								QueueWaitMS:              queueWaitMS,
 								AttemptDurationSeconds:   attemptDurations,

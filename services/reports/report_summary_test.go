@@ -54,6 +54,7 @@ func TestParseSynthesisDiagnosticsPreservesAttemptHistory(t *testing.T) {
 			"resource_failovers":       1,
 			"driver_failovers":         2,
 			"resource_chain":           []interface{}{"primary", "alternate"},
+			"stage_chain":              []interface{}{"tier4_synthesis", "tier4_synthesis"},
 			"error_classes":            []interface{}{"idle_timeout", "none"},
 			"queue_wait_ms":            []interface{}{10, 20},
 			"attempt_duration_seconds": []interface{}{0.5, 1.5},
@@ -64,6 +65,7 @@ func TestParseSynthesisDiagnosticsPreservesAttemptHistory(t *testing.T) {
 	if summary == nil || summary.Attempts != 2 || summary.ResourceID != "synthesis-resource" ||
 		summary.ResourceFailovers != 1 || summary.DriverFailovers != 2 ||
 		len(summary.ResourceChain) != 2 || summary.ResourceChain[1] != "alternate" ||
+		len(summary.StageChain) != 2 || summary.StageChain[0] != "tier4_synthesis" ||
 		len(summary.ErrorClasses) != 2 || summary.ErrorClasses[0] != "idle_timeout" ||
 		len(summary.QueueWaitMS) != 2 || summary.QueueWaitMS[1] != 20 ||
 		len(summary.AttemptDurationSeconds) != 2 || summary.AttemptDurationSeconds[1] != 1.5 ||

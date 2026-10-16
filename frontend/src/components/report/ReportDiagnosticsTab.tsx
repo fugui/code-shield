@@ -99,23 +99,79 @@ function chunkTitle(chunkName: string): ChunkTitleInfo {
   return { primary: `目录 ${chunkName}`, tooltip: '按目录语义聚合后的分片名。' };
 }
 
-function getStageLabel(index: number, total: number, retryCount: number): string {
-  if (retryCount > 0) {
+const stageNameMap: Record<string, string> = {
+  tier1_hunter: 'Stage 1 (Hunter 猎手初检)',
+  tier2_challenger: 'Stage 2 (Challenger 辩驳质询)',
+  tier3_judge: 'Stage 3 (Judge 终审裁决)',
+  tier4_synthesis: 'Stage 4 (Synthesis 报告聚合)',
+  specialized_assessment: '专项评估分析 (Specialized Assessment)',
+};
+
+function getStageLabel(
+  index: number,
+  total: number,
+  retryCount: number,
+  stageChain?: string[],
+  errorClasses?: string[]
+): string {
+  // 1. 若后端已传递准确的 stage_chain（单一真实源）
+  if (stageChain && stageChain.length > 0 && stageChain[index]) {
+    const stageKey = stageChain[index];
+    const stageName = stageNameMap[stageKey] || stageKey;
+    let stageAttemptIndex = 0;
+    for (let j = 0; j < index; j++) {
+      if (stageChain[j] === stageKey) {
+        stageAttemptIndex++;
+      }
+    }
+    if (stageAttemptIndex === 0) {
+      return stageName;
+    }
+    return `${stageName} · 重试 ${stageAttemptIndex}`;
+  }
+
+  // 2. 存量历史报告回退推断（Legacy Fallback）
+  const debateStages = ['Stage 1 (Hunter 猎手初检)', 'Stage 2 (Challenger 辩驳质询)', 'Stage 3 (Judge 终审裁决)'];
+  if (retryCount <= 0) {
+    if (total === 3) {
+      return debateStages[index] || `阶段 ${index + 1}`;
+    }
+    if (total > 1) {
+      return `阶段 ${index + 1}`;
+    }
+    return '初次调用';
+  }
+
+  // 有重试时，推断基础主阶段与重试轮次
+  const mainStagesCount = Math.max(1, total - retryCount);
+  if (mainStagesCount === 3) {
+    // 寻找首次发生异常的阶段（若有）
+    const firstErrIdx = errorClasses?.findIndex((c) => c && c !== 'none') ?? -1;
+    const retryAnchorIdx = firstErrIdx >= 0 ? firstErrIdx : 2;
+    if (index < retryAnchorIdx) {
+      return debateStages[index] || `阶段 ${index + 1}`;
+    }
+    const baseName = debateStages[retryAnchorIdx] || `阶段 ${retryAnchorIdx + 1}`;
+    if (index === retryAnchorIdx) {
+      return baseName;
+    }
+    return `${baseName} · 重试 ${index - retryAnchorIdx}`;
+  }
+
+  if (mainStagesCount === 1) {
     return index === 0 ? '初次调用' : `第 ${index} 次重试`;
   }
-  if (total === 3) {
-    const debateStages = ['Stage 1 (Hunter 猎手初检)', 'Stage 2 (Challenger 辩驳质询)', 'Stage 3 (Judge 终审裁决)'];
-    return debateStages[index] || `阶段 ${index + 1}`;
-  }
-  if (total > 1) {
+
+  if (index < mainStagesCount) {
     return `阶段 ${index + 1}`;
   }
-  return '初次调用';
+  return `阶段 ${mainStagesCount} · 重试 ${index - mainStagesCount + 1}`;
 }
 
 interface StageExecutionTraceTableProps {
   title?: string;
   resourceChain?: string[];
+  stageChain?: string[];
   durationSeconds?: number[];
   queueWaitMs?: number[];
   errorClasses?: string[];
@@ -128,6 +184,7 @@ interface StageExecutionTraceTableProps {
 function StageExecutionTraceTable({
   title,
   resourceChain,
+  stageChain,
   durationSeconds,
   queueWaitMs,
   errorClasses,
@@ -138,6 +195,7 @@ function StageExecutionTraceTable({
 }: StageExecutionTraceTableProps) {
   const stepCount = Math.max(
     resourceChain?.length ?? 0,
+    stageChain?.length ?? 0,
     durationSeconds?.length ?? 0,
     queueWaitMs?.length ?? 0,
     errorClasses?.length ?? 0,
@@ -148,11 +206,14 @@ function StageExecutionTraceTable({
     return null;
   }
 
+  const isMultiStageWithRetry = retryCount > 0 && stepCount > retryCount + 1;
   const defaultTitle = isSynthesis
     ? (attempts > 1 ? '聚合阶段调度与耗时明细 (Synthesis Trace)' : '聚合执行与耗时明细 (Synthesis Trace)')
-    : (retryCount > 0
-        ? '故障重试与耗时明细 (Retry Trace)'
-        : (attempts > 1 ? '多阶段调度与耗时明细 (Stage Trace)' : '执行与耗时明细 (Execution Trace)'));
+    : (isMultiStageWithRetry
+        ? '多阶段调度与重试明细 (Stage & Retry Trace)'
+        : (retryCount > 0
+            ? '故障重试与耗时明细 (Retry Trace)'
+            : (attempts > 1 ? '多阶段调度与耗时明细 (Stage Trace)' : '执行与耗时明细 (Execution Trace)')));
 
   return (
     <div className="code-trace-table-wrapper">
@@ -177,8 +238,12 @@ function StageExecutionTraceTable({
           <tbody>
             {Array.from({ length: stepCount }).map((_, i) => {
               const stageLabel = isSynthesis
-                ? (stepCount > 1 ? `第 ${i + 1} 次调用` : '单次执行')
-                : getStageLabel(i, stepCount, retryCount);
+                ? (stepCount > 1
+                    ? (stageChain && stageChain[i]
+                        ? `${stageNameMap[stageChain[i]] || stageChain[i]}${i > 0 ? ` · 重试 ${i}` : ''}`
+                        : (i === 0 ? '初次调用' : `第 ${i} 次重试`))
+                    : '单次执行')
+                : getStageLabel(i, stepCount, retryCount, stageChain, errorClasses);
 
               const resource = resourceChain?.[i];
               const wait = queueWaitMs?.[i];
@@ -653,6 +718,7 @@ export default function ReportDiagnosticsTab({
             <div className="synthesis-details-box">
               <StageExecutionTraceTable
                 resourceChain={synthesis.resource_chain}
+                stageChain={synthesis.stage_chain}
                 durationSeconds={synthesis.attempt_duration_seconds}
                 queueWaitMs={synthesis.queue_wait_ms}
                 errorClasses={synthesis.error_classes}
@@ -857,6 +923,7 @@ export default function ReportDiagnosticsTab({
                       )}
                       <StageExecutionTraceTable
                         resourceChain={chunk.resource_chain}
+                        stageChain={chunk.stage_chain}
                         durationSeconds={chunk.attempt_duration_seconds}
                         queueWaitMs={chunk.queue_wait_ms}
                         errorClasses={chunk.error_classes}
