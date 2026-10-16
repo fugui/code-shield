@@ -1,132 +1,222 @@
 # 码盾 · Code-Shield 🛡️
 
-**码盾**（Code-Shield）是一套由 AI 驱动的企业级代码质量与安全自动化看护系统。系统基于微前端架构设计，无缝嵌入 `code-bench` 开发者综合工作台。通过集成大语言模型（LLM）执行器（支持 **Claude CLI** 与 **OpenCode CLI**），码盾能够对多语言代码仓库进行多维度深度扫描分析，重点拦截多线程安全、内存泄漏、浮点精度失真、Coredump 风险及第三方库漏洞等关键缺陷，并自动生成结构化检视报告、建立缺陷追踪并触发多渠道通知。
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](file:///home/fugui/codes/code-shield/README.md)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8.svg)](file:///home/fugui/codes/code-shield/go.mod)
+[![React](https://img.shields.io/badge/Frontend-React%2018%20%7C%20Vite%205-61DAFB.svg)](file:///home/fugui/codes/code-shield/frontend/package.json)
+
+**码盾**（Code-Shield）是一套由 AI 驱动的企业级代码质量、安全扫描与全生命周期缺陷治理系统。系统基于微前端架构设计，深度集成于 `code-bench` 开发者综合工作台。
+
+自 **v2.0** 架构演进以来，码盾全面升级为**多智能体对抗辩论（Multi-Agent Debate）**与**分层算力体系（Tiered Computing Pipeline）**，并首创**声明式 SPI 插件架构**与**物理槽位极简缺陷对账机制（Slot-Based Reconciliation）**。系统原生支持 **Google Antigravity (AGY)**、**OpenCode**、**Codex**、**Claude Code** 以及高性能 **原生 Native LLM 引擎**，对海量代码仓进行多维度深度检视与单元测试有效性评估，全面闭环“初筛 - 辩护 - 裁决 - 归因 - 对账 - 治理”全生命周期。
 
 ---
 
 ## 🌟 核心特性
 
-### 🤖 强大的 AI 驱动代码检视
-- **全方位无状态 AI 执行器支持**：原生适配 **Claude Code CLI**、**OpenCode CLI**、**Codex CLI**、**Native API** 与 **Antigravity (AGY) CLI**，统一无状态 Prompt 注入与多 LLM 调度模型。
-  - **Claude**：支持系统提示词内联注入与流式 JSON 解析。
-  - **OpenCode**：采用轻量级全局基座 Agent + 任务规约内联注入，实现完全无状态调用；权限批准使用文档化参数 `--auto`。
-  - **Codex**：支持 OpenAI Codex CLI headless 免交互模式与模型动态路由；输出通过 `--output-last-message` 由 CLI 直接落盘，兼容默认只读沙箱环境。
-  - **Native API & AGY**：支持直接对接标准 LLM 原生接口与 Google Antigravity 执行器。
-  - ⚠️ **安全边界**：扫描引擎会使用 bash 工具并自动批准权限（OpenCode `--auto`），并非严格只读。对不可信代码仓库进行扫描时，请将服务部署在容器 / 低权限用户 / 无外网等进程级隔离环境中。
-- **内置 10 大专项检视策略**：提供开箱即用的任务模板（`tasks/` 目录），涵盖增量评审 (`change-review`)、全仓深度检视 (`deep-review`)、内存泄漏 (`memory-leak`)、多线程并发 (`thread-create`)、浮点比较 (`float-comparison`)、cJSON解析 (`cjson-scan`)、Coredump风险 (`coredump-risk`)、无序集合 (`unordered-collection`) 及单测有效性/质量评估 (`ut-effectiveness`, `ut-quality`)。
-- **自定义任务类型**：支持动态创建和管理多套检视策略，灵活配置 Analysis（切片分析）与 Synthesis（汇总阶段）提示词模板。
-- **动态解析与定位**：智能识别 LLM 输出的单行、连续行范围及离散行号，支持在工作台一键复制精确文件名与行号。
+### 🤖 1. 多智能体对抗辩论与 AI 执行引擎族
+- **多智能体三阶段对抗辩论（Multi-Agent Debate Pipeline）**：
+  - **Hunter（初筛探索）**：利用 Thick Agent 自由穿梭与探索源码上下文，发掘深层潜在代码缺陷。
+  - **Defender/Challenger（辩护对抗）**：针对初筛嫌疑单，快速多维度寻找代码防御证据与上下文反证，发起交叉质询。
+  - **Judge（终审法官）**：由独立权威模型基于指控与辩护证据链进行结构化裁决，彻底抑制 LLM 幻觉与误报。
+  - **0 候选快速放行（Fast-Pass）**：初筛无异常分片毫秒级放行，节省 80%+ 辩论阶段物理算力。
+- **全矩阵 AI 执行器驱动（Invoker Matrix）**：
+  - **Google Antigravity (AGY) CLI**：原生支持 Antigravity 深度代码推理与交互式探索引擎。
+  - **Native LLM 执行引擎（Thin LLM）**：基于标准 HTTP/SSE 协议直连大模型 API，支持多异构 Endpoint 独立 BaseURL/APIKey、加权轮询负载打散与透明故障转移。
+  - **OpenCode CLI**：轻量级无状态基座 Agent 注入，优化并发 SQLite 锁、失败会话续跑（Continuation）与输出契约守护。
+  - **Codex CLI**：支持 OpenAI Codex 免交互 headless 运行，完美兼容只读沙箱与 `danger-full-access` 权限模式。
+  - **Claude Code CLI**：系统提示词内联注入与流式 JSON 解析。
 
-### ⚙️ 多层级执行引擎与调度架构
-- **单体分析引擎 (single)**：适用于小型代码仓，将代码整体提交给 AI 进行单次上下文分析。
-- **分片并发引擎 (chunked)**：适用于大型单体项目，按目录树深度自动分片，多协程并发（默认 5）向 AI 提交，最后自动汇总。前端实时渲染分片进度（如 `分析中 (12/89)`）。
-- **双模型对抗引擎 (debate)**：引入生成模型与评审模型多轮对弈辩论，显著抑制大模型幻觉与误报。
-- **有效性评估引擎 (assessment)**：面向单元测试设计，包含契约约束与定向修复自愈管线。
-- **规划与画像引擎 (planner / profile)**：智能分析仓库规模与特征，自动化编排分片深度与分析策略。
-- **持久化任务队列 (DB-backed Queue)**：基于 PostgreSQL 的数据库持久化拉取与抢占模型，支持 `max_queue_size` 排队容量管控，服务重启任务不丢失。
-- **分片失败恢复机制 (Chunk Recovery)**：支持对单次扫描中偶发失败的分片进行局部精确补扫恢复，在执行日志中高优标记并由调度队列原子抢占运行。
-- **工作时间自动限流 (Work Hours Throttle)**：支持配置工作日及工作时间段内的并发比例（如白天限流 10% 或 0% 暂停），非工作时间/夜间自动恢复 100% 满速扫描，兼顾生产负载与扫描吞吐。
-- **多 LLM 负载均衡映射**：支持配置多 LLM 服务器端点与并发上限，按模型类型精确分流。
+### ⚡ 2. 4 级分层算力阶梯与调度架构 (Tiered Computing)
+- **解耦式算力阶梯配置**：
+  - **Tier 1 (Hunter)**：负责源码初筛，支持分片二分重试（Split on Timeout）与空闲看门狗（Idle Watchdog）。
+  - **Tier 2 (Challenger)**：负责辩护对抗，推荐低延迟高吞吐 Thin LLM。
+  - **Tier 3 (Judge)**：负责终审裁决，采用旗舰推理模型进行事实性仲裁。
+  - **Tier 4 (Synthesis)**：负责全仓态势综合汇总，生成结构化总结报告。
+- **动态背压与容灾恢复机制**：
+  - 跨 Tier 调度具备背压感知，防止下游裁判队列积压；失败分片具备类型化重试、候补资源自动故障切换与局部精准恢复。
 
-### 📊 缺陷全生命周期追踪与治理中心
-- **确定性指纹锚点与行号稳定器 (Anchor & Stabilizer)**：计算缺陷代码结构特征生成确定性指纹，配合跨版本行号稳定器，代码改动后仍能精准对齐历史缺陷。
-- **缺陷台账 (Ledger) 与开发者工作台 (Workbench)**：闭环跟踪历史存量与增量缺陷，支持指派、处理状态流转与误报反馈。
-- **专项治理攻坚会战 (Campaign)**：支持按团队、部门及专项类目设立治理会战大盘，一键导出专项 Excel 战报。
-- **缺陷类目分类学治理 (Taxonomy & Feedback)**：基于结构化分类学进行缺陷规范化归类、语义标准化、误报校准（Calibrator）与反馈闭环。
-- **全流程覆盖度对齐 (Coverage & Reconciliation)**：精准统计检视文件/行覆盖度并与真实代码树对齐。
-- **规范化分页交互**：全量接入 `@code/common` 标准分页体系（URL 双向绑定、5 页滑动窗口、15/25/50/100 阶梯选项）。
-- **多格式报告导出中心**：支持专项分析报告导出为企业级排版的 Excel/CSV、Markdown、JSON 及归档包，自适应中文字符列宽。
+### 🔌 3. 声明式 SPI 插件架构与任务形态差异化扫描
+- **核心调度去特化**：
+  - 剥离核心调度中针对特定语言与任务形态的硬编码规则，抽象出标准的 Gate（门禁）、Verifier（复核器）及 Profile（画像）插件扩展点。
+- **内置 10 大专项检视策略**：
+  - 覆盖增量变更审查 (`change-review`)、全仓深度检视 (`deep-review`)、Coredump 风险 (`coredump-risk`)、内存泄漏 (`memory-leak`)、多线程并发安全 (`thread-create`)、浮点比较精度失真 (`float-comparison`)、cJSON 安全解析 (`cjson-scan`)、无序集合遍历风险 (`unordered-collection`) 以及单元测试质量/有效性评估 (`ut-quality`, `ut-effectiveness`)。
+- **单元测试有效性评估专项引擎**：
+  - 支持实体测试用例动态切分与容灾重试；内置微空桩确诊、防弱断言（Weak Assertion）门禁、控制流护栏与契约自愈定向修复管线。
+- **精准 Git 增量变更提取**：
+  - 支持基于 `SinceDays` 与 `DiffBase` 提取差异变更，精准锁定修改文件与上下文切片。
 
-### ⏰ 自动化调度与操作审计
-- **定时调度**：支持 Cron 表达式配置日常巡检计划，支持运行时参数覆盖（如 `SkipTests` 跳过测试代码）。
-- **触发日志与审计 (Audit Logs)**：全面记录所有手动与定时触发动作（操作人、触发类型、目标摘要、客户端 IP），仅超级管理员（`super_admin`）可查看与管理。
+### 🎯 4. 极简缺陷对账架构与确定性指纹治理 (Slot-Based Reconciliation)
+- **纯 Go 物理词法定桩与两级槽位匹配**：
+  - 告别高复杂度的模糊几何对账，升级为纯 Go 物理词法扫描（Lexer-based Anchor），具备跨行宏穿透与抗代码抖动能力。
+  - 引入离散两级槽位匹配（Slot-Based Matching），彻底解决跨版本扫描行号漂移、增量漏对账与历史缺陷重复判定的痛点。
+- **统一缺陷台账 SSOT 与稀疏存储**：
+  - 缺陷台账稀疏存储（Sparse Storage）、短事务解耦与快照 TTL 分级归档，有效消除存储膨胀与数据库高压。
+  - 缺陷全闭环追踪：支持源文件删除自动关闭关联缺陷、追踪最近确认时间与累计确认次数。
+- **缺陷分类学与确定性校准器（Calibrator）**：
+  - 缺陷分类代码强绑定与推导准则，归一化致命/严重/一般/建议四级标准风险。
 
-### 📧 即时反馈与通知
-- **邮件微服务联动**：无缝对接 `code-notifier` 组件（基于 Windows GUI + Outlook COM），将精美的 Markdown 报告转化为 HTML 正文与 PDF 附件自动投递。
+### 🖥️ 5. 沉浸式扫描工作台与端到端观测遥测
+- **实时扫描工作台（Scan Workbench）**：
+  - 任务日志展开面板重构为沉浸式全景工作台，分片矩阵并发状态、多智能体阶段流向与实时缺陷流一览无余。
+  - 支持全量裁判事实链归档（debate-chunks 与 debate-verdicts.log），阶段耗时与执行链路通过可视化表格清晰呈现。
+- **报告中心与协作体验**：
+  - 任务报告新增多智能体对抗辩论轨迹 TAB，支持全局流水号（#1, #2...）追踪裁决事实。
+  - 缺陷机理分析、防御依据、终审结论分层结构化展示；全量支持 URL 直达、问题快速定位与一键分享链接。
+  - 企业级多格式导出：支持 Markdown、JSON、印刷级 PDF，以及含【检视概要】与【问题明细】双 Sheet 的 Excel。
+
+### 🏢 6. 专项治理攻坚与企业级治理中心
+- **专项缺陷审计工作区**：
+  - 专为大规模治理战役设计，支持多维度过滤、指派处理人与状态流转历史追踪。
+- **部门排行榜与折叠大纲战报**：
+  - 统计未关闭缺陷数与审计缺陷数，Excel 战报升级为单 Sheet 二级可折叠大纲数据表。
+- **生产级弹性调度与安全管控**：
+  - 支持任务队列优雅排空（Drain Mode）与工作时间自动限流避峰；废除粗暴的全局熔断，采用自适应暂停退避重试。
+  - 操作触发审计（Audit Logs）全面记录，权限严格管控。
 
 ---
 
 ## 🏗️ 系统架构
 
 ```text
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   前端 (React)   │────▶│  code-shield    │────▶│  CLI (Claude/   │
-│  (Vite/Vanilla) │◄────│    (Go/Gin)     │◄────│   OpenCode)     │
-└─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                 │
-                 ┌───────────────┴───────────────┐
-                 ▼                               ▼
-      ┌────────────────────┐          ┌────────────────────┐
-      │  code-notifier     │          │  PostgreSQL 共享库  │
-      │  (Go / Win32 GUI)  │          │  (code-common 模型) │
-      └────────────────────┘          └────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│               前端展现层 (React 18 / Vite 5)            │
+│  - 沉浸式扫描工作台  - 报告中心 (辩论轨迹)  - 缺陷审计工作区 │
+│  - 纯原生 Vanilla CSS  - Design Tokens  - @code/common   │
+└───────────────────────────┬────────────────────────────┘
+                            │ HTTP / REST API
+┌───────────────────────────▼────────────────────────────┐
+│              code-shield 核心服务 (Go 1.25+)           │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Dispatcher 调度器 & 持久化任务队列 (DB-backed)     │  │
+│  │ (工作时间限流 / 优雅排空 / 背压控制 / 失败恢复)     │  │
+│  └────────────────────────┬─────────────────────────┘  │
+│                           │                            │
+│  ┌────────────────────────▼─────────────────────────┐  │
+│  │ 声明式 SPI 扫描引擎族 (services/engines)          │  │
+│  │ ├─ DebateEngine (Hunter / Challenger / Judge)    │  │
+│  │ ├─ AssessmentEngine (单测有效性 / 门禁 / 修复)   │  │
+│  │ ├─ Single & Chunked 智能分片引擎                 │  │
+│  │ └─ SPI 插件层 (Gate 前置门禁 / Verifier 复核)    │  │
+│  └────────────────────────┬─────────────────────────┘  │
+│                           │                            │
+│  ┌────────────────────────▼─────────────────────────┐  │
+│  │ 极简缺陷对账与治理中心 (services/defectlifecycle)   │  │
+│  │ ├─ 物理词法定桩 (Lexer Anchor) & 槽位匹配 (Slot) │  │
+│  │ ├─ 缺陷台账 SSOT & 稀疏存储 (Sparse Retention)   │  │
+│  │ └─ 分类学治理 (Taxonomy) & 确定性校准器          │  │
+│  └────────────────────────┬─────────────────────────┘  │
+│                           │ Invoker 抽象适配驱动       │
+└───────────────────────────┼────────────────────────────┘
+                            │
+       ┌────────────────────┴────────────────────┐
+       ▼                                         ▼
+┌───────────────────────────────┐     ┌───────────────────────┐
+│ 异构 LLM 算力池 (llm.resources)│     │ 外部支撑体系          │
+│ ├─ Native Thin 集群 (OpenAI)  │     │ ├─ PostgreSQL 共享库  │
+│ ├─ Antigravity (AGY) CLI      │     │ ├─ code-notifier      │
+│ ├─ OpenCode CLI               │     │ │  (邮件通知微服务)   │
+│ ├─ Codex CLI (Headless)       │     │ └─ 本地代码缓存与产物 │
+│ └─ Claude Code CLI            │     │    (codes/ & reports/)│
+└───────────────────────────────┘     └───────────────────────┘
 ```
 
 | 组件 | 技术栈 | 默认端口 | 说明 |
 | :--- | :--- | :--- | :--- |
-| **code-shield** | Go 1.25+, Gin, GORM, PostgreSQL | `8080` | 核心服务，负责 API 接口、持久化队列与扫描调度 |
-| **frontend** | React 18, Vite 5, TS, Lucide, @code/common | `5173` | Web 控制台，支持 Module Federation 嵌入 `code-bench` |
-| **notifier** | Go, Win32 GUI, Outlook COM | `8081` | 独立的邮件投递微服务（Windows 环境） |
+| **code-shield** | Go 1.25+, Gin, GORM, PostgreSQL | `8080` | 核心服务：包含 SPI 扫描引擎、调度队列、缺陷对账与治理 API |
+| **frontend** | React 18, Vite 5, TS, Lucide, @code/common | `5173` | Web 控制台，基于纯原生 Vanilla CSS，支持嵌入 `code-bench` |
+| **notifier** | Go, Win32 GUI, Outlook COM | `8081` | 独立的邮件投递微服务（Windows / Linux Webhook） |
 
-> 📚 **系统深度架构与设计文档中心**：详见 **[docs/README.md](docs/README.md)**（涵盖使用指南、核心流水线规范、AI 扫描引擎设计、物理算力调度、确定性指纹、多租户治理与 RFC 提案）。
+> 📚 **系统深度架构与设计文档中心**：详见 **[docs/README.md](docs/README.md)**（包含 6 大体系：使用手册、核心流水线、扫描引擎 SPI、算力调度、指纹对账治理、多租户设计与 RFC 规范）。
 
 ---
 
 ## ⚙️ 系统配置指南 (config.yaml)
 
+系统采用**动静分层**配置规范：基础设施静态低频配置直接读取 `config.yaml`；模型与扫描策略在首次初始化时写入数据库，后续直接在 Web 界面实时热调整。
+
 ```yaml
-# ── HTTP 与基础服务 ──
+# ── 1. 基础设施层 (静态冷配置，修改需重启) ──
 server:
   port: ":8080"
-  data_dir: "./data"                  # 运行时数据目录，自动存放 codes/ 缓存与 reports/ 报告
-  worker_count: 5                     # 全局任务并发数，默认 5
-  max_queue_size: 2000                # 任务排队最大上限，默认 2000，-1 表示不限制
-  gin_log: false
+  external_url: "http://192.168.56.18:8080"
+  read_timeout: 120s
+  write_timeout: 120s
 
-# ── 数据库 ──
+storage:
+  root: "."                           # 数据根目录，自动创建 codes/ 与 reports/
+
 database:
   driver: "postgres"
   host: "127.0.0.1"
   port: 5432
   user: "postgres"
   password: "YOUR_POSTGRES_PASSWORD"
-  dbname: "code_shield"               # 与 code-bench / code-pipeline 等共享同一数据库
+  dbname: "code_shield"
   sslmode: "disable"
   timezone: "Asia/Shanghai"
   max_open_conns: 50
   max_idle_conns: 10
 
-# ── AI 引擎与限流调度 ──
-ai:
-  backend: "claude"                   # CLI 后端：claude、opencode 或 codex
-  output_format: "text"               # 输出格式：text 或 json
-
-  # 工作时间自动限流配置 (可选)
-  work_hours_throttle:
-    enabled: true                     # 是否启用工作时间自动限流
-    workdays: [1, 2, 3, 4, 5]         # 生效星期: 1=周一 ~ 5=周五
-    start_time: "09:00"               # 开始限流时刻 (HH:MM)
-    end_time: "22:00"                 # 结束限流时刻 (HH:MM)
-    scale: 0.10                       # 工作时间内并发比例 (0.10 代表 10%，0.0 代表完全暂停)
-
-  # 多 LLM 服务器并发配置 (可选)
-  # models:
-  #   - opencode: "models/glm5.1"
-  #     claude: "glm5.1"
-  #     concurrent: 5
-  #   - opencode: "models/qwen3.5"
-  #     concurrent: 2
-
-# ── 通知服务 ──
-notification:
-  webhook: "http://192.168.56.18:8081/api/notify/email"
-
-# ── 认证配置 (接入 code-common) ──
 auth:
-  jwt_secret: "YOUR_SHARED_JWT_SECRET_KEY"  # 必须与 code-bench 保持一致
+  jwt_secret: "YOUR_SHARED_JWT_SECRET" # 必须与平台保持一致
   password_login_enabled: true
   admin_list:
     - "admin@code-shield.com"
+
+# ── 2. 大模型与算力供给池 (首次导入种子模版) ──
+llm:
+  default_resource: "native"
+  resources:
+    - id: "agy"                        # Antigravity CLI 节点 (探索型 Thick Agent)
+      driver: "agy"
+      model: "gemini-3.7-flash"
+      concurrent: 5
+    - id: "opencode"                   # OpenCode 算力节点
+      driver: "opencode"
+      model: "modelgate/GLM-4.7-XS"
+      concurrent: 5
+    - id: "native"                     # 原生 Thin LLM 高并发算力集群
+      driver: "native"
+      concurrent: 10
+      endpoints:
+        - name: "deepseek-primary"
+          base_url: "https://api.deepseek.com/v1/chat/completions"
+          api_key: "sk-xxxxxxxx"
+          model: "deepseek-v4-flash"
+          concurrent: 10
+          weight: 100
+
+# ── 3. 智能扫描引擎与 4-Tier 辩论流水线 ──
+scanner:
+  worker_count: 5                     # 全局并发任务 Worker 数
+  max_queue_size: 2000                # 排队上限 (-1 为不限)
+  debate:
+    enabled: true                     # 开启多智能体对抗辩论
+    fast_pass_enabled: true           # 0 候选快速放行 (节省 80%+ 辩论开销)
+    max_candidates_per_chunk: 20      # 单分片最大仲裁候选数
+    tiers:
+      tier1_hunter:                   # Tier 1 源码初筛
+        resources: ["agy", "opencode"]
+        timeout_seconds: 7200
+        timeout_recovery: "split"     # 超时自动二分拆片
+      tier2_challenger:               # Tier 2 辩护对抗
+        resource: "native"
+        timeout_seconds: 1200
+      tier3_judge:                    # Tier 3 终审法官
+        resource: "agy"
+        timeout_seconds: 1800
+      tier4_synthesis:                # Tier 4 态势汇总
+        resource: "native"
+        timeout_seconds: 300
+
+# ── 4. 企业治理与台账快照生命周期 ──
+retention:
+  ledger_retention_days: 30           # 历史快照保留天数
+  max_retained_scans_per_repo: 10     # 代码仓保底保留轮次
+  enable_sparse_scope: true           # 启用稀疏存储节省空间
+
+notification:
+  webhook: "http://192.168.56.18:8081/api/notify/email"
 ```
 
 ---
@@ -139,14 +229,23 @@ auth:
 make build
 ```
 
-### 2. 运行服务
+### 2. 运行自动化测试与架构门禁
+```bash
+# 运行后端全量单元测试
+make test
+
+# 运行架构防腐门禁检查 (ArchGuard)
+make lint-arch
+```
+
+### 3. 运行服务
 ```bash
 # 启动码盾核心服务
 make run
 ```
 默认监听 `:8080`，管理员初始账号：`admin@code-shield.com` / `admin123`。
 
-### 3. 前端独立开发
+### 4. 前端独立开发
 ```bash
 cd frontend
 npm install
@@ -191,16 +290,16 @@ server {
 ```text
 code-shield/
 ├── main.go                     # API 集中路由配置与服务启动入口
-├── Makefile                    # 统一构建、测试、架构防腐门禁 (lint-arch) 与打包入口
-├── config.yaml[.example]       # 系统配置文件与示例模板
+├── Makefile                    # 统一构建、测试、架构防腐门禁 (lint-arch) 与打包
+├── config.yaml[.example]       # 动静分层系统配置与示例模板
 ├── cron_jobs/                  # 定时任务调度器与日常巡检清理作业 (jobs.go)
 ├── tasks/                      # 内置 10 大专项检视策略提示词与规约模板库
-│   ├── change-review/          # 增量变更代码审查
+│   ├── change-review/          # 增量变更代码审查 (支持 SinceDays / DiffBase)
 │   ├── deep-review/            # 全仓深度代码质量审查
 │   ├── coredump-risk/          # Coredump 与野指针风险排查
 │   ├── memory-leak/            # 内存泄漏与资源未释放排查
 │   ├── thread-create/          # 多线程与并发竞争看护
-│   ├── float-comparison/       # 浮点数比较精度失真排查
+│   ├── float-comparison/       # 浮点数比较精度失真排查 (支持 C/C++)
 │   ├── cjson-scan/             # cJSON 解析与边界溢出安全扫描
 │   ├── unordered-collection/   # 无序集合遍历风险扫描
 │   ├── ut-effectiveness/       # 单元测试用例有效性评估
@@ -208,53 +307,93 @@ code-shield/
 ├── models/                     # GORM 数据模型及全局配置单例
 │   ├── config.go               # 运行时配置解析与动态单例
 │   ├── db.go                   # PostgreSQL 连接池与初始化
-│   ├── models.go               # Task, Schedule, Issue, TriggerLog, TaskType 等模型
-│   ├── ledger_schema.go        # 缺陷台账与指纹锚点持久化结构
-│   └── chunk_execution.go      # 分片原子执行记录与重试状态追踪
-├── handlers/                   # HTTP API 控制层
-│   ├── auth.go                 # 用户鉴权与当前登录态 (AuthMiddleware)
+│   ├── models.go               # Task, Schedule, Issue, TriggerLog 等核心实体
+│   ├── ledger_schema.go        # 统一缺陷台账 (Ledger) 持久化模型
+│   ├── chunk_execution.go      # 分片原子执行记录与重试状态追踪
+│   └── artifact_repair.go      # 契约修复与产物审计实体
+├── handlers/                   # HTTP REST API 控制层
 │   ├── task.go                 # 扫描任务创建、取消、重试与局部恢复
-│   ├── task_type.go            # 任务类型管理与 Prompt 模板编排
 │   ├── report_handler.go       # 任务报告领域聚合与多格式导出入口
+│   ├── debate_handler.go       # 多智能体辩论轨迹数据拉取接口
 │   ├── defect_handler.go       # 缺陷问题追踪与状态流转
 │   ├── workbench.go            # 开发者治理工作台与缺陷处理接口
 │   ├── campaign_generic.go     # 专项治理攻坚会战大盘与统计接口
-│   ├── campaign_excel.go       # 会战专项 Excel 战报导出
+│   ├── campaign_excel.go       # 会战专项折叠大纲 Excel 战报导出
 │   ├── category_governance.go  # 缺陷类目分类学治理与规则映射
 │   ├── feedback_handler.go     # 误报反馈与分类校准接口
-│   ├── schedule.go             # 定时调度计划管理
-│   ├── repo.go                 # 代码仓库管理与分支同步
-│   ├── user.go / department.go # 组织架构、团队与权限管理
 │   ├── config.go               # 动态配置中心与运行时更新
-│   ├── debug.go                # 系统运行诊断与测试接口
 │   └── trigger_log.go          # 触发日志与安全操作审计
 ├── services/                   # 核心领域业务服务与引擎架构
-│   ├── dispatcher/             # 持久化任务队列抢占调度、租约控制、失败恢复 (recovery)、算力阶梯
+│   ├── dispatcher/             # 任务队列调度、优雅排空 (Drain)、算力池与背压管控
 │   ├── engines/                # AI 扫描执行引擎族
-│   │   ├── single/             # 小型仓库单体分析引擎
-│   │   ├── chunked/            # 大型项目自动分片并发分析引擎
-│   │   ├── debate/             # 双模型多轮对抗辩论引擎 (抑制幻觉与误报)
+│   │   ├── debate/             # 多智能体对抗辩论引擎 (Hunter / Challenger / Judge)
 │   │   ├── assessment/         # 测试用例有效性评估与契约自愈定向修复引擎
+│   │   ├── plugins/            # 声明式 SPI 插件架构 (前置门禁 Gates / Verifiers)
+│   │   ├── chunked/            # 大型项目自动分片并发分析引擎
+│   │   ├── single/             # 小型仓库单体分析引擎
 │   │   ├── planner/            # 任务切片与分析规划器
 │   │   ├── profile/            # 代码仓特征画像分析引擎
 │   │   └── chunker/            # 基于 AST 语法的智能代码切片器
-│   ├── invoker/                # 底层 AI 执行驱动适配器 (Claude / OpenCode / Codex / Native / AGY)
-│   ├── runner/                 # 任务流水线执行编排 (analysis 切片分析 / synthesis 汇总 / git 同步 / 续扫)
-│   ├── defectlifecycle/        # 缺陷全生命周期追踪 (指纹锚点 anchor, 台账 ledger, 行号稳定器 stabilizer)
-│   ├── governance/             # 缺陷类目治理中心 (分类学 taxonomy, 语义匹配, 误报校准 calibrator, 反馈学习)
-│   ├── coverage/               # 扫描覆盖度计算与代码树对齐机制 (reconciliation)
+│   ├── invoker/                # AI 执行驱动适配器 (AGY / OpenCode / Codex / Claude / Native)
+│   ├── runner/                 # 任务流水线执行编排 (analysis / synthesis / git 同步)
+│   ├── defectlifecycle/        # 极简缺陷对账架构 (物理词法定桩 anchor, 离散槽位 slot, 台账 ledger)
+│   ├── governance/             # 缺陷类目分类学治理、语义匹配与确定性校准 (Calibrator)
+│   ├── coverage/               # 扫描覆盖度计算与代码树对齐机制 (Reconciliation)
 │   ├── queue/                  # 持久化任务队列模型与执行状态快照
 │   └── reports/                # 企业级多格式报告导出中心 (Excel / Markdown / JSON / Archive)
 ├── docs/                       # 系统架构、RFC、方法论与开发指南中心
+│   ├── 01-guides/              # 智能扫描使用手册与任务配置指南
+│   ├── 02-architecture/        # 核心流水线、扫描引擎、调度器、对账治理与多租户架构设计
+│   ├── 03-rfcs/                # 架构设计 RFC 提案中心 (RFC-001 ~ RFC-004)
+│   ├── 04-reports/             # 压测基准、事故复盘与里程碑落地复盘
+│   ├── 05-methodology/         # 与 AI 结对架构设计实战指南与方法论
+│   └── 06-reviews/             # 架构深度检视与副作用评估报告
 └── frontend/                   # React 18 前端 SPA (纯原生 Vanilla CSS，无第三方 UI 框架捆绑)
-    ├── src/pages/              # 业务路由页面 (Workbench, Campaign, Reports, Scan, ConfigCenter 等)
-    ├── src/components/         # 业务公共组件 (report 报告中心, defects 缺陷, execution 轨迹看板)
-    └── src/styles/             # 本地与全局样式
+    ├── src/pages/              # 业务路由页面 (Scan 扫描工作台, Workbench, Campaign, Reports 等)
+    ├── src/components/         # 业务公共组件 (report 报告中心, debate 辩论轨迹, defects 缺陷)
+    └── src/styles/             # 本地与全局样式 (严格对齐 Design Tokens)
 ```
 
 ---
 
 ## 🏷️ 版本历史
+
+### v2.0.0 (2026-10-17)
+- **多智能体对抗辩论流水线（Multi-Agent Debate Pipeline）全面落地**：
+  - 引入 **Hunter（初筛探索）**、**Defender/Challenger（辩护对抗）** 与 **Judge（终审法官）** 三阶段多智能体质证机制，显著压制大语言模型的幻觉与代码误报率。
+  - 支持 **0 候选快速放行（Fast-Pass）** 机制，无嫌疑分片毫秒级放行，节省 80%+ 的辩论阶段物理算力。
+  - 完整归档全量裁决事实链（`debate-chunks` 与 `debate-verdicts.log`），分片执行具备全局连续流水序号（`#1`, `#2`...）。
+- **4 级算力阶梯与异构 LLM 混合调用架构（Tiered Computing Architecture）**：
+  - 构建 **Tier 1 (初筛)**、**Tier 2 (辩护)**、**Tier 3 (裁决)** 与 **Tier 4 (态势汇总)** 四级流水线阶梯，各阶梯具备独立的超时、重试退避与候补资源池切换策略。
+  - 引入阶段空闲看门狗（Idle Watchdog）与分片超时二分重试（Split on Timeout），兼顾分析吞吐与极端大分片容错。
+- **高性能原生 Native LLM 轻量执行引擎（Thin LLM Engine）**：
+  - 摆脱对重量级 CLI 外部进程的单一依赖，直接通过标准 HTTP/SSE 协议直连 OpenAI / DeepSeek 等兼容接口。
+  - 采用动静分离架构，支持配置多异构 Endpoint 独立 BaseURL / APIKey / Model，内置加权轮询负载打散与故障自动转移。
+- **全矩阵 AI 执行器生态全面完善**：
+  - 原生适配 **Google Antigravity (AGY) CLI**，提供强大的代码交互探索与推理能力。
+  - 深度优化 **OpenCode CLI**：解决高并发 SQLite 锁冲突，支持失败会话原地续跑（Continuation）与输出契约守护。
+  - 深度优化 **Codex CLI**：支持免交互 headless 模式，兼容 Ubuntu 24.04 `danger-full-access` 沙箱与只读隔离。
+- **声明式 SPI 插件架构与任务形态差异化扫描**：
+  - 调度核心去特化，抽象出标准的 Gate（门禁）、Verifier（复核器）及 Profile（画像）插件契约扩展点。
+  - 单元测试有效性评估全面升级：支持实体级用例动态拆分与容灾重试，内置微空桩确诊、防弱断言（Weak Assertion）门禁、控制流护栏与契约自愈定向修复管线。
+  - 支持 Git 增量变更提取（`SinceDays` / `DiffBase`），为增量审查启用精准分片。
+- **极简缺陷对账架构（Slot-Based Reconciliation）与统一缺陷台账**：
+  - 告别复杂的空间几何距离算法，演进落地**纯 Go 物理词法定桩**（穿透 C++ 跨行宏）与**两级离散槽位匹配**，认知降维，彻底攻克代码行号抖动漂移与增量漏对账难题。
+  - 统一缺陷台账 SSOT 结构，实现**覆盖明细稀疏存储（Sparse Storage）**、短事务解耦与快照 TTL 分级归档，有效消除存储膨胀与数据库压力。
+  - 完善缺陷闭环机制：支持源文件删除自动关闭缺陷、历史确认次数与最近确认时间追踪。
+- **沉浸式扫描工作台（Scan Workbench）与端到端观测遥测**：
+  - 任务日志面板重塑为全景扫描工作台，分片矩阵并发状态、多智能体辩论时序与实时缺陷流一览无余。
+  - 任务报告中心新增**多智能体对抗辩论轨迹 TAB**，法官裁决与问题机理结构化分层渲染。
+  - 诊断报告阶段执行链路与耗时明细重构为表格化展示，清晰区分流水线阶段与异常重试。
+- **专项治理攻坚会战大盘与导出引擎升级**：
+  - 专项缺陷审计工作区支持 URL 直达、一键分享链接及实体评估模式下致命/严重指标拓展。
+  - 部门治理排行榜支持未关闭缺陷统计，Excel 导出全面升级为单 Sheet 二级可折叠大纲数据表。
+- **生产级弹性调度与安全防护**：
+  - 任务队列新增**优雅排空模式（Drain Mode）**，保障服务维护期间在途任务安全收敛。
+  - 废除粗暴的全局熔断机制，全面改用出错自适应暂停退避重试；完善工作时间自动限流避峰机制。
+- **技术债务全面清零与工程规范化（RFC-004 落地）**：
+  - 彻底清理启动期废弃 DDL 探测与旧业务实体（KeyIssue 等），消除双轨镜像兼容层，归一 SSOT 配置体系。
+  - 前端彻底清理内联静态样式与 JS 模拟 hover，删除冗余专用 CSS，全面对齐 Design Tokens 语义规范。
 
 ### v1.6.0 (2026-08-23)
 - **任务报告中心统一重构 (Task Report Center Refactor)**：
