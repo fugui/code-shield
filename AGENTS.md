@@ -2,7 +2,7 @@
 
 本文档专为参与 **Code-Shield** 开发的 AI 助手与团队成员制定，聚焦 Code-Shield 专有的系统架构、核心领域划分与防腐工程约束。
 
-> 💡 **基础规章约定**：工作区通用编码风格、Design Tokens 语义化变量、标准分页规范、中文沟通及 Conventional Commits 提交规范，请统一严格遵循工作区通用准则（参见 `code-common/rules/GEMINI.md`）。
+> 💡 **基础规章约定**：工作区通用编码风格、Design Tokens 语义化变量、标准分页规范、中文沟通及 Conventional Commits 提交规范，请统一严格遵循工作区通用准则（参见 `code-common/rules/AGENTS.md`）。
 
 ---
 
