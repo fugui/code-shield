@@ -412,6 +412,7 @@ func applySynthesisRecoveryStats(ctx *TaskContext, stats *dispatcher.TierRecover
 	ctx.Summary.Synthesis.ResourceFailovers = stats.ResourceFailovers
 	ctx.Summary.Synthesis.DriverFailovers = stats.DriverFailovers
 	ctx.Summary.Synthesis.ResourceChain = stats.ResourceChain
+	ctx.Summary.Synthesis.StageChain = stats.StageChain
 	ctx.Summary.Synthesis.ErrorClasses = stats.ErrorClasses
 	ctx.Summary.Synthesis.QueueWaitMS = stats.QueueWaitMS
 	ctx.Summary.Synthesis.AttemptDurationSeconds = stats.DurationSeconds

@@ -262,6 +262,7 @@ type ChunkDiagnosticDetail struct {
 	ResourceFailovers        int       `json:"resource_failovers"`
 	DriverFailovers          int       `json:"driver_failovers"`
 	ResourceChain            []string  `json:"resource_chain,omitempty"`
+	StageChain               []string  `json:"stage_chain,omitempty"`
 	ErrorClasses             []string  `json:"error_classes,omitempty"`
 	QueueWaitMS              []int64   `json:"queue_wait_ms,omitempty"`
 	AttemptDurationSeconds   []float64 `json:"attempt_duration_seconds,omitempty"`
@@ -379,6 +380,7 @@ type SynthesisDiagnosticSummary struct {
 	ResourceFailovers      int       `json:"resource_failovers"`
 	DriverFailovers        int       `json:"driver_failovers"`
 	ResourceChain          []string  `json:"resource_chain,omitempty"`
+	StageChain             []string  `json:"stage_chain,omitempty"`
 	ErrorClasses           []string  `json:"error_classes,omitempty"`
 	QueueWaitMS            []int64   `json:"queue_wait_ms,omitempty"`
 	AttemptDurationSeconds []float64 `json:"attempt_duration_seconds,omitempty"`

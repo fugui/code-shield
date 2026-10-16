@@ -315,6 +315,7 @@ func recordFreshRetryMetrics(
 	if stats := splitStatsFromContext(ctx); stats != nil {
 		stats.FreshRetries++
 		stats.ResourceChain = append(stats.ResourceChain, candidate.ResourceID)
+		stats.StageChain = append(stats.StageChain, "specialized_assessment")
 		class := invoker.ErrorClassNone
 		if err != nil {
 			class = invoker.ClassifyError(err)

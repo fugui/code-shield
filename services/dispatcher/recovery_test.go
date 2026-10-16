@@ -66,6 +66,9 @@ func TestTierRecoveryDefaultConfigNeverFailsOverResource(t *testing.T) {
 	if stats.ResourceFailovers != 0 {
 		t.Fatalf("resource failovers=%d, want 0", stats.ResourceFailovers)
 	}
+	if len(stats.StageChain) != 2 || stats.StageChain[0] != "tier1_hunter" || stats.StageChain[1] != "tier1_hunter" {
+		t.Fatalf("stage chain=%#v, want [tier1_hunter, tier1_hunter]", stats.StageChain)
+	}
 }
 
 func TestNextTierCandidatePreservesForwardOrder(t *testing.T) {

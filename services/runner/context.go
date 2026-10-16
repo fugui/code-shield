@@ -41,6 +41,7 @@ type ChunkDetails struct {
 	ResourceFailovers        int       `json:"resource_failovers"`
 	DriverFailovers          int       `json:"driver_failovers"`
 	ResourceChain            []string  `json:"resource_chain,omitempty"`
+	StageChain               []string  `json:"stage_chain,omitempty"`
 	ErrorClasses             []string  `json:"error_classes,omitempty"`
 	QueueWaitMS              []int64   `json:"queue_wait_ms,omitempty"`
 	AttemptDurationSeconds   []float64 `json:"attempt_duration_seconds,omitempty"`
@@ -118,6 +119,7 @@ type SynthesisSummary struct {
 	ResourceFailovers      int       `json:"resource_failovers"`
 	DriverFailovers        int       `json:"driver_failovers"`
 	ResourceChain          []string  `json:"resource_chain,omitempty"`
+	StageChain             []string  `json:"stage_chain,omitempty"`
 	ErrorClasses           []string  `json:"error_classes,omitempty"`
 	QueueWaitMS            []int64   `json:"queue_wait_ms,omitempty"`
 	AttemptDurationSeconds []float64 `json:"attempt_duration_seconds,omitempty"`
@@ -317,6 +319,7 @@ func ConvertEngineChunkDetails(items []engines.ChunkDetails) []ChunkDetails {
 			ResourceFailovers:        item.ResourceFailovers,
 			DriverFailovers:          item.DriverFailovers,
 			ResourceChain:            append([]string(nil), item.ResourceChain...),
+			StageChain:               append([]string(nil), item.StageChain...),
 			ErrorClasses:             append([]string(nil), item.ErrorClasses...),
 			QueueWaitMS:              append([]int64(nil), item.QueueWaitMS...),
 			AttemptDurationSeconds:   append([]float64(nil), item.AttemptDurationSeconds...),
