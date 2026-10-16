@@ -136,7 +136,7 @@ scanner:
 
 | 错误类型 | 第一动作 | 第二动作 | 禁止动作 |
 | --- | --- | --- | --- |
-| `resource_unavailable` | 结束当前 resource 的恢复链 | 仅显式开启候选 failover 且预算允许时切换 | 默认原地无限等待 |
+| `resource_unavailable` | 短退避（默认 3s/6s）暂停 | 同 resource fresh retry；仅显式开启候选 failover 且预算允许时切换 | 全局熔断阻断或默认原地无限等待 |
 | `idle_timeout` | fresh session retry 或 continuation | 多文件 bundle 先 split；单文件分片继续同 resource retry | 无限等待或无预算重试 |
 | `timeout` | 多文件 bundle split | 不可拆分时同 resource fresh retry | 无退避高频原 bundle 重试 |
 | `output_missing` | OpenCode continuation / Codex fresh attempt | 同 resource fresh retry | 把 stdout 片段当作 artifact |
@@ -151,7 +151,7 @@ scanner:
 
 `contract_mismatch` 和 `json_invalid` 不属于普通 retry 类错误。它们应首先进入 schema repair 流程；只有 repair 失败且总预算仍有剩余时，才在同一 resource 上重新生成。资源切换只保留给显式配置的可用性异常。
 
-熔断中的 resource 在 stage 内映射为 `resource_unavailable`。它不会自动打开候选切换；只有 `max_candidate_failovers > 0` 且错误进入 `candidate_failover_on` 时才会降级到备选资源。
+为避免批处理扫描中因偶发抖动引发大面积分片失败，系统已废除全局 90 秒熔断封锁机制。出现 `resource_unavailable` 时，系统先执行指数退避暂停，再在同 resource 上重试；只有 `max_candidate_failovers > 0` 且错误进入 `candidate_failover_on` 时才会降级到备选资源。
 
 ## 7. Tier Resource 计划
 
@@ -352,6 +352,6 @@ chunk-0-xxx-1-assessment.json.attempt-2.output.txt
 
 Hunter、`specialized assessment`、Challenger、Judge 和 Synthesis 共用 stage deadline。`timeout_seconds` 控制 retry、split、contract repair 和显式 failover 的统一倒计时，Synthesis 也不再叠加旧的外层 retry 循环。配置规范化为同 resource retry 预算 2，`candidate_failover_on` 默认为空，因此默认配置不会发生跨 resource 切换。
 
-Resource 健康度由 dispatcher 记录连续失败和 breaker 状态。连续 5 次失败会打开 90 秒熔断；breaker 打开在恢复状态机中分类为 `resource_unavailable`，不会单独触发候选切换。打开期间不启动 invocation；超过 `open_until` 后资源恢复可用。
+Resource 健康度由 dispatcher 记录连续失败和时间戳供诊断监控。系统不施加全局阻断熔断，临时性错误直接触发 stage 级就地暂停退避与同 resource 重试，避免因个别瞬时错误引发全局分片级联雪崩。
 
 `ChunkDetails`、Synthesis summary 与 `DiagnosticsDTO.synthesis` 记录 `resource_failovers`、`resource_chain`、`error_classes`、`queue_wait_ms` 和 `attempt_duration_seconds`。`resource_chain` 按 attempt 展开以便审计；`resource_failovers` 只统计候选 resource 切换；`driver_failovers` 保持为 invocation 内部 endpoint / driver failover 的既有口径。
