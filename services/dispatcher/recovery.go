@@ -125,15 +125,19 @@ func candidateFailoverAllowed(recovery models.TierRecoveryConfig, class invoker.
 func waitTierRecoveryBackoff(ctx context.Context, recovery models.TierRecoveryConfig, attempt int) error {
 	backoff := time.Duration(recovery.RetryBackoffMs) * time.Millisecond
 	if backoff <= 0 {
-		return nil
+		backoff = 3 * time.Second
 	}
-	if recovery.MaxBackoffSeconds > 0 && backoff > time.Duration(recovery.MaxBackoffSeconds)*time.Second {
-		backoff = time.Duration(recovery.MaxBackoffSeconds) * time.Second
+	maxBackoff := time.Duration(recovery.MaxBackoffSeconds) * time.Second
+	if maxBackoff <= 0 {
+		maxBackoff = 15 * time.Second
 	}
-	if backoff > time.Second {
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+	if attempt > 1 {
 		backoff *= time.Duration(attempt)
-		if recovery.MaxBackoffSeconds > 0 && backoff > time.Duration(recovery.MaxBackoffSeconds)*time.Second {
-			backoff = time.Duration(recovery.MaxBackoffSeconds) * time.Second
+		if backoff > maxBackoff {
+			backoff = maxBackoff
 		}
 	}
 	select {
@@ -146,7 +150,7 @@ func waitTierRecoveryBackoff(ctx context.Context, recovery models.TierRecoveryCo
 
 // RunTierInvocationWithRecovery executes one logical tier invocation under the
 // stage recovery state machine. Ordinary retries preserve the selected
-// resource; failover requires both an availability class and an explicit budget.
+// resource with pause & backoff; failover requires both an availability class and an explicit budget.
 func RunTierInvocationWithRecovery(
 	ctx context.Context,
 	tierName string,
@@ -184,6 +188,7 @@ func RunTierInvocationWithRecovery(
 			string(invoker.ErrorClassResourceBusy),
 			string(invoker.ErrorClassRateLimited),
 			string(invoker.ErrorClassNetworkTransient),
+			string(invoker.ErrorClassResourceUnavailable),
 		}
 	}
 	if len(recovery.SplitOn) == 0 {
@@ -215,23 +220,6 @@ func RunTierInvocationWithRecovery(
 		}
 		candidate := plan.Selected
 		stats.trackAttempt(candidate.ResourceID, tierName)
-		if !candidate.Available {
-			lastErr = invoker.NewClassifiedError(
-				invoker.ErrorClassResourceUnavailable,
-				"%s resource %s breaker is open", tierName, candidate.ResourceID,
-			)
-			stats.recordError(invoker.ErrorClassResourceUnavailable)
-			if candidateFailoverAllowed(recovery, invoker.ErrorClassResourceUnavailable) && attempt < maxAttempts {
-				excludedResources[candidate.ResourceID] = struct{}{}
-				if next, ok := NextTierCandidate(plan, excludedResources); ok &&
-					stats.ResourceFailovers < recovery.MaxCandidateFailovers {
-					plan.Selected = next
-					stats.ResourceFailovers++
-					continue
-				}
-			}
-			return rawOutput, candidate, tokens, lastErr
-		}
 
 		attemptStart := time.Now()
 		metrics := &invoker.InvocationMetrics{}
@@ -265,6 +253,17 @@ func RunTierInvocationWithRecovery(
 					return splitOutput, candidate, splitTokens, nil
 				}
 				return rawOutput, candidate, splitTokens, splitErr
+			}
+		}
+
+		// When candidate failover is explicitly enabled for resource_unavailable, switch candidate immediately
+		if class == invoker.ErrorClassResourceUnavailable && candidateFailoverAllowed(recovery, class) && attempt < maxAttempts {
+			excludedResources[candidate.ResourceID] = struct{}{}
+			if next, ok := NextTierCandidate(plan, excludedResources); ok &&
+				stats.ResourceFailovers < recovery.MaxCandidateFailovers {
+				plan.Selected = next
+				stats.ResourceFailovers++
+				continue
 			}
 		}
 

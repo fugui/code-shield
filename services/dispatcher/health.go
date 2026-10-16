@@ -7,13 +7,9 @@ import (
 	"code-shield/models"
 )
 
-const (
-	resourceBreakerFailureThreshold = 5
-	resourceBreakerOpenDuration     = 90 * time.Second
-)
-
-// RecordResourceResult updates the rolling breaker state. A resource opening
-// does not imply candidate failover: stage recovery must explicitly opt in.
+// RecordResourceResult updates failure and success timestamps for diagnostics.
+// Circuit breaker has been removed: temporary errors trigger pause & backoff retry
+// instead of locking out resources globally.
 func (d *ModelDispatcher) RecordResourceResult(res *ModelResource, err error) {
 	if d == nil || res == nil {
 		return
@@ -23,34 +19,19 @@ func (d *ModelDispatcher) RecordResourceResult(res *ModelResource, err error) {
 	defer d.mu.Unlock()
 	now := time.Now()
 	if err == nil {
-		res.Health = ResourceHealth{}
+		res.Health.ConsecutiveFailures = 0
 		res.Health.LastSuccessAt = now
 		return
 	}
 
 	res.Health.ConsecutiveFailures++
 	res.Health.LastFailureAt = now
-	if res.Health.ConsecutiveFailures >= resourceBreakerFailureThreshold {
-		res.Health.OpenUntil = now.Add(resourceBreakerOpenDuration)
-		log.Printf("[Dispatcher] Resource [%s] breaker opened for %s after %d consecutive failures\n",
-			res.ResourceKey(), resourceBreakerOpenDuration, res.Health.ConsecutiveFailures)
-	}
-}
-
-func (h ResourceHealth) availableLocked(now time.Time) bool {
-	return h.OpenUntil.IsZero() || !now.Before(h.OpenUntil)
 }
 
 func (h ResourceHealth) snapshot(now time.Time) ResourceHealthSnapshot {
-	open := !h.availableLocked(now)
 	snapshot := ResourceHealthSnapshot{
-		Healthy:             !open,
-		BreakerOpen:         open,
+		Healthy:             h.ConsecutiveFailures == 0,
 		ConsecutiveFailures: h.ConsecutiveFailures,
-	}
-	if !h.OpenUntil.IsZero() && now.Before(h.OpenUntil) {
-		openUntil := h.OpenUntil
-		snapshot.OpenUntil = &openUntil
 	}
 	if !h.LastFailureAt.IsZero() {
 		lastFailure := h.LastFailureAt
@@ -63,42 +44,25 @@ func (h ResourceHealth) snapshot(now time.Time) ResourceHealthSnapshot {
 	return snapshot
 }
 
-func (d *ModelDispatcher) resourceAvailableLocked(resourceID string, now time.Time) bool {
-	if resourceID == "" {
-		return true
-	}
-	for _, res := range d.resources {
-		if res.ResourceKey() == resourceID || res.ID == resourceID || res.Driver == resourceID {
-			return res.Health.availableLocked(now)
-		}
-	}
+// IsResourceAvailable reports whether a configured resource is available.
+// All configured resources remain available for retry attempts without breaker lockouts.
+func (d *ModelDispatcher) IsResourceAvailable(resourceID string) bool {
 	return true
 }
 
-// IsResourceAvailable reports whether a configured resource's breaker is open.
-func (d *ModelDispatcher) IsResourceAvailable(resourceID string) bool {
-	if d == nil || !d.enabled {
-		return true
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.resourceAvailableLocked(resourceID, time.Now())
-}
-
-// RecoveryResourceSnapshot exposes breaker state for routing and diagnostics.
+// ResourceHealth exposes health diagnostics. Returns (available=true, healthy).
 func (d *ModelDispatcher) ResourceHealth(resourceID string) (bool, bool) {
 	if d == nil || !d.enabled {
-		return true, false
+		return true, true
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, res := range d.resources {
 		if res.ResourceKey() == resourceID || res.ID == resourceID || res.Driver == resourceID {
-			now := time.Now()
-			return res.Health.availableLocked(now), !res.Health.availableLocked(now)
+			return true, res.Health.ConsecutiveFailures == 0
 		}
 	}
-	return true, false
+	return true, true
 }
 
 // isInsideWorkHours 判定指定时刻是否处于工作时间窗口内

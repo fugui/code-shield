@@ -2,10 +2,8 @@ package dispatcher
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"code-shield/models"
 	"code-shield/services/invoker"
@@ -163,49 +161,63 @@ func TestTierRecoveryExplicitAvailabilityFailover(t *testing.T) {
 	}
 }
 
-func TestTierRecoveryBreakerOpenMapsResourceUnavailable(t *testing.T) {
+func TestResourceResultTracksFailuresWithoutBreakerOpen(t *testing.T) {
 	dispatcher := newHealthTestDispatcher(t)
 	primary := dispatcher.resources[0]
-	for i := 0; i < resourceBreakerFailureThreshold; i++ {
+	for i := 0; i < 10; i++ {
 		dispatcher.RecordResourceResult(primary, invoker.NewClassifiedError(invoker.ErrorClassNetworkTransient, "network failed"))
 	}
-	if available, open := dispatcher.ResourceHealth(primary.ID); available || !open {
-		t.Fatalf("available=%v open=%v, want breaker open", available, open)
+	if available := dispatcher.IsResourceAvailable(primary.ID); !available {
+		t.Fatal("expected IsResourceAvailable to stay true (breaker removed)")
 	}
-	if available := dispatcher.IsResourceAvailable(primary.ID); available {
-		t.Fatal("expected IsResourceAvailable to report breaker open")
+	available, healthy := dispatcher.ResourceHealth(primary.ID)
+	if !available {
+		t.Fatal("expected available=true")
 	}
-	configureTierRecoveryTest(t, []string{primary.ID}, models.TierRecoveryConfig{MaxTotalAttempts: 2})
-	invoked := false
-	stats := &TierRecoveryStats{}
-	_, _, _, err := RunTierInvocationWithRecovery(
-		context.Background(), "tier1_hunter", 10, stats,
-		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
-			invoked = true
-			return "", 0, nil
-		},
-	)
-	var classified *invoker.ClassifiedError
-	if !errors.As(err, &classified) || classified.ErrorClass() != invoker.ErrorClassResourceUnavailable {
-		t.Fatalf("error=%v, want resource_unavailable", err)
+	if healthy {
+		t.Fatal("expected healthy=false due to consecutive failures")
 	}
-	if invoked || stats.ResourceFailovers != 0 || len(stats.ErrorClasses) != 1 {
-		t.Fatalf("invoked=%v stats=%+v, want unavailable attempt without invocation", invoked, stats)
+	if primary.Health.ConsecutiveFailures != 10 {
+		t.Fatalf("consecutive failures = %d, want 10", primary.Health.ConsecutiveFailures)
+	}
+	// Test success resets failures
+	dispatcher.RecordResourceResult(primary, nil)
+	if primary.Health.ConsecutiveFailures != 0 {
+		t.Fatalf("consecutive failures = %d, want 0 after success", primary.Health.ConsecutiveFailures)
 	}
 }
 
-func TestResourceBreakerExpires(t *testing.T) {
-	dispatcher := newHealthTestDispatcher(t)
-	primary := dispatcher.resources[0]
-	for i := 0; i < resourceBreakerFailureThreshold; i++ {
-		dispatcher.RecordResourceResult(primary, errors.New("failed"))
+func TestTierRecoveryResourceUnavailableRetriesSameResource(t *testing.T) {
+	configureTierRecoveryTest(t, []string{"recovery-primary"}, models.TierRecoveryConfig{
+		MaxTotalAttempts: 3,
+		RetryBackoffMs:   1, // minimal sleep for fast test
+	})
+	calls := 0
+	stats := &TierRecoveryStats{}
+	out, candidate, tokens, err := RunTierInvocationWithRecovery(
+		context.Background(), "tier1_hunter", 10, stats,
+		func(context.Context, TierCandidate, int, *invoker.InvocationMetrics) (string, int64, error) {
+			calls++
+			if calls == 1 {
+				return "", 0, invoker.NewClassifiedError(invoker.ErrorClassResourceUnavailable, "resource unavailable temporarily")
+			}
+			return "recovered output", 100, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if available, _ := dispatcher.ResourceHealth(primary.ID); available {
-		t.Fatal("expected breaker open")
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (1 failed + 1 recovered)", calls)
 	}
-	primary.Health.OpenUntil = time.Now().Add(-time.Second)
-	if available, open := dispatcher.ResourceHealth(primary.ID); !available || open {
-		t.Fatalf("available=%v open=%v, want breaker closed", available, open)
+	if out != "recovered output" || tokens != 100 {
+		t.Fatalf("out=%q tokens=%d, want recovered output", out, tokens)
+	}
+	if candidate.ResourceID != "recovery-primary" {
+		t.Fatalf("candidate=%s, want recovery-primary preserved", candidate.ResourceID)
+	}
+	if stats.FreshRetries != 1 {
+		t.Fatalf("FreshRetries = %d, want 1", stats.FreshRetries)
 	}
 }
 

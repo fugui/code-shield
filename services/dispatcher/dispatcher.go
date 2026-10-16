@@ -121,20 +121,16 @@ type ModelResourceStatus struct {
 	Endpoints  []models.ResourceEndpointConfig `json:"endpoints,omitempty"`
 }
 
-// ResourceHealth is dispatcher-owned rolling breaker state. Opening the breaker
-// maps to resource_unavailable and never authorizes candidate failover alone.
+// ResourceHealth tracks failure and success diagnostics for a resource.
 type ResourceHealth struct {
 	ConsecutiveFailures int
-	OpenUntil           time.Time
 	LastFailureAt       time.Time
 	LastSuccessAt       time.Time
 }
 
 type ResourceHealthSnapshot struct {
 	Healthy             bool       `json:"healthy"`
-	BreakerOpen         bool       `json:"breaker_open"`
 	ConsecutiveFailures int        `json:"consecutive_failures"`
-	OpenUntil           *time.Time `json:"open_until,omitempty"`
 	LastFailureAt       *time.Time `json:"last_failure_at,omitempty"`
 	LastSuccessAt       *time.Time `json:"last_success_at,omitempty"`
 }
