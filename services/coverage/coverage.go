@@ -229,9 +229,8 @@ func NormalizeRepoPath(repoRoot, path string) string {
 // Build creates an immutable scan-coverage fact from planned chunks.
 func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []Chunk) Coverage {
 	pathChunks := make(map[string][]int)
-	plannedOwners := make(map[string]int)
+	plannedChunkIndexes := make(map[string][]int)
 	plannedFiles := make(map[string]PlannedFile)
-	conflicts := make(map[string]bool)
 	orderedPaths := make([]string, 0)
 	seen := make(map[string]bool)
 
@@ -245,11 +244,12 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 				seen[path] = true
 				orderedPaths = append(orderedPaths, path)
 			}
-			if _, exists := plannedOwners[path]; exists {
-				conflicts[path] = true
+			if existing, exists := plannedFiles[path]; exists {
+				plannedFiles[path] = mergePlannedFile(existing, planned)
+			} else {
+				plannedFiles[path] = planned
 			}
-			plannedOwners[path] = chunkIdx
-			plannedFiles[path] = planned
+			plannedChunkIndexes[path] = append(plannedChunkIndexes[path], chunkIdx)
 		}
 		for _, rawPath := range chunk.Files {
 			path := NormalizeRepoPath(repoRoot, rawPath)
@@ -298,6 +298,12 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 	files := make([]File, 0, len(orderedPaths))
 	for _, path := range orderedPaths {
 		ownerIndexes := pathChunks[path]
+		plannedIndexes := plannedChunkIndexes[path]
+		hasPlanned := len(plannedIndexes) > 0
+		allChunkIndexes := uniqueChunkIndexes(ownerIndexes, plannedIndexes)
+		realChunkIndexes := filterRealChunks(chunks, allChunkIndexes)
+		conflict := isPlanConflict(chunks, ownerIndexes, plannedIndexes)
+
 		status := StatusUnknown
 		var reason string
 		var errorText string
@@ -307,7 +313,7 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 		var hunkRanges []string
 		var owner *Chunk
 		var ownerIndex int
-		plannedChunkIndex, hasPlanned := plannedOwners[path]
+
 		isTarget := hasPlanned
 		if !isTarget {
 			for _, chunkIdx := range ownerIndexes {
@@ -321,26 +327,42 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 				}
 			}
 		}
-		if len(ownerIndexes) == 1 && !conflicts[path] {
-			ownerIndex = ownerIndexes[0]
-			owner = &chunks[ownerIndex]
-			status = normalizeStatus(owner.Status)
-			errorText = owner.Error
-			errorClass = owner.ErrorClass
-		}
-		if hasPlanned && !conflicts[path] {
+
+		if hasPlanned {
 			planned := plannedFiles[path]
-			status = normalizeStatus(chunks[plannedChunkIndex].Status)
 			reason = planned.Reason
 			diffTouched = planned.DiffTouched
 			deleted = planned.Deleted
 			hunkRanges = planned.HunkRanges
-			if status == StatusUnknown {
-				status = StatusPlanned
-			}
 		}
-		if len(ownerIndexes) > 1 {
-			status, errorText, errorClass = aggregateChunkStatuses(chunks, ownerIndexes)
+
+		if conflict {
+			status = StatusUnknown
+			errorText = "plan conflict: incompatible chunk assignments"
+		} else {
+			switch {
+			case len(realChunkIndexes) == 1:
+				ownerIndex = realChunkIndexes[0]
+				owner = &chunks[ownerIndex]
+				status = normalizeStatus(owner.Status)
+				errorText = owner.Error
+				errorClass = owner.ErrorClass
+				if status == StatusUnknown && hasPlanned {
+					status = StatusPlanned
+				}
+			case len(realChunkIndexes) > 1:
+				status, errorText, errorClass = aggregateChunkStatuses(chunks, realChunkIndexes)
+			default:
+				if len(allChunkIndexes) > 0 {
+					ownerIndex = allChunkIndexes[0]
+					status = normalizeStatus(chunks[ownerIndex].Status)
+					errorText = chunks[ownerIndex].Error
+					errorClass = chunks[ownerIndex].ErrorClass
+					if status == StatusUnknown && hasPlanned {
+						status = StatusPlanned
+					}
+				}
+			}
 		}
 
 		item := File{
@@ -357,10 +379,8 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 		if owner != nil {
 			item.ChunkUID = chunkIDs[ownerIndex]
 			item.ChunkSnapshotHash = chunkSnapshots[ownerIndex]
-			item.Error = errorText
-			item.ErrorClass = errorClass
 		}
-		if len(ownerIndexes) > 1 && status == StatusFailed {
+		if errorText != "" && item.Error == "" {
 			item.Error = errorText
 			item.ErrorClass = errorClass
 		}
@@ -401,6 +421,96 @@ func aggregateChunkStatuses(chunks []Chunk, indexes []int) (status, errorText, e
 		status = StatusSuccess
 	}
 	return status, "", ""
+}
+
+func isPlanConflict(chunks []Chunk, ownerIndexes, plannedIndexes []int) bool {
+	hasRealScan := false
+	hasPseudoPlan := false
+	pseudoStatuses := make(map[string]bool)
+
+	for _, idx := range ownerIndexes {
+		if idx >= 0 && idx < len(chunks) {
+			if !strings.HasPrefix(chunks[idx].UID, "coverage-plan-") {
+				hasRealScan = true
+			} else {
+				hasPseudoPlan = true
+				pseudoStatuses[chunks[idx].Status] = true
+			}
+		}
+	}
+	for _, idx := range plannedIndexes {
+		if idx >= 0 && idx < len(chunks) {
+			if !strings.HasPrefix(chunks[idx].UID, "coverage-plan-") {
+				hasRealScan = true
+			} else {
+				hasPseudoPlan = true
+				pseudoStatuses[chunks[idx].Status] = true
+			}
+		}
+	}
+
+	if hasRealScan && hasPseudoPlan {
+		return true
+	}
+	if len(pseudoStatuses) > 1 {
+		return true
+	}
+	return false
+}
+
+func mergePlannedFile(existing, incoming PlannedFile) PlannedFile {
+	return PlannedFile{
+		Path:        existing.Path,
+		Reason:      firstNonEmpty(existing.Reason, incoming.Reason),
+		DiffTouched: existing.DiffTouched || incoming.DiffTouched,
+		Deleted:     existing.Deleted || incoming.Deleted,
+		HunkRanges:  mergeHunkRanges(existing.HunkRanges, incoming.HunkRanges),
+	}
+}
+
+func mergeHunkRanges(existing, incoming []string) []string {
+	if len(existing) == 0 && len(incoming) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(existing)+len(incoming))
+	merged := make([]string, 0, len(existing)+len(incoming))
+	for _, r := range existing {
+		if r != "" && !seen[r] {
+			seen[r] = true
+			merged = append(merged, r)
+		}
+	}
+	for _, r := range incoming {
+		if r != "" && !seen[r] {
+			seen[r] = true
+			merged = append(merged, r)
+		}
+	}
+	return merged
+}
+
+func uniqueChunkIndexes(groups ...[]int) []int {
+	seen := make(map[int]bool)
+	unique := make([]int, 0)
+	for _, group := range groups {
+		for _, idx := range group {
+			if !seen[idx] {
+				seen[idx] = true
+				unique = append(unique, idx)
+			}
+		}
+	}
+	return unique
+}
+
+func filterRealChunks(chunks []Chunk, indexes []int) []int {
+	realIndexes := make([]int, 0, len(indexes))
+	for _, idx := range indexes {
+		if idx >= 0 && idx < len(chunks) && !strings.HasPrefix(chunks[idx].UID, "coverage-plan-") {
+			realIndexes = append(realIndexes, idx)
+		}
+	}
+	return realIndexes
 }
 
 func normalizeStatus(raw string) string {
