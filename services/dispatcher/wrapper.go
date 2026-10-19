@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"code-shield/models"
 	"code-shield/services/invoker"
 )
 
@@ -73,8 +74,17 @@ func (w *DispatchingInvoker) Invoke(req invoker.AIRequest) error {
 			preferredResourceID = workCtx.ResourceID
 		}
 
-		// 1. 申请 LLM 服务器资源（支持模型亲和性与容量加权优先分配）
-		res, modelName, err := d.AcquireWithPreference(ctx, backend, req.ModelName, preferredResourceID)
+		// 解析当前阶段合法的算力池白名单 (Scoped Resource IDs)
+		var allowedIDs []string
+		if d == GlobalDispatcher && tierName != "" && tierName != systemTierName {
+			allowedIDs = models.AppConfig.GetTierResources(tierName)
+		}
+		if len(allowedIDs) == 0 && preferredResourceID != "" {
+			allowedIDs = []string{preferredResourceID}
+		}
+
+		// 1. 申请 LLM 服务器资源（严格在 allowedIDs 范围内选择，严禁跳出越界）
+		res, modelName, err := d.AcquireScoped(ctx, backend, req.ModelName, preferredResourceID, allowedIDs)
 		if err != nil {
 			d.RecordDispatchAcquireFailure(tierName, err)
 			return invoker.WrapClassifiedError(

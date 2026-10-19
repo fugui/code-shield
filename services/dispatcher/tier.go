@@ -61,12 +61,14 @@ func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, override
 	backend := tierCfg.Backend
 	modelName := tierCfg.Model
 
+	var resourceID string
 	if overrideBackend != "" {
 		backend = overrideBackend
 	} else {
 		candidateResources := models.AppConfig.GetTierResources(tierName)
 		if len(candidateResources) > 1 && tr.dispatcher != nil && tr.dispatcher.enabled {
 			bestResourceID, bestModel := tr.dispatcher.PickBestCandidateResource(candidateResources)
+			resourceID = bestResourceID
 			if bestResource := models.AppConfig.FindResource(bestResourceID); bestResource != nil {
 				backend = bestResource.Driver
 				modelName = bestModel
@@ -75,6 +77,7 @@ func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, override
 				}
 			}
 		} else if len(candidateResources) == 1 {
+			resourceID = candidateResources[0]
 			if res := models.AppConfig.FindResource(candidateResources[0]); res != nil {
 				backend = res.Driver
 				modelName = res.ResourceModel()
@@ -90,8 +93,9 @@ func (tr *TierRouter) AcquireTier(ctx context.Context, tierName string, override
 	}
 
 	acq := &TierAcquisition{
-		Backend:   backend,
-		ModelName: modelName,
+		ResourceID: resourceID,
+		Backend:    backend,
+		ModelName:  modelName,
 		Release: func() {
 			// 物理槽位统一由 DispatchingInvoker.Invoke 闭环管理，此处保留空实现以兼容上层 defer 调用
 		},

@@ -65,6 +65,37 @@ func (r *ModelResource) ResourceKey() string {
 	return "models:" + r.OpenCode + "|" + r.Claude + "|" + r.Codex + "|" + r.Agy + "|" + r.Native
 }
 
+// Matches 判断当前算力节点是否匹配给定的标识键（支持 ID、ResourceKey 以及 Driver）
+func (r *ModelResource) Matches(targetID string) bool {
+	if r == nil || targetID == "" {
+		return false
+	}
+	if r.ID != "" && r.ID == targetID {
+		return true
+	}
+	if r.ResourceKey() == targetID {
+		return true
+	}
+	if r.Driver != "" && r.Driver == targetID {
+		return true
+	}
+	return false
+}
+
+// InAllowed 判断当前算力节点是否在指定的允许算力池列表中
+func (r *ModelResource) InAllowed(allowedIDs []string) bool {
+	if r == nil || len(allowedIDs) == 0 {
+		return false
+	}
+	for _, id := range allowedIDs {
+		if r.Matches(id) {
+			return true
+		}
+	}
+	return false
+}
+
+
 // computeResourceConfigKey 计算 ComputeResourceConfig 对应的业务标识键
 func computeResourceConfigKey(res models.ComputeResourceConfig) string {
 	resourceModel := res.ResourceModel()
@@ -314,13 +345,27 @@ func (d *ModelDispatcher) IsEnabled() bool {
 	return d.enabled
 }
 
-// Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位
+// Acquire 动态请求一个支持指定后端类型的空闲 LLM 模型资源槽位。
 func (d *ModelDispatcher) Acquire(ctx context.Context, backend string) (*ModelResource, string, error) {
-	return d.AcquireWithPreference(ctx, backend, "", "")
+	return d.AcquireScoped(ctx, backend, "", "", nil)
 }
 
-// AcquireWithPreference 动态请求支持指定后端类型的空闲 LLM 模型资源槽位。
+// AcquireWithPreference 动态请求支持指定后端类型的空闲 LLM 模型资源槽位（向后兼容）。
+// 当指定 preferredResourceID 时，严格受限于该指定资源；若需多候选资源受限调度，请使用 AcquireScoped。
 func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, preferredModel, preferredResourceID string) (*ModelResource, string, error) {
+	var allowedIDs []string
+	if preferredResourceID != "" {
+		allowedIDs = []string{preferredResourceID}
+	}
+	return d.AcquireScoped(ctx, backend, preferredModel, preferredResourceID, allowedIDs)
+}
+
+// AcquireScoped 动态请求指定后端类型的空闲 LLM 模型资源槽位，严格受限于 allowedResourceIDs 白名单。
+// 核心规则：
+// 1. 若 allowedResourceIDs 非空，候选节点池 candidatePool 严格封闭在白名单内；
+// 2. 若候选集内所有节点均满载（Active >= limit），严禁跳出越界借用未授权池，必须调用 d.cond.Wait() 阻塞等待释放；
+// 3. 仅当 allowedResourceIDs 为空且 preferredResourceID 为空时，才允许走全集群同 Driver 节点通用最低负载调度。
+func (d *ModelDispatcher) AcquireScoped(ctx context.Context, backend, preferredModel, preferredResourceID string, allowedResourceIDs []string) (*ModelResource, string, error) {
 	if d == nil || !d.enabled {
 		return nil, "", nil
 	}
@@ -332,14 +377,21 @@ func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, pr
 		return nil, "", err
 	}
 
+	// 预先校验集群中是否存在支持该 backend 且匹配白名单的算力节点
 	hasSupportedServer := false
 	for _, res := range d.resources {
 		if res.ModelName(backend) != "" {
+			if len(allowedResourceIDs) > 0 && !res.InAllowed(allowedResourceIDs) {
+				continue
+			}
 			hasSupportedServer = true
 			break
 		}
 	}
 	if !hasSupportedServer {
+		if len(allowedResourceIDs) > 0 {
+			return nil, "", fmt.Errorf("none of the allowed resources %v support backend %q", allowedResourceIDs, backend)
+		}
 		if last, ok := d.unsupportedWarned[backend]; !ok || time.Since(last) >= time.Minute {
 			log.Printf("[Dispatcher] WARNING: no server resource supports backend %q; falling back to passthrough (concurrency throttling bypassed)", backend)
 			if d.unsupportedWarned == nil {
@@ -374,40 +426,46 @@ func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, pr
 		info := d.getEffectiveScaleInfoLocked(time.Now())
 		scale := info.EffectiveScale
 
+		// 1. 严格构建当前作用域内的候选节点池 (Candidate Pool)
+		var candidatePool []*ModelResource
+		for _, res := range d.resources {
+			if res.ModelName(backend) == "" {
+				continue
+			}
+			if len(allowedResourceIDs) > 0 && !res.InAllowed(allowedResourceIDs) {
+				continue
+			}
+			candidatePool = append(candidatePool, res)
+		}
+
+		if len(candidatePool) == 0 {
+			if len(allowedResourceIDs) > 0 {
+				return nil, "", fmt.Errorf("none of the allowed resources %v support backend %q", allowedResourceIDs, backend)
+			}
+			return nil, "", nil
+		}
+
 		var bestRes *ModelResource
 		bestLoadRatio := 999.0
 		minActive := 999999
-		hasSupportedServerInLoop := false
 
+		// 2. 首选资源匹配（优先在 candidatePool 内选择 preferredResourceID）
 		if preferredResourceID != "" {
-			foundPreferredResource := false
-			for _, res := range d.resources {
-				if res.ResourceKey() != preferredResourceID && res.ID != preferredResourceID && res.Driver != preferredResourceID {
-					continue
+			for _, res := range candidatePool {
+				if res.Matches(preferredResourceID) {
+					limit := calculateLimit(res.Concurrent, scale)
+					if limit > 0 && res.Active < limit {
+						bestRes = res
+						break
+					}
 				}
-				foundPreferredResource = true
-				if res.ModelName(backend) == "" {
-					continue
-				}
-				hasSupportedServerInLoop = true
-				limit := calculateLimit(res.Concurrent, scale)
-				if limit > 0 && res.Active < limit {
-					bestRes = res
-					break
-				}
-			}
-			if !foundPreferredResource {
-				return nil, "", fmt.Errorf("preferred resource %q is not configured", preferredResourceID)
 			}
 		}
 
-		if preferredModel != "" {
-			for _, res := range d.resources {
+		// 3. 首选模型匹配（若 preferredResourceID 未空闲，且指定了 preferredModel，仅在 candidatePool 内查找同名模型）
+		if bestRes == nil && preferredModel != "" {
+			for _, res := range candidatePool {
 				model := res.ModelName(backend)
-				if model == "" {
-					continue
-				}
-				hasSupportedServerInLoop = true
 				if model == preferredModel || res.Model == preferredModel || res.ID == preferredModel {
 					limit := calculateLimit(res.Concurrent, scale)
 					if limit > 0 && res.Active < limit {
@@ -418,12 +476,9 @@ func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, pr
 			}
 		}
 
+		// 4. 候选集内负载打散与容量择优（仅在 candidatePool 内按 loadRatio 最小原则选择）
 		if bestRes == nil {
-			for _, res := range d.resources {
-				if res.ModelName(backend) == "" {
-					continue
-				}
-				hasSupportedServerInLoop = true
+			for _, res := range candidatePool {
 				limit := calculateLimit(res.Concurrent, scale)
 				if res.Active >= limit || limit <= 0 {
 					continue
@@ -437,10 +492,7 @@ func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, pr
 			}
 		}
 
-		if !hasSupportedServerInLoop {
-			return nil, "", nil
-		}
-
+		// 5. 成功在 candidatePool 中申请到空闲槽位
 		if bestRes != nil {
 			bestRes.Active++
 			limit := calculateLimit(bestRes.Concurrent, scale)
@@ -449,6 +501,7 @@ func (d *ModelDispatcher) AcquireWithPreference(ctx context.Context, backend, pr
 			return bestRes, bestRes.ModelName(backend), nil
 		}
 
+		// 6. 候选集内所有节点槽位均已打满：严格阻塞等待释放，绝不越界借用未引用算力池！
 		d.cond.Wait()
 	}
 }
