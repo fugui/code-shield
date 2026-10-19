@@ -77,7 +77,7 @@ func main() {
 	services.RecoverPendingTasks(*staleAction)
 
 	// Start worker pool only after stale tasks have been classified as resume/full replay
-	services.StartWorkerPool(models.AppConfig.Server.WorkerCount)
+	services.StartWorkerPool(models.AppConfig.Scanner.WorkerCount)
 
 	// Start cron jobs
 	cron_jobs.StartCronJobs()
