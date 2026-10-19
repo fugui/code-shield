@@ -248,14 +248,14 @@ func EnqueueTask(scheduleID *uint, repoID uint, repoURL string, taskTypeID uint,
 // EnqueueTaskWithTriggerLog supports linking a parent TaskTriggerLog and returns true if enqueued successfully
 func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint, repoURL string, taskTypeID uint, autoNotify bool, triggerType string, runParams models.RunParams) bool {
 	// 检查队列最大排队上限 (MaxQueueSize，-1 表示不限)
-	if models.AppConfig.Server.MaxQueueSize > 0 {
+	if models.AppConfig.Scanner.MaxQueueSize > 0 {
 		var pendingCount int64
 		models.DB.Model(&models.TaskExecutionLog{}).
 			Where("status = ?", models.StatusPending).
 			Count(&pendingCount)
-		if int(pendingCount) >= models.AppConfig.Server.MaxQueueSize {
+		if int(pendingCount) >= models.AppConfig.Scanner.MaxQueueSize {
 			log.Printf("[WorkerPool] Enqueue rejected: current pending tasks (%d) reached max_queue_size (%d)\n",
-				pendingCount, models.AppConfig.Server.MaxQueueSize)
+				pendingCount, models.AppConfig.Scanner.MaxQueueSize)
 			return false
 		}
 	}
@@ -383,13 +383,13 @@ func EnqueueTaskWithTriggerLog(scheduleID *uint, triggerLogID *uint, repoID uint
 
 // EnqueueResumeTask 将恢复任务放入队列排队执行，而非直接执行。
 func EnqueueResumeTask(report models.TaskReport) error {
-	if models.AppConfig.Server.MaxQueueSize > 0 {
+	if models.AppConfig.Scanner.MaxQueueSize > 0 {
 		var pendingCount int64
 		models.DB.Model(&models.TaskExecutionLog{}).
 			Where("status = ?", models.StatusPending).
 			Count(&pendingCount)
-		if int(pendingCount) >= models.AppConfig.Server.MaxQueueSize {
-			return fmt.Errorf("当前排队任务数已达系统上限 (%d)，无法入队", models.AppConfig.Server.MaxQueueSize)
+		if int(pendingCount) >= models.AppConfig.Scanner.MaxQueueSize {
+			return fmt.Errorf("当前排队任务数已达系统上限 (%d)，无法入队", models.AppConfig.Scanner.MaxQueueSize)
 		}
 	}
 

@@ -282,12 +282,6 @@ func UpdateCategoryConfig(c *gin.Context) {
 		scannerCfg.NormalizeDefaults()
 		models.AppConfig.Scanner = scannerCfg
 		if scannerCfg.WorkerCount > 0 {
-			models.AppConfig.Server.WorkerCount = scannerCfg.WorkerCount
-		}
-		if scannerCfg.MaxQueueSize > 0 {
-			models.AppConfig.Server.MaxQueueSize = scannerCfg.MaxQueueSize
-		}
-		if scannerCfg.WorkerCount > 0 {
 			services.ResizeWorkerPool(scannerCfg.WorkerCount)
 		}
 	case "governance":
@@ -421,9 +415,6 @@ func UpdateFullConfig(c *gin.Context) {
 			return
 		}
 		models.AppConfig.Scanner = scanner
-		if scanner.WorkerCount > 0 {
-			models.AppConfig.Server.WorkerCount = scanner.WorkerCount
-		}
 		if scanner.WorkerCount > 0 {
 			services.ResizeWorkerPool(scanner.WorkerCount)
 		}

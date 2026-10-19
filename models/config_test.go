@@ -266,7 +266,7 @@ func TestGetAnalysisRetryConfigDefaults(t *testing.T) {
 func TestGetTierConfigUsesStageTimeoutFallback(t *testing.T) {
 	cfg := Config{}
 	cfg.LLM.DefaultResource = "native"
-	cfg.Server.WorkerCount = 8
+	cfg.Scanner.WorkerCount = 8
 	cfg.Scanner.Debate.StageTimeoutSeconds = 1800
 
 	tierCfg := cfg.GetTierConfig("tier3_judge")
@@ -509,5 +509,83 @@ func TestComputeResourceModelMarshalRoundTrip(t *testing.T) {
 		if _, ok := item["model"]; !ok {
 			t.Fatalf("serialized resource missing top-level model: %s", out)
 		}
+	}
+}
+
+func TestLoadConfig_ScannerWorkerCountDeterminism(t *testing.T) {
+	aiFixStub := `
+ai_fix:
+  fix_url: "https://example.invalid/fixdefect?id={defect_id}"
+  context_token: "test-token"
+  report_base_url: "https://example.invalid"
+`
+
+	// 场景 1: config.yaml 显式配置 scanner.worker_count: 5，即使 LLM 总并发为 80，加载后必须坚决为 5，严禁被推导为 40
+	yamlWithExplicitWorker := `
+llm:
+  default_resource: "native"
+  resources:
+    - id: "native-1"
+      driver: "native"
+      concurrent: 40
+    - id: "native-2"
+      driver: "native"
+      concurrent: 40
+scanner:
+  worker_count: 5
+` + aiFixStub
+	tmpFile1 := filepath.Join(t.TempDir(), "config_explicit.yaml")
+	if err := os.WriteFile(tmpFile1, []byte(yamlWithExplicitWorker), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	if err := LoadConfig(tmpFile1); err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if AppConfig.Scanner.WorkerCount != 5 {
+		t.Fatalf("expected Scanner.WorkerCount == 5, got %d (explicit configuration was overwritten!)", AppConfig.Scanner.WorkerCount)
+	}
+
+	// 场景 2: 未配置 scanner.worker_count (缺省为 0)，LLM 资源并发之和为 80，动态推导 (80+1)/2 = 40
+	yamlWithDefaultWorker := `
+llm:
+  default_resource: "native"
+  resources:
+    - id: "native-1"
+      driver: "native"
+      concurrent: 40
+    - id: "native-2"
+      driver: "native"
+      concurrent: 40
+scanner:
+  output_format: "text"
+` + aiFixStub
+	tmpFile2 := filepath.Join(t.TempDir(), "config_derived.yaml")
+	if err := os.WriteFile(tmpFile2, []byte(yamlWithDefaultWorker), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	if err := LoadConfig(tmpFile2); err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if AppConfig.Scanner.WorkerCount != 40 {
+		t.Fatalf("expected Scanner.WorkerCount derived to 40, got %d", AppConfig.Scanner.WorkerCount)
+	}
+
+	// 场景 3: 未配置 scanner.worker_count 且无 LLM 节点，兜底为 5
+	yamlEmptyLLM := `
+scanner:
+  output_format: "text"
+` + aiFixStub
+	tmpFile3 := filepath.Join(t.TempDir(), "config_empty.yaml")
+	if err := os.WriteFile(tmpFile3, []byte(yamlEmptyLLM), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	if err := LoadConfig(tmpFile3); err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if AppConfig.Scanner.WorkerCount != 5 {
+		t.Fatalf("expected fallback Scanner.WorkerCount == 5, got %d", AppConfig.Scanner.WorkerCount)
+	}
+	if AppConfig.Scanner.MaxQueueSize != 2000 {
+		t.Fatalf("expected fallback Scanner.MaxQueueSize == 2000, got %d", AppConfig.Scanner.MaxQueueSize)
 	}
 }

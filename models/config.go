@@ -574,8 +574,6 @@ type ServerConfig struct {
 	WriteTimeout      time.Duration `yaml:"write_timeout" json:"write_timeout"`
 	IdleTimeout       time.Duration `yaml:"idle_timeout" json:"idle_timeout"`
 	MaxHeaderBytes    int           `yaml:"max_header_bytes" json:"max_header_bytes"`
-	WorkerCount       int           `yaml:"worker_count" json:"worker_count"`
-	MaxQueueSize      int           `yaml:"max_queue_size" json:"max_queue_size"`
 	ExternalURL       string        `yaml:"external_url" json:"external_url"`
 }
 
@@ -766,7 +764,7 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 	}
 
 	// 全局默认兜底
-	concurrent := c.Server.WorkerCount
+	concurrent := c.Scanner.WorkerCount
 	if concurrent <= 0 {
 		concurrent = 5
 	}
@@ -1019,28 +1017,27 @@ func LoadConfig(filename string) error {
 	}
 	cfg.Scanner.NormalizeDefaults()
 
-	// 算力总并发推导 WorkerCount
-	sumConcurrent := 0
-	for _, r := range cfg.LLM.Resources {
-		sumConcurrent += r.ResourceConcurrent()
-	}
-
-	if cfg.Server.WorkerCount <= 0 {
+	// 算力总并发推导 WorkerCount（仅当未显式配置 scanner.worker_count 时）
+	if cfg.Scanner.WorkerCount <= 0 {
+		sumConcurrent := 0
+		for _, r := range cfg.LLM.Resources {
+			sumConcurrent += r.ResourceConcurrent()
+		}
 		if sumConcurrent > 0 {
 			calculated := (sumConcurrent + 1) / 2
 			if calculated < 1 {
 				calculated = 1
 			}
-			cfg.Server.WorkerCount = calculated
 			cfg.Scanner.WorkerCount = calculated
-			log.Printf("[Config] Dynamic worker_count set to %d (calculated from sum of LLM concurrencies %d)\n", calculated, sumConcurrent)
+			log.Printf("[Config] scanner.worker_count not set; dynamically derived to %d from LLM resources (sum: %d)\n", calculated, sumConcurrent)
 		} else {
-			cfg.Server.WorkerCount = 5
 			cfg.Scanner.WorkerCount = 5
 		}
+	} else {
+		log.Printf("[Config] Using explicitly configured scanner.worker_count: %d\n", cfg.Scanner.WorkerCount)
 	}
-	if cfg.Server.MaxQueueSize == 0 {
-		cfg.Server.MaxQueueSize = 2000
+
+	if cfg.Scanner.MaxQueueSize <= 0 {
 		cfg.Scanner.MaxQueueSize = 2000
 	}
 
