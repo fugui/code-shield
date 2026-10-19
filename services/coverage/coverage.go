@@ -69,6 +69,7 @@ type File struct {
 	DiffTouched       bool     `json:"diff_touched"`
 	Deleted           bool     `json:"deleted,omitempty"`
 	HunkRanges        []string `json:"hunk_ranges,omitempty"`
+	IsContextOnly     bool     `json:"is_context_only,omitempty"`
 }
 
 type Chunk struct {
@@ -307,6 +308,19 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 		var owner *Chunk
 		var ownerIndex int
 		plannedChunkIndex, hasPlanned := plannedOwners[path]
+		isTarget := hasPlanned
+		if !isTarget {
+			for _, chunkIdx := range ownerIndexes {
+				chunk := chunks[chunkIdx]
+				if strings.HasPrefix(chunk.UID, "coverage-plan-") {
+					continue
+				}
+				if len(chunk.PlannedFiles) == 0 {
+					isTarget = true
+					break
+				}
+			}
+		}
 		if len(ownerIndexes) == 1 && !conflicts[path] {
 			ownerIndex = ownerIndexes[0]
 			owner = &chunks[ownerIndex]
@@ -338,6 +352,7 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 			DiffTouched:   diffTouched,
 			Deleted:       deleted,
 			HunkRanges:    hunkRanges,
+			IsContextOnly: !isTarget,
 		}
 		if owner != nil {
 			item.ChunkUID = chunkIDs[ownerIndex]
@@ -350,9 +365,11 @@ func Build(repoRoot, commitHash, policyVersion, chunkPolicyID string, chunks []C
 			item.ErrorClass = errorClass
 		}
 		if item.Hash == "" && item.Status == StatusSuccess && !item.Deleted {
-			item.Status = StatusUnknown
-			if item.Error == "" {
-				item.Error = "file hash unavailable"
+			if isTarget {
+				item.Status = StatusUnknown
+				if item.Error == "" {
+					item.Error = "file hash unavailable"
+				}
 			}
 		}
 		files = append(files, item)
@@ -408,7 +425,7 @@ func allAnalysisComplete(files []File) bool {
 		return false
 	}
 	for _, file := range files {
-		if file.Status == StatusExcluded {
+		if file.IsContextOnly || file.Status == StatusExcluded {
 			continue
 		}
 		if file.Status != StatusSuccess {
@@ -484,6 +501,9 @@ func (c Coverage) Summary() Summary {
 	failedFiles := make([]ExecutionFailure, 0)
 	failedChunks := make(map[string]ExecutionFailure)
 	for _, file := range c.Files {
+		if file.IsContextOnly {
+			continue
+		}
 		summary.PlannedFiles++
 		switch file.Status {
 		case StatusSuccess:

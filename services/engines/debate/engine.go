@@ -188,6 +188,7 @@ func (e *DebateEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 			Retries:         0,
 			Status:          "success",
 			Files:           append([]string(nil), b.AllFiles...),
+			PlannedFiles:    append([]coverage.PlannedFile(nil), changePlannedOwners[bundleIdx]...),
 			Resumed:         true,
 		}
 		artifact := cp.Result.Artifact.normalize()
