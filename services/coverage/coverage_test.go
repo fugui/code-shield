@@ -374,3 +374,44 @@ func TestCoverageSummaryDegradesOnPlanDrift(t *testing.T) {
 		t.Fatalf("missing plan drift reasons: %+v", summary.CoverageReasons)
 	}
 }
+
+func TestBuildAndSummary_PureContextFilesDoNotDegradeCoverage(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "a.cpp"), []byte("int a = 1;"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// 注意：磁盘上故意不创建 include/external_header.h，模拟纯上下文头文件或外部依赖路径
+
+	chunks := []Chunk{
+		{
+			UID:    "chunk-1",
+			Status: StatusSuccess,
+			Files:  []string{"src/a.cpp", "include/external_header.h"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/a.cpp", DiffTouched: true},
+			},
+		},
+	}
+
+	got := Build(root, "commit-1", "v1", "policy-x", chunks)
+	got.CommitVerified = true
+	got.WorktreeClean = true
+
+	if !got.AnalysisComplete {
+		t.Fatalf("analysis should be complete for planned target files, got false")
+	}
+
+	summary := got.Summary()
+	if !summary.CoverageComplete || summary.CoverageDegraded || summary.Degraded {
+		t.Fatalf("coverage should be complete and not degraded, got %+v", summary)
+	}
+	if summary.UnknownFiles > 0 {
+		t.Fatalf("pure context file without hash must not be counted as unknown file: %d", summary.UnknownFiles)
+	}
+	if slices.Contains(summary.CoverageReasons, "COVERAGE_UNKNOWN") || slices.Contains(summary.CoverageReasons, "ANALYSIS_INCOMPLETE") {
+		t.Fatalf("unexpected degradation reasons: %+v", summary.CoverageReasons)
+	}
+}
