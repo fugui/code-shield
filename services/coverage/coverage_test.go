@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -413,5 +414,226 @@ func TestBuildAndSummary_PureContextFilesDoNotDegradeCoverage(t *testing.T) {
 	}
 	if slices.Contains(summary.CoverageReasons, "COVERAGE_UNKNOWN") || slices.Contains(summary.CoverageReasons, "ANALYSIS_INCOMPLETE") {
 		t.Fatalf("unexpected degradation reasons: %+v", summary.CoverageReasons)
+	}
+}
+
+func TestBuildAndSummary_MultiHunkInSingleChunkDoesNotDegrade(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src/base"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	modelerPath := filepath.Join(root, "src/base/dissapt_modeler.py")
+	if err := os.WriteFile(modelerPath, []byte("class Modeler:\n    pass\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	chunks := []Chunk{
+		{
+			UID:    "chunk-2",
+			Status: StatusSuccess,
+			Files:  []string{"src/base/dissapt_modeler.py"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/base/dissapt_modeler.py", DiffTouched: true, HunkRanges: []string{"106-108"}},
+				{Path: "src/base/dissapt_modeler.py", DiffTouched: true, HunkRanges: []string{"110"}},
+			},
+		},
+	}
+
+	got := Build(root, "commit-2", "v1", "policy-x", chunks)
+	got.CommitVerified = true
+	got.WorktreeClean = true
+
+	if !got.AnalysisComplete {
+		t.Fatalf("analysis should be complete for multi-hunk file in single chunk, got false")
+	}
+
+	if len(got.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(got.Files))
+	}
+	file := got.Files[0]
+	if file.Status != StatusSuccess {
+		t.Fatalf("status = %q, want %q", file.Status, StatusSuccess)
+	}
+	if !file.DiffTouched {
+		t.Fatalf("diff_touched should be true")
+	}
+	if len(file.HunkRanges) != 2 || file.HunkRanges[0] != "106-108" || file.HunkRanges[1] != "110" {
+		t.Fatalf("unexpected hunk ranges: %+v", file.HunkRanges)
+	}
+	if file.ChunkUID != "chunk-2" {
+		t.Fatalf("chunk_uid = %q, want %q", file.ChunkUID, "chunk-2")
+	}
+
+	summary := got.Summary()
+	if !summary.CoverageComplete || summary.CoverageDegraded || summary.Degraded {
+		t.Fatalf("coverage should be complete and not degraded, got %+v", summary)
+	}
+	if summary.UnknownFiles > 0 {
+		t.Fatalf("unknown files should be 0, got %d", summary.UnknownFiles)
+	}
+	if slices.Contains(summary.CoverageReasons, "COVERAGE_UNKNOWN") ||
+		slices.Contains(summary.CoverageReasons, "ANALYSIS_INCOMPLETE") ||
+		slices.Contains(summary.CoverageReasons, "FILE_NOT_SCANNED") {
+		t.Fatalf("unexpected degradation reasons: %+v", summary.CoverageReasons)
+	}
+}
+
+func TestBuildAndSummary_MultiHunkAcrossMultipleChunksAggregatesSuccessfully(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "src/large_change.cpp")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("int large();"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	chunks := []Chunk{
+		{
+			UID:    "chunk-part1",
+			Status: StatusSuccess,
+			Files:  []string{"src/large_change.cpp"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/large_change.cpp", DiffTouched: true, HunkRanges: []string{"1-10"}},
+			},
+		},
+		{
+			UID:    "chunk-part2",
+			Status: StatusSuccess,
+			Files:  []string{"src/large_change.cpp"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/large_change.cpp", DiffTouched: true, HunkRanges: []string{"11-20"}},
+			},
+		},
+	}
+
+	got := Build(root, "commit-3", "v1", "policy-x", chunks)
+	got.CommitVerified = true
+	got.WorktreeClean = true
+
+	if !got.AnalysisComplete {
+		t.Fatalf("analysis should be complete across multiple success chunks, got false")
+	}
+
+	if len(got.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(got.Files))
+	}
+	file := got.Files[0]
+	if file.Status != StatusSuccess {
+		t.Fatalf("status = %q, want %q", file.Status, StatusSuccess)
+	}
+	if !file.DiffTouched {
+		t.Fatalf("diff_touched should be true")
+	}
+	if len(file.HunkRanges) != 2 || file.HunkRanges[0] != "1-10" || file.HunkRanges[1] != "11-20" {
+		t.Fatalf("unexpected merged hunk ranges: %+v", file.HunkRanges)
+	}
+
+	summary := got.Summary()
+	if !summary.CoverageComplete || summary.CoverageDegraded || summary.Degraded {
+		t.Fatalf("coverage should be complete and not degraded, got %+v", summary)
+	}
+}
+
+func TestBuildAndSummary_MultiHunkAcrossMultipleChunksFailsOnAnyChunkFailure(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "src/split.cpp")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("int split();"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	chunks := []Chunk{
+		{
+			UID:    "chunk-part1",
+			Status: StatusSuccess,
+			Files:  []string{"src/split.cpp"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/split.cpp", DiffTouched: true, HunkRanges: []string{"1-10"}},
+			},
+		},
+		{
+			UID:        "chunk-part2",
+			Status:     StatusFailed,
+			Error:      "syntax analysis failed",
+			ErrorClass: "syntax_error",
+			Files:      []string{"src/split.cpp"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/split.cpp", DiffTouched: true, HunkRanges: []string{"11-20"}},
+			},
+		},
+	}
+
+	got := Build(root, "commit-4", "v1", "policy-x", chunks)
+	got.CommitVerified = true
+	got.WorktreeClean = true
+
+	if got.AnalysisComplete {
+		t.Fatalf("analysis should fail when any chunk fails, got true")
+	}
+
+	if len(got.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(got.Files))
+	}
+	file := got.Files[0]
+	if file.Status != StatusFailed {
+		t.Fatalf("status = %q, want %q", file.Status, StatusFailed)
+	}
+	if file.Error != "syntax analysis failed" {
+		t.Fatalf("error = %q, want %q", file.Error, "syntax analysis failed")
+	}
+	if len(file.HunkRanges) != 2 || file.HunkRanges[0] != "1-10" || file.HunkRanges[1] != "11-20" {
+		t.Fatalf("hunk ranges should still be aggregated on failure: %+v", file.HunkRanges)
+	}
+
+	summary := got.Summary()
+	if summary.CoverageComplete || !summary.CoverageDegraded || !summary.Degraded {
+		t.Fatalf("coverage should degrade on chunk failure: %+v", summary)
+	}
+	if summary.FailedFiles != 1 {
+		t.Fatalf("failed files count = %d, want 1", summary.FailedFiles)
+	}
+}
+
+func TestBuild_DetectsMutuallyExclusivePlanConflicts(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "src/conflict.cpp")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("int conflict();"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	chunks := []Chunk{
+		{
+			UID:    "chunk-scan",
+			Status: StatusSuccess,
+			Files:  []string{"src/conflict.cpp"},
+			PlannedFiles: []PlannedFile{
+				{Path: "src/conflict.cpp", DiffTouched: true},
+			},
+		},
+		{
+			UID:    "coverage-plan-excluded",
+			Status: StatusExcluded,
+			PlannedFiles: []PlannedFile{
+				{Path: "src/conflict.cpp", Reason: ReasonNotSourceFile},
+			},
+		},
+	}
+
+	got := Build(root, "commit-5", "v1", "policy-x", chunks)
+	if len(got.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(got.Files))
+	}
+	file := got.Files[0]
+	if file.Status != StatusUnknown {
+		t.Fatalf("status for conflicting plan assignments should be unknown, got %q", file.Status)
+	}
+	if !strings.Contains(file.Error, "plan conflict") {
+		t.Fatalf("error = %q, want contains 'plan conflict'", file.Error)
 	}
 }

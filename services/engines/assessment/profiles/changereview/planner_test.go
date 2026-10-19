@@ -35,8 +35,8 @@ func TestBuildChangeUnitBundlesGroupsSplitsAndProducesPluginPlan(t *testing.T) {
 		t.Fatalf("unexpected bundles: %+v", bundles)
 	}
 	plan := planner.PluginPlan(assessment.PlanContext{EngineContext: &engines.EngineContext{CodesPath: root}}, bundles[0])
-	if len(plan) != 2 || plan[0].Path != "src/session.cpp" || plan[0].HunkRanges[0] != "1-3" ||
-		plan[1].HunkRanges[0] != "4-6" {
+	if len(plan) != 1 || plan[0].Path != "src/session.cpp" || len(plan[0].HunkRanges) != 2 ||
+		plan[0].HunkRanges[0] != "1-3" || plan[0].HunkRanges[1] != "4-6" {
 		t.Fatalf("unexpected plugin plan: %+v", plan)
 	}
 }

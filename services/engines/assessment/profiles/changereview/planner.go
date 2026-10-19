@@ -51,7 +51,7 @@ func changePlannedFiles(codesPath string, bundle chunker.SemanticBundle) []cover
 	for _, path := range bundle.PrimaryFiles {
 		_, statErr := os.Stat(filepath.Join(codesPath, filepath.FromSlash(path)))
 		deleted := statErr != nil
-		pathFiles := make([]coverage.PlannedFile, 0, len(bundle.PrimaryUnits))
+		hunkRanges := make([]string, 0, len(bundle.PrimaryUnits))
 		for _, unit := range bundle.PrimaryUnits {
 			if unit.Path != path {
 				continue
@@ -63,20 +63,16 @@ func changePlannedFiles(codesPath string, bundle chunker.SemanticBundle) []cover
 			case unit.StartLine > 0:
 				hunkRange = fmt.Sprintf("%d", unit.StartLine)
 			}
-			if hunkRange == "" {
-				continue
+			if hunkRange != "" {
+				hunkRanges = append(hunkRanges, hunkRange)
 			}
-			pathFiles = append(pathFiles, coverage.PlannedFile{
-				Path:        path,
-				DiffTouched: true,
-				Deleted:     deleted,
-				HunkRanges:  []string{hunkRange},
-			})
 		}
-		if len(pathFiles) == 0 {
-			pathFiles = append(pathFiles, coverage.PlannedFile{Path: path, DiffTouched: true, Deleted: deleted})
-		}
-		plannedFiles = append(plannedFiles, pathFiles...)
+		plannedFiles = append(plannedFiles, coverage.PlannedFile{
+			Path:        path,
+			DiffTouched: true,
+			Deleted:     deleted,
+			HunkRanges:  hunkRanges,
+		})
 	}
 	return plannedFiles
 }
