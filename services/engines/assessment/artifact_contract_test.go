@@ -102,7 +102,7 @@ func TestPipelineUsesDirectedRepairForJSONParseFailure(t *testing.T) {
 	contract := contractForTest(t)
 	plan := planForTest(t, "unit-1")
 	calls := 0
-	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte("{not json"), contract, plan, passingValidator(t),
+	validationResult, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte("{not json"), contract, plan, passingValidator(t),
 		ArtifactPipelineOptions{MaxLLMAttempts: 2, Repair: func(_ context.Context, request DirectedRepairRequest) (string, int64, error) {
 			calls++
 			if !strings.Contains(request.RawArtifact, "{not json") {
@@ -114,22 +114,22 @@ func TestPipelineUsesDirectedRepairForJSONParseFailure(t *testing.T) {
 			return validArtifactJSON(), 10, nil
 		}})
 	if err != nil {
-		if !errors.Is(err, ErrArtifactInvalid) {
-			t.Fatalf("ValidateAndRepairArtifact() error = %v, want ErrArtifactInvalid", err)
-		}
+		t.Fatalf("ValidateAndRepairArtifact() error = %v, want nil", err)
 	}
-	if calls != 1 || metrics.LLMRepairAttempts != 1 || metrics.LLMRepairSuccesses != 0 {
+	if calls != 1 || metrics.LLMRepairAttempts != 1 || metrics.LLMRepairSuccesses != 1 {
 		t.Fatalf("repair calls=%d attempts=%d successes=%d", calls, metrics.LLMRepairAttempts, metrics.LLMRepairSuccesses)
 	}
-	if metrics.RepairTokens != 10 || metrics.FinalStatus != "failed" || metrics.OriginalArtifactHash == "" {
+	if metrics.RepairTokens != 10 || metrics.FinalStatus != "success" || metrics.OriginalArtifactHash == "" {
 		t.Fatalf("metrics = %#v, want tokens, success, and original hash", metrics)
 	}
 	if !metrics.RepairDriftUnchecked {
-		t.Fatal("parse failure should be audited as drift unchecked")
+		t.Fatal("parse failure without baseline should be audited as drift unchecked")
 	}
-	if len(metrics.RepairAttempts) != 1 || metrics.RepairAttempts[0].Accepted || metrics.RepairAttempts[0].Raw == "" ||
-		metrics.RepairAttempts[0].Error == "" {
-		t.Fatalf("repair attempts = %#v, want a rejected raw artifact with drift-unchecked error", metrics.RepairAttempts)
+	if len(metrics.RepairAttempts) != 1 || !metrics.RepairAttempts[0].Accepted || metrics.RepairAttempts[0].Raw == "" {
+		t.Fatalf("repair attempts = %#v, want an accepted raw artifact with drift-unchecked flag", metrics.RepairAttempts)
+	}
+	if len(validationResult.Artifact.Assessments) != 1 || validationResult.Artifact.Assessments[0].UnitRef != "u001" {
+		t.Fatalf("validationResult.Artifact = %#v", validationResult.Artifact)
 	}
 }
 
@@ -396,5 +396,114 @@ func TestLocalRepairsUnitRefFromDisplayNameOrID(t *testing.T) {
 	}
 	if finalByID.Artifact.Assessments[0].UnitRef != "u001" {
 		t.Fatalf("got unit_ref = %q, want u001", finalByID.Artifact.Assessments[0].UnitRef)
+	}
+}
+
+func TestPipelineDirectedRepairRejectsWhenPlanClosureFails(t *testing.T) {
+	contract := contractForTest(t)
+	plan := planForTest(t, "unit-1")
+	calls := 0
+	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte("{not json"), contract, plan, passingValidator(t),
+		ArtifactPipelineOptions{MaxLLMAttempts: 1, Repair: func(_ context.Context, _ DirectedRepairRequest) (string, int64, error) {
+			calls++
+			// 返回了不存在于 plan 中的 unit_ref u002
+			return `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"u002","outcome":"pass","summary":"ok"}]}`, 10, nil
+		}})
+	if !errors.Is(err, ErrArtifactInvalid) {
+		t.Fatalf("err = %v, want ErrArtifactInvalid", err)
+	}
+	if calls != 1 || metrics.LLMRepairAttempts != 1 || metrics.LLMRepairSuccesses != 0 {
+		t.Fatalf("repair calls=%d attempts=%d successes=%d", calls, metrics.LLMRepairAttempts, metrics.LLMRepairSuccesses)
+	}
+	if metrics.FinalStatus != "failed" {
+		t.Fatalf("final status = %q, want failed", metrics.FinalStatus)
+	}
+}
+
+func TestLooseBaselineExtraction_HandlesInvalidReasonType(t *testing.T) {
+	contract := contractForTest(t)
+	plan := planForTest(t, "unit-1")
+	rawWithObjectReason := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"u001","outcome":"defect","summary":"bad","reason":{"type":"leak","code":123},"issues":[{"category":"内存安全","severity":"严重","detail":"bad"}]}]}`
+
+	// 1. 验证 baselineArtifact 能够容错提取松散基线
+	baseline := baselineArtifact([]byte(rawWithObjectReason))
+	if baseline == nil {
+		t.Fatal("expected baseline to be extracted loosely when reason is an object")
+	}
+	if len(baseline.Assessments) != 1 || baseline.Assessments[0].Outcome != OutcomeDefect || len(baseline.Assessments[0].Issues) != 1 {
+		t.Fatalf("unexpected baseline: %#v", baseline)
+	}
+
+	// 2. 验证修复模型将 reason 修复为合法字符串后，比对 baseline 成功放行且判定未漂移
+	repairedJSON := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"u001","outcome":"defect","summary":"bad","reason":"type: leak, code: 123","issues":[{"category":"内存安全","severity":"严重","detail":"bad"}]}]}`
+	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte(rawWithObjectReason), contract, plan, passingValidator(t),
+		ArtifactPipelineOptions{MaxLLMAttempts: 1, Repair: func(_ context.Context, _ DirectedRepairRequest) (string, int64, error) {
+			return repairedJSON, 10, nil
+		}})
+	if err != nil {
+		t.Fatalf("ValidateAndRepairArtifact() error = %v", err)
+	}
+	if metrics.FinalStatus != "success" || metrics.RepairDrifted || metrics.RepairDriftUnchecked {
+		t.Fatalf("metrics = %#v, want success with baseline drift checked", metrics)
+	}
+}
+
+func TestRepairAllowsCategoryEnumNormalization(t *testing.T) {
+	contract := contractForTest(t)
+	plan := planForTest(t, "unit-1")
+	// 原始 category 是非法的 "内存泄漏"，合法枚举只有 "内存安全"
+	rawWithInvalidCategory := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"u001","outcome":"defect","summary":"bad","issues":[{"category":"内存泄漏","severity":"严重","detail":"bad"}]}]}`
+
+	// 修复模型按指令将 category 规范化为合法的 "内存安全"
+	repairedJSON := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"u001","outcome":"defect","summary":"bad","issues":[{"category":"内存安全","severity":"严重","detail":"bad"}]}]}`
+	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte(rawWithInvalidCategory), contract, plan, passingValidator(t),
+		ArtifactPipelineOptions{MaxLLMAttempts: 1, Repair: func(_ context.Context, _ DirectedRepairRequest) (string, int64, error) {
+			return repairedJSON, 10, nil
+		}})
+	if err != nil {
+		t.Fatalf("ValidateAndRepairArtifact() error = %v", err)
+	}
+	if metrics.FinalStatus != "success" || metrics.RepairDrifted {
+		t.Fatalf("metrics = %#v, category normalization must not trigger business drift", metrics)
+	}
+}
+
+func TestRepairRejectsOutcomeReversalFromDefectToPass(t *testing.T) {
+	contract := contractForTest(t)
+	plan := planForTest(t, "unit-1")
+	// unit_ref 为 "bad" 触发验证失败并进入 repair 管线
+	rawDefect := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"bad","outcome":"defect","summary":"bad","issues":[{"category":"内存安全","severity":"严重","detail":"bad"}]}]}`
+
+	// 修复模型将 defect 擅自改为了 pass
+	repairedPass := validArtifactJSON()
+	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte(rawDefect), contract, plan, passingValidator(t),
+		ArtifactPipelineOptions{MaxLLMAttempts: 1, Repair: func(_ context.Context, _ DirectedRepairRequest) (string, int64, error) {
+			return repairedPass, 10, nil
+		}})
+	if !errors.Is(err, ErrArtifactInvalid) {
+		t.Fatalf("err = %v, want ErrArtifactInvalid", err)
+	}
+	if !metrics.RepairDrifted || metrics.RepairDriftUnitRef != "bad" {
+		t.Fatalf("metrics = %#v, want drift detected on bad", metrics)
+	}
+}
+
+func TestRepairRejectsDefectIssuesWipedOut(t *testing.T) {
+	contract := contractForTest(t)
+	plan := planForTest(t, "unit-1")
+	// unit_ref 为 "bad" 触发验证失败并进入 repair 管线
+	rawDefect := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"bad","outcome":"defect","summary":"bad","issues":[{"category":"内存安全","severity":"严重","detail":"bad"}]}]}`
+
+	// 修复模型保留了 defect，但将 issues 列表清空
+	repairedEmptyIssues := `{"schema":"` + AssessmentsArtifactSchemaV2 + `","assessments":[{"unit_ref":"u001","outcome":"defect","summary":"bad","issues":[]}]}`
+	_, metrics, err := ValidateAndRepairArtifact(context.Background(), []byte(rawDefect), contract, plan, passingValidator(t),
+		ArtifactPipelineOptions{MaxLLMAttempts: 1, Repair: func(_ context.Context, _ DirectedRepairRequest) (string, int64, error) {
+			return repairedEmptyIssues, 10, nil
+		}})
+	if !errors.Is(err, ErrArtifactInvalid) {
+		t.Fatalf("err = %v, want ErrArtifactInvalid", err)
+	}
+	if !metrics.RepairDrifted || metrics.RepairDriftUnitRef != "bad" {
+		t.Fatalf("metrics = %#v, wiping out issues must trigger drift", metrics)
 	}
 }

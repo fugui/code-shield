@@ -249,35 +249,112 @@ func ArtifactUnitsUnchanged(before, after *AssessmentArtifact) (bool, string) {
 	if before == nil {
 		return true, ""
 	}
+	if after == nil {
+		return false, "*"
+	}
 	if len(before.Assessments) != len(after.Assessments) {
 		return false, "*"
 	}
-	beforeFingerprints := ArtifactBusinessFingerprints(*before)
-	afterFingerprints := ArtifactBusinessFingerprints(*after)
-	for index := range beforeFingerprints {
-		if beforeFingerprints[index] != afterFingerprints[index] {
-			return false, before.Assessments[index].UnitRef
+
+	pairs := matchUnitAssessments(before.Assessments, after.Assessments)
+	if len(pairs) != len(before.Assessments) {
+		return false, "*"
+	}
+
+	for _, pair := range pairs {
+		beforeItem := pair[0]
+		afterItem := pair[1]
+
+		driftRef := beforeItem.UnitRef
+		if driftRef == "" {
+			driftRef = afterItem.UnitRef
+		}
+
+		// 1. 核心定性（Outcome）漂移检查：若原始 Baseline 有明确合法的定性，修复后不得逆转
+		if beforeItem.Outcome.Validate() == nil {
+			if afterItem.Outcome != beforeItem.Outcome {
+				return false, driftRef
+			}
+		}
+
+		// 2. 缺陷保全检查：若原始已判定为 defect 且包含 issues，修复后不得清空缺陷
+		if beforeItem.Outcome == OutcomeDefect && len(beforeItem.Issues) > 0 {
+			if len(afterItem.Issues) == 0 {
+				return false, driftRef
+			}
 		}
 	}
+
 	return true, ""
+}
+
+func matchUnitAssessments(before, after []UnitAssessment) [][2]UnitAssessment {
+	pairs := make([][2]UnitAssessment, 0, len(before))
+	if len(before) == 0 || len(before) != len(after) {
+		return pairs
+	}
+	if len(before) == 1 {
+		return [][2]UnitAssessment{{before[0], after[0]}}
+	}
+
+	afterUsed := make([]bool, len(after))
+	beforeUsed := make([]bool, len(before))
+
+	// 1. 优先根据非空的 UnitRef 匹配
+	for i, b := range before {
+		trimmedB := strings.TrimSpace(b.UnitRef)
+		if trimmedB == "" {
+			continue
+		}
+		for j, a := range after {
+			if !afterUsed[j] && strings.TrimSpace(a.UnitRef) == trimmedB {
+				pairs = append(pairs, [2]UnitAssessment{b, a})
+				beforeUsed[i] = true
+				afterUsed[j] = true
+				break
+			}
+		}
+	}
+
+	// 2. 其次根据非空的 PrimaryUnitID 匹配
+	for i, b := range before {
+		if beforeUsed[i] || strings.TrimSpace(b.PrimaryUnitID) == "" {
+			continue
+		}
+		for j, a := range after {
+			if !afterUsed[j] && strings.TrimSpace(a.PrimaryUnitID) == strings.TrimSpace(b.PrimaryUnitID) {
+				pairs = append(pairs, [2]UnitAssessment{b, a})
+				beforeUsed[i] = true
+				afterUsed[j] = true
+				break
+			}
+		}
+	}
+
+	// 3. 剩余未匹配的单元按相对顺序对齐匹配
+	j := 0
+	for i, b := range before {
+		if beforeUsed[i] {
+			continue
+		}
+		for j < len(after) && afterUsed[j] {
+			j++
+		}
+		if j < len(after) {
+			pairs = append(pairs, [2]UnitAssessment{b, after[j]})
+			beforeUsed[i] = true
+			afterUsed[j] = true
+			j++
+		}
+	}
+
+	return pairs
 }
 
 func ArtifactBusinessFingerprints(artifact AssessmentArtifact) []string {
 	fingerprints := make([]string, 0, len(artifact.Assessments))
 	for _, item := range artifact.Assessments {
-		item.UnitRef = ""
-		item.PrimaryUnitID = ""
-		if item.Evidence == nil {
-			item.Evidence = map[string]any{}
-		}
-		if item.Domain == nil {
-			item.Domain = map[string]json.RawMessage{}
-		}
-		if item.Issues == nil {
-			item.Issues = []AssessmentIssue{}
-		}
-		encoded, _ := json.Marshal(item)
-		fingerprints = append(fingerprints, string(encoded))
+		fingerprints = append(fingerprints, fmt.Sprintf("ref=%s:outcome=%s:issues=%d", item.UnitRef, item.Outcome, len(item.Issues)))
 	}
 	return fingerprints
 }
