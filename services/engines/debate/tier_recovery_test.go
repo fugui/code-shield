@@ -487,7 +487,7 @@ func TestSpecializedAssessmentContractMismatchRepairsWithoutNormalRetry(t *testi
 	}
 }
 
-func TestSpecializedAssessmentRejectsDriftUncheckedRepair(t *testing.T) {
+func TestSpecializedAssessmentAcceptsDriftUncheckedRepairWhenPlanMatches(t *testing.T) {
 	prevRepair := models.AppConfig.Scanner.Artifact
 	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "assessment-drift-unchecked-repair"
 	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
@@ -505,11 +505,46 @@ func TestSpecializedAssessmentRejectsDriftUncheckedRepair(t *testing.T) {
 	})
 
 	findings, records, stats, err := runSpecializedAssessmentRecovery(t, []string{"src/a.cpp", "src/b.cpp"}, primary.name)
+	if err != nil {
+		t.Fatalf("runSpecializedAssessmentRecovery() error = %v, want nil", err)
+	}
+	if len(records) != 2 || len(findings) != 0 {
+		t.Fatalf("records=%d findings=%d, want 2 records and 0 findings", len(records), len(findings))
+	}
+	if primary.calls != 1 || repair.calls != 1 {
+		t.Fatalf("calls primary=%d repair=%d, want exactly one of each", primary.calls, repair.calls)
+	}
+	if stats == nil || stats.FreshRetries != 0 || stats.ResourceFailovers != 0 || stats.SchemaRepairSuccesses != 1 {
+		t.Fatalf("stats=%+v, want 1 repair success and 0 retries", stats)
+	}
+}
+
+func TestSpecializedAssessmentRejectsDriftUncheckedRepairWhenPlanClosureFails(t *testing.T) {
+	prevRepair := models.AppConfig.Scanner.Artifact
+	models.AppConfig.Scanner.Artifact.SchemaRepairResource = "assessment-drift-unchecked-fail-repair"
+	models.AppConfig.Scanner.Artifact.MaxSchemaRepairAttempts = 1
+	models.AppConfig.Scanner.Artifact.SchemaRepairTimeoutSeconds = 10
+	t.Cleanup(func() { models.AppConfig.Scanner.Artifact = prevRepair })
+
+	primary := registerRecoveryInvoker(t, "assessment-drift-unchecked-fail", func(call int) error { return nil })
+	primary.payload = func(int) string { return "{broken" }
+	repair := registerRecoveryInvoker(t, models.AppConfig.Scanner.Artifact.SchemaRepairResource, func(call int) error { return nil })
+	// 只有 1 个 unit，而 plan 规划了 2 个 unit（src/a.cpp, src/b.cpp），Plan 闭包校验失败
+	repair.payload = func(int) string {
+		return `{"schema":"code-shield.unit-assessments.v2","assessments":[{"unit_ref":"u001","outcome":"pass","summary":"safe"}]}`
+	}
+	configureAssessmentRecovery(t, primary.name, models.TierRecoveryConfig{
+		MaxTotalAttempts:       1,
+		MaxAttemptsPerResource: 1,
+		RetryOn:                []string{"idle_timeout"},
+	})
+
+	findings, records, stats, err := runSpecializedAssessmentRecovery(t, []string{"src/a.cpp", "src/b.cpp"}, primary.name)
 	if err == nil || invoker.ClassifyError(err) != invoker.ErrorClassContractMismatch {
 		t.Fatalf("error=%v class=%s, want contract mismatch", err, invoker.ClassifyError(err))
 	}
 	if len(findings) != 0 || len(records) != 0 {
-		t.Fatalf("findings=%d records=%d, want unchecked repair to produce no assessments", len(findings), len(records))
+		t.Fatalf("findings=%d records=%d, want plan closure failure to produce no assessments", len(findings), len(records))
 	}
 	if primary.calls != 1 || repair.calls != 1 {
 		t.Fatalf("calls primary=%d repair=%d, want exactly one of each", primary.calls, repair.calls)

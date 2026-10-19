@@ -232,19 +232,27 @@ func ValidateAndRepairArtifact(
 			continue
 		}
 		if baseline == nil {
+			if closureErr := validatePlanClosure(plan, repairedResult.Artifact); closureErr != nil {
+				repairAttempt.Error = fmt.Sprintf("business drift cannot be verified and plan closure failed: %v", closureErr)
+				metrics.RepairAttempts = append(metrics.RepairAttempts, repairAttempt)
+				result = repairedResult
+				result.Issues = append(result.Issues, ArtifactIssue{
+					Stage: contract.Stage, Schema: contract.SchemaID, JSONPath: "$.assessments", Field: "assessment",
+					Code:        "REPAIR_PLAN_CLOSURE_FAILED",
+					Message:     closureErr.Error(),
+					Recoverable: false,
+				})
+				continue
+			}
+			metrics.LLMRepairSuccesses++
 			metrics.RepairDriftUnchecked = true
-			repairAttempt.Error = "business drift cannot be verified because no baseline artifact is available"
+			metrics.SchemaRepairIssues = append(metrics.SchemaRepairIssues, repairedResult.Issues...)
+			metrics.FinalArtifact = repairedResult.Artifact
+			repairAttempt.Accepted = true
+			metrics.FinalStatus = "success"
 			metrics.RepairAttempts = append(metrics.RepairAttempts, repairAttempt)
-			result = repairedResult
-			result.Issues = append(result.Issues, ArtifactIssue{
-				Stage: contract.Stage, Schema: contract.SchemaID, JSONPath: "$.assessments", Field: "assessment",
-				Code:        "REPAIR_BUSINESS_DRIFT_UNCHECKED",
-				Message:     "repair cannot be accepted without a comparable baseline artifact",
-				Recoverable: false,
-			})
-			metrics.FinalStatus = "failed"
 			logArtifactRepairMetrics(metrics, plan, true)
-			return result, metrics, ErrArtifactInvalid
+			return repairedResult, metrics, nil
 		}
 		unchanged, driftRef := ArtifactUnitsUnchanged(baseline, &repairedResult.Artifact)
 		if !unchanged {
@@ -260,7 +268,7 @@ func ValidateAndRepairArtifact(
 			continue
 		}
 		metrics.LLMRepairSuccesses++
-		metrics.RepairDriftUnchecked = baseline == nil
+		metrics.RepairDriftUnchecked = false
 		metrics.SchemaRepairIssues = append(metrics.SchemaRepairIssues, repairedResult.Issues...)
 		metrics.FinalArtifact = repairedResult.Artifact
 		repairAttempt.Accepted = true
@@ -273,6 +281,32 @@ func ValidateAndRepairArtifact(
 	logArtifactRepairMetrics(metrics, plan, true)
 	metrics.FinalStatus = "failed"
 	return result, metrics, ErrArtifactInvalid
+}
+
+func validatePlanClosure(plan PlanView, artifact AssessmentArtifact) error {
+	if plan.PromptRefs == nil {
+		return errors.New("plan prompt refs session is nil")
+	}
+	if len(plan.Units) > 0 && len(artifact.Assessments) != len(plan.Units) {
+		return fmt.Errorf("assessments count %d does not match planned units count %d", len(artifact.Assessments), len(plan.Units))
+	}
+	seen := make(map[string]bool, len(artifact.Assessments))
+	for _, item := range artifact.Assessments {
+		unitID, err := plan.PromptRefs.UnitIDForRef(item.UnitRef)
+		if err != nil {
+			return fmt.Errorf("unknown unit ref %q: %w", item.UnitRef, err)
+		}
+		if seen[unitID] {
+			return fmt.Errorf("duplicate unit %q (ref %q)", unitID, item.UnitRef)
+		}
+		seen[unitID] = true
+	}
+	for _, unit := range plan.Units {
+		if !seen[unit.ID] {
+			return fmt.Errorf("missing planned unit %q", unit.ID)
+		}
+	}
+	return nil
 }
 
 func isNonRetryableRepairError(err error) bool {
@@ -296,10 +330,80 @@ func maxRepairAttempts(value int) int {
 
 func baselineArtifact(raw []byte) *AssessmentArtifact {
 	var artifact AssessmentArtifact
-	if err := json.Unmarshal(raw, &artifact); err != nil || len(artifact.Assessments) == 0 {
+	if err := json.Unmarshal(raw, &artifact); err == nil && len(artifact.Assessments) > 0 {
+		return &artifact
+	}
+
+	// 容错型松散解析 (Loose Baseline Extractor)
+	var generic map[string]any
+	if err := json.Unmarshal(raw, &generic); err != nil {
 		return nil
 	}
-	return &artifact
+
+	rawAssessments, ok := generic["assessments"].([]any)
+	if !ok || len(rawAssessments) == 0 {
+		return nil
+	}
+
+	looseAssessments := make([]UnitAssessment, 0, len(rawAssessments))
+	for _, rawItem := range rawAssessments {
+		itemMap, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		unitRef, _ := itemMap["unit_ref"].(string)
+		primaryUnitID, _ := itemMap["primary_unit_id"].(string)
+		outcomeStr, _ := itemMap["outcome"].(string)
+		summary, _ := itemMap["summary"].(string)
+
+		var reason string
+		if rStr, ok := itemMap["reason"].(string); ok {
+			reason = rStr
+		} else if itemMap["reason"] != nil {
+			if rBytes, err := json.Marshal(itemMap["reason"]); err == nil {
+				reason = string(rBytes)
+			}
+		}
+
+		var issues []AssessmentIssue
+		if rawIssues, ok := itemMap["issues"].([]any); ok {
+			for _, rIssue := range rawIssues {
+				if iMap, ok := rIssue.(map[string]any); ok {
+					cat, _ := iMap["category"].(string)
+					sev, _ := iMap["severity"].(string)
+					detail, _ := iMap["detail"].(string)
+					sug, _ := iMap["suggestion"].(string)
+					code, _ := iMap["code"].(string)
+					issues = append(issues, AssessmentIssue{
+						Code:       code,
+						Category:   cat,
+						Severity:   sev,
+						Detail:     detail,
+						Suggestion: sug,
+					})
+				}
+			}
+		}
+
+		looseAssessments = append(looseAssessments, UnitAssessment{
+			UnitRef:       unitRef,
+			PrimaryUnitID: primaryUnitID,
+			Outcome:       AssessmentOutcome(outcomeStr),
+			Summary:       summary,
+			Reason:        reason,
+			Issues:        issues,
+		})
+	}
+
+	if len(looseAssessments) == 0 {
+		return nil
+	}
+
+	schemaStr, _ := generic["schema"].(string)
+	return &AssessmentArtifact{
+		Schema:      schemaStr,
+		Assessments: looseAssessments,
+	}
 }
 
 func allowedOutcomes(contract ArtifactContract) []string {
