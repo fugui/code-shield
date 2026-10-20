@@ -18,3 +18,6 @@
     OpenCode 会话级失败恢复：解析 sessionID、白名单化 idle / output-missing / total-timeout 续跑、短收尾 prompt、剩余预算治理与续跑成功率观测。
 *   **[06-Tier分片失败恢复与重试设计.md](06-Tier分片失败恢复与重试设计.md)**
     分片级统一恢复状态机：错误分类、同 resource 有限重试、超时二分、OpenCode / Codex 续跑、显式候选降级、资源健康熔断与 attempt 历史观测。
+*   **[07-基于一叶知秋探针的大模型自适应动态流控与防降级架构设计.md](07-基于一叶知秋探针的大模型自适应动态流控与防降级架构设计.md)**
+    基于单台 Canary 推理节点探针指标（`active_requests` / `waiting_requests`）与非对称 AIMD 拥塞控制算法，实现防 429 限流降级与低峰期自适应增压调速。
+
