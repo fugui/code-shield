@@ -102,6 +102,7 @@ type (
 	ModelResource             = dispatcher.ModelResource
 	ModelResourceStatus       = dispatcher.ModelResourceStatus
 	ThrottleInfo              = dispatcher.ThrottleInfo
+	AdaptiveStatusSnapshot    = dispatcher.AdaptiveStatusSnapshot
 	LLMSlotLease              = dispatcher.LLMSlotLease
 	DispatcherMetricsSnapshot = dispatcher.DispatcherMetricsSnapshot
 	DispatcherDebugSnapshot   = dispatcher.DispatcherDebugSnapshot

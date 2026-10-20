@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 export interface ThrottleControlCardProps {
   sysConfig: any;
   isAdmin: boolean;
-  onApplyScale: (scale: number, durationHours: number) => Promise<void>;
+  onApplyScale: (scale: number | string, durationHours: number) => Promise<void>;
   onToggleQueue: (paused: boolean) => Promise<void>;
   applyingConfig: boolean;
   togglingQueue: boolean;
@@ -17,18 +17,58 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
   applyingConfig,
   togglingQueue,
 }) => {
-  const [selectedScale, setSelectedScale] = useState<number>(1.0);
+  const [selectedScale, setSelectedScale] = useState<number | 'adaptive'>('adaptive');
   const [durationHours, setDurationHours] = useState<number>(2);
 
   useEffect(() => {
-    if (sysConfig?.concurrency_scale !== undefined) {
-      setSelectedScale(sysConfig.concurrency_scale);
+    if (sysConfig) {
+      if (sysConfig.is_manual) {
+        setSelectedScale(sysConfig.concurrency_scale ?? 1.0);
+      } else {
+        setSelectedScale('adaptive');
+      }
     }
   }, [sysConfig]);
 
   const isThrottleActive = !!(sysConfig && sysConfig.concurrency_scale !== 1.0);
-  const throttleMode = sysConfig?.throttle_mode || (isThrottleActive ? 'manual' : 'normal');
+  const throttleMode: string = sysConfig?.throttle_mode || (isThrottleActive ? 'manual' : 'normal');
   const workHoursCfg = sysConfig?.work_hours_config;
+  const adaptiveStatus = sysConfig?.adaptive_status;
+  const currentScalePct = Math.round((sysConfig?.concurrency_scale ?? 1.0) * 100);
+
+  // 状态图标背景与前景色定义
+  const getIconTheme = () => {
+    if (throttleMode === 'adaptive') {
+      if (adaptiveStatus?.is_fallback) {
+        return { bg: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #f59e0b)' };
+      }
+      if (adaptiveStatus?.state === 'overload') {
+        return { bg: 'rgba(239, 68, 68, 0.12)', color: 'var(--color-danger, #ef4444)' };
+      }
+      if (adaptiveStatus?.state === 'warning') {
+        return { bg: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #f59e0b)' };
+      }
+      if (adaptiveStatus?.state === 'boost') {
+        return { bg: 'rgba(16, 185, 129, 0.12)', color: 'var(--color-success, #10b981)' };
+      }
+      return { bg: 'rgba(59, 130, 246, 0.12)', color: 'var(--color-primary, #2563eb)' };
+    }
+    if (throttleMode === 'manual') {
+      if (sysConfig?.concurrency_scale === 0) {
+        return { bg: 'rgba(239, 68, 68, 0.12)', color: 'var(--color-danger, #ef4444)' };
+      }
+      if (sysConfig?.concurrency_scale < 1) {
+        return { bg: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #f59e0b)' };
+      }
+      return { bg: 'rgba(16, 185, 129, 0.12)', color: 'var(--color-success, #10b981)' };
+    }
+    if (throttleMode === 'work_hours') {
+      return { bg: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #f59e0b)' };
+    }
+    return { bg: 'rgba(59, 130, 246, 0.12)', color: 'var(--color-primary, #2563eb)' };
+  };
+
+  const iconTheme = getIconTheme();
 
   return (
     <div
@@ -53,23 +93,11 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
             width: '40px',
             height: '40px',
             borderRadius: '8px',
-            background: isThrottleActive
-              ? sysConfig.concurrency_scale === 0
-                ? 'rgba(239, 68, 68, 0.1)'
-                : sysConfig.concurrency_scale < 1
-                ? 'rgba(245, 158, 11, 0.1)'
-                : 'rgba(16, 185, 129, 0.1)'
-              : 'rgba(59, 130, 246, 0.1)',
+            background: iconTheme.bg,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: isThrottleActive
-              ? sysConfig.concurrency_scale === 0
-                ? 'var(--color-danger, #ef4444)'
-                : sysConfig.concurrency_scale < 1
-                ? 'var(--color-warning, #f59e0b)'
-                : 'var(--color-success, #10b981)'
-              : 'var(--color-primary, #2563eb)',
+            color: iconTheme.color,
             flexShrink: 0,
           }}
         >
@@ -82,14 +110,38 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
             <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-primary, var(--text-color, #0f172a))' }}>
               AI 扫描并发流控
             </h4>
-            {throttleMode === 'work_hours' ? (
+
+            {/* 状态徽章 (Status Badge) */}
+            {throttleMode === 'adaptive' ? (
+              adaptiveStatus?.is_fallback ? (
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #d97706)', fontWeight: 600 }}>
+                  ⚠️ 探针离线 (静态保底) {currentScalePct}%
+                </span>
+              ) : adaptiveStatus?.state === 'boost' ? (
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--color-success, #059669)', fontWeight: 600 }}>
+                  🤖 自动增压中 {currentScalePct}%
+                </span>
+              ) : adaptiveStatus?.state === 'warning' ? (
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #d97706)', fontWeight: 600 }}>
+                  ⚠️ 自动避让中 {currentScalePct}%
+                </span>
+              ) : adaptiveStatus?.state === 'overload' ? (
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.12)', color: 'var(--color-danger, #ef4444)', fontWeight: 600 }}>
+                  🚨 紧急避让中 {currentScalePct}%
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.12)', color: 'var(--color-primary, #2563eb)', fontWeight: 600 }}>
+                  🤖 自动伸缩中 {currentScalePct}%
+                </span>
+              )
+            ) : throttleMode === 'work_hours' ? (
               sysConfig.concurrency_scale === 0 ? (
                 <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.12)', color: 'var(--color-danger, #ef4444)', fontWeight: 600 }}>
                   工作时间暂停中
                 </span>
               ) : (
                 <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #d97706)', fontWeight: 600 }}>
-                  工作时间限速中 {Math.round(sysConfig.concurrency_scale * 100)}%
+                  工作时间限速中 {currentScalePct}%
                 </span>
               )
             ) : throttleMode === 'manual' ? (
@@ -99,11 +151,11 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
                 </span>
               ) : sysConfig.concurrency_scale < 1 ? (
                 <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--color-warning, #d97706)', fontWeight: 600 }}>
-                  手动限速中 {Math.round(sysConfig.concurrency_scale * 100)}%
+                  手动限速中 {currentScalePct}%
                 </span>
               ) : (
                 <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--color-success, #059669)', fontWeight: 600 }}>
-                  手动加速中 {Math.round(sysConfig.concurrency_scale * 100)}%
+                  手动加速中 {currentScalePct}%
                 </span>
               )
             ) : (
@@ -160,19 +212,42 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
               )}
             </div>
           </div>
+
+          {/* 水情透视与运行文案 (Status Description) */}
           <p style={{ margin: 0, fontSize: '0.825rem', color: 'var(--color-text-secondary, #64748b)', lineHeight: '1.3' }}>
-            {throttleMode === 'work_hours' ? (
+            {throttleMode === 'adaptive' ? (
+              adaptiveStatus ? (
+                adaptiveStatus.is_fallback ? (
+                  <>自适应探针服务连续多次无法连通（网络超时或哨兵节点离线），已自动平滑降级为静态兜底模式（100% 并发），确保主扫描流程不受干扰。</>
+                ) : (
+                  <>
+                    当前处于流量自适应模式：哨兵节点（活跃 <strong>{adaptiveStatus.active_requests}</strong>，排队 <strong>{adaptiveStatus.waiting_requests}</strong>），
+                    {adaptiveStatus.state === 'overload' ? (
+                      <>检测到严重拥塞风险，已紧急断崖避让至 <strong>{currentScalePct}%</strong> 并发速度，抢在 429 前削峰。</>
+                    ) : adaptiveStatus.state === 'warning' ? (
+                      <>出现轻度排队积压，已温和退让至 <strong>{currentScalePct}%</strong> 并发速度防微杜渐。</>
+                    ) : adaptiveStatus.state === 'boost' ? (
+                      <>后端算力充沛且平稳，已自动增压至 <strong>{currentScalePct}%</strong> 并发速度高效消化扫描队列。</>
+                    ) : (
+                      <>推理集群处于黄金平衡水位，当前自动保持为 <strong>{currentScalePct}%</strong> 稳态吞吐。</>
+                    )}
+                  </>
+                )
+              ) : (
+                '当前处于流量自适应模式，调度器正根据哨兵节点水力负荷实时调节并发槽位。'
+              )
+            ) : throttleMode === 'work_hours' ? (
               <>
-                当前处于工作时间窗口（{workHoursCfg?.start_time || '09:00'} ~ {workHoursCfg?.end_time || '22:00'}），已自动限制并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>，夜间将自动恢复满速。
+                当前处于工作时间窗口（{workHoursCfg?.start_time || '09:00'} ~ {workHoursCfg?.end_time || '22:00'}），已自动限制并发为 <strong>{currentScalePct}%</strong>，夜间将自动恢复自适应模式。
               </>
             ) : throttleMode === 'manual' ? (
               sysConfig.scale_expires_at ? (
                 <>
-                  管理员临时调整并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>，预计于 <strong>{new Date(sysConfig.scale_expires_at).toLocaleTimeString()}</strong> 自动恢复计划模式。
+                  管理员临时调整并发为 <strong>{currentScalePct}%</strong>，预计于 <strong>{new Date(sysConfig.scale_expires_at).toLocaleTimeString()}</strong> 自动恢复自适应模式。
                 </>
               ) : (
                 <>
-                  管理员手动常驻调整并发为 <strong>{Math.round(sysConfig.concurrency_scale * 100)}%</strong>。
+                  管理员手动常驻调整并发为 <strong>{currentScalePct}%</strong>。
                 </>
               )
             ) : (
@@ -190,7 +265,10 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
               <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>并发速度：</span>
               <select
                 value={selectedScale}
-                onChange={e => setSelectedScale(parseFloat(e.target.value))}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedScale(val === 'adaptive' ? 'adaptive' : parseFloat(val));
+                }}
                 style={{
                   padding: '0.35rem 0.5rem',
                   borderRadius: '6px',
@@ -203,18 +281,18 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
                   height: '32px',
                 }}
               >
+                <option value="adaptive">🤖 按流量压力自动伸缩 (默认推荐)</option>
                 <option value={0}>0% (临时暂停所有扫描)</option>
-                <option value={0.25}>25% (极度限速)</option>
-                <option value={0.5}>50% (半速运行)</option>
-                <option value={0.75}>75% (微调限速)</option>
-                <option value={1.0}>100% (恢复默认速度)</option>
-                <option value={1.25}>125% (微调加速)</option>
-                <option value={1.5}>150% (快速运行)</option>
-                <option value={2.0}>200% (双倍加速 - 高物理负载)</option>
+                <option value={0.25}>25% (人工强制极度限速)</option>
+                <option value={0.5}>50% (人工强制半速运行)</option>
+                <option value={0.75}>75% (人工强制微调限速)</option>
+                <option value={1.0}>100% (人工强制锁定基准速度)</option>
+                <option value={1.5}>150% (人工强制快速运行)</option>
+                <option value={2.0}>200% (人工强制双倍加速)</option>
               </select>
             </div>
 
-            {selectedScale !== 1.0 && (
+            {selectedScale !== 'adaptive' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary, #64748b)' }}>持续时间：</span>
                 <select
@@ -245,8 +323,8 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
 
             <button
               className="btn"
-              disabled={applyingConfig}
-              onClick={() => onApplyScale(selectedScale, selectedScale === 1.0 ? 0 : durationHours)}
+              disabled={applyingConfig || (!sysConfig?.is_manual && selectedScale === 'adaptive')}
+              onClick={() => onApplyScale(selectedScale, selectedScale === 'adaptive' ? 0 : durationHours)}
               style={{
                 height: '32px',
                 padding: '0 0.75rem',
@@ -254,12 +332,25 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.25rem',
-                background: selectedScale === 1.0 ? 'transparent' : 'var(--color-primary, #2563eb)',
-                color: selectedScale === 1.0 ? 'var(--color-text-primary, var(--text-color, #0f172a))' : '#ffffff',
-                border: selectedScale === 1.0 ? '1px solid var(--color-border-primary, var(--border-color, #e2e8f0))' : '1px solid transparent',
+                background:
+                  selectedScale === 'adaptive' && !sysConfig?.is_manual
+                    ? 'var(--color-bg-muted, #f1f5f9)'
+                    : 'var(--color-primary, #2563eb)',
+                color:
+                  selectedScale === 'adaptive' && !sysConfig?.is_manual
+                    ? 'var(--color-text-muted, #94a3b8)'
+                    : '#ffffff',
+                border: '1px solid transparent',
+                cursor: applyingConfig || (!sysConfig?.is_manual && selectedScale === 'adaptive') ? 'not-allowed' : 'pointer',
               }}
             >
-              {applyingConfig ? '应用中...' : selectedScale === 1.0 ? '重置速度' : '应用调节'}
+              {applyingConfig
+                ? '应用中...'
+                : selectedScale === 'adaptive'
+                ? sysConfig?.is_manual
+                  ? '恢复自适应'
+                  : '自适应运行中'
+                : '应用调节'}
             </button>
           </>
         ) : (

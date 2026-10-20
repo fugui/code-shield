@@ -71,9 +71,72 @@ type WorkHoursConfig struct {
 	Scale     float64 `yaml:"scale" json:"scale"`           // 0.10 代表 10%
 }
 
+// AdaptiveThrottlingConfig 自适应探针流控配置
+type AdaptiveThrottlingConfig struct {
+	Enabled                  bool    `yaml:"enabled" json:"enabled"`
+	ProbeURL                 string  `yaml:"probe_url" json:"probe_url"`
+	IntervalSeconds          int     `yaml:"interval_seconds" json:"interval_seconds"`                     // 默认 5 秒
+	TimeoutMs                int     `yaml:"timeout_ms" json:"timeout_ms"`                                 // 默认 1500 毫秒
+	ActiveLowThreshold       int     `yaml:"active_low_threshold" json:"active_low_threshold"`             // 默认 15
+	ActiveHighThreshold      int     `yaml:"active_high_threshold" json:"active_high_threshold"`           // 默认 20
+	WaitingCriticalThreshold int     `yaml:"waiting_critical_threshold" json:"waiting_critical_threshold"` // 默认 3
+	MinScale                 float64 `yaml:"min_scale" json:"min_scale"`                                   // 默认 0.20
+	MaxScale                 float64 `yaml:"max_scale" json:"max_scale"`                                   // 默认 2.50
+}
+
+func (c AdaptiveThrottlingConfig) GetIntervalSeconds() int {
+	if c.IntervalSeconds > 0 {
+		return c.IntervalSeconds
+	}
+	return 5
+}
+
+func (c AdaptiveThrottlingConfig) GetTimeoutMs() int {
+	if c.TimeoutMs > 0 {
+		return c.TimeoutMs
+	}
+	return 1500
+}
+
+func (c AdaptiveThrottlingConfig) GetActiveLowThreshold() int {
+	if c.ActiveLowThreshold > 0 {
+		return c.ActiveLowThreshold
+	}
+	return 15
+}
+
+func (c AdaptiveThrottlingConfig) GetActiveHighThreshold() int {
+	if c.ActiveHighThreshold > 0 {
+		return c.ActiveHighThreshold
+	}
+	return 20
+}
+
+func (c AdaptiveThrottlingConfig) GetWaitingCriticalThreshold() int {
+	if c.WaitingCriticalThreshold > 0 {
+		return c.WaitingCriticalThreshold
+	}
+	return 3
+}
+
+func (c AdaptiveThrottlingConfig) GetMinScale() float64 {
+	if c.MinScale > 0 {
+		return c.MinScale
+	}
+	return 0.20
+}
+
+func (c AdaptiveThrottlingConfig) GetMaxScale() float64 {
+	if c.MaxScale > 0 {
+		return c.MaxScale
+	}
+	return 2.50
+}
+
 // ThrottlingConfig 全局流控策略
 type ThrottlingConfig struct {
-	WorkHours WorkHoursConfig `yaml:"work_hours" json:"work_hours"`
+	WorkHours WorkHoursConfig          `yaml:"work_hours" json:"work_hours"`
+	Adaptive  AdaptiveThrottlingConfig `yaml:"adaptive" json:"adaptive"`
 }
 
 // TierBindingConfig 阶梯绑定配置 (支持单一资源或多资源池化绑定)

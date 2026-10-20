@@ -96,6 +96,7 @@ func isInsideWorkHours(now time.Time, cfg models.WorkHoursConfig) bool {
 }
 
 // getEffectiveScaleInfoLocked 计算当前生效流控（需在持有 d.mu 时调用）
+// 仲裁优先级：管理员手动设置 (Manual) > 动态自适应探针 (Adaptive) > 静态模式兜底 (WorkHours / Normal)
 func (d *ModelDispatcher) getEffectiveScaleInfoLocked(now time.Time) ThrottleInfo {
 	cfg := d.workHours
 	isWorkHours := isInsideWorkHours(now, cfg)
@@ -104,10 +105,13 @@ func (d *ModelDispatcher) getEffectiveScaleInfoLocked(now time.Time) ThrottleInf
 		WorkHoursConfig: cfg,
 		IsWorkHours:     isWorkHours,
 		ManualScale:     d.manualScale,
+		AdaptiveConfig:  d.adaptiveCfg,
+		AdaptiveStatus:  d.getAdaptiveStatusSnapshotLocked(),
 	}
 
 	// 1. 如果设置了过期时间，但当前时刻已超过过期时间，则手动覆盖已失效，重置为默认
 	if !d.scaleExpiresAt.IsZero() && !now.Before(d.scaleExpiresAt) {
+		d.manualActive = false
 		d.manualScale = 1.0
 		d.scaleExpiresAt = time.Time{}
 		if d.scaleTimer != nil {
@@ -117,8 +121,8 @@ func (d *ModelDispatcher) getEffectiveScaleInfoLocked(now time.Time) ThrottleInf
 		d.syncToDBLocked()
 	}
 
-	// 如果当前存在有效的手动覆盖（永久手动 scale != 1.0，或未过期的时限手动）
-	if d.manualScale != 1.0 || !d.scaleExpiresAt.IsZero() {
+	// 优先级 1: 如果当前存在有效的手动覆盖
+	if d.manualActive {
 		info.EffectiveScale = d.manualScale
 		info.ThrottleMode = "manual"
 		info.IsManual = true
@@ -129,7 +133,27 @@ func (d *ModelDispatcher) getEffectiveScaleInfoLocked(now time.Time) ThrottleInf
 		return info
 	}
 
-	// 2. 如果开启了工作时间自动限流且当前处于工作时间内
+	// 优先级 2: 动态自适应探针模式 (开启时作为常驻默认基准，且未进入 Fallback)
+	if d.adaptiveCfg.Enabled && d.adaptiveConsecutiveFailCount < 3 {
+		scale := d.adaptiveScale
+		if scale <= 0 {
+			scale = 1.0
+		}
+		minScale := d.adaptiveCfg.GetMinScale()
+		maxScale := d.adaptiveCfg.GetMaxScale()
+		if scale < minScale {
+			scale = minScale
+		} else if scale > maxScale {
+			scale = maxScale
+		}
+		info.EffectiveScale = scale
+		info.ThrottleMode = "adaptive"
+		info.IsManual = false
+		return info
+	}
+
+	// 优先级 3: 静态模式兜底 (Normal / WorkHours)
+	// 如果开启了工作时间自动限流且当前处于工作时间内
 	if isWorkHours {
 		info.EffectiveScale = cfg.Scale
 		info.ThrottleMode = "work_hours"
@@ -137,7 +161,7 @@ func (d *ModelDispatcher) getEffectiveScaleInfoLocked(now time.Time) ThrottleInf
 		return info
 	}
 
-	// 3. 正常运行模式 (100%)
+	// 正常运行模式 (100%)
 	info.EffectiveScale = 1.0
 	info.ThrottleMode = "normal"
 	info.IsManual = false
@@ -182,13 +206,18 @@ func (d *ModelDispatcher) syncToDBLocked() {
 	if !d.scaleExpiresAt.IsZero() {
 		expiresPtr = &d.scaleExpiresAt
 	}
+	scaleVal := d.manualScale
+	if !d.manualActive {
+		scaleVal = 1.0
+		expiresPtr = nil
+	}
 	models.DB.Model(&models.SystemConfig{}).Where("id = 1").Updates(map[string]interface{}{
-		"concurrency_scale": d.manualScale,
+		"concurrency_scale": scaleVal,
 		"scale_expires_at":  expiresPtr,
 	})
 }
 
-// RestoreManualScale 恢复手动设置为默认（即解除手动覆盖，回归计划策略）
+// RestoreManualScale 恢复手动设置为默认（即解除手动覆盖，回归自适应或计划策略）
 func (d *ModelDispatcher) RestoreManualScale() {
 	if d == nil {
 		return
@@ -201,6 +230,7 @@ func (d *ModelDispatcher) RestoreManualScale() {
 		d.scaleTimer = nil
 	}
 
+	d.manualActive = false
 	d.manualScale = 1.0
 	d.scaleExpiresAt = time.Time{}
 	d.syncToDBLocked()
@@ -235,23 +265,18 @@ func (d *ModelDispatcher) SetScale(scale float64, duration time.Duration) {
 		d.scaleTimer = nil
 	}
 
-	if scale == 1.0 && duration == 0 {
-		d.manualScale = 1.0
-		d.scaleExpiresAt = time.Time{}
-		log.Println("[Dispatcher] Reset throttle to scheduled baseline.")
+	d.manualActive = true
+	d.manualScale = scale
+	if duration > 0 {
+		d.scaleExpiresAt = time.Now().Add(duration)
+		log.Printf("[Dispatcher] Manual concurrency scale set to %.2f (duration: %v, will restore at %s)\n",
+			scale, duration, d.scaleExpiresAt.Format("15:04:05"))
+		d.scaleTimer = time.AfterFunc(duration, func() {
+			d.RestoreManualScale()
+		})
 	} else {
-		d.manualScale = scale
-		if duration > 0 {
-			d.scaleExpiresAt = time.Now().Add(duration)
-			log.Printf("[Dispatcher] Manual concurrency scale set to %.2f (duration: %v, will restore at %s)\n",
-				scale, duration, d.scaleExpiresAt.Format("15:04:05"))
-			d.scaleTimer = time.AfterFunc(duration, func() {
-				d.RestoreManualScale()
-			})
-		} else {
-			d.scaleExpiresAt = time.Time{}
-			log.Printf("[Dispatcher] Manual concurrency scale set to %.2f (permanent override)\n", scale)
-		}
+		d.scaleExpiresAt = time.Time{}
+		log.Printf("[Dispatcher] Manual concurrency scale set to %.2f (permanent override)\n", scale)
 	}
 
 	d.syncToDBLocked()
@@ -273,6 +298,7 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 	defer d.mu.Unlock()
 
 	d.workHours = models.AppConfig.Scanner.Throttling.WorkHours
+	d.adaptiveCfg = models.AppConfig.Scanner.Throttling.Adaptive
 
 	existingByKey := make(map[string]*ModelResource, len(d.resources))
 	for _, r := range d.resources {
