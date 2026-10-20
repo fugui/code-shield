@@ -88,35 +88,45 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected scale 0.80 after soft backoff, got %f", scale)
 	}
 
-	// 3. 🟢 黄金平衡测试: waiting == 0 && active >= 20 -> 保持当前 scale
-	scale, state, _ = d.adjustAIMDLocked(22, 0)
+	// 3. 🔄 基准自愈恢复测试: scale = 0.80 < 1.0 且排队消退 (waiting == 0)
+	// 即使此时 active = 25 (较高背景负荷)，只要零排队，系统应积极回弹恢复至 1.00 标称基准速度
+	scale, state, _ = d.adjustAIMDLocked(25, 0)
+	if state != "optimal" {
+		t.Fatalf("expected state 'optimal' after reaching 1.0 baseline, got %s", state)
+	}
+	if math.Abs(scale-1.00) > 0.001 {
+		t.Fatalf("expected scale to recover to 1.00, got %f", scale)
+	}
+
+	// 4. 🟢 黄金平衡稳态测试: waiting == 0 && scale >= 1.0 && active >= 20 -> 保持 1.00 不盲目超频
+	scale, state, _ = d.adjustAIMDLocked(25, 0)
 	if state != "optimal" {
 		t.Fatalf("expected state 'optimal', got %s", state)
 	}
-	if math.Abs(scale-0.80) > 0.001 {
-		t.Fatalf("expected scale to remain 0.80, got %f", scale)
+	if math.Abs(scale-1.00) > 0.001 {
+		t.Fatalf("expected scale to remain 1.00 in sweet spot, got %f", scale)
 	}
 
-	// 4. 🔵 闲置增压测试: waiting == 0 && active < 15
+	// 5. 🔵 闲置超频增压测试: waiting == 0 && active < 15
 	// 第 1 周期: 满足闲置，但尚未连续两周期，scale 应保持不变
 	scale, state, _ = d.adjustAIMDLocked(10, 0)
 	if state != "boost" {
 		t.Fatalf("expected state 'boost', got %s", state)
 	}
-	if math.Abs(scale-0.80) > 0.001 {
-		t.Fatalf("expected scale to remain 0.80 in first idle cycle, got %f", scale)
+	if math.Abs(scale-1.00) > 0.001 {
+		t.Fatalf("expected scale to remain 1.00 in first idle cycle, got %f", scale)
 	}
 	if d.adaptiveConsecutiveIdleCount != 1 {
 		t.Fatalf("expected consecutive idle count 1, got %d", d.adaptiveConsecutiveIdleCount)
 	}
 
-	// 第 2 周期: 再次满足闲置，触发加法爬坡 +0.2 -> scale = 0.80 + 0.20 = 1.00
+	// 第 2 周期: 再次满足闲置，触发加法超频爬坡 +0.2 -> scale = 1.00 + 0.20 = 1.20
 	scale, state, _ = d.adjustAIMDLocked(8, 0)
 	if state != "boost" {
 		t.Fatalf("expected state 'boost', got %s", state)
 	}
-	if math.Abs(scale-1.00) > 0.001 {
-		t.Fatalf("expected scale 1.00 after additive ramp-up, got %f", scale)
+	if math.Abs(scale-1.20) > 0.001 {
+		t.Fatalf("expected scale 1.20 after overdrive ramp-up, got %f", scale)
 	}
 	if d.adaptiveConsecutiveIdleCount != 0 {
 		t.Fatalf("expected consecutive idle count reset to 0, got %d", d.adaptiveConsecutiveIdleCount)
