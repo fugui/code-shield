@@ -95,7 +95,6 @@ func (r *ModelResource) InAllowed(allowedIDs []string) bool {
 	return false
 }
 
-
 // computeResourceConfigKey 计算 ComputeResourceConfig 对应的业务标识键
 func computeResourceConfigKey(res models.ComputeResourceConfig) string {
 	resourceModel := res.ResourceModel()
@@ -125,13 +124,27 @@ func computeResourceConfigKey(res models.ComputeResourceConfig) string {
 
 // ThrottleInfo 封装当前流控全景状态信息
 type ThrottleInfo struct {
-	EffectiveScale  float64                `json:"effective_scale"`   // 最终生效比例 (0.0 ~ 3.0)
-	ThrottleMode    string                 `json:"throttle_mode"`     // "work_hours", "manual", "normal"
-	ManualScale     float64                `json:"manual_scale"`      // 手动设置的比例
-	ScaleExpiresAt  *time.Time             `json:"scale_expires_at"`  // 手动过期时间
-	IsManual        bool                   `json:"is_manual"`         // 是否正处于手动覆盖中
-	IsWorkHours     bool                   `json:"is_work_hours"`     // 当前是否命中工作时间
-	WorkHoursConfig models.WorkHoursConfig `json:"work_hours_config"` // 工作时间自动限流配置
+	EffectiveScale  float64                         `json:"effective_scale"`           // 最终生效比例 (0.0 ~ 3.0)
+	ThrottleMode    string                          `json:"throttle_mode"`             // "adaptive", "work_hours", "manual", "normal"
+	ManualScale     float64                         `json:"manual_scale"`              // 手动设置的比例
+	ScaleExpiresAt  *time.Time                      `json:"scale_expires_at"`          // 手动过期时间
+	IsManual        bool                            `json:"is_manual"`                 // 是否正处于手动覆盖中
+	IsWorkHours     bool                            `json:"is_work_hours"`             // 当前是否命中工作时间
+	WorkHoursConfig models.WorkHoursConfig          `json:"work_hours_config"`         // 工作时间自动限流配置
+	AdaptiveConfig  models.AdaptiveThrottlingConfig `json:"adaptive_config"`           // 自适应探针配置
+	AdaptiveStatus  *AdaptiveStatusSnapshot         `json:"adaptive_status,omitempty"` // 自适应实时状态快照
+}
+
+// AdaptiveStatusSnapshot 封装哨兵探针与自适应拥塞控制实时快照
+type AdaptiveStatusSnapshot struct {
+	ActiveRequests   int       `json:"active_requests"`
+	WaitingRequests  int       `json:"waiting_requests"`
+	CurrentScale     float64   `json:"current_scale"`
+	State            string    `json:"state"` // "overload", "warning", "optimal", "boost", "fallback"
+	Message          string    `json:"message"`
+	LastProbeAt      time.Time `json:"last_probe_at"`
+	ConsecutiveFails int       `json:"consecutive_fails"`
+	IsFallback       bool      `json:"is_fallback"`
 }
 
 // ModelResourceStatus 封装单台 LLM 服务器的状态快照
@@ -168,20 +181,32 @@ type ResourceHealthSnapshot struct {
 
 // ModelDispatcher 负责协调跨不同物理/逻辑 LLM 服务器的 AI 并发
 type ModelDispatcher struct {
-	mu                 sync.Mutex
-	cond               *sync.Cond
-	resources          []*ModelResource
-	enabled            bool
-	manualScale        float64                // 管理员手动设置的并发折扣系数 [0.0, 3.0]
-	scaleExpiresAt     time.Time              // 手动设置失效时间
-	scaleTimer         *time.Timer            // 到期自动恢复定时器
-	stopHeartbeat      chan struct{}          // 停止心跳通道
-	workHours          models.WorkHoursConfig // 内部纳管的工作时间限流配置
-	unsupportedWarned  map[string]time.Time   // 记录各 backend 最近一次直通降级告警时间
-	lastEffectiveScale float64                // 记录上一时刻生效的 scale
-	lastThrottleMode   string                 // 记录上一时刻模式
-	activeLeases       map[string]*LLMSlotLease
-	recentLeases       []*LLMSlotLease
+	mu                           sync.Mutex
+	cond                         *sync.Cond
+	resources                    []*ModelResource
+	enabled                      bool
+	manualActive                 bool                   // 是否处于手动覆盖中
+	manualScale                  float64                // 管理员手动设置的并发折扣系数 [0.0, 3.0]
+	scaleExpiresAt               time.Time              // 手动设置失效时间
+	scaleTimer                   *time.Timer            // 到期自动恢复定时器
+	stopHeartbeat                chan struct{}          // 停止心跳通道
+	workHours                    models.WorkHoursConfig // 内部纳管的工作时间限流配置
+	adaptiveCfg                  models.AdaptiveThrottlingConfig
+	adaptiveScale                float64
+	adaptiveConsecutiveIdleCount int
+	adaptiveConsecutiveFailCount int
+	adaptiveLastProbeAt          time.Time
+	adaptiveLastActive           int
+	adaptiveLastWaiting          int
+	adaptiveState                string
+	adaptiveMessage              string
+	stopProbe                    chan struct{}
+	probeRunning                 bool
+	unsupportedWarned            map[string]time.Time // 记录各 backend 最近一次直通降级告警时间
+	lastEffectiveScale           float64              // 记录上一时刻生效的 scale
+	lastThrottleMode             string               // 记录上一时刻模式
+	activeLeases                 map[string]*LLMSlotLease
+	recentLeases                 []*LLMSlotLease
 	// skipSuccessfulLeases controls whether successful slot leases are omitted from
 	// the bounded in-memory completion history. Failed/canceled are always kept.
 	skipSuccessfulLeases bool
@@ -197,7 +222,7 @@ func GetGlobal() *ModelDispatcher {
 	return GlobalDispatcher
 }
 
-// Close 优雅停止调度器后台心跳通道
+// Close 优雅停止调度器后台心跳与探针协程
 func (d *ModelDispatcher) Close() {
 	if d == nil {
 		return
@@ -208,6 +233,13 @@ func (d *ModelDispatcher) Close() {
 	case <-d.stopHeartbeat:
 	default:
 		close(d.stopHeartbeat)
+	}
+	if d.stopProbe != nil {
+		select {
+		case <-d.stopProbe:
+		default:
+			close(d.stopProbe)
+		}
 	}
 }
 
@@ -245,9 +277,13 @@ func InitModelDispatcher() {
 	d := &ModelDispatcher{
 		manualScale:          1.0,
 		stopHeartbeat:        make(chan struct{}),
+		stopProbe:            make(chan struct{}),
 		activeLeases:         make(map[string]*LLMSlotLease),
 		skipSuccessfulLeases: true,
 		workHours:            models.AppConfig.Scanner.Throttling.WorkHours,
+		adaptiveCfg:          models.AppConfig.Scanner.Throttling.Adaptive,
+		adaptiveScale:        1.0,
+		adaptiveState:        "optimal",
 	}
 	d.metrics = newDispatcherMetrics()
 	d.cond = sync.NewCond(&d.mu)
@@ -306,6 +342,7 @@ func InitModelDispatcher() {
 			if cfg.ConcurrencyScale > 0 || cfg.ScaleExpiresAt != nil {
 				if cfg.ScaleExpiresAt != nil && cfg.ScaleExpiresAt.After(time.Now()) {
 					dur := time.Until(*cfg.ScaleExpiresAt)
+					d.manualActive = true
 					d.manualScale = cfg.ConcurrencyScale
 					d.scaleExpiresAt = *cfg.ScaleExpiresAt
 					d.scaleTimer = time.AfterFunc(dur, func() {
@@ -313,7 +350,12 @@ func InitModelDispatcher() {
 					})
 					log.Printf("[Dispatcher] Restored active manual throttle from DB: scale=%.2f, expires in %v (at %s)\n",
 						d.manualScale, dur.Round(time.Second), d.scaleExpiresAt.Format("15:04:05"))
+				} else if cfg.ScaleExpiresAt == nil && cfg.ConcurrencyScale != 1.0 && cfg.ConcurrencyScale > 0 {
+					d.manualActive = true
+					d.manualScale = cfg.ConcurrencyScale
+					log.Printf("[Dispatcher] Restored permanent manual throttle from DB: scale=%.2f\n", d.manualScale)
 				} else if cfg.ConcurrencyScale != 1.0 && cfg.ScaleExpiresAt != nil {
+					d.manualActive = false
 					d.manualScale = 1.0
 					d.scaleExpiresAt = time.Time{}
 					models.DB.Model(&models.SystemConfig{}).Where("id = 1").Updates(map[string]interface{}{
@@ -333,6 +375,10 @@ func InitModelDispatcher() {
 		initialInfo.ThrottleMode, initialInfo.EffectiveScale)
 
 	go d.startHeartbeat()
+
+	if d.adaptiveCfg.Enabled && d.adaptiveCfg.ProbeURL != "" {
+		go d.startAdaptiveProbeWorker()
+	}
 
 	GlobalDispatcher = d
 }

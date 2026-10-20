@@ -114,6 +114,8 @@ func GetConfig(c *gin.Context) {
 		"is_manual":         info.IsManual,
 		"is_work_hours":     info.IsWorkHours,
 		"work_hours_config": info.WorkHoursConfig,
+		"adaptive_config":   info.AdaptiveConfig,
+		"adaptive_status":   info.AdaptiveStatus,
 	})
 }
 
@@ -124,6 +126,7 @@ func UpdateConfig(c *gin.Context) {
 		ConcurrencyScale *float64 `json:"concurrency_scale"`
 		DurationHours    *float64 `json:"duration_hours"`
 		QueuePaused      *bool    `json:"queue_paused"`
+		ThrottleMode     *string  `json:"throttle_mode"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -138,6 +141,7 @@ func UpdateConfig(c *gin.Context) {
 		"auto_notify":       config.AutoNotify,
 		"queue_paused":      config.QueuePaused,
 		"concurrency_scale": services.Dispatcher.GetThrottleInfo().EffectiveScale,
+		"throttle_mode":     services.Dispatcher.GetThrottleInfo().ThrottleMode,
 	}
 
 	if req.AutoNotify != nil {
@@ -157,7 +161,9 @@ func UpdateConfig(c *gin.Context) {
 		services.SetQueuePaused(*req.QueuePaused)
 	}
 
-	if req.ConcurrencyScale != nil {
+	if (req.ThrottleMode != nil && *req.ThrottleMode == "adaptive") || (req.ConcurrencyScale != nil && *req.ConcurrencyScale < 0) {
+		services.Dispatcher.RestoreManualScale()
+	} else if req.ConcurrencyScale != nil {
 		var dur time.Duration
 		if req.DurationHours != nil && *req.DurationHours > 0 {
 			dur = time.Duration(*req.DurationHours * float64(time.Hour))
@@ -171,9 +177,10 @@ func UpdateConfig(c *gin.Context) {
 		"auto_notify":       config.AutoNotify,
 		"queue_paused":      config.QueuePaused,
 		"concurrency_scale": info.EffectiveScale,
+		"throttle_mode":     info.ThrottleMode,
 	}
 
-	auditDesc := fmt.Sprintf("修改了系统限流/通知配置 (限流倍率: %.2f)", info.EffectiveScale)
+	auditDesc := fmt.Sprintf("修改了系统限流/通知配置 (限流模式: %s, 限流倍率: %.2f)", info.ThrottleMode, info.EffectiveScale)
 	if req.QueuePaused != nil {
 		if *req.QueuePaused {
 			auditDesc += "；暂停了任务队列派发 (进入排空模式)"
@@ -198,11 +205,14 @@ func UpdateConfig(c *gin.Context) {
 		"is_manual":         info.IsManual,
 		"is_work_hours":     info.IsWorkHours,
 		"work_hours_config": info.WorkHoursConfig,
+		"adaptive_config":   info.AdaptiveConfig,
+		"adaptive_status":   info.AdaptiveStatus,
 	})
 }
 
 func syncWorkHoursThrottle() {
 	services.Dispatcher.SetWorkHoursThrottle(models.AppConfig.Scanner.Throttling.WorkHours)
+	services.Dispatcher.SetAdaptiveThrottle(models.AppConfig.Scanner.Throttling.Adaptive)
 }
 
 // GetCategoryConfig 获取指定 Category 的动态配置

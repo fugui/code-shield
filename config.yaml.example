@@ -147,6 +147,16 @@ scanner:
       start_time: "09:00"              # 限流开始时刻 (HH:MM)
       end_time: "22:00"                # 限流结束时刻 (HH:MM)
       scale: 0.10                      # 工作时间并发比例 (0.10 代表 10%，0.0 代表完全暂停)
+    adaptive:
+      enabled: true                    # 是否启用一叶知秋哨兵探针自适应动态流控
+      probe_url: "http://10.29.93.96:5031/api/metrics/recent?server=pd-glm52-w4a8-xs&limit=1" # Canary 探针指标接口
+      interval_seconds: 5              # 探针拉取周期 (秒)
+      timeout_ms: 1500                 # 探针请求硬超时 (毫秒)
+      active_low_threshold: 15         # 闲置增压活跃请求数上限
+      active_high_threshold: 20        # 黄金平衡活跃请求数下限
+      waiting_critical_threshold: 3    # 紧急熔断排队请求数阈值
+      min_scale: 0.20                  # 最小并发比例下限 (20%)
+      max_scale: 2.50                  # 最大并发比例上限 (250%)
 
   # 多智能体对抗辩论流水线 (Debate Pipeline)
   debate:

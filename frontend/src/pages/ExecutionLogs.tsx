@@ -48,23 +48,28 @@ function ExecutionLogs({ embedded = false }: ExecutionLogsProps) {
     }
   }, []);
 
-  const handleApplyConfig = async (scale: number, duration: number) => {
+  const handleApplyConfig = async (scale: number | string, duration: number) => {
     setApplyingConfig(true);
     try {
+      const body: Record<string, any> = {};
+      if (scale === 'adaptive') {
+        body.throttle_mode = 'adaptive';
+      } else {
+        body.concurrency_scale = typeof scale === 'number' ? scale : parseFloat(scale);
+        body.duration_hours = duration;
+      }
+
       const res = await fetch('/api/config', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          concurrency_scale: scale,
-          duration_hours: duration,
-        }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         const data = await res.json();
         setSysConfig(data);
-        showToast('AI 并发限流调节应用成功', 'success');
+        showToast(scale === 'adaptive' ? '已恢复大模型流量自适应流控' : 'AI 并发限流调节应用成功', 'success');
       } else {
         const err = await res.json();
         showToast(err.error || '调节失败，请重试', 'error');

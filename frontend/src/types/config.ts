@@ -72,6 +72,44 @@ export interface ToolsConfig {
   overrides: Record<string, string>;
 }
 
+export interface AdaptiveThrottlingConfig {
+  enabled: boolean;
+  probe_url: string;
+  interval_seconds?: number;
+  timeout_ms?: number;
+  active_low_threshold?: number;
+  active_high_threshold?: number;
+  waiting_critical_threshold?: number;
+  min_scale?: number;
+  max_scale?: number;
+}
+
+export interface AdaptiveStatusSnapshot {
+  active_requests: number;
+  waiting_requests: number;
+  current_scale: number;
+  state: 'overload' | 'warning' | 'optimal' | 'boost' | 'fallback' | string;
+  message: string;
+  last_probe_at: string;
+  consecutive_fails: number;
+  is_fallback: boolean;
+}
+
+export interface SystemThrottleConfigResponse {
+  id: number;
+  auto_notify: boolean;
+  queue_paused: boolean;
+  concurrency_scale: number;
+  throttle_mode: 'adaptive' | 'work_hours' | 'manual' | 'normal' | string;
+  scale_expires_at?: string;
+  manual_scale: number;
+  is_manual: boolean;
+  is_work_hours: boolean;
+  work_hours_config: WorkHoursConfig;
+  adaptive_config?: AdaptiveThrottlingConfig;
+  adaptive_status?: AdaptiveStatusSnapshot;
+}
+
 export interface ScannerConfig {
   worker_count: number;
   chunk_concurrency: number;
@@ -96,6 +134,7 @@ export interface ScannerConfig {
   };
   throttling: {
     work_hours: WorkHoursConfig;
+    adaptive?: AdaptiveThrottlingConfig;
   };
   opencode?: {
     continuation: {
