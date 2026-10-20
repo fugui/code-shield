@@ -118,14 +118,27 @@ func (d *ModelDispatcher) adjustAIMDLocked(active, waiting int) (float64, string
 		state = "warning"
 		msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现轻度积压（活跃 %d，排队 %d），已温和退让至 %.0f%% 并发速度防微杜渐",
 			active, waiting, math.Round(scale*100))
+	} else if scale < 1.0 {
+		// 🔄 基准自愈恢复区: waiting == 0 且 scale < 1.0
+		// 只要零排队，说明拥塞已消除，系统应主动努力回弹恢复至 100% 额定基准速度，
+		// 避免因为大模型存在常驻背景负载（如 active >= 20）而导致系统被死锁在极低并发无法自拔。
+		scale = math.Min(1.0, scale+0.2)
+		d.adaptiveConsecutiveIdleCount = 0
+		if scale >= 1.0 {
+			state = "optimal"
+			msg = fmt.Sprintf("🟢 排队消退：哨兵节点恢复零排队（活跃 %d，排队 0），已自愈回归 100%% 标称基准速度", active)
+		} else {
+			state = "boost"
+			msg = fmt.Sprintf("🔄 排队消退：哨兵节点恢复零排队（活跃 %d，排队 0），正稳步回弹至 %.0f%% 恢复基准", active, math.Round(scale*100))
+		}
 	} else if active >= activeHigh {
-		// 🟢 黄金平衡区: waiting == 0 且 active >= 20
+		// 🟢 黄金平衡区: waiting == 0 且 scale >= 1.0 且 active >= 20
 		d.adaptiveConsecutiveIdleCount = 0
 		state = "optimal"
 		msg = fmt.Sprintf("🟢 黄金平衡：哨兵节点（活跃 %d，排队 %d），推理集群处于最佳利用水位，保持 %.0f%% 稳态吞吐",
 			active, waiting, math.Round(scale*100))
 	} else if active < activeLow {
-		// 🔵 闲置增压区: waiting == 0 且 active < 15 (需连续 2 周期稳定)
+		// 🔵 闲置超频增压区: waiting == 0 且 scale >= 1.0 且 active < 15 (需连续 2 周期稳定)
 		d.adaptiveConsecutiveIdleCount++
 		if d.adaptiveConsecutiveIdleCount >= 2 {
 			scale = math.Min(maxScale, scale+0.2)
