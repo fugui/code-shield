@@ -17,6 +17,7 @@ import (
 	"code-shield/services/engines/assessment"
 	assessmentprofiles "code-shield/services/engines/assessment/profiles"
 	"code-shield/services/engines/chunker"
+	"code-shield/services/governance"
 	"code-shield/services/invoker"
 	"gorm.io/datatypes"
 )
@@ -492,6 +493,7 @@ func (e *DebateEngine) consumePluginArtifact(
 	if err != nil {
 		return nil, records, tokens, err
 	}
+	findings = governAssessmentFindings(ctx, findings)
 	if artifactContract.SchemaID != "" {
 		if encoded, encodeErr := json.Marshal(artifactRepairMetrics); encodeErr == nil {
 			for index := range findings {
@@ -507,6 +509,48 @@ func (e *DebateEngine) consumePluginArtifact(
 			len(result.Invalid), result.Unknown)
 	}
 	return findings, records, tokens, nil
+}
+
+func governAssessmentFindings(ctx *engines.EngineContext, findings []models.AnalysisFinding) []models.AnalysisFinding {
+	if ctx == nil {
+		return findings
+	}
+	hasTaxonomy := len(ctx.Taxonomy.Categories) > 0
+	hasAllowed := len(ctx.AllowedCategories) > 0
+	if !hasTaxonomy && !hasAllowed {
+		return findings
+	}
+
+	for i := range findings {
+		if findings[i].AssessmentOutcome != string(assessment.OutcomeDefect) {
+			continue
+		}
+		if hasTaxonomy {
+			resolution := ResolveCategory(findings[i].CategoryCode, findings[i].Category, ctx.Taxonomy)
+			switch resolution.Status {
+			case CategoryResolutionValid, CategoryResolutionCodeAuthority, CategoryResolutionLabelAuthority, CategoryResolutionAliasAuthority:
+				findings[i].CategoryCode = resolution.Code
+				findings[i].Category = resolution.Label
+				findings[i].CategoryStatus = CategoryStatusValid
+				findings[i].TaxonomyGoverned = true
+				findings[i].CategorySource = CategorySourceDeterministic
+				findings[i].TaxonomyHash = ctx.TaxonomyHash
+			default:
+				if findings[i].CategoryCode != "" {
+					findings[i].CategoryStatus = CategoryStatusReviewRequired
+				}
+			}
+		} else if hasAllowed {
+			normalized := governance.NormalizeCategory(findings[i].Category, ctx.AllowedCategories)
+			findings[i].Category = normalized.Category
+			findings[i].CategoryDetail = normalized.Detail
+			findings[i].TaxonomyGoverned = normalized.Governed
+			if normalized.Governed {
+				findings[i].CategoryStatus = CategoryStatusValid
+			}
+		}
+	}
+	return findings
 }
 
 func assessmentRecordsFromFindings(findings ...models.AnalysisFinding) []coverage.AssessmentRecord {
