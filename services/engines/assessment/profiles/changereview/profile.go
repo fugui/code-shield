@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,9 +133,37 @@ func (Profile) MapFindings(ctx assessment.AssessmentContext, bundle assessment.B
 			finding.Title = fmt.Sprintf("%s：%s", issue.Category, displayName)
 			finding.Severity = issue.Severity
 			finding.Category = issue.Category
+			if isLikelyCategoryCode(issue.Code) {
+				finding.CategoryCode = strings.TrimSpace(issue.Code)
+				finding.CategoryStatus = "VALID"
+				finding.TaxonomyGoverned = true
+			}
+			finding.LineNumber = resolveFindingLineNumber(unit, issue.Evidence)
+			if finding.LineNumber == "" {
+				finding.LineNumber = resolveFindingLineNumber(unit, item.Evidence)
+			}
 			finding.Detail = item.Summary
 			finding.Suggestion = issue.Suggestion
-			finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, unit, issue.Code)
+			if finding.CodeSnippet == "" {
+				snippetParam := ""
+				if !isLikelyCategoryCode(issue.Code) {
+					snippetParam = issue.Code
+				}
+				snippetUnit := unit
+				if snippetUnit.StartLine <= 0 {
+					startLine := extractLineInt(issue.Evidence, "line_start", "start_line", "line", "line_number")
+					endLine := extractLineInt(issue.Evidence, "line_end", "end_line")
+					if startLine > 0 {
+						snippetUnit.StartLine = startLine
+						if endLine >= startLine {
+							snippetUnit.EndLine = endLine
+						} else {
+							snippetUnit.EndLine = startLine
+						}
+					}
+				}
+				finding.CodeSnippet = assessment.ExtractIssueSnippet(ctx, snippetUnit, snippetParam)
+			}
 		default:
 			finding.Title = fmt.Sprintf("变更需人工评估：%s", displayName)
 			finding.Severity = "建议"
@@ -328,6 +357,64 @@ func lineNumber(unit coverage.PlanUnit) string {
 		return fmt.Sprintf("%d-%d", unit.StartLine, unit.EndLine)
 	}
 	return fmt.Sprintf("%d", unit.StartLine)
+}
+
+func resolveFindingLineNumber(unit coverage.PlanUnit, evidence map[string]any) string {
+	if len(evidence) > 0 {
+		start := extractLineInt(evidence, "line_start", "start_line", "line", "line_number")
+		end := extractLineInt(evidence, "line_end", "end_line")
+		if start > 0 {
+			if end > start {
+				return fmt.Sprintf("%d-%d", start, end)
+			}
+			return fmt.Sprintf("%d", start)
+		}
+	}
+	return lineNumber(unit)
+}
+
+func extractLineInt(evidence map[string]any, keys ...string) int {
+	for _, k := range keys {
+		val, ok := evidence[k]
+		if !ok || val == nil {
+			continue
+		}
+		switch v := val.(type) {
+		case float64:
+			if v > 0 {
+				return int(v)
+			}
+		case int:
+			if v > 0 {
+				return v
+			}
+		case int64:
+			if v > 0 {
+				return int(v)
+			}
+		case json.Number:
+			if n, err := v.Int64(); err == nil && n > 0 {
+				return int(n)
+			}
+		case string:
+			trimmed := strings.TrimSpace(v)
+			if n, err := strconv.Atoi(trimmed); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+func isLikelyCategoryCode(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" || strings.ContainsAny(trimmed, "\n\r;{}()") {
+		return false
+	}
+	if len(trimmed) > 64 || strings.Contains(trimmed, " ") {
+		return false
+	}
+	return true
 }
 
 func contains(values []string, wanted string) bool {

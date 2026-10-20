@@ -323,3 +323,96 @@ func TestRegistrationImplementsAllRequiredFacets(t *testing.T) {
 		t.Fatal("profile does not implement normalizer facet")
 	}
 }
+
+func TestMapFindingsMapsCategoryCodeAndGoverned(t *testing.T) {
+	bundle := assessment.Bundle{
+		ID: "b-01",
+		Units: []coverage.PlanUnit{{
+			ID:          "unit-01",
+			Kind:        coverage.PlanUnitKeywordOccurrence,
+			Path:        "src/thread.cpp",
+			DisplayName: "thread_create @ src/thread.cpp:10",
+			StartLine:   10,
+			EndLine:     10,
+		}},
+	}
+	result := assessment.AssessmentResult{Valid: []assessment.UnitAssessment{{
+		UnitRef:       "u001",
+		PrimaryUnitID: "unit-01",
+		Outcome:       assessment.OutcomeDefect,
+		Issues: []assessment.AssessmentIssue{{
+			Code:       "HELF_MISSING_TERMINATE",
+			Category:   "缺少终止",
+			Severity:   "严重",
+			Detail:     "thread missing terminate logic",
+			Suggestion: "add exit handling",
+			Evidence: map[string]any{
+				"line_start": 45,
+				"line_end":   48,
+			},
+		}},
+	}}}
+
+	findings, err := Profile{}.MapFindings(assessment.AssessmentContext{}, bundle, result)
+	if err != nil {
+		t.Fatalf("MapFindings() error = %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings count = %d, want 1", len(findings))
+	}
+	f := findings[0]
+	if f.CategoryCode != "HELF_MISSING_TERMINATE" {
+		t.Fatalf("CategoryCode = %q, want HELF_MISSING_TERMINATE", f.CategoryCode)
+	}
+	if f.CategoryStatus != "VALID" {
+		t.Fatalf("CategoryStatus = %q, want VALID", f.CategoryStatus)
+	}
+	if !f.TaxonomyGoverned {
+		t.Fatalf("TaxonomyGoverned = %v, want true", f.TaxonomyGoverned)
+	}
+	if f.LineNumber != "45-48" {
+		t.Fatalf("LineNumber = %q, want 45-48", f.LineNumber)
+	}
+	if f.CodeSnippet == "HELF_MISSING_TERMINATE" {
+		t.Fatalf("CodeSnippet must not be polluted by issue.Code: got %q", f.CodeSnippet)
+	}
+}
+
+func TestMapFindingsFallbackLineNumberWhenUnitLineIsZero(t *testing.T) {
+	bundle := assessment.Bundle{
+		ID: "b-02",
+		Units: []coverage.PlanUnit{{
+			ID:          "file-unit",
+			Kind:        coverage.PlanUnitFile,
+			Path:        "src/worker.cpp",
+			DisplayName: "src/worker.cpp",
+			StartLine:   0,
+			EndLine:     0,
+		}},
+	}
+	result := assessment.AssessmentResult{Valid: []assessment.UnitAssessment{{
+		UnitRef:       "u001",
+		PrimaryUnitID: "file-unit",
+		Outcome:       assessment.OutcomeDefect,
+		Issues: []assessment.AssessmentIssue{{
+			Code:     "THREAD_MISSING_JOIN",
+			Category: "生命周期-join遗漏",
+			Severity: "一般",
+			Detail:   "missing join",
+			Evidence: map[string]any{
+				"line_start": "88",
+			},
+		}},
+	}}}
+
+	findings, err := Profile{}.MapFindings(assessment.AssessmentContext{}, bundle, result)
+	if err != nil {
+		t.Fatalf("MapFindings() error = %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings count = %d, want 1", len(findings))
+	}
+	if findings[0].LineNumber != "88" {
+		t.Fatalf("LineNumber = %q, want 88", findings[0].LineNumber)
+	}
+}
