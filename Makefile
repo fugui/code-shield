@@ -27,7 +27,7 @@ build: $(BINARY)
 install: $(NODE_MODULES)
 
 $(NODE_MODULES): $(FRONTEND_DIR)/package.json
-	cd $(FRONTEND_DIR) && ( [ -d node_modules ] || npm install )
+	cd $(FRONTEND_DIR) && ( [ -d node_modules ] || npm install --no-package-lock )
 	@touch $(NODE_MODULES)
 
 # 编译构建前端静态资产 (dist/)
