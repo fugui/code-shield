@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"code-shield/models"
+	"code-shield/services/coverage"
 	"code-shield/services/engines"
 	"code-shield/services/engines/chunked"
 	"code-shield/services/engines/chunker"
@@ -21,7 +22,7 @@ import (
 // bundleResumeSchemaVersion 是轻量断点续扫的唯一兼容性安全边界。
 // 凡影响 prompt、输出契约、findings/debate log 转换、bundle 拆分或 token 统计的改动必须递增。
 const (
-	bundleResumeSchemaVersion = 5
+	bundleResumeSchemaVersion = 6
 )
 
 type BundleResumeMetadata struct {
@@ -62,10 +63,11 @@ func HashPromptContent(promptContent string) string {
 
 // BundleResumeResult 保存一个 bundle 完整成功后的可复用结果。
 type BundleResumeResult struct {
-	Findings     []models.AnalysisFinding `json:"findings"`
-	DebateLogs   []models.TaskDebateLog   `json:"debate_logs"`
-	HunterTokens int64                    `json:"hunter_tokens"`
-	Tier2Tokens  int64                    `json:"tier2_tokens"`
+	Findings          []models.AnalysisFinding    `json:"findings"`
+	DebateLogs        []models.TaskDebateLog      `json:"debate_logs"`
+	AssessmentRecords []coverage.AssessmentRecord `json:"assessment_records,omitempty"`
+	HunterTokens      int64                       `json:"hunter_tokens"`
+	Tier2Tokens       int64                       `json:"tier2_tokens"`
 
 	Artifact BundleArtifactMetrics `json:"artifact,omitempty"`
 }
@@ -147,6 +149,7 @@ func WriteBundleResumeCheckpoint(
 	bundle chunker.SemanticBundle,
 	findings []models.AnalysisFinding,
 	debateLogs []models.TaskDebateLog,
+	assessmentRecords []coverage.AssessmentRecord,
 	hunterTokens int64,
 	tier2Tokens int64,
 	metadata BundleResumeMetadata,
@@ -163,6 +166,9 @@ func WriteBundleResumeCheckpoint(
 	if debateLogs == nil {
 		debateLogs = []models.TaskDebateLog{}
 	}
+	if assessmentRecords == nil {
+		assessmentRecords = []coverage.AssessmentRecord{}
+	}
 
 	cp := BundleResumeCheckpoint{
 		ResumeSchemaVersion: bundleResumeSchemaVersion,
@@ -174,10 +180,11 @@ func WriteBundleResumeCheckpoint(
 		Metadata:            metadata,
 		SnapshotHash:        snapshotHash,
 		Result: BundleResumeResult{
-			Findings:     findings,
-			DebateLogs:   debateLogs,
-			HunterTokens: hunterTokens,
-			Tier2Tokens:  tier2Tokens,
+			Findings:          findings,
+			DebateLogs:        debateLogs,
+			AssessmentRecords: assessmentRecords,
+			HunterTokens:      hunterTokens,
+			Tier2Tokens:       tier2Tokens,
 		},
 		CompletedAt: time.Now(),
 	}

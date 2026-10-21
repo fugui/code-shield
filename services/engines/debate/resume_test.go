@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"code-shield/models"
+	"code-shield/services/coverage"
 	"code-shield/services/engines"
 	"code-shield/services/engines/chunked"
 	"code-shield/services/engines/chunker"
@@ -43,10 +44,11 @@ func TestBundleResumeCheckpointRoundTrip(t *testing.T) {
 	}
 	findings := []models.AnalysisFinding{{Title: "finding", Severity: "严重"}}
 	logs := []models.TaskDebateLog{{ChunkName: bundle.Name, CandidateID: "H-001", Verdict: "CONFIRMED"}}
+	records := []coverage.AssessmentRecord{{PrimaryUnitID: "unit-1", Status: "pass"}}
 	metadata := BundleResumeMetadata{EngineConfigHash: "config"}
 
 	snapshotHash := "snapshot"
-	if err := WriteBundleResumeCheckpoint(dir, 42, "debate_full", 7, bundle, findings, logs, 11, 22, metadata, snapshotHash, BundleArtifactMetrics{ArtifactComplete: boolPtr(true), ArtifactState: "observed"}); err != nil {
+	if err := WriteBundleResumeCheckpoint(dir, 42, "debate_full", 7, bundle, findings, logs, records, 11, 22, metadata, snapshotHash, BundleArtifactMetrics{ArtifactComplete: boolPtr(true), ArtifactState: "observed"}); err != nil {
 		t.Fatalf("WriteBundleResumeCheckpoint() error = %v", err)
 	}
 
@@ -68,6 +70,9 @@ func TestBundleResumeCheckpointRoundTrip(t *testing.T) {
 	}
 	if len(cp.Result.Findings) != 1 || cp.Result.Findings[0].Title != "finding" {
 		t.Fatalf("unexpected findings: %+v", cp.Result.Findings)
+	}
+	if len(cp.Result.AssessmentRecords) != 1 || cp.Result.AssessmentRecords[0].PrimaryUnitID != "unit-1" || cp.Result.AssessmentRecords[0].Status != "pass" {
+		t.Fatalf("unexpected assessment records: %+v", cp.Result.AssessmentRecords)
 	}
 	if cp.Result.HunterTokens != 11 || cp.Result.Tier2Tokens != 22 {
 		t.Fatalf("unexpected tokens: %+v", cp.Result)
@@ -94,7 +99,7 @@ func TestBundleResumeCheckpointInvalidFilesAreIgnored(t *testing.T) {
 		Metadata:            BundleResumeMetadata{EngineConfigHash: "config"},
 		SnapshotHash:        "snapshot",
 	}
-	if err := WriteBundleResumeCheckpoint(dir, valid.ReportID, valid.EngineMode, valid.BundleIndex, bundle, nil, nil, 0, 0, BundleResumeMetadata{EngineConfigHash: "config"}, "snapshot", BundleArtifactMetrics{ArtifactComplete: boolPtr(true), ArtifactState: "observed"}); err != nil {
+	if err := WriteBundleResumeCheckpoint(dir, valid.ReportID, valid.EngineMode, valid.BundleIndex, bundle, nil, nil, nil, 0, 0, BundleResumeMetadata{EngineConfigHash: "config"}, "snapshot", BundleArtifactMetrics{ArtifactComplete: boolPtr(true), ArtifactState: "observed"}); err != nil {
 		t.Fatalf("WriteBundleResumeCheckpoint() error = %v", err)
 	}
 
@@ -144,7 +149,7 @@ func TestBundleResumeCheckpointRejectsPlanManifestMismatch(t *testing.T) {
 		EngineConfigHash: "config",
 	}
 	snapshotHash := "snapshot"
-	if err := WriteBundleResumeCheckpoint(dir, 1, "debate_full", 0, bundle, nil, nil, 0, 0, metadata, snapshotHash, BundleArtifactMetrics{ArtifactComplete: boolPtr(true)}); err != nil {
+	if err := WriteBundleResumeCheckpoint(dir, 1, "debate_full", 0, bundle, nil, nil, nil, 0, 0, metadata, snapshotHash, BundleArtifactMetrics{ArtifactComplete: boolPtr(true)}); err != nil {
 		t.Fatalf("write checkpoint: %v", err)
 	}
 
@@ -177,7 +182,7 @@ func TestBundleResumeCheckpointBindsChangeBaseline(t *testing.T) {
 		DiffManifestHash: "sha256:diff",
 	}
 	if err := WriteBundleResumeCheckpoint(
-		dir, 1, "debate_full", 0, bundle, nil, nil, 0, 0, metadata, "snapshot",
+		dir, 1, "debate_full", 0, bundle, nil, nil, nil, 0, 0, metadata, "snapshot",
 		BundleArtifactMetrics{ArtifactComplete: boolPtr(true)},
 	); err != nil {
 		t.Fatal(err)
@@ -218,7 +223,7 @@ func TestBundleResumeCheckpointPersistsQuarantine(t *testing.T) {
 	bundle := chunker.SemanticBundle{Name: "quarantined", AllFiles: []string{"a.cc"}}
 	complete := false
 	if err := WriteBundleResumeCheckpoint(
-		tempDir, 1, "debate_full", 1, bundle, nil, nil, 0, 0,
+		tempDir, 1, "debate_full", 1, bundle, nil, nil, nil, 0, 0,
 		BundleResumeMetadata{EngineConfigHash: "config"}, "snapshot",
 		BundleArtifactMetrics{
 			ArtifactComplete:         &complete,
@@ -256,6 +261,7 @@ func TestBundleResumeCheckpointRejectsChangedSource(t *testing.T) {
 		"debate_full",
 		1,
 		bundle,
+		nil,
 		nil,
 		nil,
 		0,
@@ -320,6 +326,7 @@ func TestDebateEngineSkipsValidResumeCheckpoints(t *testing.T) {
 			bundleIdx,
 			bundle,
 			findings,
+			nil,
 			nil,
 			3,
 			0,

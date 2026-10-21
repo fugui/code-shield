@@ -207,9 +207,17 @@ func (e *DebateEngine) Run(ctx *engines.EngineContext) (*engines.EngineResult, e
 		allFindings = append(allFindings, cp.Result.Findings...)
 		allDebateLogs = append(allDebateLogs, cp.Result.DebateLogs...)
 		if ctx.AssessmentProfile != "" {
-			allAssessments = append(allAssessments, assessmentRecordsFromFindings(cp.Result.Findings...)...)
+			if len(cp.Result.AssessmentRecords) > 0 {
+				allAssessments = append(allAssessments, cp.Result.AssessmentRecords...)
+			} else {
+				allAssessments = append(allAssessments, reconcileLegacyBundleAssessments(b, cp.Result.Findings)...)
+			}
 		} else {
-			allAssessments = append(allAssessments, fileAssessmentRecords(b)...)
+			if len(cp.Result.AssessmentRecords) > 0 {
+				allAssessments = append(allAssessments, cp.Result.AssessmentRecords...)
+			} else {
+				allAssessments = append(allAssessments, fileAssessmentRecords(b)...)
+			}
 		}
 		totalHunterTokens += cp.Result.HunterTokens
 		totalTier2Tokens += cp.Result.Tier2Tokens
@@ -449,6 +457,10 @@ bundleLoop:
 					}
 				}
 				if snapshotHashErr == nil {
+					checkpointAssessments := assessmentRecords
+					if ctx.AssessmentProfile == "" {
+						checkpointAssessments = fileAssessmentRecords(bnd)
+					}
 					if err := WriteBundleResumeCheckpoint(
 						chunkDir,
 						ctx.ReportID,
@@ -457,6 +469,7 @@ bundleLoop:
 						bnd,
 						findings,
 						debateLogs,
+						checkpointAssessments,
 						hTokens,
 						t2Tokens,
 						resumeMetadata,
