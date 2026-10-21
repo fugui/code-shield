@@ -567,6 +567,30 @@ func assessmentRecordsFromFindings(findings ...models.AnalysisFinding) []coverag
 	return records
 }
 
+func reconcileLegacyBundleAssessments(bundle chunker.SemanticBundle, findings []models.AnalysisFinding) []coverage.AssessmentRecord {
+	existing := assessmentRecordsFromFindings(findings...)
+	if len(bundle.PrimaryUnits) == 0 {
+		return existing
+	}
+
+	assessedMap := make(map[string]bool, len(existing))
+	for _, record := range existing {
+		assessedMap[record.PrimaryUnitID] = true
+	}
+
+	records := append([]coverage.AssessmentRecord(nil), existing...)
+	for _, unit := range bundle.PrimaryUnits {
+		if unit.ID != "" && !assessedMap[unit.ID] {
+			records = append(records, coverage.AssessmentRecord{
+				PrimaryUnitID: unit.ID,
+				Status:        string(assessment.OutcomePass),
+			})
+			assessedMap[unit.ID] = true
+		}
+	}
+	return records
+}
+
 func assessmentPipelineObservation(
 	candidate dispatcher.TierCandidate,
 	responseFormatMode string,
