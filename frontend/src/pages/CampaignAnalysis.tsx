@@ -4,9 +4,23 @@ import { Pagination, usePagination } from '@code/common';
 import { apiUrl } from '../config';
 import { useToast } from '../components/Toast';
 import AuditingWorkspace from '../components/AuditingWorkspace';
+import ReportViewer from '../components/report/ReportViewer';
 import { sshToHttps } from '../utils/urlUtils';
 
 // Inline Icons as SVGs for portable premium look
+const ReportIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.5L19 7.5V19a2 2 0 0 1-2 2z" />
+  </svg>
+);
+
+const ExternalLinkIcon = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+    <polyline points="15 3 21 3 21 9"></polyline>
+    <line x1="10" y1="14" x2="21" y2="3"></line>
+  </svg>
+);
 const PlayIcon = () => (
   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -55,6 +69,55 @@ const DownloadIcon = () => (
   </svg>
 );
 
+export interface CampaignRepoItem {
+  repo_id: number;
+  repo_name: string;
+  id?: number;
+  name?: string;
+  repo_url?: string;
+  department?: string;
+  owner_name?: string;
+  total_issues: number;
+  total_defects?: number;
+  total_entities?: number;
+  pass_count?: number;
+  pass_rate?: number;
+  blocking: number;
+  critical: number;
+  major?: number;
+  hint?: number;
+  suggestion?: number;
+  open_issues?: number;
+  resolved_issues?: number;
+  fix_rate?: number;
+  last_scan_time?: string;
+  last_task_id?: number;
+}
+
+export interface CampaignDeptItem {
+  department: string;
+  total_repos: number;
+  scanned_repos: number;
+  total_issues: number;
+  open_issues: number;
+  resolved_issues: number;
+  pass_count: number;
+  blocking: number;
+  critical: number;
+  fix_rate?: number;
+  pass_rate?: number;
+}
+
+export interface CampaignTrendItem {
+  date: string;
+  total_issues: number;
+  open_issues: number;
+  resolved_issues?: number;
+  pass_count?: number;
+  pass_rate?: number;
+  fix_rate?: number;
+}
+
 interface CampaignAnalysisProps {
   campaign: string;
   title: string;
@@ -71,9 +134,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
   // Dashboard overall stats & states
   const [loading, setLoading] = useState(true);
-  const [repos, setRepos] = useState<any[]>([]);
-  const [depts, setDepts] = useState<any[]>([]);
-  const [trends, setTrends] = useState<any[]>([]);
+  const [repos, setRepos] = useState<CampaignRepoItem[]>([]);
+  const [depts, setDepts] = useState<CampaignDeptItem[]>([]);
+  const [trends, setTrends] = useState<CampaignTrendItem[]>([]);
   
   const [activeTab, setActiveTab] = useState<'repos' | 'depts' | 'trends'>('repos');
   const [departments, setDepartments] = useState<string[]>([]);
@@ -98,10 +161,48 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null);
   const [selectedRepoName, setSelectedRepoName] = useState('');
+
+  // Floating Scan Report Drawer
+  const [reportDrawerOpen, setReportDrawerOpen] = useState(false);
+  const [reportTaskId, setReportTaskId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const rTaskId = searchParams.get('reportTaskId');
+    if (rTaskId) {
+      const parsedId = parseInt(rTaskId, 10);
+      if (!isNaN(parsedId) && parsedId > 0) {
+        setReportTaskId(parsedId);
+        setReportDrawerOpen(true);
+      }
+    } else {
+      setReportDrawerOpen(false);
+      setReportTaskId(null);
+    }
+  }, [searchParams]);
+
+  const handleOpenReport = (taskId: number) => {
+    setReportTaskId(taskId);
+    setReportDrawerOpen(true);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('reportTaskId', taskId.toString());
+      return next;
+    }, { replace: true });
+  };
+
+  const handleCloseReport = () => {
+    setReportDrawerOpen(false);
+    setReportTaskId(null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('reportTaskId');
+      return next;
+    }, { replace: true });
+  };
   
   // Nested Department Repos
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
-  const [deptRepos, setDeptRepos] = useState<Record<string, any[]>>({});
+  const [deptRepos, setDeptRepos] = useState<Record<string, CampaignRepoItem[]>>({});
   const [deptReposLoading, setDeptReposLoading] = useState<Record<string, boolean>>({});
   const [exportingDepts, setExportingDepts] = useState(false);
 
@@ -224,9 +325,9 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
         const currentRepoId = searchParams.get('repoId');
         if (currentRepoId) {
           const rId = parseInt(currentRepoId, 10);
-          const matched = repoList.find((r: any) => r.repo_id === rId || r.id === rId);
+          const matched = repoList.find((r: CampaignRepoItem) => r.repo_id === rId || r.id === rId);
           if (matched) {
-            setSelectedRepoName(matched.repo_name || matched.name);
+            setSelectedRepoName(matched.repo_name || matched.name || '');
           }
         }
       })
@@ -287,7 +388,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
         setWorkspaceOpen(true);
         const matched = repos.find(r => r.repo_id === rId || r.id === rId);
         if (matched) {
-          setSelectedRepoName(matched.repo_name || matched.name);
+          setSelectedRepoName(matched.repo_name || matched.name || '');
         }
       }
     } else if (workspaceOpen) {
@@ -514,8 +615,8 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
   // KPIs Calculations
   const totalIssuesCount = repos.reduce((acc, r) => acc + (isEntityMode ? (r.total_entities || r.total_issues) : (r.total_defects || ((r.open_issues || 0) + (r.resolved_issues || 0)) || r.total_issues)), 0);
-  const totalOpenCount = repos.reduce((acc, r) => acc + r.open_issues, 0);
-  const totalResolvedCount = repos.reduce((acc, r) => acc + r.resolved_issues, 0);
+  const totalOpenCount = repos.reduce((acc, r) => acc + (r.open_issues || 0), 0);
+  const totalResolvedCount = repos.reduce((acc, r) => acc + (r.resolved_issues || 0), 0);
   const totalPassCount = repos.reduce((acc, r) => acc + (r.pass_count || 0), 0);
   const totalScannedRepos = repos.filter(r => r.last_scan_time && r.last_scan_time !== '0001-01-01T00:00:00Z').length;
   
@@ -791,37 +892,93 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                         </td>
                         <td style={styles.tableCell}>
                           {r.last_scan_time && r.last_scan_time !== '0001-01-01T00:00:00Z' ? (
-                            <span title={new Date(r.last_scan_time).toLocaleString()}>
-                              {r.last_scan_time.substring(0, 10)}
-                            </span>
+                            r.last_task_id ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReport(r.last_task_id!)}
+                                title={`点击查看最新扫描报告 (#${r.last_task_id})`}
+                                className="code-link-btn"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  padding: 0,
+                                  color: 'var(--primary-color)',
+                                  cursor: 'pointer',
+                                  fontSize: 'inherit',
+                                  fontWeight: 500,
+                                  textDecoration: 'underline',
+                                  textUnderlineOffset: '3px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                }}
+                              >
+                                <span>{r.last_scan_time.substring(0, 10)}</span>
+                                <ExternalLinkIcon size={12} />
+                              </button>
+                            ) : (
+                              <span title={new Date(r.last_scan_time).toLocaleString()}>
+                                {r.last_scan_time.substring(0, 10)}
+                              </span>
+                            )
                           ) : (
                             <span style={{ color: 'var(--color-text-muted)' }}>未扫描</span>
                           )}
                         </td>
                         <td style={{ ...styles.tableCell }}>
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                             {(() => {
+                              const hasReport = !!r.last_task_id;
                               const hasNotScanned = !r.last_scan_time || r.last_scan_time === '0001-01-01T00:00:00Z';
                               return (
-                                <button 
-                                  disabled={hasNotScanned}
-                                  onClick={() => openWorkspace(r.repo_id, r.repo_name)}
-                                  title={hasNotScanned ? "代码仓未进行首次分析，无法审计" : "问题审计"}
-                                  className="code-icon-btn"
-                                  style={{
-                                    border: 'none',
-                                    color: hasNotScanned ? 'var(--color-border-primary)' : 'var(--primary-color)',
-                                    cursor: hasNotScanned ? 'not-allowed' : 'pointer',
-                                    borderRadius: '50%'
-                                  }}
-                                >
-                                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <circle cx="10" cy="13" r="2"></circle>
-                                    <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
-                                  </svg>
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={!hasReport}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (r.last_task_id) handleOpenReport(r.last_task_id);
+                                    }}
+                                    title={hasReport ? `查看最新扫描报告 (#${r.last_task_id})` : "暂无已完成的扫描报告"}
+                                    className="code-icon-btn"
+                                    style={{
+                                      border: 'none',
+                                      color: !hasReport ? 'var(--color-border-primary)' : 'var(--primary-color)',
+                                      cursor: !hasReport ? 'not-allowed' : 'pointer',
+                                      borderRadius: '50%',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      padding: '4px'
+                                    }}
+                                  >
+                                    <ReportIcon size={18} />
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    disabled={hasNotScanned}
+                                    onClick={() => openWorkspace(r.repo_id, r.repo_name)}
+                                    title={hasNotScanned ? "代码仓未进行首次分析，无法审计" : "问题审计"}
+                                    className="code-icon-btn"
+                                    style={{
+                                      border: 'none',
+                                      color: hasNotScanned ? 'var(--color-border-primary)' : 'var(--primary-color)',
+                                      cursor: hasNotScanned ? 'not-allowed' : 'pointer',
+                                      borderRadius: '50%',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      padding: '4px'
+                                    }}
+                                  >
+                                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                      <polyline points="14 2 14 8 20 8"></polyline>
+                                      <circle cx="10" cy="13" r="2"></circle>
+                                      <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
+                                    </svg>
+                                  </button>
+                                </>
                               );
                             })()}
                           </div>
@@ -934,7 +1091,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {deptRepos[d.department].map((r: any, idx: number) => {
+                                      {deptRepos[d.department].map((r: CampaignRepoItem, idx: number) => {
                                         const rateVal = isEntityMode ? (r.pass_rate || 0) : (r.fix_rate || 0);
                                         const auditDefects = r.total_defects || ((r.open_issues || 0) + (r.resolved_issues || 0)) || r.total_issues;
                                         return (
@@ -982,41 +1139,102 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
                                           </td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
                                             {r.last_scan_time && r.last_scan_time !== '0001-01-01T00:00:00Z' ? (
-                                              <span title={new Date(r.last_scan_time).toLocaleString()}>
-                                                {r.last_scan_time.substring(0, 10)}
-                                              </span>
+                                              r.last_task_id ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenReport(r.last_task_id!);
+                                                  }}
+                                                  title={`点击查看最新扫描报告 (#${r.last_task_id})`}
+                                                  className="code-link-btn"
+                                                  style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    color: 'var(--primary-color)',
+                                                    cursor: 'pointer',
+                                                    fontSize: 'inherit',
+                                                    fontWeight: 500,
+                                                    textDecoration: 'underline',
+                                                    textUnderlineOffset: '3px',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px',
+                                                  }}
+                                                >
+                                                  <span>{r.last_scan_time.substring(0, 10)}</span>
+                                                  <ExternalLinkIcon size={12} />
+                                                </button>
+                                              ) : (
+                                                <span title={new Date(r.last_scan_time).toLocaleString()}>
+                                                  {r.last_scan_time.substring(0, 10)}
+                                                </span>
+                                              )
                                             ) : (
                                               <span style={{ color: 'var(--color-text-muted)' }}>未扫描</span>
                                             )}
                                           </td>
                                           <td style={{ ...styles.tableCell, padding: '0.6rem 0.8rem' }}>
-                                            {(() => {
-                                              const hasNotScanned = !r.last_scan_time || r.last_scan_time === '0001-01-01T00:00:00Z';
-                                              return (
-                                                <button 
-                                                  disabled={hasNotScanned}
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    openWorkspace(r.repo_id, r.repo_name);
-                                                  }}
-                                                  title={hasNotScanned ? "代码仓未进行首次扫描，无法审计" : "问题审计"}
-                                                  className="code-icon-btn"
-                                                  style={{
-                                                    border: 'none',
-                                                    color: hasNotScanned ? 'var(--color-border-primary)' : 'var(--primary-color)',
-                                                    cursor: hasNotScanned ? 'not-allowed' : 'pointer',
-                                                    borderRadius: '50%'
-                                                  }}
-                                                >
-                                                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                                    <circle cx="10" cy="13" r="2"></circle>
-                                                    <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
-                                                  </svg>
-                                                </button>
-                                              );
-                                            })()}
+                                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                              {(() => {
+                                                const hasReport = !!r.last_task_id;
+                                                const hasNotScanned = !r.last_scan_time || r.last_scan_time === '0001-01-01T00:00:00Z';
+                                                return (
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      disabled={!hasReport}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (r.last_task_id) handleOpenReport(r.last_task_id);
+                                                      }}
+                                                      title={hasReport ? `查看最新扫描报告 (#${r.last_task_id})` : "暂无已完成的扫描报告"}
+                                                      className="code-icon-btn"
+                                                      style={{
+                                                        border: 'none',
+                                                        color: !hasReport ? 'var(--color-border-primary)' : 'var(--primary-color)',
+                                                        cursor: !hasReport ? 'not-allowed' : 'pointer',
+                                                        borderRadius: '50%',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        padding: '3px'
+                                                      }}
+                                                    >
+                                                      <ReportIcon size={16} />
+                                                    </button>
+                                                    <button 
+                                                      type="button"
+                                                      disabled={hasNotScanned}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openWorkspace(r.repo_id, r.repo_name);
+                                                      }}
+                                                      title={hasNotScanned ? "代码仓未进行首次扫描，无法审计" : "问题审计"}
+                                                      className="code-icon-btn"
+                                                      style={{
+                                                        border: 'none',
+                                                        color: hasNotScanned ? 'var(--color-border-primary)' : 'var(--primary-color)',
+                                                        cursor: hasNotScanned ? 'not-allowed' : 'pointer',
+                                                        borderRadius: '50%',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        padding: '3px'
+                                                      }}
+                                                    >
+                                                      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                                        <circle cx="10" cy="13" r="2"></circle>
+                                                        <line x1="21" y1="21" x2="11.5" y2="14.8"></line>
+                                                      </svg>
+                                                    </button>
+                                                  </>
+                                                );
+                                              })()}
+                                            </div>
                                           </td>
                                         </tr>
                                       );})}
@@ -1107,6 +1325,16 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
           else if (activeTab === 'trends') fetchTrendsData();
         }}
       />
+
+      {/* 5. FLOATING SCAN REPORT VIEWER DRAWER */}
+      {reportTaskId && (
+        <ReportViewer
+          taskId={reportTaskId}
+          open={reportDrawerOpen}
+          onClose={handleCloseReport}
+          mode="drawer"
+        />
+      )}
     </div>
   );
 }

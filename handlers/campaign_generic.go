@@ -115,6 +115,7 @@ type DynamicCampaignRepoSummary struct {
 	ResolvedIssues int       `json:"resolved_issues"`
 	FixRate        float64   `json:"fix_rate"` // 修复率 (缺陷攻关模式)
 	LastScanTime   time.Time `json:"last_scan_time"`
+	LastTaskID     uint      `json:"last_task_id"`
 }
 
 // GetDynamicCampaignRepos 动态专项代码仓列表及指标聚合
@@ -209,6 +210,7 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 				Suggestion: item.Suggestion, OpenIssues: item.OpenIssues,
 				ResolvedIssues: item.ResolvedIssues, FixRate: item.FixRate,
 				LastScanTime: item.LastScanTime,
+				LastTaskID:   item.LastTaskID,
 			})
 		}
 		return summaries, nil
@@ -253,23 +255,30 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 		findingMap[stat.RepoID] = stat
 	}
 
-	// 3. Fetch last scan times from reports
-	type DbScanTime struct {
+	// 3. Fetch last scan times and task ids from reports
+	type DbScanInfo struct {
+		ID        uint       `gorm:"column:id"`
 		RepoID    uint       `gorm:"column:repo_id"`
 		CreatedAt *time.Time `gorm:"column:created_at"`
 	}
-	var scanTimes []DbScanTime
-	models.DB.Model(&models.TaskReport{}).
-		Select("repo_id, max(created_at) as created_at").
+	latestReportsSubQuery := models.DB.Model(&models.TaskReport{}).
+		Select("MAX(id)").
 		Where("task_type_id = ? AND status IN ?", tt.ID, []string{"success", "degraded", "skipped"}).
-		Group("repo_id").
-		Scan(&scanTimes)
+		Group("repo_id")
+
+	var scanInfos []DbScanInfo
+	models.DB.Model(&models.TaskReport{}).
+		Select("id, repo_id, created_at").
+		Where("id IN (?)", latestReportsSubQuery).
+		Scan(&scanInfos)
 
 	scanTimeMap := make(map[uint]time.Time)
-	for _, st := range scanTimes {
+	scanTaskIDMap := make(map[uint]uint)
+	for _, st := range scanInfos {
 		if st.CreatedAt != nil {
 			scanTimeMap[st.RepoID] = *st.CreatedAt
 		}
+		scanTaskIDMap[st.RepoID] = st.ID
 	}
 
 	// 6. Aggregate metrics
@@ -348,6 +357,7 @@ func FetchCampaignRepoSummaries(tt *models.TaskType, keyword, department string)
 			ResolvedIssues: resolvedCount,
 			FixRate:        fixRate,
 			LastScanTime:   scanTimeMap[repo.ID],
+			LastTaskID:     scanTaskIDMap[repo.ID],
 		})
 	}
 	return summaries, nil

@@ -135,6 +135,13 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 		assert.NoError(t, db.Create(&defects[i]).Error)
 	}
 
+	report := models.TaskReport{
+		RepoID:     repo.ID,
+		TaskTypeID: taskType.ID,
+		Status:     "success",
+	}
+	assert.NoError(t, db.Create(&report).Error)
+
 	// 4. 调用 FetchCampaignRepoSummaries 验证统计指标
 	repoSummaries, err := FetchCampaignRepoSummaries(&taskType, "", "")
 	assert.NoError(t, err)
@@ -152,6 +159,7 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 	assert.Equal(t, 5, r.TotalDefects, "累计缺陷总数 (total_defects) 应该为 5")
 	assert.Equal(t, 3, r.ResolvedIssues, "已解决/关闭数 (resolved_issues) 应该为 3")
 	assert.Equal(t, 60.0, r.FixRate, "修复率应为 (3/5)*100 = 60.0%")
+	assert.Equal(t, report.ID, r.LastTaskID, "LastTaskID 应该为最新报告的 ID")
 
 	// 5. 验证 GetDynamicCampaignRepos HTTP 接口
 	router := gin.New()
@@ -174,6 +182,7 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 	assert.Equal(t, 2, list[0].TotalIssues)
 	assert.Equal(t, 1, list[0].Blocking)
 	assert.Equal(t, 1, list[0].Critical)
+	assert.Equal(t, report.ID, list[0].LastTaskID, "HTTP 响应中的 LastTaskID 应该匹配最新报告 ID")
 }
 
 func TestExportDynamicCampaignDepartments(t *testing.T) {
