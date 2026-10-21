@@ -57,8 +57,11 @@ func (d *ModelDispatcher) SetAdaptiveThrottle(cfg models.AdaptiveThrottlingConfi
 	}
 	d.mu.Lock()
 	d.adaptiveCfg = cfg
-	if d.adaptiveScale <= 0 {
-		d.adaptiveScale = 1.0
+	if !d.adaptiveInitialized {
+		d.adaptiveInitialized = true
+		if d.adaptiveScale <= 0 {
+			d.adaptiveScale = 1.0
+		}
 	}
 	enabled := cfg.Enabled && cfg.ProbeURL != ""
 	shouldStart := enabled && !d.probeRunning
@@ -99,29 +102,50 @@ func (d *ModelDispatcher) adjustAIMDLocked(active, waiting int) (float64, string
 	activeLow := d.adaptiveCfg.GetActiveLowThreshold()
 	activeHigh := d.adaptiveCfg.GetActiveHighThreshold()
 
-	scale := d.adaptiveScale
-	if scale <= 0 {
-		scale = 1.0
+	if !d.adaptiveInitialized {
+		d.adaptiveInitialized = true
+		if d.adaptiveScale <= 0 {
+			d.adaptiveScale = 1.0
+		}
 	}
+	scale := d.adaptiveScale
 
 	var state, msg string
 
 	if waiting > criticalWait {
 		// 🚨 严重过载区: waiting > 3
 		scale = math.Max(minScale, scale*0.4)
+		scale = math.Round(scale*100) / 100
+		if minScale == 0 && scale <= 0.08 {
+			scale = 0
+		}
 		d.adaptiveConsecutiveIdleCount = 0
 		d.adaptiveConsecutiveRecoveryCount = 0
 		state = "overload"
-		msg = fmt.Sprintf("🚨 严重过载：哨兵节点排队超标（活跃 %d，排队 %d），已断崖避让至 %.0f%% 并发速度，抢在 429 前削峰",
-			active, waiting, math.Round(scale*100))
+		if scale <= 0 {
+			msg = fmt.Sprintf("🚨 严重过载：哨兵节点排队超标（活跃 %d，排队 %d），已断崖避让至 0%% 并发速度（扫描完全暂停），全力让路业务流量",
+				active, waiting)
+		} else {
+			msg = fmt.Sprintf("🚨 严重过载：哨兵节点排队超标（活跃 %d，排队 %d），已断崖避让至 %.0f%% 并发速度，抢在 429 前削峰",
+				active, waiting, math.Round(scale*100))
+		}
 	} else if waiting >= 1 {
 		// ⚠️ 轻度预警区: 1 <= waiting <= 3
 		scale = math.Max(minScale, scale*0.8)
+		scale = math.Round(scale*100) / 100
+		if minScale == 0 && scale <= 0.08 {
+			scale = 0
+		}
 		d.adaptiveConsecutiveIdleCount = 0
 		d.adaptiveConsecutiveRecoveryCount = 0
 		state = "warning"
-		msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现轻度积压（活跃 %d，排队 %d），已温和退让至 %.0f%% 并发速度防微杜渐",
-			active, waiting, math.Round(scale*100))
+		if scale <= 0 {
+			msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现轻度积压（活跃 %d，排队 %d），已温和退让至 0%% 并发速度（扫描完全暂停），全力让路业务流量",
+				active, waiting)
+		} else {
+			msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现轻度积压（活跃 %d，排队 %d），已温和退让至 %.0f%% 并发速度防微杜渐",
+				active, waiting, math.Round(scale*100))
+		}
 	} else if active >= activeHigh {
 		// 🟢 高位饱和稳态区: waiting == 0 且 active >= activeHigh
 		// 哨兵节点活跃负载已达到或超过上限阈值（如 active >= 20），算力处于高利用率饱和状态。

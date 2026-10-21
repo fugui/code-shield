@@ -201,6 +201,7 @@ type ModelDispatcher struct {
 	adaptiveLastWaiting              int
 	adaptiveState                string
 	adaptiveMessage              string
+	adaptiveInitialized          bool
 	stopProbe                    chan struct{}
 	probeRunning                 bool
 	unsupportedWarned            map[string]time.Time // 记录各 backend 最近一次直通降级告警时间
@@ -285,6 +286,7 @@ func InitModelDispatcher() {
 		adaptiveCfg:          models.AppConfig.Scanner.Throttling.Adaptive,
 		adaptiveScale:        1.0,
 		adaptiveState:        "optimal",
+		adaptiveInitialized:  true,
 	}
 	d.metrics = newDispatcherMetrics()
 	d.cond = sync.NewCond(&d.mu)

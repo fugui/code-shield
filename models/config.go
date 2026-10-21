@@ -77,11 +77,16 @@ type AdaptiveThrottlingConfig struct {
 	ProbeURL                 string  `yaml:"probe_url" json:"probe_url"`
 	IntervalSeconds          int     `yaml:"interval_seconds" json:"interval_seconds"`                     // 默认 5 秒
 	TimeoutMs                int     `yaml:"timeout_ms" json:"timeout_ms"`                                 // 默认 1500 毫秒
-	ActiveLowThreshold       int     `yaml:"active_low_threshold" json:"active_low_threshold"`             // 默认 15
-	ActiveHighThreshold      int     `yaml:"active_high_threshold" json:"active_high_threshold"`           // 默认 20
-	WaitingCriticalThreshold int     `yaml:"waiting_critical_threshold" json:"waiting_critical_threshold"` // 默认 3
-	MinScale                 float64 `yaml:"min_scale" json:"min_scale"`                                   // 默认 0.20
-	MaxScale                 float64 `yaml:"max_scale" json:"max_scale"`                                   // 默认 2.50
+	ActiveLowThreshold       int      `yaml:"active_low_threshold" json:"active_low_threshold"`             // 默认 15
+	ActiveHighThreshold      int      `yaml:"active_high_threshold" json:"active_high_threshold"`           // 默认 20
+	WaitingCriticalThreshold int      `yaml:"waiting_critical_threshold" json:"waiting_critical_threshold"` // 默认 3
+	MinScale                 *float64 `yaml:"min_scale,omitempty" json:"min_scale,omitempty"`               // 默认 0.20，支持配置 0.00 在拥塞时完全暂停
+	MaxScale                 float64  `yaml:"max_scale" json:"max_scale"`                                   // 默认 2.50
+}
+
+// Float64Ptr 辅助函数：将 float64 转换为指针
+func Float64Ptr(v float64) *float64 {
+	return &v
 }
 
 func (c AdaptiveThrottlingConfig) GetIntervalSeconds() int {
@@ -120,8 +125,8 @@ func (c AdaptiveThrottlingConfig) GetWaitingCriticalThreshold() int {
 }
 
 func (c AdaptiveThrottlingConfig) GetMinScale() float64 {
-	if c.MinScale > 0 {
-		return c.MinScale
+	if c.MinScale != nil && *c.MinScale >= 0 {
+		return *c.MinScale
 	}
 	return 0.20
 }

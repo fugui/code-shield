@@ -155,7 +155,7 @@ scanner:
       active_low_threshold: 15         # 闲置增压活跃请求数上限
       active_high_threshold: 20        # 黄金平衡活跃请求数下限
       waiting_critical_threshold: 3    # 紧急熔断排队请求数阈值
-      min_scale: 0.20                  # 最小并发比例下限 (20%)
+      min_scale: 0.20                  # 最小并发比例下限 (0.20 代表 20%，支持配置 0.00 在拥塞时完全暂停让路业务)
       max_scale: 2.50                  # 最大并发比例上限 (250%)
 
   # 多智能体对抗辩论流水线 (Debate Pipeline)
