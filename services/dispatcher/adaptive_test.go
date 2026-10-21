@@ -89,8 +89,41 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 	}
 
 	// 3. 🔄 基准自愈恢复测试: scale = 0.80 < 1.0 且排队消退 (waiting == 0)
-	// 即使此时 active = 25 (较高背景负荷)，只要零排队，系统应积极回弹恢复至 1.00 标称基准速度
+	// 即使此时 active = 25 (较高背景负荷)，只要零排队，系统应经 3 周期连续确认后按 +10% 平稳回弹
+	// 周期 1: 零排队观测 (count=1, scale 仍为 0.80)
 	scale, state, _ = d.adjustAIMDLocked(25, 0)
+	if state != "boost" {
+		t.Fatalf("expected state 'boost', got %s", state)
+	}
+	if math.Abs(scale-0.80) > 0.001 {
+		t.Fatalf("expected scale 0.80 in recovery cycle 1, got %f", scale)
+	}
+	if d.adaptiveConsecutiveRecoveryCount != 1 {
+		t.Fatalf("expected recovery count 1, got %d", d.adaptiveConsecutiveRecoveryCount)
+	}
+
+	// 周期 2: 零排队观测 (count=2, scale 仍为 0.80)
+	scale, state, _ = d.adjustAIMDLocked(25, 0)
+	if math.Abs(scale-0.80) > 0.001 {
+		t.Fatalf("expected scale 0.80 in recovery cycle 2, got %f", scale)
+	}
+	if d.adaptiveConsecutiveRecoveryCount != 2 {
+		t.Fatalf("expected recovery count 2, got %d", d.adaptiveConsecutiveRecoveryCount)
+	}
+
+	// 周期 3: 满 3 周期稳定确认，回弹 +0.10 -> scale = 0.80 + 0.10 = 0.90
+	scale, state, _ = d.adjustAIMDLocked(25, 0)
+	if math.Abs(scale-0.90) > 0.001 {
+		t.Fatalf("expected scale 0.90 after 3-cycle recovery step, got %f", scale)
+	}
+	if d.adaptiveConsecutiveRecoveryCount != 0 {
+		t.Fatalf("expected recovery count reset to 0, got %d", d.adaptiveConsecutiveRecoveryCount)
+	}
+
+	// 再经过 3 周期回弹至 1.00 标称基准 (0.90 + 0.10 = 1.00)
+	d.adjustAIMDLocked(25, 0)                   // cycle 4 (count=1)
+	d.adjustAIMDLocked(25, 0)                   // cycle 5 (count=2)
+	scale, state, _ = d.adjustAIMDLocked(25, 0) // cycle 6 (count=3 -> 1.00, state=optimal)
 	if state != "optimal" {
 		t.Fatalf("expected state 'optimal' after reaching 1.0 baseline, got %s", state)
 	}
@@ -108,7 +141,7 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 	}
 
 	// 5. 🔵 闲置超频增压测试: waiting == 0 && active < 15
-	// 第 1 周期: 满足闲置，但尚未连续两周期，scale 应保持不变
+	// 第 1 周期: 满足闲置，但尚未连续三周期，scale 应保持不变
 	scale, state, _ = d.adjustAIMDLocked(10, 0)
 	if state != "boost" {
 		t.Fatalf("expected state 'boost', got %s", state)
@@ -120,13 +153,22 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected consecutive idle count 1, got %d", d.adaptiveConsecutiveIdleCount)
 	}
 
-	// 第 2 周期: 再次满足闲置，触发加法超频爬坡 +0.2 -> scale = 1.00 + 0.20 = 1.20
+	// 第 2 周期: 满足闲置，但尚未连续三周期，scale 应保持不变
+	scale, state, _ = d.adjustAIMDLocked(9, 0)
+	if math.Abs(scale-1.00) > 0.001 {
+		t.Fatalf("expected scale to remain 1.00 in second idle cycle, got %f", scale)
+	}
+	if d.adaptiveConsecutiveIdleCount != 2 {
+		t.Fatalf("expected consecutive idle count 2, got %d", d.adaptiveConsecutiveIdleCount)
+	}
+
+	// 第 3 周期: 连续 3 周期闲置，触发加法超频爬坡 +0.10 -> scale = 1.00 + 0.10 = 1.10
 	scale, state, _ = d.adjustAIMDLocked(8, 0)
 	if state != "boost" {
 		t.Fatalf("expected state 'boost', got %s", state)
 	}
-	if math.Abs(scale-1.20) > 0.001 {
-		t.Fatalf("expected scale 1.20 after overdrive ramp-up, got %f", scale)
+	if math.Abs(scale-1.10) > 0.001 {
+		t.Fatalf("expected scale 1.10 after overdrive ramp-up, got %f", scale)
 	}
 	if d.adaptiveConsecutiveIdleCount != 0 {
 		t.Fatalf("expected consecutive idle count reset to 0, got %d", d.adaptiveConsecutiveIdleCount)
@@ -135,7 +177,8 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 	// 验证爬坡封顶 maxScale (2.50)
 	d.adaptiveScale = 2.45
 	d.adjustAIMDLocked(5, 0)               // cycle 1
-	scale, _, _ = d.adjustAIMDLocked(5, 0) // cycle 2 -> min(2.50, 2.45 + 0.20) = 2.50
+	d.adjustAIMDLocked(5, 0)               // cycle 2
+	scale, _, _ = d.adjustAIMDLocked(5, 0) // cycle 3 -> min(2.50, 2.45 + 0.10) = 2.50
 	if math.Abs(scale-2.50) > 0.001 {
 		t.Fatalf("expected scale clamped to maxScale 2.50, got %f", scale)
 	}
