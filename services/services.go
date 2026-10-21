@@ -115,10 +115,33 @@ type (
 // Dispatcher 为多 LLM 并发分配器的全局单例引用
 var Dispatcher *ModelDispatcher = dispatcher.GlobalDispatcher
 
+func init() {
+	queue.SetBackpressureChecker(dispatcher.GlobalDispatcher)
+	dispatcher.RegisterSlotReleasedHook(queue.NotifyWorker)
+}
+
 // InitModelDispatcher 初始化全局并发调度器并同步单例引用
 func InitModelDispatcher() {
 	dispatcher.InitModelDispatcher()
 	Dispatcher = dispatcher.GlobalDispatcher
+	queue.SetBackpressureChecker(dispatcher.GlobalDispatcher)
+	dispatcher.RegisterSlotReleasedHook(queue.NotifyWorker)
+}
+
+// CanAdmitNewTask 判断当前是否允许认领新任务（结合单任务分片并发与实时算力池容量）
+func CanAdmitNewTask(currentRunningTasks int) bool {
+	if Dispatcher == nil {
+		return true
+	}
+	return Dispatcher.CanAdmitNewTask(currentRunningTasks)
+}
+
+// WaitingCallersCount 返回当前因算力槽位耗尽而阻塞等待中的调用协程数
+func WaitingCallersCount() int {
+	if Dispatcher == nil {
+		return 0
+	}
+	return Dispatcher.WaitingCallersCount()
 }
 
 // GetTierRouter 获取算力分级路由器门面

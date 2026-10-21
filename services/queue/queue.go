@@ -77,6 +77,50 @@ const workerNotifyCapacity = 1024
 // isQueuePaused 内存级原子开关缓存（优雅排空模式/暂停派发）
 var isQueuePaused atomic.Bool
 
+// BackpressureChecker 算力准入背压检查器接口
+type BackpressureChecker interface {
+	CanAdmitNewTask(currentRunningTasks int) bool
+}
+
+var (
+	backpressureCheckerMu sync.RWMutex
+	backpressureChecker   BackpressureChecker
+)
+
+// SetBackpressureChecker 注入算力准入背压检查器
+func SetBackpressureChecker(checker BackpressureChecker) {
+	backpressureCheckerMu.Lock()
+	defer backpressureCheckerMu.Unlock()
+	backpressureChecker = checker
+}
+
+// activeWorkerTasks 跟踪当前由 Worker 认领并处于执行中的在途任务数
+var activeWorkerTasks atomic.Int32
+
+// RunningWorkerTaskCount 返回当前 Worker 池已认领正在执行的任务数
+func RunningWorkerTaskCount() int {
+	count := int(activeWorkerTasks.Load())
+	if rCount := runner.RunningTaskCount(); rCount > count {
+		count = rCount
+	}
+	return count
+}
+
+func canClaimNextTask() bool {
+	if IsQueuePaused() {
+		return false
+	}
+	backpressureCheckerMu.RLock()
+	checker := backpressureChecker
+	backpressureCheckerMu.RUnlock()
+	if checker != nil {
+		if !checker.CanAdmitNewTask(RunningWorkerTaskCount()) {
+			return false
+		}
+	}
+	return true
+}
+
 // IsQueuePaused 查询当前队列是否处于暂停派发状态
 func IsQueuePaused() bool {
 	return isQueuePaused.Load()
@@ -466,8 +510,8 @@ func EnqueueResumeTask(report models.TaskReport) error {
 
 // fetchNextPendingTask 从数据库中原子抢占并拉取一条 Pending 状态的任务
 func fetchNextPendingTask() (*Task, bool) {
-	// 【新增拦截】处于暂停/排空模式时直接返回，Worker 进入休眠等待
-	if IsQueuePaused() {
+	// 【背压与排空拦截】处于暂停/排空模式或算力池饱和时直接返回，Worker 进入休眠等待
+	if !canClaimNextTask() {
 		return nil, false
 	}
 
@@ -480,8 +524,8 @@ func fetchNextPendingTask() (*Task, bool) {
 
 	// 使用数据库事务原子抢占最早的一条 pending 任务
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
-		// 事务内二次复查暂停开关，缩小与外部暂停操作的竞态窗口
-		if IsQueuePaused() {
+		// 事务内二次复查暂停与背压开关，缩小与外部状态变更的竞态窗口
+		if !canClaimNextTask() {
 			return nil
 		}
 
@@ -597,64 +641,73 @@ func worker(id int, stop <-chan struct{}) {
 		log.Printf("[Worker %d] Picked up task for Repo %d (TaskType %d, LogID: %d, ReportID: %d)\n",
 			id, task.RepoID, task.TaskTypeID, task.LogID, task.ReportID)
 
-		var err error
-		if task.IsResume {
-			err = runner.ResumeChunkedTask(task.ReportID)
-		} else {
-			err = runner.RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
-		}
+		activeWorkerTasks.Add(1)
+		func() {
+			defer func() {
+				activeWorkerTasks.Add(-1)
+				// 任务完成（无论成败），释放在途任务配额并广播唤醒其他可能因算力配额受限而在等待的 Worker
+				NotifyWorker()
+			}()
 
-		now := time.Now()
-		if task.LogID == 0 {
-			// Resume tasks without a log entry — just log the result
-			if err != nil {
-				log.Printf("[Worker %d] Resume task failed for ReportID %d: %v\n", id, task.ReportID, err)
+			var err error
+			if task.IsResume {
+				err = runner.ResumeChunkedTask(task.ReportID)
 			} else {
-				log.Printf("[Worker %d] Resume task completed for ReportID %d\n", id, task.ReportID)
+				err = runner.RunTaskSync(task.ReportID, task.RepoURL, task.TaskTypeID, task.AutoNotify, task.RunParams)
 			}
-		} else if errors.Is(err, ErrSkipped) {
-			log.Printf("[Worker %d] Skipping Repo %d — scope planner skipped task.\n", id, task.RepoID)
-			models.DB.Transaction(func(tx *gorm.DB) error {
-				if err := tx.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-					"status":          models.StatusSkipped,
-					"status_priority": models.GetStatusPriority(models.StatusSkipped),
-					"error_message":   "scope planner skipped task",
-					"end_time":        &now,
-				}).Error; err != nil {
-					return err
+
+			now := time.Now()
+			if task.LogID == 0 {
+				// Resume tasks without a log entry — just log the result
+				if err != nil {
+					log.Printf("[Worker %d] Resume task failed for ReportID %d: %v\n", id, task.ReportID, err)
+				} else {
+					log.Printf("[Worker %d] Resume task completed for ReportID %d\n", id, task.ReportID)
 				}
-				return tx.Model(&models.TaskReport{}).Where("id = ? AND status NOT IN ?", task.ReportID, models.TerminalTaskStatuses()).Update("status", models.StatusSkipped).Error
-			})
-		} else if errors.Is(err, ErrTaskCanceled) {
-			log.Printf("[Worker %d] Task canceled before execution for Repo %d (TaskType %d, LogID: %d, ReportID: %d)\n",
-				id, task.RepoID, task.TaskTypeID, task.LogID, task.ReportID)
-			if task.LogID != 0 {
+			} else if errors.Is(err, ErrSkipped) {
+				log.Printf("[Worker %d] Skipping Repo %d — scope planner skipped task.\n", id, task.RepoID)
+				models.DB.Transaction(func(tx *gorm.DB) error {
+					if err := tx.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
+						"status":          models.StatusSkipped,
+						"status_priority": models.GetStatusPriority(models.StatusSkipped),
+						"error_message":   "scope planner skipped task",
+						"end_time":        &now,
+					}).Error; err != nil {
+						return err
+					}
+					return tx.Model(&models.TaskReport{}).Where("id = ? AND status NOT IN ?", task.ReportID, models.TerminalTaskStatuses()).Update("status", models.StatusSkipped).Error
+				})
+			} else if errors.Is(err, ErrTaskCanceled) {
+				log.Printf("[Worker %d] Task canceled before execution for Repo %d (TaskType %d, LogID: %d, ReportID: %d)\n",
+					id, task.RepoID, task.TaskTypeID, task.LogID, task.ReportID)
+				if task.LogID != 0 {
+					models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
+						"status":          models.StatusFailed,
+						"status_priority": models.GetStatusPriority(models.StatusFailed),
+						"error_message":   "任务已在删除前取消",
+						"end_time":        &now,
+					})
+				}
+				models.DB.Model(&models.TaskReport{}).
+					Where("id = ? AND status NOT IN ?", task.ReportID, models.TerminalTaskStatuses()).
+					Updates(map[string]interface{}{"status": models.StatusFailed})
+			} else if err != nil {
+				log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
 				models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
 					"status":          models.StatusFailed,
 					"status_priority": models.GetStatusPriority(models.StatusFailed),
-					"error_message":   "任务已在删除前取消",
+					"error_message":   err.Error(),
+					"end_time":        &now,
+				})
+			} else {
+				log.Printf("[Worker %d] Task completed for Repo %d\n", id, task.RepoID)
+				models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
+					"status":          models.StatusSuccess,
+					"status_priority": models.GetStatusPriority(models.StatusSuccess),
 					"end_time":        &now,
 				})
 			}
-			models.DB.Model(&models.TaskReport{}).
-				Where("id = ? AND status NOT IN ?", task.ReportID, models.TerminalTaskStatuses()).
-				Updates(map[string]interface{}{"status": models.StatusFailed})
-		} else if err != nil {
-			log.Printf("[Worker %d] Task failed for Repo %d: %v\n", id, task.RepoID, err)
-			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":          models.StatusFailed,
-				"status_priority": models.GetStatusPriority(models.StatusFailed),
-				"error_message":   err.Error(),
-				"end_time":        &now,
-			})
-		} else {
-			log.Printf("[Worker %d] Task completed for Repo %d\n", id, task.RepoID)
-			models.DB.Model(&models.TaskExecutionLog{}).Where("id = ?", task.LogID).Updates(map[string]interface{}{
-				"status":          models.StatusSuccess,
-				"status_priority": models.GetStatusPriority(models.StatusSuccess),
-				"end_time":        &now,
-			})
-		}
+		}()
 	}
 }
 

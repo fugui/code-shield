@@ -298,6 +298,7 @@ interface DebugOverviewData {
     total_active_slots: number;
     total_limit_slots: number;
     total_raw_slots: number;
+    waiting_callers?: number;
     metrics?: DispatcherMetricsSnapshot;
     active_leases?: LLMSlotLease[];
     recent_leases?: LLMSlotLease[];
@@ -748,7 +749,14 @@ export default function SystemDebug() {
             </div>
           </div>
           <div className="code-debug-card__subtext">
-            <span>原始总并发: {data?.dispatcher?.total_raw_slots || 0} · 纳管节点: {data?.dispatcher?.resources?.length || 0} 台</span>
+            <span>
+              原始总并发: {data?.dispatcher?.total_raw_slots || 0} · 纳管节点: {data?.dispatcher?.resources?.length || 0} 台
+              {((data?.dispatcher?.waiting_callers ?? 0) > 0) && (
+                <strong style={{ color: 'var(--color-warning, #f59e0b)', marginLeft: '0.45rem' }}>
+                  · {data?.dispatcher?.waiting_callers} 分片等待槽位 (准入背压拦截)
+                </strong>
+              )}
+            </span>
           </div>
         </div>
 

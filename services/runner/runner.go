@@ -89,6 +89,13 @@ func GetActiveTaskContext(reportID uint) *TaskContext {
 	return activeTasks[reportID]
 }
 
+// RunningTaskCount 返回当前内存中处于运行状态的任务总数
+func RunningTaskCount() int {
+	activeTasksMu.Lock()
+	defer activeTasksMu.Unlock()
+	return len(activeTasks)
+}
+
 // GetRunningTasks 获取当前内存中所有正在执行的任务快照列表
 func GetRunningTasks() []RunningTaskInfo {
 	activeTasksMu.Lock()

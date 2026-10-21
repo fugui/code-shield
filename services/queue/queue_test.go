@@ -460,3 +460,121 @@ func TestQueue_ResumeTaskFlow(t *testing.T) {
 		t.Fatalf("expected log status running after fetch, got %s", claimed.Status)
 	}
 }
+
+type mockBackpressureChecker struct {
+	allowed bool
+}
+
+func (m *mockBackpressureChecker) CanAdmitNewTask(runningTasks int) bool {
+	return m.allowed
+}
+
+func TestQueue_BackpressureAdmissionControl(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "shield_queue_bp",
+		&models.Department{},
+		&models.User{},
+		&models.TaskType{},
+		&models.Repository{},
+		&models.ScheduleConfig{},
+		&models.TaskTriggerLog{},
+		&models.TaskReport{},
+		&models.TaskExecutionLog{},
+	)
+	if db == nil {
+		return
+	}
+	models.DB = db
+	defer func() {
+		SetBackpressureChecker(nil)
+	}()
+
+	repo := models.Repository{Name: "backpressure-repo", URL: "https://git.example.com/bp.git"}
+	db.Create(&repo)
+
+	taskType := models.TaskType{Name: "bp-test", DisplayName: "Backpressure Test", EngineMode: "debate"}
+	db.Create(&taskType)
+
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusQueued}
+	db.Create(&report)
+
+	execLog := models.TaskExecutionLog{
+		RepoID:       repo.ID,
+		TaskTypeID:   taskType.ID,
+		TaskReportID: &report.ID,
+		Status:       models.StatusPending,
+		StartTime:    time.Now(),
+	}
+	db.Create(&execLog)
+
+	checker := &mockBackpressureChecker{allowed: false}
+	SetBackpressureChecker(checker)
+
+	// 1. 当背压拦截生效时（allowed=false），fetchNextPendingTask 应直接返回 false，任务保持 pending
+	task, found := fetchNextPendingTask()
+	if found || task != nil {
+		t.Fatalf("expected task not to be claimed when backpressure rejects admission")
+	}
+
+	var pendingLog models.TaskExecutionLog
+	db.First(&pendingLog, execLog.ID)
+	if pendingLog.Status != models.StatusPending {
+		t.Fatalf("expected log to remain pending, got %s", pendingLog.Status)
+	}
+
+	// 2. 当算力充沛背压放行时（allowed=true），fetchNextPendingTask 应成功抢占任务
+	checker.allowed = true
+	task, found = fetchNextPendingTask()
+	if !found || task == nil {
+		t.Fatalf("expected task to be claimed when backpressure allows admission")
+	}
+	if task.ReportID != report.ID {
+		t.Fatalf("expected claimed task report ID %d, got %d", report.ID, task.ReportID)
+	}
+
+	var claimedLog models.TaskExecutionLog
+	db.First(&claimedLog, execLog.ID)
+	if claimedLog.Status != models.StatusRunning {
+		t.Fatalf("expected log status to be running, got %s", claimedLog.Status)
+	}
+}
+
+func TestQueue_CanClaimNextTaskLogic(t *testing.T) {
+	defer func() {
+		SetBackpressureChecker(nil)
+		SetQueuePaused(false)
+		activeWorkerTasks.Store(0)
+	}()
+
+	// 1. 无 Checker 时且未暂停，默认允许
+	SetBackpressureChecker(nil)
+	SetQueuePaused(false)
+	if !canClaimNextTask() {
+		t.Fatal("expected canClaimNextTask to be true when no checker and not paused")
+	}
+
+	// 2. 队列暂停时，直接返回 false
+	SetQueuePaused(true)
+	if canClaimNextTask() {
+		t.Fatal("expected canClaimNextTask to be false when queue is paused")
+	}
+	SetQueuePaused(false)
+
+	// 3. 背压拦截时返回 false
+	checker := &mockBackpressureChecker{allowed: false}
+	SetBackpressureChecker(checker)
+	if canClaimNextTask() {
+		t.Fatal("expected canClaimNextTask to be false when checker returns false")
+	}
+
+	// 4. 背压放行时返回 true
+	checker.allowed = true
+	if !canClaimNextTask() {
+		t.Fatal("expected canClaimNextTask to be true when checker returns true")
+	}
+
+	// 5. 校验 RunningWorkerTaskCount 累加
+	activeWorkerTasks.Store(3)
+	if count := RunningWorkerTaskCount(); count < 3 {
+		t.Fatalf("expected RunningWorkerTaskCount >= 3, got %d", count)
+	}
+}

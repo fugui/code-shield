@@ -738,3 +738,110 @@ func TestModelDispatcher_SlotLeaseLifecycle(t *testing.T) {
 		t.Fatalf("expected 0 active leases after ResetActiveSlots")
 	}
 }
+
+func TestDispatcher_CanAdmitNewTask(t *testing.T) {
+	// 默认 ChunkConcurrency 为 6
+	models.AppConfig.Scanner.ChunkConcurrency = 6
+
+	t.Run("Extreme Throttling totalLimit=1: maxTasks=1", func(t *testing.T) {
+		d := setupTestDispatcher(1)
+		defer close(d.stopHeartbeat)
+
+		// 运行任务数=0，允许准入
+		if !d.CanAdmitNewTask(0) {
+			t.Fatal("expected CanAdmitNewTask(0) to be true when totalLimit=1")
+		}
+		// 运行任务数=1，超过/达到 maxTasks=1，拒绝准入
+		if d.CanAdmitNewTask(1) {
+			t.Fatal("expected CanAdmitNewTask(1) to be false when totalLimit=1")
+		}
+		// 运行任务数=2，拒绝准入
+		if d.CanAdmitNewTask(2) {
+			t.Fatal("expected CanAdmitNewTask(2) to be false when totalLimit=1")
+		}
+	})
+
+	t.Run("Ample Capacity totalLimit=12: maxTasks=2", func(t *testing.T) {
+		d := setupTestDispatcher(12)
+		defer close(d.stopHeartbeat)
+
+		if !d.CanAdmitNewTask(0) {
+			t.Fatal("expected CanAdmitNewTask(0) to be true when totalLimit=12")
+		}
+		if !d.CanAdmitNewTask(1) {
+			t.Fatal("expected CanAdmitNewTask(1) to be true when totalLimit=12")
+		}
+		if d.CanAdmitNewTask(2) {
+			t.Fatal("expected CanAdmitNewTask(2) to be false when totalLimit=12")
+		}
+	})
+
+	t.Run("Live Congestion with waitingCallers > 0 rejects admission", func(t *testing.T) {
+		d := setupTestDispatcher(12)
+		defer close(d.stopHeartbeat)
+
+		d.waitingCallers = 2
+		if d.CanAdmitNewTask(0) {
+			t.Fatal("expected CanAdmitNewTask(0) to be false when waitingCallers > 0")
+		}
+		d.waitingCallers = 0
+		if !d.CanAdmitNewTask(0) {
+			t.Fatal("expected CanAdmitNewTask(0) to be true after waitingCallers cleared")
+		}
+	})
+
+	t.Run("Scale=0 total pause rejects admission", func(t *testing.T) {
+		d := setupTestDispatcher(12)
+		defer close(d.stopHeartbeat)
+
+		d.manualScale = 0.0
+		d.manualActive = true
+		if d.CanAdmitNewTask(0) {
+			t.Fatal("expected CanAdmitNewTask(0) to be false when scale=0")
+		}
+	})
+}
+
+func TestDispatcher_WaitingCallersAndReleaseHook(t *testing.T) {
+	d := setupTestDispatcher(1)
+	defer close(d.stopHeartbeat)
+
+	hookCalled := false
+	RegisterSlotReleasedHook(func() {
+		hookCalled = true
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// 占满唯一个槽位
+	res, _, err := d.AcquireScoped(context.Background(), "opencode", "", "", nil)
+	if err != nil || res == nil {
+		t.Fatalf("failed to acquire first slot: %v", err)
+	}
+
+	// 启动第二个协程尝试获取，因槽位满载进入等待
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _, _ = d.AcquireScoped(ctx, "opencode", "", "", nil)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	if count := d.WaitingCallersCount(); count != 1 {
+		t.Fatalf("expected 1 waiting caller, got %d", count)
+	}
+
+	wg.Wait()
+	// 超时唤醒退出后，waitingCallers 恢复为 0
+	if count := d.WaitingCallersCount(); count != 0 {
+		t.Fatalf("expected 0 waiting caller after timeout, got %d", count)
+	}
+
+	// 释放槽位，验证 hook 触发
+	d.Release(res, "opencode")
+	if !hookCalled {
+		t.Fatal("expected slot released hook to be called")
+	}
+}
