@@ -348,9 +348,11 @@ func (d *ModelDispatcher) probeOnce() {
 		d.lastThrottleMode = info.ThrottleMode
 		d.syncToDBLocked()
 		d.cond.Broadcast()
+		TriggerSlotReleasedHook()
 	} else if d.adaptiveScale > oldScale {
-		// 增压或扩容时，即刻唤醒等待槽位中的业务协程
+		// 增压或扩容时，即刻唤醒等待槽位中的业务协程与等待背压的 Worker
 		d.cond.Broadcast()
+		TriggerSlotReleasedHook()
 	}
 }
 

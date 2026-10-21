@@ -145,6 +145,7 @@ func GetDebugOverview(c *gin.Context) {
 			"total_active_slots":    totalActiveSlots,
 			"total_limit_slots":     totalLimitSlots,
 			"total_raw_slots":       totalRawSlots,
+			"waiting_callers":       services.WaitingCallersCount(),
 			"active_leases":         activeLeases,
 			"recent_leases":         recentLeases,
 			"metrics":               dispatcherMetrics,

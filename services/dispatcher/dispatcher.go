@@ -214,6 +214,29 @@ type ModelDispatcher struct {
 	skipSuccessfulLeases bool
 	leaseSeq             uint64
 	metrics              *dispatcherMetrics
+	waitingCallers       int // 当前因算力槽位耗尽而挂起等待的调用协程数
+}
+
+var (
+	slotReleasedHookMu sync.RWMutex
+	slotReleasedHook   func()
+)
+
+// RegisterSlotReleasedHook 注册算力槽位释放或流控扩容时的外部唤醒回调
+func RegisterSlotReleasedHook(hook func()) {
+	slotReleasedHookMu.Lock()
+	defer slotReleasedHookMu.Unlock()
+	slotReleasedHook = hook
+}
+
+// TriggerSlotReleasedHook 触发槽位释放与容量回升事件广播
+func TriggerSlotReleasedHook() {
+	slotReleasedHookMu.RLock()
+	hook := slotReleasedHook
+	slotReleasedHookMu.RUnlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 // GlobalDispatcher 为多 LLM 并发分配器的全局单例
@@ -551,8 +574,64 @@ func (d *ModelDispatcher) AcquireScoped(ctx context.Context, backend, preferredM
 		}
 
 		// 6. 候选集内所有节点槽位均已打满：严格阻塞等待释放，绝不越界借用未引用算力池！
+		d.waitingCallers++
 		d.cond.Wait()
+		d.waitingCallers--
 	}
+}
+
+// WaitingCallersCount 返回当前因算力槽位耗尽而阻塞等待中的调用协程数
+func (d *ModelDispatcher) WaitingCallersCount() int {
+	if d == nil || !d.enabled {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.waitingCallers
+}
+
+// CanAdmitNewTask 综合考虑单任务分片并发(ChunkConcurrency)与实时算力池容量，判定当前是否允许认领新任务
+func (d *ModelDispatcher) CanAdmitNewTask(currentRunningTasks int) bool {
+	if d == nil || !d.enabled {
+		return true // 未开启多节点调度器（直通模式）直接放行
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	info := d.getEffectiveScaleInfoLocked(time.Now())
+	// 1. 若当前处于完全暂停模式 (scale <= 0)，直接拒绝认领新任务
+	if info.EffectiveScale <= 0 {
+		return false
+	}
+
+	// 2. 微观拥塞检查：若已有分片协程正在排队等待槽位，严禁拉取新任务加剧排队
+	if d.waitingCallers > 0 {
+		return false
+	}
+
+	// 3. 计算当前集群全部算力节点的有效算力上限总和
+	totalLimit := 0
+	for _, res := range d.resources {
+		totalLimit += calculateLimit(res.Concurrent, info.EffectiveScale)
+	}
+	if totalLimit <= 0 {
+		return false
+	}
+
+	// 4. 结合单个任务分片并发度 (ChunkConcurrency，默认 6) 动态计算任务配额
+	chunkConcurrency := models.AppConfig.GetChunkConcurrency()
+	if chunkConcurrency <= 0 {
+		chunkConcurrency = 6
+	}
+
+	// 计算能够完全并行消化的任务数：ceil(totalLimit / chunkConcurrency)
+	maxTasks := (totalLimit + chunkConcurrency - 1) / chunkConcurrency
+	if maxTasks < 1 {
+		maxTasks = 1
+	}
+
+	return currentRunningTasks < maxTasks
 }
 
 // Release 释放指定的模型资源槽位，并通知其他等待中的任务。
@@ -599,6 +678,7 @@ func (d *ModelDispatcher) Release(res *ModelResource, backend string) {
 	log.Printf("[Dispatcher] [Release] Server #%d [%s] released for backend %s (model: %s). Concurrency: %d/%d (Scale: %.2f [%s], Raw: %d)\n",
 		targetForLog.Index, targetForLog.ResourceKey(), backend, targetForLog.ModelName(backend), targetForLog.Active, limit, info.EffectiveScale, info.ThrottleMode, targetForLog.Concurrent)
 	d.cond.Broadcast()
+	TriggerSlotReleasedHook()
 }
 
 // PickBestCandidateResource 在多个候选 Resource ID / Driver 中采用 SWRR 与实时可用容量动态择优
