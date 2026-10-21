@@ -315,8 +315,11 @@ func (d *ModelDispatcher) probeOnce() {
 
 	info := d.getEffectiveScaleInfoLocked(time.Now())
 	if info.EffectiveScale != d.lastEffectiveScale || info.ThrottleMode != d.lastThrottleMode {
-		log.Printf("[Dispatcher] Throttle status switched: mode=%s, scale=%.2f (was mode=%s, scale=%.2f)\n",
-			info.ThrottleMode, info.EffectiveScale, d.lastThrottleMode, d.lastEffectiveScale)
+		// 仅在流控模式发生跨模态切换或非自适应模式调速时记录，避免与前面的 Adaptive AIMD adjusted scale 重复刷屏
+		if info.ThrottleMode != d.lastThrottleMode || (info.ThrottleMode != "adaptive" && d.lastThrottleMode != "adaptive") {
+			log.Printf("[Dispatcher] Throttle status switched: mode=%s, scale=%.2f (was mode=%s, scale=%.2f)\n",
+				info.ThrottleMode, info.EffectiveScale, d.lastThrottleMode, d.lastEffectiveScale)
+		}
 		d.lastEffectiveScale = info.EffectiveScale
 		d.lastThrottleMode = info.ThrottleMode
 		d.syncToDBLocked()
