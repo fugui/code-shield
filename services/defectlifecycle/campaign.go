@@ -105,6 +105,7 @@ type CampaignRepoSummary struct {
 	ResolvedIssues int       `json:"resolved_issues"`
 	FixRate        float64   `json:"fix_rate"`
 	LastScanTime   time.Time `json:"last_scan_time"`
+	LastTaskID     uint      `json:"last_task_id"`
 }
 
 type CampaignTrendPoint struct {
@@ -328,22 +329,30 @@ func ListLedgerRepoSummaries(db *gorm.DB, taskTypeID uint) ([]CampaignRepoSummar
 	if err := db.Where("task_type_id = ?", taskTypeID).Find(&defects).Error; err != nil {
 		return nil, fmt.Errorf("load ledger defects: %w", err)
 	}
-	type scanTimeRow struct {
+	type scanInfoRow struct {
+		ID        uint
 		RepoID    uint
 		CreatedAt *time.Time
 	}
-	scanTimes := make([]scanTimeRow, 0)
-	if err := db.Model(&models.TaskReport{}).
-		Select("repo_id, max(created_at) as created_at").
+	latestReportsSubQuery := db.Model(&models.TaskReport{}).
+		Select("MAX(id)").
 		Where("task_type_id = ? AND status IN ?", taskTypeID, []string{"success", "degraded", "skipped"}).
-		Group("repo_id").Scan(&scanTimes).Error; err != nil {
+		Group("repo_id")
+
+	scanInfos := make([]scanInfoRow, 0)
+	if err := db.Model(&models.TaskReport{}).
+		Select("id, repo_id, created_at").
+		Where("id IN (?)", latestReportsSubQuery).
+		Scan(&scanInfos).Error; err != nil {
 		return nil, fmt.Errorf("load ledger scan times: %w", err)
 	}
-	lastScan := make(map[uint]time.Time, len(scanTimes))
-	for _, item := range scanTimes {
+	lastScan := make(map[uint]time.Time, len(scanInfos))
+	lastTaskID := make(map[uint]uint, len(scanInfos))
+	for _, item := range scanInfos {
 		if item.CreatedAt != nil {
 			lastScan[item.RepoID] = *item.CreatedAt
 		}
+		lastTaskID[item.RepoID] = item.ID
 	}
 
 	type aggregate struct {
@@ -399,6 +408,7 @@ func ListLedgerRepoSummaries(db *gorm.DB, taskTypeID uint) ([]CampaignRepoSummar
 			Major: counts.Major, Suggestion: counts.Suggestion,
 			OpenIssues: counts.Open, ResolvedIssues: counts.Resolved,
 			FixRate: fixRate, LastScanTime: lastScan[repo.ID],
+			LastTaskID: lastTaskID[repo.ID],
 		})
 	}
 	return summaries, nil
