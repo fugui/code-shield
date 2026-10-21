@@ -88,10 +88,23 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected scale 0.80 after soft backoff, got %f", scale)
 	}
 
-	// 3. 🔄 基准自愈恢复测试: scale = 0.80 < 1.0 且排队消退 (waiting == 0)
-	// 即使此时 active = 25 (较高背景负荷)，只要零排队，系统应经 3 周期连续确认后按 +10% 平稳回弹
-	// 周期 1: 零排队观测 (count=1, scale 仍为 0.80)
+	// 3. 🟢 高位饱和稳态测试: scale = 0.80 < 1.0, waiting == 0, 但 active = 25 >= activeHigh (20)
+	// 虽然零排队，但活跃度处于高位，严禁盲目加压回弹，系统应保持当前并发稳态观望，重置计数器
 	scale, state, _ = d.adjustAIMDLocked(25, 0)
+	if state != "optimal" {
+		t.Fatalf("expected state 'optimal' for saturated active hold, got %s", state)
+	}
+	if math.Abs(scale-0.80) > 0.001 {
+		t.Fatalf("expected scale to hold at 0.80 when active >= activeHigh, got %f", scale)
+	}
+	if d.adaptiveConsecutiveRecoveryCount != 0 {
+		t.Fatalf("expected recovery count 0 during saturation hold, got %d", d.adaptiveConsecutiveRecoveryCount)
+	}
+
+	// 4. 🔄 安全基准自愈恢复测试: scale = 0.80 < 1.0, waiting == 0, 且 active = 16 < activeHigh (20)
+	// 集群真正具备承载余量，持续观测 3 周期确认稳定后平稳回弹
+	// 周期 1: 适度负载零排队观测 (count=1, scale 仍为 0.80)
+	scale, state, _ = d.adjustAIMDLocked(16, 0)
 	if state != "boost" {
 		t.Fatalf("expected state 'boost', got %s", state)
 	}
@@ -102,17 +115,17 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected recovery count 1, got %d", d.adaptiveConsecutiveRecoveryCount)
 	}
 
-	// 周期 2: 零排队观测 (count=2, scale 仍为 0.80)
-	scale, state, _ = d.adjustAIMDLocked(25, 0)
-	if math.Abs(scale-0.80) > 0.001 {
-		t.Fatalf("expected scale 0.80 in recovery cycle 2, got %f", scale)
-	}
-	if d.adaptiveConsecutiveRecoveryCount != 2 {
-		t.Fatalf("expected recovery count 2, got %d", d.adaptiveConsecutiveRecoveryCount)
+	// 模拟中途活跃度突发冲高 (active = 22 >= 20)，验证打断防抖并重置计数器
+	scale, state, _ = d.adjustAIMDLocked(22, 0)
+	if state != "optimal" || math.Abs(scale-0.80) > 0.001 || d.adaptiveConsecutiveRecoveryCount != 0 {
+		t.Fatalf("expected saturation to interrupt recovery and reset count, got count=%d", d.adaptiveConsecutiveRecoveryCount)
 	}
 
-	// 周期 3: 满 3 周期稳定确认，回弹 +0.10 -> scale = 0.80 + 0.10 = 0.90
-	scale, state, _ = d.adjustAIMDLocked(25, 0)
+	// 重新开始平稳观测 3 周期
+	d.adjustAIMDLocked(16, 0) // count=1
+	d.adjustAIMDLocked(16, 0) // count=2
+	// 满 3 周期稳定确认，回弹 +0.10 -> scale = 0.80 + 0.10 = 0.90
+	scale, state, _ = d.adjustAIMDLocked(16, 0)
 	if math.Abs(scale-0.90) > 0.001 {
 		t.Fatalf("expected scale 0.90 after 3-cycle recovery step, got %f", scale)
 	}
@@ -121,9 +134,9 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 	}
 
 	// 再经过 3 周期回弹至 1.00 标称基准 (0.90 + 0.10 = 1.00)
-	d.adjustAIMDLocked(25, 0)                   // cycle 4 (count=1)
-	d.adjustAIMDLocked(25, 0)                   // cycle 5 (count=2)
-	scale, state, _ = d.adjustAIMDLocked(25, 0) // cycle 6 (count=3 -> 1.00, state=optimal)
+	d.adjustAIMDLocked(16, 0)                   // cycle 4 (count=1)
+	d.adjustAIMDLocked(16, 0)                   // cycle 5 (count=2)
+	scale, state, _ = d.adjustAIMDLocked(16, 0) // cycle 6 (count=3 -> 1.00, state=optimal)
 	if state != "optimal" {
 		t.Fatalf("expected state 'optimal' after reaching 1.0 baseline, got %s", state)
 	}
@@ -131,7 +144,7 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected scale to recover to 1.00, got %f", scale)
 	}
 
-	// 4. 🟢 黄金平衡稳态测试: waiting == 0 && scale >= 1.0 && active >= 20 -> 保持 1.00 不盲目超频
+	// 5. 🟢 黄金平衡稳态测试: waiting == 0 && scale >= 1.0 && active >= 20 -> 保持 1.00 不盲目超频
 	scale, state, _ = d.adjustAIMDLocked(25, 0)
 	if state != "optimal" {
 		t.Fatalf("expected state 'optimal', got %s", state)
@@ -140,7 +153,7 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected scale to remain 1.00 in sweet spot, got %f", scale)
 	}
 
-	// 5. 🔵 闲置超频增压测试: waiting == 0 && active < 15
+	// 6. 🔵 闲置超频增压测试: waiting == 0 && active < 15
 	// 第 1 周期: 满足闲置，但尚未连续三周期，scale 应保持不变
 	scale, state, _ = d.adjustAIMDLocked(10, 0)
 	if state != "boost" {
