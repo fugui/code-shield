@@ -191,13 +191,14 @@ type ModelDispatcher struct {
 	scaleTimer                   *time.Timer            // 到期自动恢复定时器
 	stopHeartbeat                chan struct{}          // 停止心跳通道
 	workHours                    models.WorkHoursConfig // 内部纳管的工作时间限流配置
-	adaptiveCfg                  models.AdaptiveThrottlingConfig
-	adaptiveScale                float64
-	adaptiveConsecutiveIdleCount int
-	adaptiveConsecutiveFailCount int
-	adaptiveLastProbeAt          time.Time
-	adaptiveLastActive           int
-	adaptiveLastWaiting          int
+	adaptiveCfg                      models.AdaptiveThrottlingConfig
+	adaptiveScale                    float64
+	adaptiveConsecutiveIdleCount     int
+	adaptiveConsecutiveRecoveryCount int
+	adaptiveConsecutiveFailCount     int
+	adaptiveLastProbeAt              time.Time
+	adaptiveLastActive               int
+	adaptiveLastWaiting              int
 	adaptiveState                string
 	adaptiveMessage              string
 	stopProbe                    chan struct{}
