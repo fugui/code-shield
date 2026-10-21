@@ -135,10 +135,13 @@ func (d *ModelDispatcher) getEffectiveScaleInfoLocked(now time.Time) ThrottleInf
 
 	// 优先级 2: 动态自适应探针模式 (开启时作为常驻默认基准，且未进入 Fallback)
 	if d.adaptiveCfg.Enabled && d.adaptiveConsecutiveFailCount < 3 {
-		scale := d.adaptiveScale
-		if scale <= 0 {
-			scale = 1.0
+		if !d.adaptiveInitialized {
+			d.adaptiveInitialized = true
+			if d.adaptiveScale <= 0 {
+				d.adaptiveScale = 1.0
+			}
 		}
+		scale := d.adaptiveScale
 		minScale := d.adaptiveCfg.GetMinScale()
 		maxScale := d.adaptiveCfg.GetMaxScale()
 		if scale < minScale {

@@ -17,10 +17,11 @@ func setupAdaptiveTestDispatcher(rawConcurrent int) *ModelDispatcher {
 	d := &ModelDispatcher{
 		manualScale:   1.0,
 		stopHeartbeat: make(chan struct{}),
-		stopProbe:     make(chan struct{}),
-		enabled:       true,
-		adaptiveScale: 1.0,
-		adaptiveState: "optimal",
+		stopProbe:           make(chan struct{}),
+		enabled:             true,
+		adaptiveScale:       1.0,
+		adaptiveState:       "optimal",
+		adaptiveInitialized: true,
 		adaptiveCfg: models.AdaptiveThrottlingConfig{
 			Enabled:                  true,
 			IntervalSeconds:          1,
@@ -28,7 +29,7 @@ func setupAdaptiveTestDispatcher(rawConcurrent int) *ModelDispatcher {
 			ActiveLowThreshold:       15,
 			ActiveHighThreshold:      20,
 			WaitingCriticalThreshold: 3,
-			MinScale:                 0.20,
+			MinScale:                 models.Float64Ptr(0.20),
 			MaxScale:                 2.50,
 		},
 	}
@@ -361,3 +362,69 @@ func TestAdaptive_ProbeNetworkAndFallback(t *testing.T) {
 		t.Fatalf("expected adaptive mode restored after recovery, got %s", infoRecovered.ThrottleMode)
 	}
 }
+
+// TestAdaptive_MinScaleZeroPauseAndResume 验证 min_scale = 0.00 时发生严重过载彻底暂停与平稳自愈唤醒
+func TestAdaptive_MinScaleZeroPauseAndResume(t *testing.T) {
+	d := setupAdaptiveTestDispatcher(10)
+	defer d.Close()
+
+	d.mu.Lock()
+	d.adaptiveCfg.MinScale = models.Float64Ptr(0.00)
+	d.adaptiveScale = 0.20
+	d.mu.Unlock()
+
+	// 1. 验证 GetMinScale 正确返回 0.00
+	if d.adaptiveCfg.GetMinScale() != 0.00 {
+		t.Fatalf("expected GetMinScale() == 0.00, got %f", d.adaptiveCfg.GetMinScale())
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// 2. 严重过载测试: waiting = 5 (> 3) -> scale 断崖降速至 0.00
+	scale, state, msg := d.adjustAIMDLocked(25, 5)
+	if state != "overload" {
+		t.Fatalf("expected state 'overload', got %s", state)
+	}
+	if scale > 0.001 {
+		t.Fatalf("expected scale to drop to 0.00 when minScale=0.00, got %f", scale)
+	}
+	if d.adaptiveScale > 0.001 {
+		t.Fatalf("expected d.adaptiveScale == 0.00, got %f", d.adaptiveScale)
+	}
+	t.Logf("Overload pause msg: %s", msg)
+
+	// 3. 验证此时调度器限流计算结果为 0 (完全暂停扫描任务)
+	limit := calculateLimit(10, scale)
+	if limit != 0 {
+		t.Fatalf("expected calculateLimit == 0 when scale == 0.00, got %d", limit)
+	}
+	info := d.getEffectiveScaleInfoLocked(time.Now())
+	if info.EffectiveScale > 0.001 {
+		t.Fatalf("expected effective scale == 0.00, got %f", info.EffectiveScale)
+	}
+
+	// 4. 零排队但活跃度仍高 (active = 22 >= 20): 保持 0.00 暂停观望
+	scale, state, _ = d.adjustAIMDLocked(22, 0)
+	if state != "optimal" || scale > 0.001 {
+		t.Fatalf("expected state optimal and scale 0.00 during high saturation, got state=%s, scale=%f", state, scale)
+	}
+
+	// 5. 零排队且算力充沛 (active = 10 < 20): 经 3 周期稳定后安全自愈回弹唤醒
+	d.adjustAIMDLocked(10, 0) // cycle 1
+	d.adjustAIMDLocked(10, 0) // cycle 2
+	scale, state, _ = d.adjustAIMDLocked(10, 0) // cycle 3 -> 回弹至 0.10
+	if math.Abs(scale-0.10) > 0.001 {
+		t.Fatalf("expected scale to recover to 0.10 from 0.00 pause, got %f", scale)
+	}
+	if state != "boost" {
+		t.Fatalf("expected state boost during recovery, got %s", state)
+	}
+
+	// 验证唤醒后槽位恢复为 1 (ceil(10 * 0.10) = 1)
+	limitRecovered := calculateLimit(10, scale)
+	if limitRecovered != 1 {
+		t.Fatalf("expected calculateLimit == 1 after recovery to 0.10, got %d", limitRecovered)
+	}
+}
+
