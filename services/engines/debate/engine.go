@@ -717,58 +717,7 @@ func (e *DebateEngine) ProcessBundle(ctx *engines.EngineContext, bundle chunker.
 		debateLogs = append(debateLogs, logEntry)
 
 		if jv.Verdict == models.DebateVerdictConfirmed || jv.Verdict == models.DebateVerdictConditional {
-			challArgText := challCase.DefenseVerdict
-			if challCase.MitigatingFactors != "" {
-				challArgText += " (" + challCase.MitigatingFactors + ")"
-			}
-
-			categoryCode, categorySource, categoryStatus := resolveJudgeCategoryInheritance(&jv, origCand)
-			normalizedCategory := governance.NormalizeCategory(jv.Category, ctx.AllowedCategories)
-			normalizedTaxonomyHash := ctx.TaxonomyHash
-			if normalizedTaxonomyHash == "" {
-				normalizedTaxonomyHash = ctx.Taxonomy.Hash
-			}
-			cleanCategory := normalizedCategory.Category
-			normScope := defectlifecycle.NormalizeScopeSymbol(jv.ScopeSymbol)
-			cleanTrigger := defectlifecycle.CleanSourceToken(jv.TriggerLine)
-			modelLine := jv.LineRange
-			if strings.TrimSpace(modelLine) == "" {
-				modelLine = jv.LineNumber
-			}
-			calibratedLine := modelLine
-
-			if ctx.CodesPath != "" {
-				if anchor, err := defectlifecycle.EnrichSourceAnchor(ctx.CodesPath, jv.FilePath, modelLine, jv.TriggerLine); err == nil {
-					normScope = anchor.NormalizedScope
-					cleanTrigger = anchor.PhysicalToken
-					calibratedLine = fmt.Sprintf("%d-%d", anchor.StartLine, anchor.EndLine)
-				}
-			}
-
-			finding := models.AnalysisFinding{
-				FilePath:                jv.FilePath,
-				LineNumber:              calibratedLine,
-				TriggerLine:             cleanTrigger,
-				ScopeSymbol:             normScope,
-				CodeSnippet:             jv.CodeSnippet,
-				Category:                cleanCategory,
-				CategoryDetail:          normalizedCategory.Detail,
-				CategoryCode:            categoryCode,
-				CategorySource:          categorySource,
-				CategoryStatus:          categoryStatus,
-				ClassificationRationale: jv.ClassificationRationale,
-				TaxonomyHash:            normalizedTaxonomyHash,
-				TaxonomyGoverned:        normalizedCategory.Governed,
-				ReviewRequired:          jv.ReviewRequired,
-				Title:                   DeriveConciseTitle(jv.Title, cleanCategory),
-				Detail:                  deriveDefectDetail(origCand, jv),
-				Suggestion:              jv.Suggestion,
-				HunterClaim:             origCand.AttackHypothesis,
-				ChallengerArg:           challArgText,
-				JudgeVerdict:            jv.JudgementRationale,
-				Severity:                jv.SeverityPreliminary,
-				CreatedAt:               time.Now(),
-			}
+			finding := assembleFindingFromJudge(ctx, jv, origCand, challCase)
 			confirmedFindings = append(confirmedFindings, finding)
 			log.Printf("[DebateEngine] Candidate %s [%s]: %s\n", jv.CandidateID, jv.Verdict, jv.Title)
 		} else {
@@ -802,6 +751,81 @@ func (e *DebateEngine) ProcessBundle(ctx *engines.EngineContext, bundle chunker.
 	}
 
 	return confirmedFindings, debateLogs, nil, hunterTokens, totalTier2Tokens, nil
+}
+
+// assembleFindingFromJudge 将终审裁决、控辩上下文与物理源码锚点装配为标准 AnalysisFinding，
+// 并执行物理代码片段上下文智能扩展保底。
+func assembleFindingFromJudge(
+	ctx *engines.EngineContext,
+	jv JudgeFinalVerdict,
+	origCand HunterCandidate,
+	challCase ChallengerDefenseCase,
+) models.AnalysisFinding {
+	challArgText := challCase.DefenseVerdict
+	if challCase.MitigatingFactors != "" {
+		challArgText += " (" + challCase.MitigatingFactors + ")"
+	}
+
+	categoryCode, categorySource, categoryStatus := resolveJudgeCategoryInheritance(&jv, origCand)
+	var allowedCategories []string
+	taxonomyHash := ""
+	codesPath := ""
+	if ctx != nil {
+		allowedCategories = ctx.AllowedCategories
+		taxonomyHash = ctx.TaxonomyHash
+		if taxonomyHash == "" {
+			taxonomyHash = ctx.Taxonomy.Hash
+		}
+		codesPath = ctx.CodesPath
+	}
+	normalizedCategory := governance.NormalizeCategory(jv.Category, allowedCategories)
+	cleanCategory := normalizedCategory.Category
+	normScope := defectlifecycle.NormalizeScopeSymbol(jv.ScopeSymbol)
+	cleanTrigger := defectlifecycle.CleanSourceToken(jv.TriggerLine)
+	modelLine := jv.LineRange
+	if strings.TrimSpace(modelLine) == "" {
+		modelLine = jv.LineNumber
+	}
+	calibratedLine := modelLine
+	finalSnippet := jv.CodeSnippet
+	if codesPath != "" {
+		if anchor, err := defectlifecycle.EnrichSourceAnchor(codesPath, jv.FilePath, modelLine, jv.TriggerLine); err == nil {
+			normScope = anchor.NormalizedScope
+			cleanTrigger = anchor.PhysicalToken
+			calibratedLine = fmt.Sprintf("%d-%d", anchor.StartLine, anchor.EndLine)
+			// 若模型输出单行、空白或行数过少（<3行），触发确定性物理提取保底
+			if strings.Count(finalSnippet, "\n") < 2 || strings.TrimSpace(finalSnippet) == "" {
+				if snippet := defectlifecycle.ExtractPhysicalCodeSnippet(codesPath, jv.FilePath, anchor.StartLine, anchor.EndLine, 5, 8); snippet != "" {
+					finalSnippet = snippet
+				}
+			}
+		}
+	}
+
+	return models.AnalysisFinding{
+		FilePath:                jv.FilePath,
+		LineNumber:              calibratedLine,
+		TriggerLine:             cleanTrigger,
+		ScopeSymbol:             normScope,
+		CodeSnippet:             finalSnippet,
+		Category:                cleanCategory,
+		CategoryDetail:          normalizedCategory.Detail,
+		CategoryCode:            categoryCode,
+		CategorySource:          categorySource,
+		CategoryStatus:          categoryStatus,
+		ClassificationRationale: jv.ClassificationRationale,
+		TaxonomyHash:            taxonomyHash,
+		TaxonomyGoverned:        normalizedCategory.Governed,
+		ReviewRequired:          jv.ReviewRequired,
+		Title:                   DeriveConciseTitle(jv.Title, cleanCategory),
+		Detail:                  deriveDefectDetail(origCand, jv),
+		Suggestion:              jv.Suggestion,
+		HunterClaim:             origCand.AttackHypothesis,
+		ChallengerArg:           challArgText,
+		JudgeVerdict:            jv.JudgementRationale,
+		Severity:                jv.SeverityPreliminary,
+		CreatedAt:               time.Now(),
+	}
 }
 
 // summarizeRationale 将冗长的仲裁裁判词浓缩为控制台单行可读的简要结论

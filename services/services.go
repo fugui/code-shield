@@ -445,6 +445,11 @@ func EnrichSourceAnchor(repoRoot string, filePath string, rawLine string, rawTri
 	return defectlifecycle.EnrichSourceAnchor(repoRoot, filePath, rawLine, rawTrigger)
 }
 
+// ExtractPhysicalCodeSnippet 从磁盘物理源文件中提取包含目标行上下文的真实代码片段，委托至 defects 子包
+func ExtractPhysicalCodeSnippet(repoRoot string, filePath string, startLine, endLine int, paddingBefore, paddingAfter int) string {
+	return defectlifecycle.ExtractPhysicalCodeSnippet(repoRoot, filePath, startLine, endLine, paddingBefore, paddingAfter)
+}
+
 // ==============================================================================
 // 5. Governance 专项治理与反馈沉淀门面
 // ==============================================================================
