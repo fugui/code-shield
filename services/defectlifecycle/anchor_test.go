@@ -3,6 +3,7 @@ package defectlifecycle
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -236,5 +237,74 @@ void Worker::ProcessData() {
 	}
 	if anchorEmpty.StartLine != 8 {
 		t.Errorf("expected empty line to be found at 8, got %d", anchorEmpty.StartLine)
+	}
+}
+
+func TestExtractPhysicalCodeSnippet(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourceFile := filepath.Join("src", "thread_demo.cpp")
+	fullPath := filepath.Join(tmpDir, sourceFile)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	codeLines := []string{
+		"// line 1",
+		"// line 2",
+		"// line 3",
+		"// line 4",
+		"// line 5",
+		"void launch_worker() {",
+		"    std::thread t([]() {",
+		"        do_work();",
+		"    });",
+		"    // risk: missing join",
+		"}",
+		"// line 12",
+		"// line 13",
+		"// line 14",
+		"// line 15",
+	}
+	content := strings.Join(codeLines, "\n")
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. 单行触发点自适应扩展：测试当只传入单行 7 时，自动向前后扩展
+	snippet := ExtractPhysicalCodeSnippet(tmpDir, sourceFile, 7, 7, 3, 4)
+	if snippet == "" {
+		t.Fatalf("expected non-empty snippet")
+	}
+	lines := strings.Split(snippet, "\n")
+	// 期望起始行 7 - 3 = 4, 结束行 7 + 4 = 11, 共 11 - 4 + 1 = 8 行
+	if len(lines) != 8 {
+		t.Fatalf("expected 8 lines, got %d:\n%s", len(lines), snippet)
+	}
+	if !strings.Contains(snippet, "std::thread t") {
+		t.Fatalf("snippet must contain target line")
+	}
+
+	// 2. 原始区间行数充足 (>= 5 行)：应直接截取该区间，不额外扩展
+	snippetLarge := ExtractPhysicalCodeSnippet(tmpDir, sourceFile, 6, 11, 5, 8)
+	linesLarge := strings.Split(snippetLarge, "\n")
+	if len(linesLarge) != 6 {
+		t.Fatalf("expected exactly 6 lines for range 6-11, got %d", len(linesLarge))
+	}
+	if !strings.HasPrefix(linesLarge[0], "void launch_worker()") || !strings.HasPrefix(linesLarge[5], "}") {
+		t.Fatalf("unexpected range content:\n%s", snippetLarge)
+	}
+
+	// 3. 边界保护：文件不存在或路径为空返回空字符串
+	if got := ExtractPhysicalCodeSnippet(tmpDir, "non_existent.cpp", 1, 1, 5, 8); got != "" {
+		t.Fatalf("expected empty snippet for non-existent file, got %q", got)
+	}
+	if got := ExtractPhysicalCodeSnippet("", sourceFile, 1, 1, 5, 8); got != "" {
+		t.Fatalf("expected empty snippet for empty repoRoot, got %q", got)
+	}
+
+	// 4. 首行与尾行越界 Clamp 保护
+	snippetClamped := ExtractPhysicalCodeSnippet(tmpDir, sourceFile, 1, 1, 5, 8)
+	if len(strings.Split(snippetClamped, "\n")) > len(codeLines) {
+		t.Fatalf("clamped lines exceed total file length")
 	}
 }

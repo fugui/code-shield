@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"code-shield/models"
+	"code-shield/services/engines"
 	"code-shield/services/invoker"
 )
 
@@ -186,5 +187,81 @@ func TestIsInvocationTimeoutClassification(t *testing.T) {
 	}
 	if isInvocationTimeout(invoker.NewClassifiedError(invoker.ErrorClassResourceBusy, "failed to acquire LLM server slot")) {
 		t.Fatal("dispatcher wait timeout must not trigger bundle splitting")
+	}
+}
+
+func TestDebateEngine_AssembleFindingCodeSnippetFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourceFile := filepath.Join("src", "worker.cpp")
+	fullPath := filepath.Join(tmpDir, sourceFile)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sourceCode := []string{
+		"// header info",
+		"// namespace worker",
+		"void launch_task() {",
+		"    std::thread t([]() {",
+		"        execute();",
+		"    });",
+		"    if (error_occurred) return;",
+		"    t.join();",
+		"}",
+		"// footer line 1",
+		"// footer line 2",
+	}
+	if err := os.WriteFile(fullPath, []byte(strings.Join(sourceCode, "\n")), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	engineCtx := &engines.EngineContext{
+		CodesPath:         tmpDir,
+		AllowedCategories: []string{"生命周期-join遗漏"},
+	}
+
+	// 1. 测试单行代码片段：AI 仅输出了 1 行触发语句
+	singleLineVerdict := JudgeFinalVerdict{
+		CandidateID:         "H-101",
+		Verdict:             models.DebateVerdictConfirmed,
+		Category:            "生命周期-join遗漏",
+		FilePath:            sourceFile,
+		LineNumber:          "4",
+		TriggerLine:         "std::thread t([]() {",
+		ScopeSymbol:         "launch_task",
+		Title:               "未正确管理线程生命周期",
+		JudgementRationale:  "缺少退出防护",
+		CodeSnippet:         "std::thread t([]() {", // 单行！
+		SeverityPreliminary: "严重",
+	}
+	origCand := HunterCandidate{
+		CandidateID:      "H-101",
+		AttackHypothesis: "线程提前退出导致悬空",
+	}
+	challCase := ChallengerDefenseCase{
+		CandidateID:    "H-101",
+		DefenseVerdict: "CHALLENGE_FAILED",
+	}
+
+	findingSingle := assembleFindingFromJudge(engineCtx, singleLineVerdict, origCand, challCase)
+	if findingSingle.CodeSnippet == "std::thread t([]() {" {
+		t.Fatalf("expected code snippet to be physically enriched with context, got original single line")
+	}
+	snippetLines := strings.Split(findingSingle.CodeSnippet, "\n")
+	if len(snippetLines) < 5 {
+		t.Fatalf("expected enriched snippet to have at least 5 lines of context, got %d:\n%s", len(snippetLines), findingSingle.CodeSnippet)
+	}
+	if !strings.Contains(findingSingle.CodeSnippet, "void launch_task()") {
+		t.Fatalf("expected snippet to contain outer function context:\n%s", findingSingle.CodeSnippet)
+	}
+
+	// 2. 测试已有合格多行代码片段：AI 已经输出了 5 行代码，应被保留
+	multiLineCode := "void foo() {\n    int a = 1;\n    int b = 2;\n    int c = 3;\n}"
+	multiLineVerdict := singleLineVerdict
+	multiLineVerdict.CodeSnippet = multiLineCode
+
+	findingMulti := assembleFindingFromJudge(engineCtx, multiLineVerdict, origCand, challCase)
+	if findingMulti.CodeSnippet != multiLineCode {
+		t.Fatalf("expected existing multi-line code snippet to be preserved, got:\n%s", findingMulti.CodeSnippet)
 	}
 }

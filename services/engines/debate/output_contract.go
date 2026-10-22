@@ -163,7 +163,7 @@ func newHunterCandidateContract(allowedCategories []string) OutputContract {
       "scope_symbol": "ClassName::functionName",
       "category": %q,
       "title": "简明候选标题",
-      "code_snippet": "真实源码片段",
+      "code_snippet": "void process_request(Context* ctx) {\n    if (!ctx) return;\n    if (value > threshold) {\n        handle_overflow(ctx);\n    }\n}",
       "trigger_condition": "【前置假设】外部入参传入非法边界或空指针；【触发路径】经 Process() 调用但未作非空校验；【崩溃机理】在当前行解引用导致段错误崩溃"
     }
   ]
@@ -246,7 +246,7 @@ func newJudgeContract(allowedCategories []string) OutputContract {
       "scope_symbol": "ClassName::functionName",
       "title": "简明结论标题",
       "judgement_rationale": "引用双方证据和源码事实进行终审说明",
-      "code_snippet": "真实源码片段",
+      "code_snippet": "void process_request(Context* ctx) {\n    if (!ctx) return;\n    if (value > threshold) {\n        handle_overflow(ctx);\n    }\n}",
       "suggestion": "可执行修复方案",
       "evidence": [
         {
@@ -311,6 +311,7 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- 禁止把多个区间合并进一个字符串（如 `\"70-91 120-125\"`）、禁止嵌套数组或 `[70, 91]` 数字对。\n")
 		sb.WriteString("- `line_range` 与 `additional_line_ranges` 禁止携带文件名前缀（如 `a.cpp:10-20`），只输出行号或行号区间。\n")
 		sb.WriteString("- `trigger_line` 必须引用命中的真实源码行原文，禁止空字符串或省略。\n")
+		sb.WriteString("- `code_snippet` 必须提取包含 `trigger_line` 触发点及关键控制上下文的真实源码片段（5-25行，使用 \\n 换行），严禁仅输出单行 trigger_line。\n")
 		sb.WriteString("- `category_code` 必须与 `category` 一一对应配对，禁止自造分类或短码。\n")
 		sb.WriteString("- `trigger_condition` 必须阐明完整的因果链并明确三要素：1) 【前置假设】外部输入、数据状态或并发时序边界；2) 【触发路径】调用链与数据流传播路径；3) 【故障机理】导致未捕获致命异常、段错误/Panic、关键控制分支偏离、死循环/收敛失败、状态破坏、数据漂移/计算失真、资源耗尽或安全越权的具体物理机制与致命后果。禁止空泛陈述。\n")
 		sb.WriteString("- 零缺陷安全退避契约：若当前待检视分片经审查确认安全合规、不存在可达的缺陷隐患或异常偏差，必须返回顶层空候选列表，即 `{\"schema\": \"")
@@ -324,6 +325,7 @@ func RenderOutputContract(contract OutputContract) string {
 		sb.WriteString("- `line_range` 只能是一个区间，如 `42` 或 `42-50`；不要输出 `42,43` 或 `1-2,10-20`。\n")
 		sb.WriteString("- `CONFIRMED` 必须包含同一候选的 source 证据，且至少包含一个 `caller` / `definition` / `macro` 类型的可达性证据。\n")
 		sb.WriteString("- `REJECTED` 必须保留原候选的 `trigger_line`、`scope_symbol`、`code_snippet`、`file_path`、`line_range` 与 `severity_preliminary`（不得省略或自造枚举）；`suggestion` 填写防误报说明或维护提示（禁止空字符串）；`evidence` 必须引用至少一项证明误报的证据（可使用辩方反证、无调用点 probe、自主探查的防御代码或引用 primary_evidence 并在 reason 中阐明否定理由）。\n")
+		sb.WriteString("- `code_snippet` 必须保留或补充包含触发点及关键控制上下文的多行源码片段（5-25行，使用 \\n 换行），严禁退化为单行触发语句。\n")
 		sb.WriteString("- 禁止返回 `source_verified`；该字段由服务端 Evidence Verifier 计算。\n")
 	}
 	if contract.Profile == OutputProfileChallenger {

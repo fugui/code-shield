@@ -478,3 +478,65 @@ func ResolvePhysicalTriggerLine(repoRoot string, filePath string, rawLine string
 	}
 	return physical
 }
+
+// ExtractPhysicalCodeSnippet 从磁盘物理源文件中提取包含目标行上下文的真实代码片段。
+// 当 startLine 与 endLine 跨度过窄（如小于 5 行或单行）时，自动向前后扩展窗口（默认前回溯 5 行、后延伸 8 行），
+// 确保提取的代码包含完整的函数/控制流上下文。
+func ExtractPhysicalCodeSnippet(repoRoot string, filePath string, startLine, endLine int, paddingBefore, paddingAfter int) string {
+	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
+	if normPath == "" || repoRoot == "" {
+		return ""
+	}
+	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, normPath))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(contentBytes), "\n")
+	totalLines := len(lines)
+	if totalLines == 0 {
+		return ""
+	}
+
+	if startLine <= 0 {
+		startLine = 1
+	}
+	if endLine <= 0 {
+		endLine = startLine
+	}
+	if startLine > totalLines {
+		startLine = totalLines
+	}
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+	if endLine < startLine {
+		startLine, endLine = endLine, startLine
+	}
+
+	lineCount := endLine - startLine + 1
+	actualStart := startLine
+	actualEnd := endLine
+
+	if lineCount < 5 {
+		if paddingBefore <= 0 {
+			paddingBefore = 5
+		}
+		if paddingAfter <= 0 {
+			paddingAfter = 8
+		}
+		actualStart = startLine - paddingBefore
+		if actualStart < 1 {
+			actualStart = 1
+		}
+		actualEnd = endLine + paddingAfter
+		if actualEnd > totalLines {
+			actualEnd = totalLines
+		}
+	}
+
+	selected := make([]string, 0, actualEnd-actualStart+1)
+	for i := actualStart - 1; i < actualEnd; i++ {
+		selected = append(selected, strings.TrimRight(lines[i], "\r"))
+	}
+	return strings.Join(selected, "\n")
+}
