@@ -3,6 +3,7 @@ package defectlifecycle
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"code-shield/models"
@@ -75,9 +76,8 @@ func TestFilterSparseScopeAndManifest(t *testing.T) {
 
 func TestWriteTempManifest(t *testing.T) {
 	tempDir := t.TempDir()
-	models.AppConfig.Retention.ScopeManifestDir = tempDir
-
-	report := &models.TaskReport{ID: 999}
+	reportPath := filepath.Join(tempDir, "report.md")
+	report := &models.TaskReport{ID: 999, ReportPath: reportPath}
 	data := []byte("dummy manifest content")
 
 	tempPath, err := writeTempManifest(report, data)
@@ -91,6 +91,11 @@ func TestWriteTempManifest(t *testing.T) {
 	}
 
 	finalPath := manifestFinalPath(report)
+	expectedFinalPath := filepath.Join(tempDir, "report-999-scope-manifest.json.gz")
+	if finalPath != expectedFinalPath {
+		t.Fatalf("expected finalPath %s, got %s", expectedFinalPath, finalPath)
+	}
+
 	if err := os.Rename(tempPath, finalPath); err != nil {
 		t.Fatalf("rename to final path failed: %v", err)
 	}

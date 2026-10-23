@@ -508,9 +508,9 @@ func RunLedgerRetentionGCJob() {
         return
     }
 
-    // 清理超过 24 小时的未关联孤儿 Manifest 临时文件
-    cleanedOrphans := services.PurgeOrphanManifestTempFiles(
-        models.AppConfig.System.ScopeManifestDir, 24*time.Hour)
+    // 清理超过 24 小时的未关联孤儿 Manifest 临时文件（递归扫描 reports 目录）
+    cleanedOrphans := defectlifecycle.PurgeOrphanManifestTempFiles(
+        models.AppConfig.GetReportsDir(), 24*time.Hour)
     if cleanedOrphans > 0 {
         log.Printf("[GC] Cleaned %d orphaned manifest temp files.", cleanedOrphans)
     }
@@ -580,11 +580,8 @@ system:
   # 同一代码仓保留的最新完整扫描快照数 (默认 10 轮，防止低频扫描仓基线丢失)
   max_retained_scans_per_repo: 10
   
-  # 覆盖明细是否启用稀疏存储 (默认 true，推荐开启)
-  enable_sparse_scope_storage: true
-  
-  # 覆盖清单全量压缩产物存储目录 (为空时跟随 report artifacts)
-  scope_manifest_dir: ""
+  # 覆盖明细是否启用稀疏存储 (默认 true，推荐开启；产物收敛于各报告专属目录)
+  enable_sparse_scope: true
 ```
 
 并在 [`models/config.go`](file:///home/fugui/codes/code-shield/models/config.go) 中映射该结构体字段。
