@@ -133,8 +133,17 @@ ORDER BY report_id ASC`
 			return totalPurged, fmt.Errorf("purge batch %v: %w", batch, err)
 		}
 
-		// 事务提交成功后，物理清理外置 scope manifest 压缩文件
+		// 事务提交成功后，物理清理关联文件
 		for _, r := range reports {
+			taskDir := r.GetReportDir()
+			baseName := filepath.Base(taskDir)
+			// 若为独立任务专属目录（如 report-198-fmt），直接整目录原子清理
+			if strings.HasPrefix(baseName, fmt.Sprintf("report-%d-", r.ID)) {
+				_ = os.RemoveAll(taskDir)
+				continue
+			}
+
+			// 兼容历史平铺旧目录结构：逐个清理外置文件
 			manifestPath := r.GetScopeManifestPath()
 			if manifestPath != "" {
 				_ = os.Remove(manifestPath)

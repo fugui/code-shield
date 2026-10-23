@@ -267,8 +267,8 @@ func TestPrepareOutputPaths(t *testing.T) {
 			Repo:     repo,
 		}
 		ctx.PrepareOutputPaths()
-		expectedReport := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-report-foo-bar.md"
-		expectedJSON := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-summary-foo-bar.json"
+		expectedReport := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-foo-bar/report-43-report-foo-bar.md"
+		expectedJSON := "/tmp/code-shield-test/reports/test_task/2026-05-18/report-43-foo-bar/report-43-summary-foo-bar.json"
 		if ctx.ReportPath != expectedReport {
 			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.ReportPath)
 		}
@@ -288,7 +288,7 @@ func TestPrepareOutputPaths(t *testing.T) {
 		}
 		ctx.PrepareOutputPaths()
 		today := time.Now().Format("2006-01-02")
-		expectedReport := filepath.Join(models.AppConfig.Storage.Root, "reports", taskType.Name, today, "report-44-report-foo-bar.md")
+		expectedReport := filepath.Join(models.AppConfig.Storage.Root, "reports", taskType.Name, today, "report-44-foo-bar", "report-44-report-foo-bar.md")
 		if ctx.ReportPath != expectedReport {
 			t.Errorf("expected reportPath %q, got %q", expectedReport, ctx.ReportPath)
 		}
@@ -1840,4 +1840,3 @@ func TestHandleGenericCampaign_EntityLifecycle(t *testing.T) {
 		t.Fatalf("expected severity 一般, got: %s", saved3.Severity)
 	}
 }
-
