@@ -587,8 +587,12 @@ type NotificationConfig struct {
 type RetentionConfig struct {
 	// 缺陷台账历史快照保留天数（默认 30 天）
 	LedgerRetentionDays int `yaml:"ledger_retention_days" json:"ledger_retention_days"`
+	// 失败/跳过/异常中断任务明细保留天数（默认 7 天）
+	NonSuccessRetentionDays int `yaml:"non_success_retention_days" json:"non_success_retention_days"`
 	// 同一代码仓保留的最新完整扫描快照数（默认 10 轮，防止低频扫描仓基线丢失）
 	MaxRetainedScansPerRepo int `yaml:"max_retained_scans_per_repo" json:"max_retained_scans_per_repo"`
+	// 智能体辩论轨迹 DB 记录保留天数（默认 30 天）
+	DebateLogRetentionDays int `yaml:"debate_log_retention_days" json:"debate_log_retention_days"`
 	// 覆盖明细是否启用稀疏存储（默认 true，推荐开启）
 	EnableSparseScope bool `yaml:"enable_sparse_scope" json:"enable_sparse_scope"`
 	// 覆盖清单全量压缩产物存储目录（为空时跟随 report artifacts）
@@ -600,8 +604,14 @@ func (c *RetentionConfig) NormalizeRetentionDefaults() {
 	if c.LedgerRetentionDays <= 0 {
 		c.LedgerRetentionDays = 30
 	}
+	if c.NonSuccessRetentionDays <= 0 {
+		c.NonSuccessRetentionDays = 7
+	}
 	if c.MaxRetainedScansPerRepo <= 0 {
 		c.MaxRetainedScansPerRepo = 10
+	}
+	if c.DebateLogRetentionDays <= 0 {
+		c.DebateLogRetentionDays = 30
 	}
 	if !c.EnableSparseScope {
 		// 若 YAML 中未显式设置，默认开启稀疏存储
