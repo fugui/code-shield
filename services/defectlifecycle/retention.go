@@ -140,6 +140,8 @@ ORDER BY report_id ASC`
 			// 若为独立任务专属目录（如 report-198-fmt），直接整目录原子清理
 			if strings.HasPrefix(baseName, fmt.Sprintf("report-%d-", r.ID)) {
 				_ = os.RemoveAll(taskDir)
+				// 顺便尝试清理可能变空的父级日期目录（若非空则安全忽略）
+				_ = os.Remove(filepath.Dir(taskDir))
 				continue
 			}
 
