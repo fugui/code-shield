@@ -814,6 +814,13 @@ func (ctx *TaskContext) PrepareOutputPaths() {
 	safeRepoName := strings.ReplaceAll(ctx.Repo.Name, "/", "-")
 	ctx.ReportPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-report-%s.md", ctx.Report.ID, safeRepoName))
 	ctx.JsonPath = filepath.Join(reportsDir, fmt.Sprintf("report-%d-summary-%s.json", ctx.Report.ID, safeRepoName))
+
+	// 同步预填 ctx.Report 的内存路径属性，确保后续子系统（如 Manifest 预写）可直接获取标准的专属报告目录
+	if rel, err := filepath.Rel(models.AppConfig.GetDataDir(), ctx.ReportPath); err == nil {
+		ctx.Report.ReportPath = rel
+	} else {
+		ctx.Report.ReportPath = ctx.ReportPath
+	}
 }
 
 func (ctx *TaskContext) ExecuteAnalysis(fileList []string) ([]models.AnalysisFinding, error) {

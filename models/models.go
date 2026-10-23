@@ -889,13 +889,26 @@ func (r *TaskReport) GetSummaryJSONPath() string {
 	return filepath.Join(dir, fmt.Sprintf("report-%d-summary.json", r.ID))
 }
 
-// GetScopeManifestPath 返回全量覆盖明细压缩清单路径（08号设计 §3.2）
+// GetScopeManifestPath 返回全量覆盖明细压缩清单路径（统一归集于报告专属目录）
 func (r *TaskReport) GetScopeManifestPath() string {
-	if AppConfig.Retention.ScopeManifestDir != "" {
-		return filepath.Join(AppConfig.Retention.ScopeManifestDir, fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
-	}
 	dir := r.GetReportDir()
-	return filepath.Join(dir, fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+	// 1. 优先检查标准规范命名：report-{id}-scope-manifest.json.gz
+	standardPath := filepath.Join(dir, fmt.Sprintf("report-%d-scope-manifest.json.gz", r.ID))
+	if _, err := os.Stat(standardPath); err == nil {
+		return standardPath
+	}
+	// 2. 兼容历史报告目录内的遗留命名：scope_manifest-{id}.json.gz
+	legacyPath := filepath.Join(dir, fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+	if _, err := os.Stat(legacyPath); err == nil {
+		return legacyPath
+	}
+	// 3. 兼容历史误落在 reports 根目录下的遗留文件
+	rootLegacyPath := filepath.Join(AppConfig.GetDataDir(), "reports", fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+	if _, err := os.Stat(rootLegacyPath); err == nil {
+		return rootLegacyPath
+	}
+	// 4. 若文件尚未生成（如预写阶段推导目标路径），返回标准规范路径
+	return standardPath
 }
 
 // GetExecutionLogPath 返回任务 AI 执行输出日志路径

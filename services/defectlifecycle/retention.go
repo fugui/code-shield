@@ -139,10 +139,13 @@ ORDER BY report_id ASC`
 			if manifestPath != "" {
 				_ = os.Remove(manifestPath)
 			}
-			if models.AppConfig.Retention.ScopeManifestDir != "" {
-				cfgPath := filepath.Join(models.AppConfig.Retention.ScopeManifestDir, fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
-				_ = os.Remove(cfgPath)
+			// 额外清理可能遗留的旧格式文件与历史根目录遗留文件
+			legacyNamed := filepath.Join(r.GetReportDir(), fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+			if legacyNamed != manifestPath {
+				_ = os.Remove(legacyNamed)
 			}
+			rootLegacy := filepath.Join(models.AppConfig.GetDataDir(), "reports", fmt.Sprintf("scope_manifest-%d.json.gz", r.ID))
+			_ = os.Remove(rootLegacy)
 		}
 
 		totalPurged += len(batch)
@@ -285,42 +288,42 @@ func PurgeOrphanFindings(db *gorm.DB) (int64, error) {
 	return totalPurged, nil
 }
 
-// PurgeOrphanManifestTempFiles 清理指定目录下超过 maxAge 的未转正 Manifest 临时文件
-func PurgeOrphanManifestTempFiles(manifestDir string, maxAge time.Duration) int {
-	if manifestDir == "" {
-		manifestDir = models.AppConfig.Retention.ScopeManifestDir
-	}
-	if manifestDir == "" {
-		manifestDir = filepath.Join(models.AppConfig.GetDataDir(), "reports")
+// PurgeOrphanManifestTempFiles 递归遍历指定报告根目录，清理超过 maxAge 的未转正 Manifest 临时文件
+func PurgeOrphanManifestTempFiles(reportsBaseDir string, maxAge time.Duration) int {
+	if reportsBaseDir == "" {
+		reportsBaseDir = filepath.Join(models.AppConfig.GetDataDir(), "reports")
 	}
 	if maxAge <= 0 {
 		maxAge = 24 * time.Hour
 	}
 
-	entries, err := os.ReadDir(manifestDir)
-	if err != nil {
+	if _, err := os.Stat(reportsBaseDir); err != nil {
 		return 0
 	}
 
 	now := time.Now()
 	cleaned := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+
+	_ = filepath.Walk(reportsBaseDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
 		}
-		name := entry.Name()
-		if strings.HasPrefix(name, "scope_manifest-tmp-") && strings.HasSuffix(name, ".json.gz") {
-			fullPath := filepath.Join(manifestDir, name)
-			info, statErr := entry.Info()
-			if statErr != nil {
-				continue
-			}
-			if now.Sub(info.ModTime()) > maxAge {
-				if removeErr := os.Remove(fullPath); removeErr == nil {
-					cleaned++
-				}
+		name := info.Name()
+		// 匹配各类 Manifest 临时文件：
+		// 1. 标准规范：report-{id}-scope-manifest.json.gz.tmp.*
+		// 2. 遗留规范：scope_manifest-{id}.json.gz.tmp.*
+		// 3. 历史单元测试格式：scope_manifest-tmp-*
+		isManifestTemp := strings.Contains(name, "-scope-manifest.json.gz.tmp.") ||
+			(strings.HasPrefix(name, "scope_manifest-") && strings.Contains(name, ".tmp.")) ||
+			strings.HasPrefix(name, "scope_manifest-tmp-")
+
+		if isManifestTemp && now.Sub(info.ModTime()) > maxAge {
+			if removeErr := os.Remove(path); removeErr == nil {
+				cleaned++
 			}
 		}
-	}
+		return nil
+	})
+
 	return cleaned
 }

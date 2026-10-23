@@ -309,39 +309,52 @@ func TestPurgeOrphanManifestTempFiles(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	oldFile := filepath.Join(tempDir, "scope_manifest-tmp-12345.json.gz")
-	newFile := filepath.Join(tempDir, "scope_manifest-tmp-67890.json.gz")
-	otherFile := filepath.Join(tempDir, "scope_manifest-12345.json.gz") // 正式文件，不应被清理
-
-	if err := os.WriteFile(oldFile, []byte("old content"), 0644); err != nil {
-		t.Fatalf("write old file: %v", err)
-	}
-	if err := os.WriteFile(newFile, []byte("new content"), 0644); err != nil {
-		t.Fatalf("write new file: %v", err)
-	}
-	if err := os.WriteFile(otherFile, []byte("regular file"), 0644); err != nil {
-		t.Fatalf("write regular file: %v", err)
+	subDir := filepath.Join(tempDir, "task_type", "2026-10-23")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatalf("mkdir subDir: %v", err)
 	}
 
-	// 将 oldFile 的修改时间修改为 48 小时前
+	// 1. 标准新格式临时文件（在深层子目录中，且过期）
+	oldStandardTemp := filepath.Join(subDir, "report-123-scope-manifest.json.gz.tmp.1791766295073691915")
+	// 2. 现网历史残留格式临时文件（.tmp. 格式，且过期）
+	oldLegacyDotTemp := filepath.Join(tempDir, "scope_manifest-194.json.gz.tmp.1791766295073691915")
+	// 3. 历史单元测试格式临时文件（-tmp- 格式，且过期）
+	oldLegacyDashTemp := filepath.Join(tempDir, "scope_manifest-tmp-12345.json.gz")
+	// 4. 新生成的未过期临时文件（不应被清理）
+	newTempFile := filepath.Join(subDir, "report-456-scope-manifest.json.gz.tmp.1791766295073691999")
+	// 5. 正式标准文件（不应被清理）
+	regularFile := filepath.Join(subDir, "report-123-scope-manifest.json.gz")
+	// 6. 正式遗留文件（不应被清理）
+	legacyRegularFile := filepath.Join(tempDir, "scope_manifest-12345.json.gz")
+
+	for _, f := range []string{oldStandardTemp, oldLegacyDotTemp, oldLegacyDashTemp, newTempFile, regularFile, legacyRegularFile} {
+		if err := os.WriteFile(f, []byte("test content"), 0644); err != nil {
+			t.Fatalf("write file %s: %v", f, err)
+		}
+	}
+
+	// 将 3 个旧文件的修改时间修改为 48 小时前
 	oldTime := time.Now().Add(-48 * time.Hour)
-	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
-		t.Fatalf("chtimes: %v", err)
+	for _, f := range []string{oldStandardTemp, oldLegacyDotTemp, oldLegacyDashTemp} {
+		if err := os.Chtimes(f, oldTime, oldTime); err != nil {
+			t.Fatalf("chtimes %s: %v", f, err)
+		}
 	}
 
 	cleaned := PurgeOrphanManifestTempFiles(tempDir, 24*time.Hour)
-	if cleaned != 1 {
-		t.Fatalf("expected 1 cleaned file, got %d", cleaned)
+	if cleaned != 3 {
+		t.Fatalf("expected 3 cleaned files, got %d", cleaned)
 	}
 
-	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
-		t.Fatalf("expected oldFile to be deleted")
+	for _, f := range []string{oldStandardTemp, oldLegacyDotTemp, oldLegacyDashTemp} {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Fatalf("expected old file %s to be deleted", f)
+		}
 	}
-	if _, err := os.Stat(newFile); os.IsNotExist(err) {
-		t.Fatalf("expected newFile to be preserved")
-	}
-	if _, err := os.Stat(otherFile); os.IsNotExist(err) {
-		t.Fatalf("expected otherFile to be preserved")
+	for _, f := range []string{newTempFile, regularFile, legacyRegularFile} {
+		if _, err := os.Stat(f); os.IsNotExist(err) {
+			t.Fatalf("expected file %s to be preserved", f)
+		}
 	}
 }
 

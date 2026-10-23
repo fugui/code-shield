@@ -595,8 +595,8 @@ type RetentionConfig struct {
 	DebateLogRetentionDays int `yaml:"debate_log_retention_days" json:"debate_log_retention_days"`
 	// 覆盖明细是否启用稀疏存储（默认 true，推荐开启）
 	EnableSparseScope bool `yaml:"enable_sparse_scope" json:"enable_sparse_scope"`
-	// 覆盖清单全量压缩产物存储目录（为空时跟随 report artifacts）
-	ScopeManifestDir string `yaml:"scope_manifest_dir" json:"scope_manifest_dir"`
+	// 覆盖清单全量压缩产物存储目录（已废弃：现统一收敛于各报告专属目录）
+	ScopeManifestDir string `yaml:"scope_manifest_dir,omitempty" json:"scope_manifest_dir,omitempty"`
 }
 
 // NormalizeRetentionDefaults 填充保留策略默认值

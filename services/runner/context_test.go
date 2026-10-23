@@ -134,3 +134,34 @@ func TestConvertEngineChunkDetailsPreservesStableIdentity(t *testing.T) {
 		t.Fatalf("native schema observability not preserved: %+v", got[0])
 	}
 }
+
+func TestPrepareOutputPathsInitializesReportPath(t *testing.T) {
+	tempDir := t.TempDir()
+	oldDataDir := models.AppConfig.Server.DataDir
+	models.AppConfig.Server.DataDir = tempDir
+	t.Cleanup(func() { models.AppConfig.Server.DataDir = oldDataDir })
+
+	ctx := &TaskContext{
+		Report:   models.TaskReport{ID: 100},
+		Repo:     models.Repository{Name: "myorg/myrepo"},
+		TaskType: models.TaskType{Name: "code_review"},
+	}
+
+	ctx.PrepareOutputPaths()
+
+	if ctx.Report.ReportPath == "" {
+		t.Fatalf("expected ctx.Report.ReportPath to be initialized, got empty")
+	}
+
+	reportDir := ctx.Report.GetReportDir()
+	expectedPrefix := filepath.Join(tempDir, "reports", "code_review")
+	if !filepath.HasPrefix(reportDir, expectedPrefix) {
+		t.Fatalf("expected reportDir %s to start with %s", reportDir, expectedPrefix)
+	}
+
+	manifestPath := ctx.Report.GetScopeManifestPath()
+	expectedManifest := filepath.Join(reportDir, "report-100-scope-manifest.json.gz")
+	if manifestPath != expectedManifest {
+		t.Fatalf("expected manifestPath %s, got %s", expectedManifest, manifestPath)
+	}
+}

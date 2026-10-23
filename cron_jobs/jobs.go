@@ -104,7 +104,7 @@ func RunLedgerRetentionGCJob() {
 
 	// 清理超过 24 小时的未关联孤儿 Manifest 临时文件
 	cleanedOrphans := defectlifecycle.PurgeOrphanManifestTempFiles(
-		models.AppConfig.Retention.ScopeManifestDir, 24*time.Hour)
+		models.AppConfig.GetReportsDir(), 24*time.Hour)
 	if cleanedOrphans > 0 {
 		log.Printf("[GC] Cleaned %d orphaned manifest temp files.", cleanedOrphans)
 	}
