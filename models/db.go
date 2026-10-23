@@ -69,10 +69,6 @@ func InitDB() {
 		log.Fatalf("failed to create active task report unique index: %v", err)
 	}
 
-	if err := CleanLegacyEntityFindingTitles(DB); err != nil {
-		log.Printf("[DB] CleanLegacyEntityFindingTitles notice: %v", err)
-	}
-
 	if DB.Dialector.Name() == "postgres" {
 		if err := ensureLedgerForeignKeys(DB); err != nil {
 			log.Fatalf("failed to create ledger foreign keys: %v", err)
@@ -354,23 +350,4 @@ func InitDynamicConfigs(seed Config) {
 	log.Println("Note: Dynamic sections in config.yaml (llm, scanner, governance) are bypassed.")
 	log.Println("To adjust LLM nodes, workers, or debate tiers, visit Web UI: /admin/config")
 	log.Println("================================================================================")
-}
-
-// CleanLegacyEntityFindingTitles 清洗存量实体评估中包含结论前缀的历史用例标题
-func CleanLegacyEntityFindingTitles(db *gorm.DB) error {
-	if db == nil {
-		return nil
-	}
-	query := `
-		UPDATE campaign_findings
-		SET title = SUBSTRING(title FROM POSITION('：' IN title) + 1)
-		WHERE title LIKE '%：%'
-		  AND task_type_id IN (
-		      SELECT id FROM task_types WHERE governance_mode = 'entity_assessment'
-		  );
-	`
-	if err := db.Exec(query).Error; err != nil {
-		log.Printf("[DB] CleanLegacyEntityFindingTitles notice: %v", err)
-	}
-	return nil
 }
