@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"code-shield/models"
+	"code-shield/services/governance"
 	"code-shield/services/reports"
 	"fmt"
 	"net/http"
@@ -115,7 +116,7 @@ func generateCampaignExcel(c *gin.Context, repoName, campaignTitle string, items
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("C%d", r), item.Category)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("D%d", r), item.FilePath)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("E%d", r), item.LineNumber)
-			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", r), item.Title)
+			_ = f.SetCellValue(sheet1, fmt.Sprintf("F%d", r), governance.ExtractEntityCaseName(item.Title))
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("G%d", r), item.Detail)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("H%d", r), statusCn)
 			_ = f.SetCellValue(sheet1, fmt.Sprintf("I%d", r), item.Assignee)

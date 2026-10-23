@@ -3,8 +3,6 @@ import { Drawer, EmptyState } from '@code/common';
 import { useToast } from '../components/Toast';
 import { Code2, Settings, Trash2, Plus, RefreshCw, X, Shield, Layers, CheckCircle2 } from 'lucide-react';
 
-type FileTab = 'analysis_prompt';
-
 type ScanProfileName = 'full_review' | 'occurrence_review' | 'keyword_review' | 'change_review' | 'entity_review';
 
 interface EditableScanProfile {

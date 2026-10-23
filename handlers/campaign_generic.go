@@ -431,9 +431,20 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 	if category != "" {
 		countQuery = countQuery.Where("category = ?", category)
 	}
-	if keyword != "" {
-		like := "%" + keyword + "%"
-		countQuery = countQuery.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+	trimmedKeyword := strings.TrimSpace(keyword)
+	idStr := strings.TrimPrefix(trimmedKeyword, "#")
+	idVal, isID := 0, false
+	if v, err := strconv.Atoi(idStr); err == nil && v > 0 {
+		idVal = v
+		isID = true
+	}
+	if trimmedKeyword != "" {
+		like := "%" + trimmedKeyword + "%"
+		if isID {
+			countQuery = countQuery.Where("id = ? OR file_path LIKE ? OR title LIKE ? OR detail LIKE ?", idVal, like, like, like)
+		} else {
+			countQuery = countQuery.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+		}
 	}
 
 	var total int64
@@ -458,13 +469,20 @@ func GetDynamicCampaignFindings(c *gin.Context) {
 	if category != "" {
 		findQuery = findQuery.Where("category = ?", category)
 	}
-	if keyword != "" {
-		like := "%" + keyword + "%"
-		findQuery = findQuery.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+	if trimmedKeyword != "" {
+		like := "%" + trimmedKeyword + "%"
+		if isID {
+			findQuery = findQuery.Where("id = ? OR file_path LIKE ? OR title LIKE ? OR detail LIKE ?", idVal, like, like, like)
+		} else {
+			findQuery = findQuery.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+		}
 	}
 
 	list := make([]models.CampaignFinding, 0)
 	orderClause := "CASE severity WHEN '致命' THEN 1 WHEN '阻塞' THEN 1 WHEN '严重' THEN 2 WHEN '一般' THEN 3 WHEN '主要' THEN 3 WHEN '提示' THEN 3 WHEN '建议' THEN 4 WHEN '合格' THEN 5 ELSE 6 END, id DESC"
+	if isID {
+		orderClause = fmt.Sprintf("CASE WHEN id = %d THEN 0 ELSE 1 END, ", idVal) + orderClause
+	}
 	if err := findQuery.Order(orderClause).Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch findings"})
 		return
@@ -836,16 +854,27 @@ func ExportDynamicCampaignFindings(c *gin.Context) {
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-	if category != "" {
-		query = query.Where("category = ?", category)
+	trimmedKeyword := strings.TrimSpace(keyword)
+	idStr := strings.TrimPrefix(trimmedKeyword, "#")
+	idVal, isID := 0, false
+	if v, err := strconv.Atoi(idStr); err == nil && v > 0 {
+		idVal = v
+		isID = true
 	}
-	if keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+	if trimmedKeyword != "" {
+		like := "%" + trimmedKeyword + "%"
+		if isID {
+			query = query.Where("id = ? OR file_path LIKE ? OR title LIKE ? OR detail LIKE ?", idVal, like, like, like)
+		} else {
+			query = query.Where("file_path LIKE ? OR title LIKE ? OR detail LIKE ?", like, like, like)
+		}
 	}
 
 	var dbFindings []models.CampaignFinding
 	orderClause := "CASE severity WHEN '致命' THEN 1 WHEN '阻塞' THEN 1 WHEN '严重' THEN 2 WHEN '一般' THEN 3 WHEN '主要' THEN 3 WHEN '提示' THEN 3 WHEN '建议' THEN 4 WHEN '合格' THEN 5 ELSE 6 END, id DESC"
+	if isID {
+		orderClause = fmt.Sprintf("CASE WHEN id = %d THEN 0 ELSE 1 END, ", idVal) + orderClause
+	}
 	if err := query.Order(orderClause).Find(&dbFindings).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch findings for export"})
 		return

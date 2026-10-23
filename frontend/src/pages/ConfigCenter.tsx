@@ -164,8 +164,7 @@ export default function ConfigCenter() {
     webhook: ''
   });
 
-  // 明文可见状态与 Ping 状态
-  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  // Ping 状态
   const [pingStates, setPingStates] = useState<Record<string, { loading: boolean; result?: PingResult }>>({});
 
   // Endpoint 抽屉编辑状态
@@ -279,10 +278,6 @@ export default function ConfigCenter() {
     fetchFullConfig();
   }, [fetchFullConfig]);
 
-  const toggleSecret = (key: string) => {
-    setShowSecrets(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
   const validateTierBindings = () => {
     const tiers = scannerConfig.debate?.tiers;
     if (!tiers) return null;
@@ -335,7 +330,11 @@ export default function ConfigCenter() {
           ...llmConfig,
           resources: llmConfig.resources.map(res => {
             if (res.driver !== 'native' || !res.endpoints?.length) return res;
-            const { base_url, api_key, model, concurrent, ...resource } = res;
+            const resource = { ...res };
+            delete (resource as Record<string, unknown>).base_url;
+            delete (resource as Record<string, unknown>).api_key;
+            delete (resource as Record<string, unknown>).model;
+            delete (resource as Record<string, unknown>).concurrent;
             return resource;
           })
         };

@@ -136,6 +136,7 @@ func (Profile) MapFindings(ctx assessment.AssessmentContext, bundle assessment.B
 		}
 		finding := baseFinding(ctx, item, unit, rawArtifact)
 		displayName := displayNameForUnit(bundle.Units, item.PrimaryUnitID)
+		finding.TargetSymbol = displayName
 		switch item.Outcome {
 		case assessment.OutcomePass:
 			finding.Title = fmt.Sprintf("测试用例合格：%s", displayName)

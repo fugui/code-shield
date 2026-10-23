@@ -1684,3 +1684,160 @@ func TestSanitizeMarkdownReport(t *testing.T) {
 		t.Errorf("expected nested extracted markdown %q, got: %q", expectedNested, got)
 	}
 }
+
+// TestHandleGenericCampaign_EntityLifecycle 验证实体评估模式下测试用例 ID 稳定性与状态闭环流转
+func TestHandleGenericCampaign_EntityLifecycle(t *testing.T) {
+	testDB := setupTestDB(t)
+	if testDB == nil {
+		return
+	}
+	oldDB := models.DB
+	models.DB = testDB
+	defer func() {
+		models.DB = oldDB
+	}()
+
+	mustMigrate(t, models.DB,
+		&models.Department{},
+		&models.Repository{},
+		&models.TaskReport{},
+		&models.TaskType{},
+		&models.User{},
+		&models.CampaignFinding{},
+	)
+
+	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	dept := models.Department{Name: "test-dept-entity-" + uniqueSuffix}
+	models.DB.Create(&dept)
+	defer models.DB.Delete(&models.Department{}, dept.ID)
+
+	user := models.User{Username: "user-entity-" + uniqueSuffix, Name: "UserEntity", Email: "user_ent_" + uniqueSuffix + "@test.com", Password: "pwd"}
+	models.DB.Create(&user)
+	defer models.DB.Delete(&models.User{}, user.ID)
+
+	repo := models.Repository{
+		DepartmentID: dept.ID,
+		OwnerID:      user.ID,
+		Name:         "test-repo-entity-" + uniqueSuffix,
+		URL:          "http://entity.git",
+	}
+	models.DB.Create(&repo)
+	defer models.DB.Delete(&models.Repository{}, repo.ID)
+
+	taskType := models.TaskType{
+		Name:           "ut_scan_" + uniqueSuffix,
+		DisplayName:    "测试用例有效性评估",
+		IsCampaign:     true,
+		GovernanceMode: models.GovernanceModeEntityAssessment,
+	}
+	models.DB.Create(&taskType)
+	defer models.DB.Delete(&models.TaskType{}, taskType.ID)
+
+	defer func() {
+		models.DB.Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).Delete(&models.CampaignFinding{})
+		models.DB.Where("repo_id = ?", repo.ID).Delete(&models.TaskReport{})
+	}()
+
+	// ── 第 1 轮扫描：发现空测试缺陷 ──
+	report1 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
+	models.DB.Create(&report1)
+	ctx1 := &taskContext{Repo: repo, Report: report1, TaskType: taskType}
+
+	findingRound1 := models.AnalysisFinding{
+		FilePath:    "tests/worker_test.cpp",
+		LineNumber:  "45-60",
+		Title:       "断言有效性-空测试：ThreadPoolTest.Submit_Worker",
+		Severity:    "严重",
+		Category:    "断言有效性-空测试",
+		Detail:      "测试用例无有效断言",
+		CodeSnippet: "TEST(ThreadPoolTest, Submit_Worker) {}",
+	}
+
+	if err := handleGenericCampaignHook(ctx1, []models.AnalysisFinding{findingRound1}); err != nil {
+		t.Fatalf("scan 1 failed: %v", err)
+	}
+
+	var saved1 models.CampaignFinding
+	if err := models.DB.Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).First(&saved1).Error; err != nil {
+		t.Fatalf("failed to query finding round 1: %v", err)
+	}
+	if saved1.Title != "ThreadPoolTest.Submit_Worker" {
+		t.Fatalf("expected title to be sanitized to ThreadPoolTest.Submit_Worker, got: %s", saved1.Title)
+	}
+	if saved1.Status != "open" {
+		t.Fatalf("expected status open, got: %s", saved1.Status)
+	}
+	stableID := saved1.ID
+
+	// ── 第 2 轮扫描：用例修复后合格 ──
+	report2 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
+	models.DB.Create(&report2)
+	ctx2 := &taskContext{Repo: repo, Report: report2, TaskType: taskType}
+
+	findingRound2 := models.AnalysisFinding{
+		FilePath:    "tests/worker_test.cpp",
+		LineNumber:  "45-65",
+		Title:       "测试用例合格：ThreadPoolTest.Submit_Worker",
+		Severity:    "合格",
+		Category:    "无问题",
+		Detail:      "断言充分且有效",
+		CodeSnippet: "TEST(ThreadPoolTest, Submit_Worker) { ASSERT_TRUE(worker.Run()); }",
+	}
+
+	if err := handleGenericCampaignHook(ctx2, []models.AnalysisFinding{findingRound2}); err != nil {
+		t.Fatalf("scan 2 failed: %v", err)
+	}
+
+	var saved2 models.CampaignFinding
+	if err := models.DB.Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).First(&saved2).Error; err != nil {
+		t.Fatalf("failed to query finding round 2: %v", err)
+	}
+	// 验证 ID 绝对稳定不变！
+	if saved2.ID != stableID {
+		t.Fatalf("ID changed between scans! expected %d, got %d", stableID, saved2.ID)
+	}
+	// 验证状态自动闭环为 closed
+	if saved2.Status != "closed" {
+		t.Fatalf("expected status closed after passing, got: %s", saved2.Status)
+	}
+	if saved2.Severity != "合格" {
+		t.Fatalf("expected severity 合格, got: %s", saved2.Severity)
+	}
+
+	// ── 第 3 轮扫描：后续重构退化，再次发现缺陷 ──
+	report3 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: "success"}
+	models.DB.Create(&report3)
+	ctx3 := &taskContext{Repo: repo, Report: report3, TaskType: taskType}
+
+	findingRound3 := models.AnalysisFinding{
+		FilePath:    "tests/worker_test.cpp",
+		LineNumber:  "45-70",
+		Title:       "断言有效性-预期结果不完整：ThreadPoolTest.Submit_Worker",
+		Severity:    "一般",
+		Category:    "断言有效性-预期结果不完整",
+		Detail:      "未验证返回状态码",
+		CodeSnippet: "TEST(ThreadPoolTest, Submit_Worker) { worker.Run(); }",
+	}
+
+	if err := handleGenericCampaignHook(ctx3, []models.AnalysisFinding{findingRound3}); err != nil {
+		t.Fatalf("scan 3 failed: %v", err)
+	}
+
+	var saved3 models.CampaignFinding
+	if err := models.DB.Where("task_type_id = ? AND repo_id = ?", taskType.ID, repo.ID).First(&saved3).Error; err != nil {
+		t.Fatalf("failed to query finding round 3: %v", err)
+	}
+	// 验证 ID 依然绝对稳定！
+	if saved3.ID != stableID {
+		t.Fatalf("ID changed on reopen! expected %d, got %d", stableID, saved3.ID)
+	}
+	// 验证状态自动流转为 reopen (open)
+	if saved3.Status != "open" {
+		t.Fatalf("expected status reopened (open), got: %s", saved3.Status)
+	}
+	if saved3.Severity != "一般" {
+		t.Fatalf("expected severity 一般, got: %s", saved3.Severity)
+	}
+}
+
