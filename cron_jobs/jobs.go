@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"code-shield/models"
@@ -24,18 +25,32 @@ func StartCronJobs() {
 	globalCron.Start()
 	log.Println("[Cron] Cron scheduler started.")
 
-	// 注册每天凌晨 03:30 自动执行的磁盘临时文件 GC 清理任务
+	// 注册每天凌晨 03:30 自动执行的磁盘临时文件与数据库辩论轨迹 GC 清理任务
 	_, err := globalCron.AddFunc("30 3 * * *", func() {
-		retentionDays := models.AppConfig.Scanner.Debate.LogRetentionDays
+		retentionDays := models.AppConfig.Retention.DebateLogRetentionDays
 		if retentionDays <= 0 {
-			retentionDays = 7
+			retentionDays = models.AppConfig.Scanner.Debate.LogRetentionDays
 		}
+		if retentionDays <= 0 {
+			retentionDays = 30
+		}
+		// 1. 物理清理本地磁盘临时构件与分片目录
 		services.CleanExpiredTempArtifacts(retentionDays)
+
+		// 2. 物理清理数据库 task_debate_logs 过期记录 (防止单表无限膨胀)
+		if models.DB != nil {
+			cleanedDebates, err := defectlifecycle.PurgeExpiredDebateLogs(models.DB, retentionDays)
+			if err != nil {
+				log.Printf("[Cron] Failed to purge expired debate logs from DB: %v\n", err)
+			} else if cleanedDebates > 0 {
+				log.Printf("[Cron] Purged %d expired debate logs from DB.\n", cleanedDebates)
+			}
+		}
 	})
 	if err != nil {
-		log.Printf("[Cron] Failed to register disk GC cron job: %v\n", err)
+		log.Printf("[Cron] Failed to register disk and debate GC cron job: %v\n", err)
 	} else {
-		log.Println("[Cron] Registered daily temp artifact disk GC cron (03:30 AM).")
+		log.Println("[Cron] Registered daily temp artifact and debate log GC cron (03:30 AM).")
 	}
 
 	_, err = globalCron.AddFunc("0 4 * * *", RunLedgerRetentionGCJob)
@@ -71,13 +86,17 @@ func RunLedgerRetentionGCJob() {
 	if retentionDays <= 0 {
 		retentionDays = 30
 	}
+	nonSuccessRetentionDays := models.AppConfig.Retention.NonSuccessRetentionDays
+	if nonSuccessRetentionDays <= 0 {
+		nonSuccessRetentionDays = 7
+	}
 	maxRetainedScans := models.AppConfig.Retention.MaxRetainedScansPerRepo
 	if maxRetainedScans <= 0 {
 		maxRetainedScans = 10
 	}
 
 	log.Println("[GC] Starting ledger retention and snapshot cleanup...")
-	cleanedReports, err := defectlifecycle.PurgeExpiredScanSnapshots(models.DB, retentionDays, maxRetainedScans)
+	cleanedReports, err := defectlifecycle.PurgeExpiredScanSnapshots(models.DB, retentionDays, maxRetainedScans, nonSuccessRetentionDays)
 	if err != nil {
 		log.Printf("[GC] Scan snapshot cleanup failed: %v", err)
 		return
@@ -90,9 +109,30 @@ func RunLedgerRetentionGCJob() {
 		log.Printf("[GC] Cleaned %d orphaned manifest temp files.", cleanedOrphans)
 	}
 
+	// 清理失去父报告引用的孤儿 campaign_findings 数据（自愈保护机制）
+	cleanedFindings, err := defectlifecycle.PurgeOrphanFindings(models.DB)
+	if err != nil {
+		log.Printf("[GC] Warning: orphan findings sweeper failed: %v", err)
+	} else if cleanedFindings > 0 {
+		log.Printf("[GC] Cleaned %d orphaned campaign findings.", cleanedFindings)
+	}
+
 	// 针对 PostgreSQL 执行非阻塞式 VACUUM ANALYZE，促使引擎及时回收 Dead Tuples 并刷新统计信息
 	if models.DB.Dialector.Name() == "postgres" {
-		_ = models.DB.Exec("VACUUM (ANALYZE) scan_scope_entries, defect_observations, analysis_findings;").Error
+		tables := []string{
+			"scan_scope_entries",
+			"defect_observations",
+			"analysis_findings",
+			"artifact_repair_audits",
+			"task_debate_logs",
+			"campaign_findings",
+			"defects",
+			"task_reports",
+		}
+		vacuumSQL := fmt.Sprintf("VACUUM (ANALYZE) %s;", strings.Join(tables, ", "))
+		if err := models.DB.Exec(vacuumSQL).Error; err != nil {
+			log.Printf("[GC] Warning: VACUUM ANALYZE failed: %v", err)
+		}
 	}
 	log.Printf("[GC] Ledger retention cleanup completed. Pruned snapshots for %d expired reports.", cleanedReports)
 }
