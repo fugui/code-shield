@@ -143,3 +143,28 @@ func TestAskLLMIfSameFinding(t *testing.T) {
 		t.Errorf("expected false when invoker is nil")
 	}
 }
+
+func TestExtractEntityCaseName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"TestLogin", "TestLogin"},
+		{"ThreadPoolTest.Submit_Worker", "ThreadPoolTest.Submit_Worker"},
+		{"断言有效性-空测试：ThreadPoolTest.Submit_Worker", "ThreadPoolTest.Submit_Worker"},
+		{"测试用例合格：ThreadPoolTest.Submit_Worker", "ThreadPoolTest.Submit_Worker"},
+		{"非目标测试实体：ThreadPoolTest.Helper", "ThreadPoolTest.Helper"},
+		{"测试用例需人工评估：ThreadPoolTest.Complex", "ThreadPoolTest.Complex"},
+		{"CustomCategory: TestFooBar", "TestFooBar"},
+		{"带中文冒号但无后缀：", "带中文冒号但无后缀："},
+	}
+
+	for _, tt := range tests {
+		got := ExtractEntityCaseName(tt.input)
+		if got != tt.expected {
+			t.Errorf("ExtractEntityCaseName(%q) = %q, expected %q", tt.input, got, tt.expected)
+		}
+	}
+}

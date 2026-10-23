@@ -77,15 +77,25 @@ func HandleGenericCampaign(ctx *CampaignContext, findings []models.AnalysisFindi
 	isEntityMode := ctx.TaskType.GovernanceMode == models.GovernanceModeEntityAssessment
 
 	if isEntityMode {
-		// ── 模式 B (全量实体评估): 确定性 O(1) 路径+用例名称哈希匹配 ──
+		// ── 模式 B (全量实体评估): 确定性 O(1) 路径+用例原生名称哈希匹配 ──
 		oldIndex := make(map[string]*models.CampaignFinding, len(allOldFindings))
 		for i := range allOldFindings {
-			key := allOldFindings[i].FilePath + "\x00" + allOldFindings[i].Title
-			oldIndex[key] = &allOldFindings[i]
+			rawName := ExtractEntityCaseName(allOldFindings[i].Title)
+			key := allOldFindings[i].FilePath + "\x00" + rawName
+			if existing, ok := oldIndex[key]; ok {
+				// 若存在多条同名历史记录，优先匹配活跃状态（非 resolved），同状态下取最新 ID
+				if (existing.Status == "resolved" && allOldFindings[i].Status != "resolved") ||
+					(existing.Status == allOldFindings[i].Status && allOldFindings[i].ID > existing.ID) {
+					oldIndex[key] = &allOldFindings[i]
+				}
+			} else {
+				oldIndex[key] = &allOldFindings[i]
+			}
 		}
 
 		for idx, f := range findings {
-			key := f.FilePath + "\x00" + f.Title
+			rawName := ExtractEntityCaseName(f.Title)
+			key := f.FilePath + "\x00" + rawName
 			if oldF, ok := oldIndex[key]; ok {
 				matchedFindingsMap[idx] = oldF
 				matchedOldIDs[oldF.ID] = true
@@ -284,13 +294,18 @@ func HandleGenericCampaign(ctx *CampaignContext, findings []models.AnalysisFindi
 			}
 			logBytes, _ := json.Marshal(statusLog)
 
+			caseTitle := f.Title
+			if isEntityMode {
+				caseTitle = ExtractEntityCaseName(f.Title)
+			}
+
 			newFinding := models.CampaignFinding{
 				TaskTypeID:   ctx.TaskType.ID,
 				RepoID:       ctx.Repo.ID,
 				TaskReportID: ctx.Report.ID,
 				FilePath:     f.FilePath,
 				LineNumber:   f.LineNumber,
-				Title:        f.Title,
+				Title:        caseTitle,
 				Detail:       f.Detail,
 				Severity:     f.Severity,
 				Category:     f.Category,
@@ -386,6 +401,9 @@ func HandleGenericCampaign(ctx *CampaignContext, findings []models.AnalysisFindi
 
 			matchedFinding.TaskReportID = ctx.Report.ID
 			matchedFinding.LineNumber = f.LineNumber
+			if isEntityMode {
+				matchedFinding.Title = ExtractEntityCaseName(f.Title)
+			}
 			matchedFinding.Detail = f.Detail
 			matchedFinding.Severity = f.Severity
 			matchedFinding.Category = f.Category
@@ -739,6 +757,26 @@ func SanitizeFindingTitle(title string) string {
 	runes := []rune(title)
 	if len(runes) > 500 {
 		return string(runes[:497]) + "..."
+	}
+	return title
+}
+
+// ExtractEntityCaseName 从实体用例标题中提取原生测试用例名称
+// 自动剥离可能存在的评估结论前缀（如“断言有效性-空测试：”、“测试用例合格：”、“非目标测试实体：”、“测试用例需人工评估：”等），
+// 确保同一用例在跨轮次扫描时拥有完全一致、永久稳定的对账键。
+func ExtractEntityCaseName(title string) string {
+	title = strings.TrimSpace(title)
+	if idx := strings.Index(title, "："); idx != -1 {
+		cleaned := strings.TrimSpace(title[idx+len("："):])
+		if cleaned != "" {
+			return cleaned
+		}
+	}
+	if idx := strings.Index(title, ": "); idx != -1 {
+		cleaned := strings.TrimSpace(title[idx+2:])
+		if cleaned != "" {
+			return cleaned
+		}
 	}
 	return title
 }

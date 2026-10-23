@@ -732,7 +732,7 @@ export default function AuditingWorkspace({
             
             <input 
               type="text" 
-              placeholder={workspaceType === 'ut' ? "搜索用例名称 / 文件路径 / 问题详情..." : "过滤文件路径/描述/标题..."}
+              placeholder={workspaceType === 'ut' || isEntityMode ? "搜索用例 ID / 名称 / 文件路径 / 问题详情..." : "搜索缺陷 ID / 文件路径 / 描述 / 标题..."}
               value={wsKeyword}
               onChange={e => setWsKeyword(e.target.value)}
               style={{ padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', fontSize: '0.8rem', outline: 'none', color: 'var(--text-color)' }}
@@ -767,9 +767,19 @@ export default function AuditingWorkspace({
                     className="code-interactive-card"
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                      <span style={getBadgeStyles(f.severity)}>
-                        {f.severity}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <span style={getBadgeStyles(f.severity)}>
+                          {f.severity}
+                        </span>
+                        <span style={{ 
+                          fontFamily: 'monospace', 
+                          fontSize: '0.75rem', 
+                          fontWeight: 600, 
+                          color: 'var(--color-text-muted, #94a3b8)' 
+                        }}>
+                          #{f.id}
+                        </span>
+                      </div>
                       <span style={getStatusBadgeStyles(f.status)}>
                         {getStatusText(f.status)}
                       </span>
@@ -817,9 +827,29 @@ export default function AuditingWorkspace({
             <>
               {/* Defect Context Header */}
               <div>
-                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', fontWeight: 700, color: '#ef4444', textAlign: 'left' }}>
-                  ❌ {editingFinding.title || '未命名缺陷'}
-                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ 
+                    fontFamily: 'monospace', 
+                    fontSize: '0.85rem', 
+                    fontWeight: 700, 
+                    padding: '0.15rem 0.45rem', 
+                    borderRadius: '4px', 
+                    background: 'var(--color-bg-muted, #f1f5f9)', 
+                    color: 'var(--color-text-secondary, #475569)', 
+                    border: '1px solid var(--border-color)' 
+                  }}>
+                    #{editingFinding.id}
+                  </span>
+                  <h3 style={{ 
+                    margin: 0, 
+                    fontSize: '1.1rem', 
+                    fontWeight: 700, 
+                    color: editingFinding.severity === '合格' ? '#16a34a' : '#ef4444', 
+                    textAlign: 'left' 
+                  }}>
+                    {editingFinding.severity === '合格' ? '✅' : '❌'} {editingFinding.title || '未命名缺陷'}
+                  </h3>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                   <div style={{ fontSize: '0.8rem', color: '#64748b', background: 'var(--bg-color)', padding: '0.5rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-block' }}>
                     📁 <strong>文件:</strong> {editingFinding.file_path}:{editingFinding.line_number}

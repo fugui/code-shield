@@ -3,6 +3,7 @@ package defectlifecycle
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -646,7 +647,14 @@ func campaignFindings(db *gorm.DB, defects []models.Defect) ([]CampaignFinding, 
 
 func filterCampaignFindings(items []CampaignFinding, query CampaignQuery) []CampaignFinding {
 	filtered := make([]CampaignFinding, 0, len(items))
-	keyword := strings.ToLower(query.Keyword)
+	trimmedKeyword := strings.TrimSpace(query.Keyword)
+	idStr := strings.TrimPrefix(trimmedKeyword, "#")
+	idVal, isID := 0, false
+	if v, err := strconv.Atoi(idStr); err == nil && v > 0 {
+		idVal = v
+		isID = true
+	}
+	keyword := strings.ToLower(trimmedKeyword)
 	for _, item := range items {
 		if query.Severity != "" && item.Severity != query.Severity {
 			continue
@@ -657,10 +665,14 @@ func filterCampaignFindings(items []CampaignFinding, query CampaignQuery) []Camp
 		if query.Category != "" && item.Category != query.Category {
 			continue
 		}
-		if keyword != "" && !strings.Contains(strings.ToLower(item.FilePath), keyword) &&
-			!strings.Contains(strings.ToLower(item.Title), keyword) &&
-			!strings.Contains(strings.ToLower(item.Detail), keyword) {
-			continue
+		if keyword != "" {
+			matched := (isID && int(item.ID) == idVal) ||
+				strings.Contains(strings.ToLower(item.FilePath), keyword) ||
+				strings.Contains(strings.ToLower(item.Title), keyword) ||
+				strings.Contains(strings.ToLower(item.Detail), keyword)
+			if !matched {
+				continue
+			}
 		}
 		filtered = append(filtered, item)
 	}

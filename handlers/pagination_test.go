@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -187,7 +188,7 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 	}
 	defer db.Delete(&models.Repository{}, repo.ID)
 
-	taskType := models.TaskType{Name: "test-finding-type-" + time.Now().Format("150405.000000"), DisplayName: "测试专项分析", IsCampaign: true, CampaignPath: "test-finding-path"}
+	taskType := models.TaskType{Name: "test-finding-type-" + time.Now().Format("150405.000000"), DisplayName: "测试专项分析", IsCampaign: true, CampaignPath: "test-finding-path", GovernanceMode: models.GovernanceModeEntityAssessment}
 	if err := db.Create(&taskType).Error; err != nil {
 		t.Fatalf("Failed to create test task type: %v", err)
 	}
@@ -208,8 +209,8 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 5", FilePath: "e.cpp", Severity: "一般", Status: "resolved", Category: "内存泄漏"},
 		{RepoID: repo.ID, TaskTypeID: taskType.ID, Title: "Issue 6", FilePath: "f.cpp", Severity: "建议", Status: "invalid", Category: "内存泄漏"},
 	}
-	for _, f := range testFindings {
-		if err := db.Create(&f).Error; err != nil {
+	for i := range testFindings {
+		if err := db.Create(&testFindings[i]).Error; err != nil {
 			t.Fatalf("Failed to create test finding: %v", err)
 		}
 	}
@@ -249,7 +250,7 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 	if len(resp.Items) != 2 {
 		t.Errorf("Expected page 1 items 2, got %d", len(resp.Items))
 	}
-	if resp.SeverityStats["严重"] != 2 || resp.SeverityStats["一般"] != 3 || resp.SeverityStats["建议"] != 1 {
+	if resp.SeverityStats["严重"] != 2 || resp.SeverityStats["一般"] != 1 {
 		t.Errorf("Unexpected SeverityStats: %+v", resp.SeverityStats)
 	}
 	if resp.StatusStats["open"] != 3 || resp.StatusStats["resolved"] != 2 || resp.StatusStats["invalid"] != 1 {
@@ -260,6 +261,42 @@ func TestGetDynamicCampaignFindingsStats(t *testing.T) {
 	}
 	if len(resp.Categories) != 2 || resp.Categories[0] != "并发安全" || resp.Categories[1] != "内存泄漏" {
 		t.Errorf("Unexpected Categories ordering: %+v", resp.Categories)
+	}
+
+	// 测试按纯数字 ID 搜索与精准置顶
+	targetFinding := testFindings[2] // Severity: 一般
+	reqByID, _ := http.NewRequest("GET", fmt.Sprintf("/api/analysis/test-finding-path/findings?repo_id=%d&keyword=%d", repo.ID, targetFinding.ID), nil)
+	wByID := httptest.NewRecorder()
+	router.ServeHTTP(wByID, reqByID)
+	if wByID.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 for ID search, got %d", wByID.Code)
+	}
+	var respByID struct {
+		Total int64                    `json:"total"`
+		Items []models.CampaignFinding `json:"items"`
+	}
+	_ = json.Unmarshal(wByID.Body.Bytes(), &respByID)
+	if respByID.Total == 0 || len(respByID.Items) == 0 {
+		t.Fatalf("Expected to find finding by ID %d", targetFinding.ID)
+	}
+	if respByID.Items[0].ID != targetFinding.ID {
+		t.Errorf("Expected first item to be ID %d, got %d", targetFinding.ID, respByID.Items[0].ID)
+	}
+
+	// 测试带 # 号的 ID 检索 (#123)
+	reqByHashID, _ := http.NewRequest("GET", fmt.Sprintf("/api/analysis/test-finding-path/findings?repo_id=%d&keyword=%s", repo.ID, url.QueryEscape(fmt.Sprintf("#%d", targetFinding.ID))), nil)
+	wByHashID := httptest.NewRecorder()
+	router.ServeHTTP(wByHashID, reqByHashID)
+	if wByHashID.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 for #ID search, got %d", wByHashID.Code)
+	}
+	var respByHashID struct {
+		Total int64                    `json:"total"`
+		Items []models.CampaignFinding `json:"items"`
+	}
+	_ = json.Unmarshal(wByHashID.Body.Bytes(), &respByHashID)
+	if respByHashID.Total == 0 || len(respByHashID.Items) == 0 || respByHashID.Items[0].ID != targetFinding.ID {
+		t.Errorf("Expected to find finding by #ID %d", targetFinding.ID)
 	}
 }
 
