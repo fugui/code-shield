@@ -374,3 +374,69 @@ func stringHasSub(s, sub string) bool {
 	}
 	return false
 }
+
+func TestPurgeExpiredScanSnapshotsAtomicTaskDir(t *testing.T) {
+	db := setupTestDB(t)
+
+	tempDir := t.TempDir()
+	oldDataDir := models.AppConfig.Server.DataDir
+	models.AppConfig.Server.DataDir = tempDir
+	t.Cleanup(func() { models.AppConfig.Server.DataDir = oldDataDir })
+
+	repo := models.Repository{Name: "task-dir-repo", URL: "https://example.com/task-dir.git"}
+	db.Create(&repo)
+	taskType := models.TaskType{Name: "sec-scan", DisplayName: "Security Scan"}
+	db.Create(&taskType)
+
+	now := time.Now()
+	// 创建一个 15 天前超期的 failed 任务 (ID 301)
+	task301Dir := filepath.Join(tempDir, "reports", taskType.Name, "2026-10-09", "report-301-task-dir-repo")
+	_ = os.MkdirAll(filepath.Join(task301Dir, "debate-chunks"), 0755)
+	_ = os.WriteFile(filepath.Join(task301Dir, "report-301-report-task-dir-repo.md"), []byte("# Report"), 0644)
+	_ = os.WriteFile(filepath.Join(task301Dir, "report-301-summary-task-dir-repo.json"), []byte("{}"), 0644)
+	_ = os.WriteFile(filepath.Join(task301Dir, "debate-chunks", "chunk-1.json"), []byte("{}"), 0644)
+
+	rel301Path := filepath.Join("reports", taskType.Name, "2026-10-09", "report-301-task-dir-repo", "report-301-report-task-dir-repo.md")
+	report301 := models.TaskReport{
+		ID:         301,
+		RepoID:     repo.ID,
+		TaskTypeID: taskType.ID,
+		Status:     "failed",
+		ReportPath: rel301Path,
+		CreatedAt:  now.Add(-15 * 24 * time.Hour),
+	}
+	db.Create(&report301)
+
+	// 创建一个未超期的任务 (ID 302)
+	task302Dir := filepath.Join(tempDir, "reports", taskType.Name, "2026-10-23", "report-302-task-dir-repo")
+	_ = os.MkdirAll(task302Dir, 0755)
+	_ = os.WriteFile(filepath.Join(task302Dir, "report.md"), []byte("# Active Report"), 0644)
+	rel302Path := filepath.Join("reports", taskType.Name, "2026-10-23", "report-302-task-dir-repo", "report.md")
+	report302 := models.TaskReport{
+		ID:         302,
+		RepoID:     repo.ID,
+		TaskTypeID: taskType.ID,
+		Status:     "success",
+		ReportPath: rel302Path,
+		CreatedAt:  now.Add(-1 * 24 * time.Hour),
+	}
+	db.Create(&report302)
+
+	purged, err := PurgeExpiredScanSnapshots(db, 30, 10, 7)
+	if err != nil {
+		t.Fatalf("PurgeExpiredScanSnapshots failed: %v", err)
+	}
+	if purged != 1 {
+		t.Fatalf("expected 1 report purged, got %d", purged)
+	}
+
+	// 验证超期任务的整个专属目录被原子化物理清理
+	if _, err := os.Stat(task301Dir); !os.IsNotExist(err) {
+		t.Fatalf("expected expired task dir %s to be deleted completely", task301Dir)
+	}
+
+	// 验证未超期任务的专属目录完好无损
+	if _, err := os.Stat(task302Dir); os.IsNotExist(err) {
+		t.Fatalf("expected active task dir %s to be preserved", task302Dir)
+	}
+}

@@ -159,6 +159,11 @@ func TestPrepareOutputPathsInitializesReportPath(t *testing.T) {
 		t.Fatalf("expected reportDir %s to start with %s", reportDir, expectedPrefix)
 	}
 
+	expectedDirName := "report-100-myorg-myrepo"
+	if filepath.Base(reportDir) != expectedDirName {
+		t.Fatalf("expected reportDir base name %s, got %s", expectedDirName, filepath.Base(reportDir))
+	}
+
 	manifestPath := ctx.Report.GetScopeManifestPath()
 	expectedManifest := filepath.Join(reportDir, "report-100-scope-manifest.json.gz")
 	if manifestPath != expectedManifest {
