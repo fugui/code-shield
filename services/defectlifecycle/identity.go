@@ -177,7 +177,7 @@ func defectClassMajor(category string) string {
 	if major == "" {
 		return "uncategorized"
 	}
-	if idx := strings.IndexAny(major, ":/|"); idx > 0 {
+	if idx := strings.IndexAny(major, ":/|-"); idx > 0 {
 		major = strings.TrimSpace(major[:idx])
 	}
 	return major
@@ -200,7 +200,9 @@ func BuildIdentities(repoRoot string, repoID, taskTypeID uint, findings []models
 		if normPath != "" && repoRoot != "" {
 			if anchor, err := EnrichSourceAnchor(repoRoot, normPath, finding.LineNumber, rawStatement); err == nil {
 				normPath = NormalizePath("", anchor.NormalizedPath)
-				symbolPath = anchor.NormalizedScope
+				if symbolPath == "" {
+					symbolPath = anchor.NormalizedScope
+				}
 				cleanToken = anchor.PhysicalToken
 				shape = statementShape(anchor.PhysicalToken)
 				startLine, endLine = anchor.StartLine, anchor.EndLine

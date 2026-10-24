@@ -1,6 +1,7 @@
 package defectlifecycle
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -52,6 +53,8 @@ const (
 	reasonAISame            = "AI_SAME"
 	reasonAIReview          = "AI_REVIEW"
 	reasonAIUnavailable     = "AI_UNAVAILABLE"
+	reasonAIDisabled        = "AI_DISABLED"
+	reasonAIEmpty           = "AI_EMPTY"
 	reasonAutoMerge         = "AUTO_MERGE"
 	reasonAutoNew           = "AUTO_NEW"
 	reasonPassCleared       = "PASS_CLEARED"
@@ -118,10 +121,24 @@ type ArbitrationRequest struct {
 }
 
 type ArbitrationDecision struct {
-	DefectID   uint
-	Decision   string
-	Confidence float64
-	Reason     string
+	DefectID    uint    `json:"candidate_id"`
+	AltDefectID uint    `json:"defect_id,omitempty"`
+	Decision    string  `json:"decision"`
+	Confidence  float64 `json:"confidence"`
+	Reason      string  `json:"reason"`
+}
+
+func (d *ArbitrationDecision) UnmarshalJSON(data []byte) error {
+	type rawDecision ArbitrationDecision
+	var raw rawDecision
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = ArbitrationDecision(raw)
+	if d.DefectID == 0 && d.AltDefectID != 0 {
+		d.DefectID = d.AltDefectID
+	}
+	return nil
 }
 
 type ArbitrationProvider interface {
@@ -515,7 +532,7 @@ func scoreCandidate(identity Identity, candidate Candidate) (float64, map[string
 
 func applyEvidenceGate(identity Identity, candidate Candidate, detail map[string]float64) {
 	anchorGate := (detail["scope_key_equal"] == 1 && detail["clean_token_similarity"] >= 0.8) ||
-		(detail["scope_key_equal"] == 1 && detail["line_proximity"] == 1) ||
+		(detail["scope_key_equal"] == 1 && detail["line_proximity"] >= 0.75) ||
 		(detail["clean_token_similarity"] >= 0.8 && detail["line_proximity"] >= 0.5)
 	rootAliasGate := hasSource(candidate, AliasRoot)
 	resourceAliasGate := hasSource(candidate, AliasResource)
@@ -791,6 +808,11 @@ func matchedVerdict(status string) string {
 
 func arbitrateUnclaimed(input MatchingInput, observations []ObservationGroup, edges [][]scoredCandidate, decisions []ObservationDecision, aiCalls *int) {
 	if input.Arbitrator == nil {
+		for i := range decisions {
+			if decisions[i].DefectID == nil && len(edges[i]) > 0 && decisions[i].Reason == reasonGrayBand {
+				decisions[i].Reason = reasonAIDisabled
+			}
+		}
 		return
 	}
 	for i := range decisions {
@@ -816,6 +838,9 @@ func arbitrateUnclaimed(input MatchingInput, observations []ObservationGroup, ed
 		if err != nil {
 			decisions[i].Reason = reasonAIUnavailable
 			continue
+		}
+		if len(arbitrations) == 0 {
+			decisions[i].Reason = reasonAIEmpty
 		}
 		accepted := false
 		autoFallback := true

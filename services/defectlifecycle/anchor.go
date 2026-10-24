@@ -329,7 +329,13 @@ scanLoop:
 			}
 		default:
 			// C / C++
-			if m := reFuncCpp.FindString(line); m != "" && !strings.HasPrefix(line, "if") && !strings.HasPrefix(line, "while") && !strings.HasPrefix(line, "for") && !strings.HasPrefix(line, "switch") {
+			trimmed := line
+			if strings.HasSuffix(trimmed, ";") || strings.Contains(trimmed, "=") ||
+				strings.HasPrefix(trimmed, "return ") || strings.HasPrefix(trimmed, "throw ") ||
+				strings.HasPrefix(trimmed, "delete ") {
+				continue
+			}
+			if m := reFuncCpp.FindString(line); m != "" && !strings.HasPrefix(line, "if") && !strings.HasPrefix(line, "while") && !strings.HasPrefix(line, "for") && !strings.HasPrefix(line, "switch") && !strings.HasPrefix(line, "catch") {
 				idx := strings.Index(m, "(")
 				if idx != -1 {
 					scopeSign = strings.TrimSpace(m[:idx])

@@ -1,6 +1,7 @@
 package defectlifecycle
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -467,5 +468,57 @@ func TestCommittableDecisionsFiltersZeroDefectIDAndOrphanCleared(t *testing.T) {
 	}
 	if committable[0].DefectID == nil || *committable[0].DefectID != validID {
 		t.Fatalf("expected defect ID %d, got %+v", validID, committable[0].DefectID)
+	}
+}
+
+func TestArbitrationDecisionJSONDeserialization(t *testing.T) {
+	candidatePayload := `{"decisions":[{"candidate_id":42,"decision":"SAME","confidence":0.95,"reason":"same problem"}]}`
+	var payload1 struct {
+		Decisions []ArbitrationDecision `json:"decisions"`
+	}
+	if err := json.Unmarshal([]byte(candidatePayload), &payload1); err != nil {
+		t.Fatalf("unmarshal candidate_id: %v", err)
+	}
+	if len(payload1.Decisions) != 1 || payload1.Decisions[0].DefectID != 42 {
+		t.Fatalf("expected DefectID=42 from candidate_id, got %+v", payload1.Decisions)
+	}
+
+	defectPayload := `{"decisions":[{"defect_id":88,"decision":"SAME","confidence":0.88,"reason":"same defect"}]}`
+	var payload2 struct {
+		Decisions []ArbitrationDecision `json:"decisions"`
+	}
+	if err := json.Unmarshal([]byte(defectPayload), &payload2); err != nil {
+		t.Fatalf("unmarshal defect_id: %v", err)
+	}
+	if len(payload2.Decisions) != 1 || payload2.Decisions[0].DefectID != 88 {
+		t.Fatalf("expected DefectID=88 from defect_id, got %+v", payload2.Decisions)
+	}
+}
+
+func TestApplyEvidenceGateLineProximityTolerance(t *testing.T) {
+	ident := Identity{
+		NormPath:         "src/a.cpp",
+		ScopeKey:         "scope-1",
+		DefectClassMajor: "logic",
+	}
+	cand := Candidate{
+		Defect: models.Defect{
+			NormPath:         "src/a.cpp",
+			ScopeKey:         "scope-1",
+			DefectClassMajor: "logic",
+		},
+	}
+	detail := map[string]float64{
+		"scope_key_equal":          1,
+		"defect_class_major_equal": 1,
+		"line_proximity":           0.9524, // 相距 1 行 (1 - 1/21)
+		"clean_token_similarity":   0.20,
+	}
+	applyEvidenceGate(ident, cand, detail)
+	if detail["anchor_gate"] != 1 {
+		t.Fatalf("expected anchor_gate=1 for proximity 0.9524 within same scope, got %v", detail["anchor_gate"])
+	}
+	if detail["evidence_veto"] == 1 {
+		t.Fatalf("expected no evidence veto for same scope and class, got veto=1")
 	}
 }
