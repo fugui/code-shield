@@ -165,3 +165,58 @@ func TestSameStatementWithLineRangeMerges(t *testing.T) {
 		t.Fatalf("expected same physical statement in one group, got %d groups and %d findings", len(groups), len(groups[0].Findings))
 	}
 }
+
+func TestBuildIdentitiesPreservesExplicitScopeSymbol(t *testing.T) {
+	repoRoot := t.TempDir()
+	path := filepath.Join(repoRoot, "src", "fmt.cpp")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create dir: %v", err)
+	}
+	content := "int descriptor() {\n  int fd = fileno(file_);\n  return fd;\n}\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	finding := models.AnalysisFinding{
+		FilePath:    "src/fmt.cpp",
+		LineNumber:  "2",
+		Category:    "逻辑与正确性-边界处理",
+		TriggerLine: "int fd = fileno(file_);",
+		ScopeSymbol: "fmt::buffered_file::descriptor",
+	}
+	identities := BuildIdentities(repoRoot, 1, 2, []models.AnalysisFinding{finding})
+	if len(identities) != 1 {
+		t.Fatalf("expected 1 identity, got %d", len(identities))
+	}
+	// 期望保留高质量 scope: "buffered_file::descriptor"（经 NormalizeScopeSymbol 保留核心段），而不是被反查出来的行内表达式覆盖
+	if identities[0].SymbolPath != "buffered_file::descriptor" {
+		t.Fatalf("expected preserved explicit scope symbol, got %q", identities[0].SymbolPath)
+	}
+}
+
+func TestExtractScopeAndBodyFromLinesIgnoresStatements(t *testing.T) {
+	lines := []string{
+		"int descriptor() {",
+		"  int fd = fileno(file_);",
+		"  set(new char[10], 10);",
+		"  return fd;",
+		"}",
+	}
+	// 针对第 2 行 "int fd = fileno(file_);" 向上反查，应该命中第 1 行的 "descriptor"，而不是把自身 "fileno" 当成函数定义
+	scope, _ := ExtractScopeAndBodyFromLines("src/os.cc", lines, 2)
+	if scope != "descriptor" {
+		t.Fatalf("expected outer function 'descriptor', got %q", scope)
+	}
+}
+
+func TestDefectClassMajorDashSplitting(t *testing.T) {
+	cls1 := defectClassMajor("逻辑与正确性-边界处理")
+	cls2 := defectClassMajor("逻辑与正确性-逻辑漏洞")
+	cls3 := defectClassMajor("逻辑与正确性-异常控制")
+	if cls1 != "逻辑与正确性" || cls2 != "逻辑与正确性" || cls3 != "逻辑与正确性" {
+		t.Fatalf("expected all to reduce to '逻辑与正确性', got cls1=%q cls2=%q cls3=%q", cls1, cls2, cls3)
+	}
+	cls4 := defectClassMajor("安全风险-内存破坏")
+	if cls4 != "安全风险" {
+		t.Fatalf("expected '安全风险', got %q", cls4)
+	}
+}
