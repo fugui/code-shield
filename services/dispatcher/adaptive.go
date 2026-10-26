@@ -88,13 +88,14 @@ func (d *ModelDispatcher) SetAdaptiveThrottle(cfg models.AdaptiveThrottlingConfi
 }
 
 // adjustAIMDLocked 非对称加法递增/乘法递减拥塞控制算法实现（需在持有 d.mu 时调用）
-// 判定规则严格依据架构设计规范：
-// 1. 🚨 waiting > 3: 乘法断崖下调 scale = max(minScale, scale * 0.4)，抢在 429 前削峰
-// 2. ⚠️ 1 <= waiting <= 3: 温和退避 scale = max(minScale, scale * 0.8)
-// 3. 🟢 waiting == 0 && active >= activeHigh: 高位饱和稳态，活跃度达到或超过上限，严禁盲目加压/回弹，维持当前并发稳态
-// 4. 🔄 waiting == 0 && active < activeHigh && scale < 1.0: 安全基准自愈，确认有承载余量，连续 3 个周期稳定后按 +10% 平稳回弹至 1.0
-// 5. 🔵 waiting == 0 && active < activeLow && scale >= 1.0: 闲置超频增压，连续 3 个周期稳定后执行 scale = min(maxScale, scale + 0.10)
-// 6. 🟢 waiting == 0 && activeLow <= active < activeHigh && scale >= 1.0: 黄金平衡稳态，保持当前 Scale 不变
+// 判定规则严格依据架构设计规范与低水位微排队容忍策略：
+// 1. 🚨 waiting > criticalWait (默认 3): 乘法断崖下调 scale = max(minScale, scale * 0.4)，抢在 429 前削峰
+// 2. ⚠️ 确切积压或高位饱和排队 (waiting >= 2 或 waiting == 1 && active >= activeHigh): 温和退避 scale = max(minScale, scale * 0.8)
+// 3. 🟡 瞬态入队微排队观望 (waiting == 1 && active < activeHigh): 活跃度未饱和，单个排队通常为引擎 Continuous Batching 调度切片毫秒级时延，不进行惩罚性退缩，维持当前 Scale 稳态观望
+// 4. 🟢 waiting == 0 && active >= activeHigh: 高位饱和稳态，活跃度达到或超过上限，严禁盲目加压/回弹，维持当前并发稳态
+// 5. 🔄 waiting == 0 && active < activeHigh && scale < 1.0: 安全基准自愈，确认有承载余量，连续 3 个周期稳定后按 +10% 平稳回弹至 1.0
+// 6. 🔵 waiting == 0 && active < activeLow && scale >= 1.0: 闲置超频增压，连续 3 个周期稳定后执行 scale = min(maxScale, scale + 0.10)
+// 7. 🟢 waiting == 0 && activeLow <= active < activeHigh && scale >= 1.0: 黄金平衡稳态，保持当前 Scale 不变
 func (d *ModelDispatcher) adjustAIMDLocked(active, waiting int) (float64, string, string) {
 	minScale := d.adaptiveCfg.GetMinScale()
 	maxScale := d.adaptiveCfg.GetMaxScale()
@@ -129,8 +130,8 @@ func (d *ModelDispatcher) adjustAIMDLocked(active, waiting int) (float64, string
 			msg = fmt.Sprintf("🚨 严重过载：哨兵节点排队超标（活跃 %d，排队 %d），已断崖避让至 %.0f%% 并发速度，抢在 429 前削峰",
 				active, waiting, math.Round(scale*100))
 		}
-	} else if waiting >= 1 {
-		// ⚠️ 轻度预警区: 1 <= waiting <= 3
+	} else if waiting >= 2 || (waiting == 1 && active >= activeHigh) {
+		// ⚠️ 确切积压与高位饱和排队预警区: 2 <= waiting <= 3 或 (waiting == 1 且 active >= activeHigh)
 		scale = math.Max(minScale, scale*0.8)
 		scale = math.Round(scale*100) / 100
 		if minScale == 0 && scale <= 0.08 {
@@ -140,12 +141,24 @@ func (d *ModelDispatcher) adjustAIMDLocked(active, waiting int) (float64, string
 		d.adaptiveConsecutiveRecoveryCount = 0
 		state = "warning"
 		if scale <= 0 {
-			msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现轻度积压（活跃 %d，排队 %d），已温和退让至 0%% 并发速度（扫描完全暂停），全力让路业务流量",
+			msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现积压（活跃 %d，排队 %d），已温和退让至 0%% 并发速度（扫描完全暂停），全力让路业务流量",
 				active, waiting)
+		} else if waiting == 1 {
+			msg = fmt.Sprintf("⚠️ 高位饱和排队：哨兵节点活跃度偏高且出现排队（活跃 %d >= %d，排队 1），已温和退让至 %.0f%% 并发速度避让",
+				active, activeHigh, math.Round(scale*100))
 		} else {
-			msg = fmt.Sprintf("⚠️ 队列预警：哨兵节点出现轻度积压（活跃 %d，排队 %d），已温和退让至 %.0f%% 并发速度防微杜渐",
+			msg = fmt.Sprintf("⚠️ 队列积压预警：哨兵节点出现排队积压（活跃 %d，排队 %d），已温和退让至 %.0f%% 并发速度防微杜渐",
 				active, waiting, math.Round(scale*100))
 		}
+	} else if waiting == 1 && active < activeHigh {
+		// 🟡 瞬态调度微排队观望区: waiting == 1 且 active < activeHigh
+		// 活跃负载未达饱和高位，单个排队通常为推理引擎 Continuous Batching 调度切片毫秒级时延，不进行惩罚性退缩，维持当前 Scale 稳态观望；
+		// 同时重置自愈与超频计数，避免在微排队时继续盲目扩容。
+		d.adaptiveConsecutiveIdleCount = 0
+		d.adaptiveConsecutiveRecoveryCount = 0
+		state = "optimal"
+		msg = fmt.Sprintf("🟢 瞬态微排队：哨兵节点活跃负载适中（活跃 %d < %d，排队 1），判定为调度切片正常排队，维持当前 %.0f%% 稳态观望暂不退让",
+			active, activeHigh, math.Round(scale*100))
 	} else if active >= activeHigh {
 		// 🟢 高位饱和稳态区: waiting == 0 且 active >= activeHigh
 		// 哨兵节点活跃负载已达到或超过上限阈值（如 active >= 20），算力处于高利用率饱和状态。
