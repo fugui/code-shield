@@ -398,7 +398,7 @@ type TaskContext struct {
 	Summary           TaskSummaryReport
 	Findings          []models.AnalysisFinding
 
-	Runtime           *TaskRuntimeTracker
+	Runtime *TaskRuntimeTracker
 }
 
 // PhaseTimer 阶段打点计时器

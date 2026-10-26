@@ -691,4 +691,3 @@ func TestRunCLIProcess_RateLimitedClassification(t *testing.T) {
 		t.Errorf("expected 'rate limited' in error message, got: %v", err)
 	}
 }
-

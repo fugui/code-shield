@@ -73,10 +73,10 @@ type WorkHoursConfig struct {
 
 // AdaptiveThrottlingConfig 自适应探针流控配置
 type AdaptiveThrottlingConfig struct {
-	Enabled                  bool    `yaml:"enabled" json:"enabled"`
-	ProbeURL                 string  `yaml:"probe_url" json:"probe_url"`
-	IntervalSeconds          int     `yaml:"interval_seconds" json:"interval_seconds"`                     // 默认 5 秒
-	TimeoutMs                int     `yaml:"timeout_ms" json:"timeout_ms"`                                 // 默认 1500 毫秒
+	Enabled                  bool     `yaml:"enabled" json:"enabled"`
+	ProbeURL                 string   `yaml:"probe_url" json:"probe_url"`
+	IntervalSeconds          int      `yaml:"interval_seconds" json:"interval_seconds"`                     // 默认 5 秒
+	TimeoutMs                int      `yaml:"timeout_ms" json:"timeout_ms"`                                 // 默认 1500 毫秒
 	ActiveLowThreshold       int      `yaml:"active_low_threshold" json:"active_low_threshold"`             // 默认 15
 	ActiveHighThreshold      int      `yaml:"active_high_threshold" json:"active_high_threshold"`           // 默认 20
 	WaitingCriticalThreshold int      `yaml:"waiting_critical_threshold" json:"waiting_critical_threshold"` // 默认 3

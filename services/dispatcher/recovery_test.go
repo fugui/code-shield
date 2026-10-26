@@ -367,4 +367,3 @@ func TestTierRecoveryUnknownAllowsProbeRetry(t *testing.T) {
 		t.Fatalf("FreshRetries = %d, want 1", stats.FreshRetries)
 	}
 }
-

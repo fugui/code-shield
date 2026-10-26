@@ -181,16 +181,16 @@ type ResourceHealthSnapshot struct {
 
 // ModelDispatcher 负责协调跨不同物理/逻辑 LLM 服务器的 AI 并发
 type ModelDispatcher struct {
-	mu                           sync.Mutex
-	cond                         *sync.Cond
-	resources                    []*ModelResource
-	enabled                      bool
-	manualActive                 bool                   // 是否处于手动覆盖中
-	manualScale                  float64                // 管理员手动设置的并发折扣系数 [0.0, 3.0]
-	scaleExpiresAt               time.Time              // 手动设置失效时间
-	scaleTimer                   *time.Timer            // 到期自动恢复定时器
-	stopHeartbeat                chan struct{}          // 停止心跳通道
-	workHours                    models.WorkHoursConfig // 内部纳管的工作时间限流配置
+	mu                               sync.Mutex
+	cond                             *sync.Cond
+	resources                        []*ModelResource
+	enabled                          bool
+	manualActive                     bool                   // 是否处于手动覆盖中
+	manualScale                      float64                // 管理员手动设置的并发折扣系数 [0.0, 3.0]
+	scaleExpiresAt                   time.Time              // 手动设置失效时间
+	scaleTimer                       *time.Timer            // 到期自动恢复定时器
+	stopHeartbeat                    chan struct{}          // 停止心跳通道
+	workHours                        models.WorkHoursConfig // 内部纳管的工作时间限流配置
 	adaptiveCfg                      models.AdaptiveThrottlingConfig
 	adaptiveScale                    float64
 	adaptiveConsecutiveIdleCount     int
@@ -199,16 +199,16 @@ type ModelDispatcher struct {
 	adaptiveLastProbeAt              time.Time
 	adaptiveLastActive               int
 	adaptiveLastWaiting              int
-	adaptiveState                string
-	adaptiveMessage              string
-	adaptiveInitialized          bool
-	stopProbe                    chan struct{}
-	probeRunning                 bool
-	unsupportedWarned            map[string]time.Time // 记录各 backend 最近一次直通降级告警时间
-	lastEffectiveScale           float64              // 记录上一时刻生效的 scale
-	lastThrottleMode             string               // 记录上一时刻模式
-	activeLeases                 map[string]*LLMSlotLease
-	recentLeases                 []*LLMSlotLease
+	adaptiveState                    string
+	adaptiveMessage                  string
+	adaptiveInitialized              bool
+	stopProbe                        chan struct{}
+	probeRunning                     bool
+	unsupportedWarned                map[string]time.Time // 记录各 backend 最近一次直通降级告警时间
+	lastEffectiveScale               float64              // 记录上一时刻生效的 scale
+	lastThrottleMode                 string               // 记录上一时刻模式
+	activeLeases                     map[string]*LLMSlotLease
+	recentLeases                     []*LLMSlotLease
 	// skipSuccessfulLeases controls whether successful slot leases are omitted from
 	// the bounded in-memory completion history. Failed/canceled are always kept.
 	skipSuccessfulLeases bool

@@ -15,8 +15,8 @@ import (
 
 func setupAdaptiveTestDispatcher(rawConcurrent int) *ModelDispatcher {
 	d := &ModelDispatcher{
-		manualScale:   1.0,
-		stopHeartbeat: make(chan struct{}),
+		manualScale:         1.0,
+		stopHeartbeat:       make(chan struct{}),
 		stopProbe:           make(chan struct{}),
 		enabled:             true,
 		adaptiveScale:       1.0,
@@ -78,18 +78,42 @@ func TestAdaptive_AIMD_Algorithm(t *testing.T) {
 		t.Fatalf("expected scale clamped to minScale 0.20, got %f", scale)
 	}
 
-	// 2. ⚠️ 轻度预警测试: 1 <= waiting <= 3 -> scale = max(0.20, scale * 0.8)
-	// 先将 scale 设为 1.0
+	// 2. 🟡 瞬态调度微排队容忍测试: waiting == 1 且 active = 10 < activeHigh (20)
+	// 活跃度未饱和，判定为调度切片正常排队，保持当前 scale 不变，不惩罚退让，重置计数器
 	d.adaptiveScale = 1.0
-	scale, state, _ = d.adjustAIMDLocked(22, 2)
-	if state != "warning" {
-		t.Fatalf("expected state 'warning', got %s", state)
+	d.adaptiveConsecutiveIdleCount = 2
+	scale, state, _ = d.adjustAIMDLocked(10, 1)
+	if state != "optimal" {
+		t.Fatalf("expected state 'optimal' for transient micro queue, got %s", state)
 	}
-	if math.Abs(scale-0.80) > 0.001 {
-		t.Fatalf("expected scale 0.80 after soft backoff, got %f", scale)
+	if math.Abs(scale-1.00) > 0.001 {
+		t.Fatalf("expected scale to hold at 1.00 for transient micro queue, got %f", scale)
+	}
+	if d.adaptiveConsecutiveIdleCount != 0 {
+		t.Fatalf("expected idle count reset to 0, got %d", d.adaptiveConsecutiveIdleCount)
 	}
 
-	// 3. 🟢 高位饱和稳态测试: scale = 0.80 < 1.0, waiting == 0, 但 active = 25 >= activeHigh (20)
+	// 3. ⚠️ 高位饱和排队预警测试: waiting == 1 且 active = 22 >= activeHigh (20) -> scale = max(0.20, 1.0 * 0.8) = 0.80
+	scale, state, _ = d.adjustAIMDLocked(22, 1)
+	if state != "warning" {
+		t.Fatalf("expected state 'warning' for saturated active with queue=1, got %s", state)
+	}
+	if math.Abs(scale-0.80) > 0.001 {
+		t.Fatalf("expected scale 0.80 after soft backoff on saturated active, got %f", scale)
+	}
+
+	// 4. ⚠️ 确切积压预警测试: waiting = 2 (积压 >= 2 时无论活跃度均退让) -> scale = max(0.20, 0.80 * 0.8) = 0.64
+	scale, state, _ = d.adjustAIMDLocked(10, 2)
+	if state != "warning" {
+		t.Fatalf("expected state 'warning' for waiting=2, got %s", state)
+	}
+	if math.Abs(scale-0.64) > 0.001 {
+		t.Fatalf("expected scale 0.64 after soft backoff on waiting=2, got %f", scale)
+	}
+
+	// 5. 🟢 高位饱和稳态测试: scale = 0.80 < 1.0, waiting == 0, 但 active = 25 >= activeHigh (20)
+	// 将 scale 设为 0.80，测试高位零排队稳态
+	d.adaptiveScale = 0.80
 	// 虽然零排队，但活跃度处于高位，严禁盲目加压回弹，系统应保持当前并发稳态观望，重置计数器
 	scale, state, _ = d.adjustAIMDLocked(25, 0)
 	if state != "optimal" {
@@ -411,8 +435,8 @@ func TestAdaptive_MinScaleZeroPauseAndResume(t *testing.T) {
 	}
 
 	// 5. 零排队且算力充沛 (active = 10 < 20): 经 3 周期稳定后安全自愈回弹唤醒
-	d.adjustAIMDLocked(10, 0) // cycle 1
-	d.adjustAIMDLocked(10, 0) // cycle 2
+	d.adjustAIMDLocked(10, 0)                   // cycle 1
+	d.adjustAIMDLocked(10, 0)                   // cycle 2
 	scale, state, _ = d.adjustAIMDLocked(10, 0) // cycle 3 -> 回弹至 0.10
 	if math.Abs(scale-0.10) > 0.001 {
 		t.Fatalf("expected scale to recover to 0.10 from 0.00 pause, got %f", scale)
@@ -427,4 +451,3 @@ func TestAdaptive_MinScaleZeroPauseAndResume(t *testing.T) {
 		t.Fatalf("expected calculateLimit == 1 after recovery to 0.10, got %d", limitRecovered)
 	}
 }
-

@@ -225,9 +225,11 @@ export const ThrottleControlCard: React.FC<ThrottleControlCardProps> = ({
                     {adaptiveStatus.state === 'overload' ? (
                       <>检测到严重拥塞风险，已紧急断崖避让至 <strong>{currentScalePct}%</strong> 并发速度，抢在 429 前削峰。</>
                     ) : adaptiveStatus.state === 'warning' ? (
-                      <>出现轻度排队积压，已温和退让至 <strong>{currentScalePct}%</strong> 并发速度防微杜渐。</>
+                      <>出现排队积压，已温和退让至 <strong>{currentScalePct}%</strong> 并发速度防微杜渐。</>
                     ) : adaptiveStatus.state === 'boost' ? (
                       <>后端算力充沛且平稳，已自动增压至 <strong>{currentScalePct}%</strong> 并发速度高效消化扫描队列。</>
+                    ) : adaptiveStatus.waiting_requests === 1 ? (
+                      <>活跃负载未达饱和高位，瞬态微排队已自动容忍，当前保持为 <strong>{currentScalePct}%</strong> 稳态观望暂不退让。</>
                     ) : (
                       <>推理集群处于黄金平衡水位，当前自动保持为 <strong>{currentScalePct}%</strong> 稳态吞吐。</>
                     )}
