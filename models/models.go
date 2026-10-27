@@ -710,6 +710,52 @@ func (t *TaskType) PostprocessScript() string {
 	return filepath.Join(t.TaskDir(), "postprocess")
 }
 
+// SaveTaskTypeMetaJSON 安全更新任务类型磁盘 meta.json，
+// 保留原文件中未被 TaskType 结构体映射的扩展字段（如 plugins、synthesis_config 等），
+// 并防止运行时派生字段（如 scan_profile_hash）污染磁盘文件。
+func SaveTaskTypeMetaJSON(taskDir string, taskType TaskType) error {
+	absTaskDir := AppConfig.GetAbsPath(taskDir)
+	if err := os.MkdirAll(absTaskDir, 0755); err != nil {
+		return fmt.Errorf("create task dir %s: %w", absTaskDir, err)
+	}
+
+	metaFilePath := filepath.Join(absTaskDir, "meta.json")
+	return SaveTaskTypeMetaFile(metaFilePath, taskType)
+}
+
+// SaveTaskTypeMetaFile 根据指定文件绝对或相对路径写入 meta.json，保留未知扩展字段
+func SaveTaskTypeMetaFile(metaFilePath string, taskType TaskType) error {
+	var existingMap map[string]json.RawMessage
+	if existingBytes, err := os.ReadFile(metaFilePath); err == nil {
+		_ = json.Unmarshal(existingBytes, &existingMap)
+	}
+	if existingMap == nil {
+		existingMap = make(map[string]json.RawMessage)
+	}
+
+	taskType.ScanProfileHash = ""
+	taskTypeBytes, err := json.Marshal(taskType)
+	if err != nil {
+		return fmt.Errorf("marshal task type: %w", err)
+	}
+
+	var newMap map[string]json.RawMessage
+	if err := json.Unmarshal(taskTypeBytes, &newMap); err != nil {
+		return fmt.Errorf("unmarshal task type map: %w", err)
+	}
+
+	for k, v := range newMap {
+		existingMap[k] = v
+	}
+
+	formattedBytes, err := json.MarshalIndent(existingMap, "", "  ")
+	if err != nil {
+		return fmt.Errorf("format meta.json: %w", err)
+	}
+
+	return os.WriteFile(metaFilePath, formattedBytes, 0644)
+}
+
 // TaskReport 通用任务报告
 type TaskReport struct {
 	ID               uint           `gorm:"primaryKey" json:"id"`

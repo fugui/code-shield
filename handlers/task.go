@@ -168,7 +168,7 @@ func TriggerTask(c *gin.Context) {
 		TargetMode:    "single",
 		TargetSummary: fmt.Sprintf("代码仓: %s", repo.Name),
 		TotalRepos:    1,
-		SuccessCount:  1,
+		SuccessCount:  0,
 		ClientIP:      clientIP,
 		CreatedAt:     time.Now(),
 	}
@@ -179,7 +179,17 @@ func TriggerTask(c *gin.Context) {
 		tLogID = &triggerLog.ID
 	}
 
-	services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+	if !services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{}) {
+		models.DB.Model(&models.TaskTriggerLog{}).Where("id = ?", triggerLog.ID).Updates(map[string]interface{}{
+			"success_count": 0,
+			"skip_count":    1,
+			"remark":        "任务入队失败或同类任务并发排队",
+		})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "任务入队失败，请稍后重试"})
+		return
+	}
+
+	models.DB.Model(&models.TaskTriggerLog{}).Where("id = ?", triggerLog.ID).Update("success_count", 1)
 
 	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
 		fmt.Sprintf("触发单仓扫描 [%s] 代码仓: %s", taskType.DisplayName, repo.Name),

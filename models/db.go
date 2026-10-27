@@ -2,6 +2,7 @@ package models
 
 import (
 	"code-common/backend/gormdb"
+	"code-shield/services/engines/profile"
 	"encoding/json"
 	"log"
 	"os"
@@ -153,13 +154,10 @@ func seedDatabase() {
 			log.Println("Admin user created (email: admin@code-shield.com, password: admin123)")
 		}
 	}
-
-	// Seed built-in task types
-	seedBuiltinTaskTypes()
 }
 
 func seedBuiltinTaskTypes() {
-	tasksDir := "tasks"
+	tasksDir := AppConfig.GetAbsPath("tasks")
 
 	entries, err := os.ReadDir(tasksDir)
 	if err != nil {
@@ -190,6 +188,31 @@ func seedBuiltinTaskTypes() {
 			log.Printf("Error: failed to parse %s: %v", metaFilePath, err)
 			continue
 		}
+
+		// 校验并规范化 engine_config，支持平铺格式无损自愈
+		canonicalEngineConfig, _, parseErr := profile.Canonicalize(json.RawMessage(taskType.EngineConfig))
+		if parseErr != nil {
+			recoveredProfile, _, isRecovered, recErr := profile.ParseOrRecover(json.RawMessage(taskType.EngineConfig))
+			if recErr != nil {
+				log.Printf("Error: invalid engine_config in %s: %v, skipping", metaFilePath, parseErr)
+				continue
+			}
+			if isRecovered {
+				healedJSON, marshalErr := json.Marshal(profile.EngineConfig{ScanProfile: recoveredProfile})
+				if marshalErr != nil {
+					log.Printf("Error: failed to marshal auto-healed engine_config for %s: %v", taskType.Name, marshalErr)
+					continue
+				}
+				taskType.EngineConfig = datatypes.JSON(healedJSON)
+				log.Printf("[TaskType] Successfully auto-healed flattened engine_config for task %q from disk", taskType.Name)
+				if err := SaveTaskTypeMetaFile(metaFilePath, taskType); err != nil {
+					log.Printf("Warning: failed to rewrite healed meta.json for %s: %v", taskType.Name, err)
+				}
+			}
+		} else {
+			taskType.EngineConfig = datatypes.JSON(canonicalEngineConfig)
+		}
+
 		if taxonomy := taskType.GetCategoryTaxonomy(); taxonomy != nil {
 			if taskType.TaxonomySchemaVersion == 0 {
 				taskType.TaxonomySchemaVersion = taxonomy.SchemaVersion
@@ -274,6 +297,22 @@ func seedBuiltinTaskTypes() {
 					dbTask.IsActive = false
 					if err := DB.Model(&dbTask).Update("is_active", false).Error; err == nil {
 						log.Printf("Orphan Cleanup: Successfully deactivated task type %q in database", dbTask.Name)
+					}
+				}
+			}
+		}
+	}
+
+	// 存量 DB 任务类型规范化与平铺自愈兜底（针对可能缺失对应磁盘目录的 DB 存量数据）
+	var dbTasksForHealing []TaskType
+	if err := DB.Find(&dbTasksForHealing).Error; err == nil {
+		for _, tt := range dbTasksForHealing {
+			if _, _, parseErr := profile.Parse(json.RawMessage(tt.EngineConfig)); parseErr != nil {
+				if recProfile, _, isRec, recErr := profile.ParseOrRecover(json.RawMessage(tt.EngineConfig)); recErr == nil && isRec {
+					if healedJSON, marshalErr := json.Marshal(profile.EngineConfig{ScanProfile: recProfile}); marshalErr == nil {
+						if err := DB.Model(&TaskType{}).Where("id = ?", tt.ID).Update("engine_config", datatypes.JSON(healedJSON)).Error; err == nil {
+							log.Printf("[TaskType] Successfully auto-healed DB task type %q (id=%d) engine_config", tt.Name, tt.ID)
+						}
 					}
 				}
 			}

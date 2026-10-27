@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -246,5 +247,67 @@ func TestPureSchemaInitialization(t *testing.T) {
 		if db.Migrator().HasTable(lt) {
 			t.Fatalf("unexpected legacy reconciliation table %s exists", lt)
 		}
+	}
+}
+
+func TestSaveTaskTypeMetaFilePreservesExtensionsAndOmitsDerivedHash(t *testing.T) {
+	tempDir := t.TempDir()
+	metaPath := filepath.Join(tempDir, "meta.json")
+
+	// 模拟原有 meta.json 中包含 plugins 与 synthesis_config 等非 TaskType 字段
+	originalContent := `{
+  "name": "custom_task",
+  "display_name": "Custom Task",
+  "engine_mode": "debate_full",
+  "plugins": {
+    "preflight_gate": {"id": "test_radar"}
+  },
+  "synthesis_config": {
+    "report_type": "static"
+  }
+}`
+	if err := os.WriteFile(metaPath, []byte(originalContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	taskType := TaskType{
+		Name:            "custom_task",
+		DisplayName:     "Updated Custom Task",
+		EngineMode:      "debate_full",
+		ScanProfileHash: "sha256:should-not-persist-to-disk",
+		Timeout:         45,
+	}
+
+	if err := SaveTaskTypeMetaFile(metaPath, taskType); err != nil {
+		t.Fatalf("SaveTaskTypeMetaFile failed: %v", err)
+	}
+
+	savedBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var savedMap map[string]json.RawMessage
+	if err := json.Unmarshal(savedBytes, &savedMap); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. 验证原有扩展字段未被抹除
+	if _, ok := savedMap["plugins"]; !ok {
+		t.Fatal("expected plugins extension field to be preserved")
+	}
+	if _, ok := savedMap["synthesis_config"]; !ok {
+		t.Fatal("expected synthesis_config extension field to be preserved")
+	}
+
+	// 2. 验证更新字段已生效
+	var displayName string
+	if err := json.Unmarshal(savedMap["display_name"], &displayName); err != nil || displayName != "Updated Custom Task" {
+		t.Fatalf("display_name = %q, want 'Updated Custom Task'", displayName)
+	}
+
+	// 3. 验证派生 hash 字段没有污染磁盘
+	if rawHash, ok := savedMap["scan_profile_hash"]; ok && string(rawHash) != `""` {
+		t.Fatalf("unexpected scan_profile_hash on disk: %s", string(rawHash))
 	}
 }

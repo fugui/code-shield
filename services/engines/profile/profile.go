@@ -247,3 +247,35 @@ func Hash(profile ScanProfile) string {
 	sum := sha256.Sum256(raw)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
+
+// Canonicalize validates the engine_config JSON, applies defaults, and returns
+// the canonical EngineConfig JSON (with {"scan_profile": ...} wrapper) and its profile hash.
+func Canonicalize(raw json.RawMessage) ([]byte, string, error) {
+	parsed, hash, err := Parse(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	canonicalJSON, err := json.Marshal(EngineConfig{ScanProfile: parsed})
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal canonical engine_config: %w", err)
+	}
+	return canonicalJSON, hash, nil
+}
+
+// ParseOrRecover validates engine_config JSON. If raw is missing the "scan_profile"
+// wrapper (i.e. flattened ScanProfile), it attempts to auto-recover it by wrapping it
+// into {"scan_profile": <raw>}. Returns the parsed profile, hash, whether it was recovered, and error.
+func ParseOrRecover(raw json.RawMessage) (ScanProfile, string, bool, error) {
+	profile, hash, err := Parse(raw)
+	if err == nil {
+		return profile, hash, false, nil
+	}
+
+	wrapped := fmt.Sprintf(`{"scan_profile":%s}`, string(raw))
+	recovered, recHash, recErr := Parse(json.RawMessage(wrapped))
+	if recErr == nil {
+		return recovered, recHash, true, nil
+	}
+
+	return ScanProfile{}, "", false, err
+}
