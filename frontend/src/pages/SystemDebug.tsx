@@ -1159,15 +1159,15 @@ export default function SystemDebug() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="code-debug-table">
+            <table className="code-debug-table code-debug-table--fixed code-debug-table--active-leases">
               <thead>
                 <tr>
-                  <th style={{ width: '220px' }}>分配算力节点与模型</th>
+                  <th style={{ width: '210px' }}>分配算力节点与模型</th>
                   <th style={{ width: '180px' }}>所属任务 / 仓库</th>
-                  <th style={{ width: '150px' }}>执行环节 / 阶段</th>
+                  <th style={{ width: '140px' }}>执行环节 / 阶段</th>
                   <th>当前微任务内容</th>
                   <th style={{ width: '130px' }}>已工作持续时长</th>
-                  {isSuperAdmin && <th style={{ width: '100px' }}>诊断</th>}
+                  {isSuperAdmin && <th style={{ width: '80px', textAlign: 'center' }}>诊断</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1207,16 +1207,19 @@ export default function SystemDebug() {
                       </td>
                       <td>
                         {lease.repo_name ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
                               <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--color-text-secondary, #64748b)', flexShrink: 0 }}>
                                 <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.53 1.03 1.53 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" />
                               </svg>
-                              <strong style={{ fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                              <strong
+                                className="code-debug-table__repo-text"
+                                title={lease.repo_name}
+                              >
                                 {lease.repo_name}
                               </strong>
                               {lease.report_id > 0 && (
-                                <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                                <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-text-secondary, #64748b)', flexShrink: 0 }}>
                                   #{lease.report_id}
                                 </span>
                               )}
@@ -1224,7 +1227,10 @@ export default function SystemDebug() {
                             {lease.task_type && (
                               <span style={{
                                 fontSize: '0.72rem',
-                                color: 'var(--color-text-secondary, #64748b)'
+                                color: 'var(--color-text-secondary, #64748b)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
                               }}>
                                 {lease.task_type}
                               </span>
@@ -1264,8 +1270,11 @@ export default function SystemDebug() {
                           {lease.stage || '推理执行中'}
                         </span>
                       </td>
-                      <td>
-                        <span style={{ fontSize: '0.82rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                      <td className="code-debug-table__cell--subtask">
+                        <span
+                          className="code-debug-table__subtask-text"
+                          title={(lease.sub_task || lease.detail) || undefined}
+                        >
                           {lease.sub_task || lease.detail || '-'}
                         </span>
                       </td>
@@ -1289,7 +1298,7 @@ export default function SystemDebug() {
                         </div>
                       </td>
                       {isSuperAdmin && (
-                        <td>
+                        <td style={{ textAlign: 'center' }}>
                           <button
                             className="code-debug-lease-detail-button"
                             onClick={() => openLeaseDetails(lease)}
@@ -1361,17 +1370,17 @@ export default function SystemDebug() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="code-debug-table">
+            <table className="code-debug-table code-debug-table--fixed code-debug-table--recent-leases">
               <thead>
                 <tr>
-                  <th style={{ width: '220px' }}>算力节点与模型</th>
+                  <th style={{ width: '210px' }}>算力节点与模型</th>
                   <th style={{ width: '180px' }}>所属任务 / 仓库</th>
-                  <th style={{ width: '150px' }}>执行环节 / 阶段</th>
+                  <th style={{ width: '140px' }}>执行环节 / 阶段</th>
                   <th>微任务内容</th>
-                  <th style={{ width: '100px' }}>状态</th>
-                  <th style={{ width: '130px' }}>耗时</th>
+                  <th style={{ width: '90px' }}>状态</th>
+                  <th style={{ width: '120px' }}>耗时</th>
                   <th style={{ width: '110px' }}>完成时间</th>
-                  {isSuperAdmin && <th style={{ width: '100px' }}>诊断</th>}
+                  {isSuperAdmin && <th style={{ width: '80px', textAlign: 'center' }}>诊断</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1413,12 +1422,21 @@ export default function SystemDebug() {
                       </td>
                       <td>
                         {lease.repo_name ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <strong style={{ fontSize: '0.85rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                            <strong
+                              className="code-debug-table__repo-text"
+                              title={lease.repo_name}
+                            >
                               {lease.repo_name}
                             </strong>
                             {lease.task_type && (
-                              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary, #64748b)' }}>
+                              <span style={{
+                                fontSize: '0.72rem',
+                                color: 'var(--color-text-secondary, #64748b)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
                                 {lease.task_type}
                               </span>
                             )}
@@ -1441,8 +1459,11 @@ export default function SystemDebug() {
                           {lease.stage || '推理执行'}
                         </span>
                       </td>
-                      <td>
-                        <span style={{ fontSize: '0.82rem', color: 'var(--color-text-primary, #0f172a)' }}>
+                      <td className="code-debug-table__cell--subtask">
+                        <span
+                          className="code-debug-table__subtask-text"
+                          title={(lease.sub_task || lease.detail) || undefined}
+                        >
                           {lease.sub_task || lease.detail || '-'}
                         </span>
                       </td>
@@ -1462,7 +1483,7 @@ export default function SystemDebug() {
                         </span>
                       </td>
                       {isSuperAdmin && (
-                        <td>
+                        <td style={{ textAlign: 'center' }}>
                           <button
                             className="code-debug-lease-detail-button"
                             onClick={() => openLeaseDetails(lease)}
