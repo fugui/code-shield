@@ -103,7 +103,7 @@ function defaultScanProfile(name: ScanProfileName): EditableScanProfile {
 function extractScanProfile(value: TaskTypeItem['engine_config']): EditableScanProfile | null {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-    const profile = parsed?.scan_profile;
+    const profile = parsed?.scan_profile || (parsed && typeof parsed.name === 'string' ? parsed : null);
     if (!profile || typeof profile.name !== 'string') return null;
     if (profile.name === 'test_entity_review') {
       return {

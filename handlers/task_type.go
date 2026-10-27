@@ -79,13 +79,12 @@ func CreateTaskType(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_mode: 引擎未注册"})
 		return
 	}
-	if _, _, err := profile.Parse(json.RawMessage(req.EngineConfig)); err != nil {
+	canonicalEngineConfig, profileHash, err := profile.Canonicalize(json.RawMessage(req.EngineConfig))
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_config: " + err.Error()})
 		return
 	}
-	canonicalProfile, profileHash, _ := profile.Parse(json.RawMessage(req.EngineConfig))
-	canonicalProfileJSON, _ := json.Marshal(canonicalProfile)
-	req.EngineConfig = datatypes.JSON(canonicalProfileJSON)
+	req.EngineConfig = datatypes.JSON(canonicalEngineConfig)
 
 	if req.NotifyTemplate == "" {
 		req.NotifyTemplate = "【Code-Shield】{{.RepoName}} {{.TaskDisplayName}}报告"
@@ -150,13 +149,9 @@ func CreateTaskType(c *gin.Context) {
 	logTaskTypeFileErr("write analysis prompt", req.AnalysisPromptFile(),
 		os.WriteFile(models.AppConfig.GetAbsPath(req.AnalysisPromptFile()), []byte(defaultAnalysisPrompt), 0644))
 
-	// 写入 meta.json
-	if metaBytes, err := json.MarshalIndent(req, "", "  "); err != nil {
-		logTaskTypeFileErr("marshal meta.json", absTaskDir, err)
-	} else {
-		logTaskTypeFileErr("write meta.json", filepath.Join(absTaskDir, "meta.json"),
-			os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644))
-	}
+	// 写入 meta.json（使用 models.SaveTaskTypeMetaJSON 安全落盘）
+	logTaskTypeFileErr("write meta.json", filepath.Join(absTaskDir, "meta.json"),
+		models.SaveTaskTypeMetaJSON(req.TaskDir(), req))
 
 	// 主动失效专项分析内存缓存
 	InvalidateCampaignCache(req.CampaignPath, req.Name)
@@ -215,17 +210,14 @@ func UpdateTaskType(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_mode: 引擎未注册"})
 		return
 	}
-	var profileHash string
 	if req.EngineConfig != nil {
-		canonicalProfile, parsedHash, parseErr := profile.Parse(*req.EngineConfig)
+		canonicalEngineConfig, _, parseErr := profile.Canonicalize(*req.EngineConfig)
 		if parseErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 engine_config: " + parseErr.Error()})
 			return
 		}
-		canonicalProfileJSON, _ := json.Marshal(canonicalProfile)
-		canonicalRaw := json.RawMessage(canonicalProfileJSON)
+		canonicalRaw := json.RawMessage(canonicalEngineConfig)
 		req.EngineConfig = &canonicalRaw
-		profileHash = parsedHash
 	}
 
 	updates := map[string]interface{}{}
@@ -346,20 +338,17 @@ func UpdateTaskType(c *gin.Context) {
 	}
 
 	models.DB.First(&taskType, id)
-	taskType.ScanProfileHash = profileHash
 
 	// 主动失效专项分析内存缓存
 	InvalidateCampaignCache(oldTaskType.CampaignPath, oldTaskType.Name, taskType.CampaignPath, taskType.Name)
 
-	// 将最新元数据重写回磁盘的 meta.json
+	// 将最新元数据安全重写回磁盘的 meta.json（保留 plugins/synthesis_config 等未映射扩展块）
 	absTaskDir := models.AppConfig.GetAbsPath(taskType.TaskDir())
-	logTaskTypeFileErr("create task dir", absTaskDir, os.MkdirAll(absTaskDir, 0755))
-	if metaBytes, err := json.MarshalIndent(taskType, "", "  "); err != nil {
-		logTaskTypeFileErr("marshal meta.json", absTaskDir, err)
-	} else {
-		logTaskTypeFileErr("write meta.json", filepath.Join(absTaskDir, "meta.json"),
-			os.WriteFile(filepath.Join(absTaskDir, "meta.json"), metaBytes, 0644))
-	}
+	logTaskTypeFileErr("write meta.json", filepath.Join(absTaskDir, "meta.json"),
+		models.SaveTaskTypeMetaJSON(taskType.TaskDir(), taskType))
+
+	// 写盘完成后再装饰 ScanProfileHash 返回，确保派生哈希不污染磁盘 meta.json，同时保证未传 engine_config 时返回最新哈希
+	decorateScanProfileHash(&taskType)
 
 	commonAudit.SetAuditContext(c, "task_type", "update", models.AuditLevelP0,
 		fmt.Sprintf("修改了任务类型: %s (%s)", taskType.DisplayName, taskType.Name),
@@ -577,18 +566,30 @@ func TriggerAllReposForTaskType(c *gin.Context) {
 		tLogID = &triggerLog.ID
 	}
 
-	count := 0
+	successCount := 0
+	skipCount := 0
 	for _, repo := range repos {
-		services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
-		count++
+		ok := services.EnqueueTaskWithTriggerLog(nil, tLogID, repo.ID, repo.URL, taskType.ID, false, "manual", models.RunParams{})
+		if ok {
+			successCount++
+		} else {
+			skipCount++
+		}
+	}
+
+	if triggerLog.ID > 0 {
+		models.DB.Model(&triggerLog).Updates(map[string]interface{}{
+			"success_count": successCount,
+			"skip_count":    skipCount,
+		})
 	}
 
 	commonAudit.SetAuditContext(c, "scan", "trigger", models.AuditLevelP1,
-		fmt.Sprintf("触发了任务类型 [%s] 全仓扫描 (覆盖 %d 仓)", taskType.DisplayName, count),
+		fmt.Sprintf("触发了任务类型 [%s] 全仓扫描 (覆盖 %d 仓, 成功 %d, 跳过 %d)", taskType.DisplayName, len(repos), successCount, skipCount),
 		"task_trigger_log", fmt.Sprintf("%d", triggerLog.ID), triggerLog.TriggerBatch,
 		nil, triggerLog)
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"message": fmt.Sprintf("已成功触发 %d 个代码仓的 %s 任务", count, taskType.DisplayName),
+		"message": fmt.Sprintf("已成功触发 %d 个代码仓的 %s 任务 (成功排队 %d, 跳过 %d)", len(repos), taskType.DisplayName, successCount, skipCount),
 	})
 }

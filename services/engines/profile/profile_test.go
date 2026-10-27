@@ -126,3 +126,66 @@ func TestHashIsStable(t *testing.T) {
 		t.Fatal("changed profile should have a different hash")
 	}
 }
+
+func TestCanonicalize(t *testing.T) {
+	raw := `{"scan_profile":{"version":1,"name":"keyword_review","content_keywords":["pthread_create"]}}`
+	canonicalBytes, hash, err := Canonicalize(json.RawMessage(raw))
+	if err != nil {
+		t.Fatalf("Canonicalize() error = %v", err)
+	}
+	if !strings.HasPrefix(hash, "sha256:") {
+		t.Fatalf("hash = %q, want sha256 prefix", hash)
+	}
+
+	var wrapper struct {
+		ScanProfile ScanProfile `json:"scan_profile"`
+	}
+	if err := json.Unmarshal(canonicalBytes, &wrapper); err != nil {
+		t.Fatalf("unmarshal canonical result failed: %v", err)
+	}
+	if wrapper.ScanProfile.Name != NameOccurrenceReview {
+		t.Fatalf("canonical name = %q, want %q", wrapper.ScanProfile.Name, NameOccurrenceReview)
+	}
+	if wrapper.ScanProfile.PrimaryUnit != PrimaryUnitFile {
+		t.Fatalf("canonical primary_unit = %q, want %q", wrapper.ScanProfile.PrimaryUnit, PrimaryUnitFile)
+	}
+
+	invalidRaw := `{"scan_profile":{"version":1,"name":"custom"}}`
+	if _, _, err := Canonicalize(json.RawMessage(invalidRaw)); err == nil {
+		t.Fatal("Canonicalize() expected error for invalid profile, got nil")
+	}
+}
+
+func TestParseOrRecover(t *testing.T) {
+	// 1. 标准嵌套结构
+	nestedRaw := `{"scan_profile":{"version":1,"name":"full_review","target_scope":"business"}}`
+	p, hash, recovered, err := ParseOrRecover(json.RawMessage(nestedRaw))
+	if err != nil || recovered {
+		t.Fatalf("ParseOrRecover() nested failed: err=%v, recovered=%v", err, recovered)
+	}
+	if p.Name != NameFullReview || !strings.HasPrefix(hash, "sha256:") {
+		t.Fatalf("ParseOrRecover() unexpected profile: %+v", p)
+	}
+
+	// 2. 错误平铺结构（本次现网 Bug 产生的脏数据格式）
+	flattenedRaw := `{"version":1,"name":"keyword_review","content_keywords":["cJSON_"]}`
+	p, hash, recovered, err = ParseOrRecover(json.RawMessage(flattenedRaw))
+	if err != nil {
+		t.Fatalf("ParseOrRecover() auto-heal failed: %v", err)
+	}
+	if !recovered {
+		t.Fatal("ParseOrRecover() expected recovered=true, got false")
+	}
+	if p.Name != NameOccurrenceReview || p.PrimaryUnit != PrimaryUnitFile {
+		t.Fatalf("ParseOrRecover() auto-healed profile invalid: %+v", p)
+	}
+	if !strings.HasPrefix(hash, "sha256:") {
+		t.Fatalf("ParseOrRecover() hash invalid: %q", hash)
+	}
+
+	// 3. 确实非法的平铺结构
+	invalidRaw := `{"version":1,"name":"invalid_name"}`
+	if _, _, _, err := ParseOrRecover(json.RawMessage(invalidRaw)); err == nil {
+		t.Fatal("ParseOrRecover() expected error for invalid flattened profile, got nil")
+	}
+}
