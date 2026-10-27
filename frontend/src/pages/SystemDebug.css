@@ -353,6 +353,46 @@
   background: var(--color-bg-hover, rgba(241, 245, 249, 0.5));
 }
 
+/* 固定布局与防变形表格 */
+.code-debug-table--fixed {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.code-debug-table--active-leases {
+  min-width: 960px;
+}
+
+.code-debug-table--recent-leases {
+  min-width: 1060px;
+}
+
+/* 单元格单行截断与文本样式 */
+.code-debug-table__cell--subtask {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-debug-table__subtask-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.code-debug-table__repo-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary, #0f172a);
+}
+
 .code-debug-lease-detail-button {
   padding: 0.3rem 0.65rem;
   font-size: 0.78rem;
@@ -391,6 +431,11 @@
 .code-debug-lease-meta span {
   color: var(--color-text-secondary, #64748b);
   margin-right: 0.35rem;
+}
+
+.code-debug-lease-meta strong {
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .code-debug-lease-label {
