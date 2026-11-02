@@ -6,6 +6,7 @@ import { appNavigatePath } from '../config';
 import {
   LLMConfig,
   ComputeResource,
+  ResourceEndpoint,
   DebateTiers,
   TierBinding,
   ComputeConfigResponse,
@@ -53,12 +54,12 @@ const TIER_DEFS: TierDefinition[] = [
     badgeClass: 'code-config-tier-card__badge--tier3_judge',
     roleType: 'thick',
     roleTag: '必须 Thick Agent 驱动',
-    description: '综合正反双方证据与代码上下文，进行权威裁决。'
+    description: '综合正反双方证据与代码上下文，进行权威终审裁决。'
   },
   {
     key: 'tier4_synthesis',
     title: 'Tier 4: 综合裁决 (Synthesis)',
-    badge: 'T4 · 修复建议',
+    badge: 'T4 · 报告归纳',
     badgeClass: 'code-config-tier-card__badge--tier4_synthesis',
     roleType: 'native',
     roleTag: '必须 Native 驱动',
@@ -173,6 +174,19 @@ export default function ConfigCenter() {
       return;
     }
 
+    // 校验每个阶梯必须至少选择一个算力节点
+    for (const def of TIER_DEFS) {
+      const binding = tiersConfig[def.key];
+      const selected = binding?.resources && binding.resources.length > 0
+        ? binding.resources
+        : (binding?.resource ? [binding.resource] : []);
+      if (selected.length === 0) {
+        showToast(`${def.title} 必须至少选择一个池化算力节点`, 'error');
+        setSaving(false);
+        return;
+      }
+    }
+
     // 校验超时倒挂约束
     for (const def of TIER_DEFS) {
       const binding = tiersConfig[def.key];
@@ -281,9 +295,9 @@ export default function ConfigCenter() {
       id: `native-${llmConfig.resources.length + 1}`,
       driver: 'native',
       model: '',
-      concurrent: 5,
+      concurrent: 10,
       endpoints: [
-        { name: 'primary', base_url: 'http://127.0.0.1:8000/v1', api_key: '', model: 'glm-4-flash', concurrent: 5 }
+        { name: 'deepseek-primary', base_url: 'https://api.deepseek.com/v1/chat/completions', api_key: '', model: 'deepseek-chat', concurrent: 10 }
       ]
     });
     setDrawerOpen(true);
@@ -310,37 +324,95 @@ export default function ConfigCenter() {
     showToast(`已移除算力节点 [${resItem.id}]，请点击顶部保存生效`, 'info');
   };
 
+  // Drawer 内端点增删改操作
+  const handleAddEndpoint = () => {
+    setEditingResource(prev => {
+      const eps = prev.endpoints || [];
+      const newEp: ResourceEndpoint = {
+        name: `endpoint-${eps.length + 1}`,
+        base_url: 'https://api.deepseek.com/v1/chat/completions',
+        api_key: '',
+        model: 'deepseek-chat',
+        concurrent: 5
+      };
+      return { ...prev, endpoints: [...eps, newEp] };
+    });
+  };
+
+  const handleRemoveEndpoint = (idx: number) => {
+    if ((editingResource.endpoints?.length || 0) <= 1) {
+      showToast('Native 驱动必须至少保留一个物理端点', 'warning');
+      return;
+    }
+    setEditingResource(prev => ({
+      ...prev,
+      endpoints: (prev.endpoints || []).filter((_, i) => i !== idx)
+    }));
+  };
+
+  const handleEndpointChange = (epIdx: number, field: keyof ResourceEndpoint, value: string | number) => {
+    setEditingResource(prev => {
+      const eps = [...(prev.endpoints || [])];
+      eps[epIdx] = { ...eps[epIdx], [field]: value };
+      return { ...prev, endpoints: eps };
+    });
+  };
+
   const handleSaveDrawerResource = () => {
-    if (!editingResource.id.trim()) {
+    const cleanId = editingResource.id.trim();
+    if (!cleanId) {
       showToast('算力节点 ID 不能为空', 'error');
       return;
     }
+
+    // Native 端点合法性校验
+    if (editingResource.driver === 'native') {
+      const eps = editingResource.endpoints || [];
+      if (eps.length === 0) {
+        showToast('Native 驱动必须配置至少一个物理推理端点', 'error');
+        return;
+      }
+      for (let i = 0; i < eps.length; i++) {
+        const ep = eps[i];
+        if (!ep.name.trim() || !ep.base_url.trim() || !ep.model.trim()) {
+          showToast(`端点 #${i + 1} 的名称、Base URL 与模型标识不能为空`, 'error');
+          return;
+        }
+      }
+    }
+
     if (editingIndex === null) {
-      if (llmConfig.resources.some(r => r.id === editingResource.id.trim())) {
-        showToast(`节点 ID [${editingResource.id}] 已存在，请更换`, 'error');
+      if (llmConfig.resources.some(r => r.id === cleanId)) {
+        showToast(`节点 ID [${cleanId}] 已存在，请更换`, 'error');
         return;
       }
       setLlmConfig(prev => ({
         ...prev,
-        resources: [...prev.resources, { ...editingResource, id: editingResource.id.trim() }]
+        resources: [...prev.resources, { ...editingResource, id: cleanId }]
       }));
     } else {
       setLlmConfig(prev => {
         const nextList = [...prev.resources];
-        nextList[editingIndex] = { ...editingResource, id: editingResource.id.trim() };
+        nextList[editingIndex] = { ...editingResource, id: cleanId };
         return { ...prev, resources: nextList };
       });
     }
     setDrawerOpen(false);
   };
 
-  // Tier 胶囊点击切换多选池化绑定
+  // Tier 胶囊点击切换多选池化绑定 (必须至少保留一个节点)
   const handleToggleTierResource = (tierKey: TierKeyType, resourceId: string) => {
     setTiersConfig(prev => {
       const binding: TierBinding = prev[tierKey] || { timeout_seconds: 1200 };
       const currentList = binding.resources && binding.resources.length > 0
         ? [...binding.resources]
         : (binding.resource ? [binding.resource] : []);
+
+      // 至少保留一个节点约束
+      if (currentList.includes(resourceId) && currentList.length <= 1) {
+        showToast('每个阶梯必须至少选择一个池化算力节点，不可全部取消', 'warning');
+        return prev;
+      }
 
       let nextList: string[];
       if (currentList.includes(resourceId)) {
@@ -510,7 +582,7 @@ export default function ConfigCenter() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                         <span style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--color-text-primary)' }}>{res.id}</span>
                         <span className={`code-config-resource-item__badge code-config-resource-item__badge--${isNative ? 'native' : 'thick'}`}>
-                          {isNative ? 'Native 推理' : `${res.driver.toUpperCase()} Thick Agent`}
+                          {isNative ? `Native 推理 (${res.endpoints?.length || 0} 端点)` : `${res.driver.toUpperCase()} Thick Agent`}
                         </span>
                         {isDefault && (
                           <span className="code-config-badge code-config-badge--blue">默认资源</span>
@@ -589,7 +661,7 @@ export default function ConfigCenter() {
         </div>
       )}
 
-      {/* Tab 2: 辩论流水线编排 */}
+      {/* Tab 2: 辩论流水线编排 (高度紧凑工整布局) */}
       {activeTab === 'pipeline' && (
         <div className="code-config-panel">
           <div className="code-config-card">
@@ -598,7 +670,7 @@ export default function ConfigCenter() {
               严格遵循架构分层规范：Tier 1/3 强制绑定 Thick Agent 节点，Tier 2/4 强制绑定 Native 推理节点。勾选多个节点即开启同类型池化调度。
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1.25rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginTop: '1rem' }}>
               {TIER_DEFS.map(def => {
                 const binding: TierBinding = tiersConfig[def.key] || { timeout_seconds: 1200 };
                 const selectedResources = binding.resources && binding.resources.length > 0
@@ -611,9 +683,11 @@ export default function ConfigCenter() {
                 );
 
                 const isTimeoutInverted = !!(binding.attempt_timeout_seconds && binding.attempt_timeout_seconds > binding.timeout_seconds);
+                const hasNoSelection = selectedResources.length === 0;
 
                 return (
                   <div key={def.key} className="code-config-tier-card">
+                    {/* 卡片头部：左侧阶段身份标签，右侧紧凑超时控制与选中计数 */}
                     <div className="code-config-tier-card__header">
                       <div className="code-config-tier-card__title-group">
                         <div className="code-config-tier-card__title-row">
@@ -626,20 +700,49 @@ export default function ConfigCenter() {
                         <span className="code-config-tier-card__desc">{def.description}</span>
                       </div>
 
-                      <div className="code-config-tier-card__slots">
-                        已选节点: {selectedResources.length} 个
+                      {/* 紧凑行内超时控制器 */}
+                      <div className="code-config-tier-card__header-right">
+                        <div className="code-config-tier-compact-timeouts">
+                          <div className="code-config-tier-timeout-item" title="阶段总预算超时 (timeout_seconds)">
+                            <span>总预算:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              className="code-config-tier-timeout-input"
+                              value={binding.timeout_seconds || 1200}
+                              onChange={e => handleTierTimeoutChange(def.key, 'timeout_seconds', parseInt(e.target.value, 10) || 1200)}
+                            />
+                            <span className="unit">秒</span>
+                          </div>
+                          <span style={{ color: 'var(--color-border-primary)' }}>|</span>
+                          <div className="code-config-tier-timeout-item" title="单次尝试超时 (attempt_timeout_seconds)">
+                            <span>单次:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              className="code-config-tier-timeout-input"
+                              value={binding.attempt_timeout_seconds || 600}
+                              onChange={e => handleTierTimeoutChange(def.key, 'attempt_timeout_seconds', parseInt(e.target.value, 10) || 600)}
+                            />
+                            <span className="unit">秒</span>
+                          </div>
+                        </div>
+
+                        <span className="code-config-tier-card__slots">
+                          已选: {selectedResources.length} 个
+                        </span>
                       </div>
                     </div>
 
-                    {/* 节点池化多选胶囊 */}
-                    <div style={{ marginTop: '0.85rem' }}>
-                      <div className="code-config-label" style={{ marginBottom: '0.4rem', fontSize: '0.8rem' }}>
-                        池化节点选择 (点击切换勾选):
-                      </div>
+                    {/* 节点池化胶囊多选行 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                      <span className="code-config-label" style={{ margin: 0, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                        池化节点选择:
+                      </span>
                       {candidateResources.length === 0 ? (
-                        <div className="code-config-tier-notice code-config-tier-notice--warning">
+                        <span className="code-config-label-hint" style={{ color: 'var(--color-warning)' }}>
                           尚未配置符合条件的 {def.roleType === 'thick' ? 'Thick Agent' : 'Native'} 算力节点，请先在供给池中添加。
-                        </div>
+                        </span>
                       ) : (
                         <div className="code-config-tier-card__btn-group">
                           {candidateResources.map(r => {
@@ -660,38 +763,15 @@ export default function ConfigCenter() {
                       )}
                     </div>
 
-                    {/* 超时控制与倒挂校验 */}
-                    <div className="code-config-grid-2" style={{ marginTop: '0.85rem' }}>
-                      <div className="code-config-field" style={{ margin: 0 }}>
-                        <label className="code-config-label">
-                          阶段总预算超时 (timeout_seconds):
-                          <span className="code-config-label-hint">单位: 秒</span>
-                        </label>
-                        <input
-                          type="number"
-                          className="code-config-input"
-                          value={binding.timeout_seconds || 1200}
-                          onChange={e => handleTierTimeoutChange(def.key, 'timeout_seconds', parseInt(e.target.value, 10) || 1200)}
-                        />
+                    {/* 约束报警提示 */}
+                    {hasNoSelection && (
+                      <div className="code-config-tier-notice code-config-tier-notice--warning" style={{ marginTop: '0.25rem' }}>
+                        ⚠️ 阶段未绑定节点：每个阶梯必须至少选择一个池化算力节点，否则扫描流水线无法派发任务。
                       </div>
-
-                      <div className="code-config-field" style={{ margin: 0 }}>
-                        <label className="code-config-label">
-                          单次尝试超时 (attempt_timeout_seconds):
-                          <span className="code-config-label-hint">单位: 秒</span>
-                        </label>
-                        <input
-                          type="number"
-                          className="code-config-input"
-                          value={binding.attempt_timeout_seconds || 600}
-                          onChange={e => handleTierTimeoutChange(def.key, 'attempt_timeout_seconds', parseInt(e.target.value, 10) || 600)}
-                        />
-                      </div>
-                    </div>
-
+                    )}
                     {isTimeoutInverted && (
-                      <div className="code-config-tier-notice code-config-tier-notice--warning" style={{ marginTop: '0.5rem' }}>
-                        ⚠️ 约束冲突：单次尝试超时 ({binding.attempt_timeout_seconds}s) 不能大于阶段总超时 ({binding.timeout_seconds}s)。
+                      <div className="code-config-tier-notice code-config-tier-notice--warning" style={{ marginTop: '0.25rem' }}>
+                        ⚠️ 超时倒挂冲突：单次尝试超时 ({binding.attempt_timeout_seconds}s) 不能大于阶段总超时 ({binding.timeout_seconds}s)。
                       </div>
                     )}
                   </div>
@@ -702,14 +782,14 @@ export default function ConfigCenter() {
         </div>
       )}
 
-      {/* 节点编辑 / 新增 Drawer */}
+      {/* 节点编辑 / 新增 Drawer (支持 Native 多端点自由增删) */}
       {drawerOpen && (
         <Drawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
           title={editingIndex === null ? '添加算力节点' : `编辑算力节点: ${editingResource.id}`}
           subtitle="配置推理节点驱动类型、物理端点与并发吞吐额度"
-          width="520px"
+          width="560px"
           footer={
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setDrawerOpen(false)}>
@@ -721,45 +801,47 @@ export default function ConfigCenter() {
             </div>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.5rem 0' }}>
-            <div className="code-config-field">
-              <label className="code-config-label">节点 ID (唯一标识):</label>
-              <input
-                type="text"
-                className="code-config-input"
-                disabled={editingIndex !== null}
-                value={editingResource.id}
-                onChange={e => setEditingResource(prev => ({ ...prev, id: e.target.value }))}
-                placeholder="例如: native-1, agy-1"
-              />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', padding: '0.5rem 0' }}>
+            <div className="code-config-grid-2">
+              <div className="code-config-field" style={{ margin: 0 }}>
+                <label className="code-config-label">节点 ID (唯一标识):</label>
+                <input
+                  type="text"
+                  className="code-config-input"
+                  disabled={editingIndex !== null}
+                  value={editingResource.id}
+                  onChange={e => setEditingResource(prev => ({ ...prev, id: e.target.value }))}
+                  placeholder="例如: native-1, agy-1"
+                />
+              </div>
+
+              <div className="code-config-field" style={{ margin: 0 }}>
+                <label className="code-config-label">驱动架构类型:</label>
+                <select
+                  className="code-config-select"
+                  value={editingResource.driver}
+                  onChange={e => {
+                    const drv = e.target.value;
+                    setEditingResource(prev => ({
+                      ...prev,
+                      driver: drv,
+                      endpoints: drv === 'native' ? (prev.endpoints && prev.endpoints.length > 0 ? prev.endpoints : [
+                        { name: 'deepseek-primary', base_url: 'https://api.deepseek.com/v1/chat/completions', api_key: '', model: 'deepseek-chat', concurrent: 5 }
+                      ]) : undefined
+                    }));
+                  }}
+                >
+                  <option value="native">Native (直接调用 OpenAI 兼容端点)</option>
+                  <option value="agy">AGY (Antigravity 智能体容器)</option>
+                  <option value="opencode">OpenCode (自主代码分析智能体)</option>
+                  <option value="claude">Claude (Anthropic 命令行/Agent)</option>
+                  <option value="codex">Codex (CLI 补丁生成智能体)</option>
+                </select>
+              </div>
             </div>
 
-            <div className="code-config-field">
-              <label className="code-config-label">驱动架构类型:</label>
-              <select
-                className="code-config-select"
-                value={editingResource.driver}
-                onChange={e => {
-                  const drv = e.target.value;
-                  setEditingResource(prev => ({
-                    ...prev,
-                    driver: drv,
-                    endpoints: drv === 'native' ? (prev.endpoints && prev.endpoints.length > 0 ? prev.endpoints : [
-                      { name: 'primary', base_url: 'http://127.0.0.1:8000/v1', api_key: '', model: 'glm-4-flash', concurrent: 5 }
-                    ]) : undefined
-                  }));
-                }}
-              >
-                <option value="native">Native (直接调用 OpenAI 兼容端点)</option>
-                <option value="agy">AGY (Antigravity 智能体容器)</option>
-                <option value="opencode">OpenCode (自主代码分析智能体)</option>
-                <option value="claude">Claude (Anthropic 命令行/Agent)</option>
-                <option value="codex">Codex (CLI 补丁生成智能体)</option>
-              </select>
-            </div>
-
-            <div className="code-config-field">
-              <label className="code-config-label">并发配额上限 (Concurrent):</label>
+            <div className="code-config-field" style={{ margin: 0 }}>
+              <label className="code-config-label">节点并发配额上限 (Concurrent):</label>
               <input
                 type="number"
                 min={1}
@@ -770,92 +852,115 @@ export default function ConfigCenter() {
               />
             </div>
 
+            {/* Native 驱动：支持多个物理 Endpoints 增删改 */}
             {editingResource.driver === 'native' ? (
-              <div style={{ borderTop: '1px solid var(--color-border-primary)', paddingTop: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.95rem' }}>Native 端点列表配置</h4>
+              <div style={{ borderTop: '1px solid var(--color-border-primary)', paddingTop: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.92rem', color: 'var(--color-text-primary)' }}>
+                      Native 物理端点集群 ({editingResource.endpoints?.length || 0})
+                    </h4>
+                    <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.74rem', color: 'var(--color-text-secondary)' }}>
+                      支持配置多个物理端点实现集群负载分流与故障切换。
+                    </p>
+                  </div>
+                  <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem' }} onClick={handleAddEndpoint}>
+                    + 添加端点
+                  </button>
+                </div>
+
                 {(editingResource.endpoints || []).map((ep, epIdx) => (
-                  <div key={epIdx} style={{ background: 'var(--color-bg-muted)', padding: '0.75rem', borderRadius: 'var(--radius-sm, 6px)', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                    <div className="code-config-grid-2">
+                  <div key={epIdx} className="code-config-endpoint-card">
+                    <div className="code-config-endpoint-card__header">
+                      <div className="code-config-endpoint-card__title">
+                        <span>端点 #{epIdx + 1}:</span>
+                        <code style={{ fontSize: '0.8rem', color: 'var(--color-primary)' }}>{ep.name || '未命名'}</code>
+                      </div>
+                      {(editingResource.endpoints?.length || 0) > 1 && (
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          style={{ padding: '0.15rem 0.45rem', fontSize: '0.72rem' }}
+                          onClick={() => handleRemoveEndpoint(epIdx)}
+                        >
+                          删除端点
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="code-config-grid-3">
                       <div className="code-config-field" style={{ margin: 0 }}>
-                        <label className="code-config-label">端点名称:</label>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>端点名称:</label>
                         <input
                           type="text"
                           className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
                           value={ep.name}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setEditingResource(prev => {
-                              const eps = [...(prev.endpoints || [])];
-                              eps[epIdx] = { ...eps[epIdx], name: val };
-                              return { ...prev, endpoints: eps };
-                            });
-                          }}
+                          onChange={e => handleEndpointChange(epIdx, 'name', e.target.value)}
+                          placeholder="例如: primary"
                         />
                       </div>
 
                       <div className="code-config-field" style={{ margin: 0 }}>
-                        <label className="code-config-label">模型标识 (Model):</label>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>模型标识:</label>
                         <input
                           type="text"
                           className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
                           value={ep.model}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setEditingResource(prev => {
-                              const eps = [...(prev.endpoints || [])];
-                              eps[epIdx] = { ...eps[epIdx], model: val };
-                              return { ...prev, endpoints: eps };
-                            });
-                          }}
+                          onChange={e => handleEndpointChange(epIdx, 'model', e.target.value)}
+                          placeholder="例如: deepseek-chat"
+                        />
+                      </div>
+
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>端点并发:</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          value={ep.concurrent}
+                          onChange={e => handleEndpointChange(epIdx, 'concurrent', Math.max(1, parseInt(e.target.value, 10) || 1))}
                         />
                       </div>
                     </div>
 
                     <div className="code-config-field" style={{ margin: 0 }}>
-                      <label className="code-config-label">Base URL (OpenAI 兼容):</label>
+                      <label className="code-config-label" style={{ fontSize: '0.78rem' }}>Base URL (OpenAI 兼容):</label>
                       <input
                         type="text"
                         className="code-config-input"
+                        style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
                         value={ep.base_url}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setEditingResource(prev => {
-                            const eps = [...(prev.endpoints || [])];
-                            eps[epIdx] = { ...eps[epIdx], base_url: val };
-                            return { ...prev, endpoints: eps };
-                          });
-                        }}
+                        onChange={e => handleEndpointChange(epIdx, 'base_url', e.target.value)}
+                        placeholder="https://api.openai.com/v1/chat/completions"
                       />
                     </div>
 
                     <div className="code-config-field" style={{ margin: 0 }}>
-                      <label className="code-config-label">API Key (留空或保持脱敏则不覆盖):</label>
+                      <label className="code-config-label" style={{ fontSize: '0.78rem' }}>API Key (留空或保持脱敏则不覆盖):</label>
                       <input
                         type="password"
                         className="code-config-input"
+                        style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
                         placeholder="sk-****"
                         value={ep.api_key}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setEditingResource(prev => {
-                            const eps = [...(prev.endpoints || [])];
-                            eps[epIdx] = { ...eps[epIdx], api_key: val };
-                            return { ...prev, endpoints: eps };
-                          });
-                        }}
+                        onChange={e => handleEndpointChange(epIdx, 'api_key', e.target.value)}
                       />
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="code-config-field">
+              <div className="code-config-field" style={{ margin: 0 }}>
                 <label className="code-config-label">Agent 默认模型标识 (可选):</label>
                 <input
                   type="text"
                   className="code-config-input"
                   value={editingResource.model || ''}
-                  placeholder="可留空使用环境默认值"
+                  placeholder="可留空使用环境全局默认值"
                   onChange={e => setEditingResource(prev => ({ ...prev, model: e.target.value }))}
                 />
               </div>
