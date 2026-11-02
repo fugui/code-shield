@@ -4,6 +4,7 @@ import (
 	"code-common/backend/gormdb"
 	"code-shield/services/engines/profile"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -320,73 +321,164 @@ func seedBuiltinTaskTypes() {
 	}
 }
 
-// InitDynamicConfigs 检查并按 Category 执行 Seed-Once 导入，并将数据库持久化配置作为运行时 SSOT
-func InitDynamicConfigs(seed Config) {
+// migrateLegacyDynamicConfigsOnce 启动期自动无损迁移存量 dynamic config 记录
+// TODO(cleanup): 存量环境升级完毕后统一清理本迁移函数
+func migrateLegacyDynamicConfigsOnce(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		var computeRecord SystemDynamicConfig
+		hasCompute := tx.Where("category = ?", "compute").First(&computeRecord).Error == nil
+
+		if hasCompute {
+			// 若已存在 compute 权威记录，仅幂等清理可能残余的旧版 4 类配置记录
+			if err := tx.Where("category IN ('llm', 'scanner', 'governance', 'notification')").Delete(&SystemDynamicConfig{}).Error; err != nil {
+				log.Printf("[Migration] Warning: failed to clean up residual legacy configs: %v", err)
+			}
+			return nil
+		}
+
+		// 检测是否存在旧版记录 (llm 或 scanner)
+		var legacyRecords []SystemDynamicConfig
+		if err := tx.Where("category IN ('llm', 'scanner')").Find(&legacyRecords).Error; err != nil || len(legacyRecords) == 0 {
+			// 全新部署环境，无需执行存量迁移
+			return nil
+		}
+
+		log.Println("[Migration] Detecting legacy dynamic configs (llm/scanner), migrating to unified 'compute'...")
+
+		var compute DynamicComputeConfig
+		// 先使用当前全局默认值作为底座
+		compute.LLM = AppConfig.LLM
+		compute.Tiers = AppConfig.Scanner.Debate.Tiers
+		compute.WorkerCount = AppConfig.Scanner.WorkerCount
+
+		for _, rec := range legacyRecords {
+			switch rec.Category {
+			case "llm":
+				var legacyLLM LLMConfig
+				if err := json.Unmarshal(rec.Data, &legacyLLM); err == nil && len(legacyLLM.Resources) > 0 {
+					compute.LLM = legacyLLM
+				}
+			case "scanner":
+				var legacyScanner struct {
+					WorkerCount int `json:"worker_count"`
+					Debate      struct {
+						Tiers DebateTiersConfig `json:"tiers"`
+					} `json:"debate"`
+				}
+				if err := json.Unmarshal(rec.Data, &legacyScanner); err == nil {
+					if legacyScanner.WorkerCount > 0 {
+						compute.WorkerCount = legacyScanner.WorkerCount
+					}
+					if legacyScanner.Debate.Tiers.Tier1Hunter.HasConfig() ||
+						legacyScanner.Debate.Tiers.Tier2Challenger.HasConfig() ||
+						legacyScanner.Debate.Tiers.Tier3Judge.HasConfig() ||
+						legacyScanner.Debate.Tiers.Tier4Synthesis.HasConfig() {
+						compute.Tiers = legacyScanner.Debate.Tiers
+					}
+				}
+			}
+		}
+
+		NormalizeComputeDefaults(&compute)
+
+		rawJSON, err := json.Marshal(compute)
+		if err != nil {
+			return fmt.Errorf("failed to serialize migrated compute config: %w", err)
+		}
+
+		now := time.Now()
+		migratedRecord := SystemDynamicConfig{
+			Category:  "compute",
+			Data:      datatypes.JSON(rawJSON),
+			Version:   1,
+			UpdatedBy: "system_migration",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := tx.Create(&migratedRecord).Error; err != nil {
+			return fmt.Errorf("failed to save migrated compute config: %w", err)
+		}
+
+		// 彻底清除历史旧记录，释放 YAML 对静态冷配置的绝对控制权
+		if err := tx.Where("category IN ('llm', 'scanner', 'governance', 'notification')").Delete(&SystemDynamicConfig{}).Error; err != nil {
+			return fmt.Errorf("failed to clean up legacy dynamic configs: %w", err)
+		}
+
+		log.Printf("[Migration] Successfully migrated legacy dynamic configs to category 'compute' (v1) and cleaned up legacy categories\n")
+		return nil
+	})
+}
+
+// InitDynamicCompute 启动期加载动态算力快照 (DB SSOT)，并执行 Seed-Once 检查
+func InitDynamicCompute(seed DynamicComputeConfig) {
 	if DB == nil {
-		log.Println("[Config] WARNING: DB is nil, skipping dynamic config initialization")
+		log.Println("[Config] WARNING: DB is nil, skipping dynamic compute initialization")
 		return
 	}
 
-	categories := []string{"llm", "scanner", "governance", "notification"}
-	for _, cat := range categories {
-		var record SystemDynamicConfig
-		res := DB.Where("category = ?", cat).First(&record)
-		if res.Error != nil {
-			// 首次启动，未找到记录，执行 Seed-Once 写入
-			var rawJSON []byte
-			var err error
-			switch cat {
-			case "llm":
-				rawJSON, err = json.Marshal(seed.LLM)
-			case "scanner":
-				rawJSON, err = json.Marshal(seed.Scanner)
-			case "governance":
-				rawJSON, err = json.Marshal(seed.Governance)
-			case "notification":
-				rawJSON, err = json.Marshal(seed.Notification)
-			}
-			if err != nil {
-				log.Printf("[Config] Failed to serialize seed config for category %s: %v", cat, err)
-				continue
-			}
+	// 1. 执行存量无损自动平滑迁移
+	if err := migrateLegacyDynamicConfigsOnce(DB); err != nil {
+		log.Printf("[Config] Warning: legacy dynamic config migration error: %v", err)
+	}
 
-			record = SystemDynamicConfig{
-				Category:  cat,
-				Data:      datatypes.JSON(rawJSON),
-				Version:   1,
-				UpdatedBy: "system_seed",
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-			if err := DB.Create(&record).Error; err != nil {
-				log.Printf("[Config] Failed to seed dynamic config for category %s: %v", cat, err)
-			} else {
-				log.Printf("[Config] Initialized seed config for category %s into database", cat)
-			}
+	// 2. 查询当前唯一的 compute 动态配置记录
+	var record SystemDynamicConfig
+	res := DB.Where("category = ?", "compute").First(&record)
+	if res.Error != nil {
+		// 全新环境首次启动，执行 Seed-Once 写入
+		NormalizeComputeDefaults(&seed)
+		rawJSON, err := json.Marshal(seed)
+		if err != nil {
+			log.Printf("[Config] Failed to serialize seed compute config: %v", err)
+			return
+		}
+
+		now := time.Now()
+		record = SystemDynamicConfig{
+			Category:  "compute",
+			Data:      datatypes.JSON(rawJSON),
+			Version:   1,
+			UpdatedBy: "system_seed",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := DB.Create(&record).Error; err != nil {
+			log.Printf("[Config] Failed to seed compute config into database: %v", err)
 		} else {
-			// 已存在记录，以数据库持久化数据为准反序列化覆盖至全局 AppConfig
-			switch cat {
-			case "llm":
-				_ = json.Unmarshal(record.Data, &AppConfig.LLM)
-			case "scanner":
-				_ = json.Unmarshal(record.Data, &AppConfig.Scanner)
-			case "governance":
-				_ = json.Unmarshal(record.Data, &AppConfig.Governance)
-			case "notification":
-				_ = json.Unmarshal(record.Data, &AppConfig.Notification)
-			}
+			log.Println("[Config] Initialized seed compute config into database (version 1)")
+			ApplyDynamicComputeConfig(seed)
+		}
+	} else {
+		// 数据库已有 compute 记录，反序列化并原子覆盖内存中的动态算力快照
+		var dbCompute DynamicComputeConfig
+		if err := json.Unmarshal(record.Data, &dbCompute); err != nil {
+			log.Printf("[Config] Error parsing compute config from DB: %v, falling back to seed", err)
+			ApplyDynamicComputeConfig(seed)
+		} else {
+			NormalizeComputeDefaults(&dbCompute)
+			ApplyDynamicComputeConfig(dbCompute)
+			log.Printf("[Config Source] RUNTIME DYNAMIC COMPUTE LOADED FROM DATABASE (SSOT, version: %d, updated_by: %s)\n",
+				record.Version, record.UpdatedBy)
 		}
 	}
 
-	// 同步回旧字段，保证全系统向前与向后兼容
-	AppConfig.Identity = AppConfig.Governance.Identity
-	AppConfig.Arbitration = AppConfig.Governance.Arbitration
-	AppConfig.Lifecycle = AppConfig.Governance.Lifecycle
-	AppConfig.Scanner.NormalizeDefaults()
-
 	log.Println("================================================================================")
-	log.Println("[Config Source] RUNTIME DYNAMIC CONFIG LOADED FROM DATABASE (SSOT)")
-	log.Println("Note: Dynamic sections in config.yaml (llm, scanner, governance) are bypassed.")
+	log.Println("[Config Source] RUNTIME DYNAMIC COMPUTE LOADED FROM DATABASE (SSOT)")
+	log.Println("Note: Static sections in config.yaml (governance, notification, scanner policies)")
+	log.Println("      are 100% authoritative and effective upon service restart.")
 	log.Println("To adjust LLM nodes, workers, or debate tiers, visit Web UI: /admin/config")
 	log.Println("================================================================================")
+}
+
+// InitDynamicConfigs 向后兼容别名函数
+func InitDynamicConfigs(seed Config) {
+	InitDynamicCompute(DynamicComputeConfig{
+		LLM:         seed.LLM,
+		Tiers:       seed.Scanner.Debate.Tiers,
+		WorkerCount: seed.Scanner.WorkerCount,
+	})
 }

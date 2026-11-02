@@ -4,7 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
+
+	"gorm.io/datatypes"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestAssessmentJSONSchemaModeAlwaysAuto(t *testing.T) {
@@ -185,24 +191,24 @@ func TestLoadConfigNewFormat(t *testing.T) {
 		t.Errorf("expected Tier1Hunter resources ['opencode-deepseek', 'opencode-glm'], got %+v", tier1Resources)
 	}
 	// 3. 验证 Governance
-	if AppConfig.Identity.MaxCandidatesPerObservation != 64 ||
-		AppConfig.Identity.MaxCandidateEdgesPerReport != 20000 ||
-		AppConfig.Identity.StrongSameThreshold != 0.90 ||
-		AppConfig.Identity.AssignBand != 0.65 ||
-		AppConfig.Identity.RejectBelow != 0.45 ||
+	if AppConfig.Governance.Identity.MaxCandidatesPerObservation != 64 ||
+		AppConfig.Governance.Identity.MaxCandidateEdgesPerReport != 20000 ||
+		AppConfig.Governance.Identity.StrongSameThreshold != 0.90 ||
+		AppConfig.Governance.Identity.AssignBand != 0.65 ||
+		AppConfig.Governance.Identity.RejectBelow != 0.45 ||
 		!AppConfig.GrayZoneAutoResolveEnabled() ||
-		AppConfig.Identity.AIArbitrationConfidence != 0.70 ||
-		AppConfig.Identity.GrayZoneFallbackMergeScore != 0.60 {
-		t.Errorf("unexpected identity config: %+v", AppConfig.Identity)
+		AppConfig.Governance.Identity.AIArbitrationConfidence != 0.70 ||
+		AppConfig.Governance.Identity.GrayZoneFallbackMergeScore != 0.60 {
+		t.Errorf("unexpected identity config: %+v", AppConfig.Governance.Identity)
 	}
-	if AppConfig.Arbitration.MaxCallsPerReport != 20 || AppConfig.Arbitration.TimeoutSeconds != 30 {
-		t.Errorf("unexpected arbitration config: %+v", AppConfig.Arbitration)
+	if AppConfig.Governance.Arbitration.MaxCallsPerReport != 20 || AppConfig.Governance.Arbitration.TimeoutSeconds != 30 {
+		t.Errorf("unexpected arbitration config: %+v", AppConfig.Governance.Arbitration)
 	}
-	if AppConfig.Lifecycle.ResolvedRounds != 2 ||
-		AppConfig.Lifecycle.DormantThreshold != 2 ||
-		AppConfig.Lifecycle.ObsoleteAfterDormant != 8 ||
-		!AppConfig.Lifecycle.RequireCoverage || !AppConfig.Lifecycle.RequireChange {
-		t.Errorf("unexpected lifecycle config: %+v", AppConfig.Lifecycle)
+	if AppConfig.Governance.Lifecycle.ResolvedRounds != 2 ||
+		AppConfig.Governance.Lifecycle.DormantThreshold != 2 ||
+		AppConfig.Governance.Lifecycle.ObsoleteAfterDormant != 8 ||
+		!AppConfig.Governance.Lifecycle.RequireCoverage || !AppConfig.Governance.Lifecycle.RequireChange {
+		t.Errorf("unexpected lifecycle config: %+v", AppConfig.Governance.Lifecycle)
 	}
 
 	// 4. 验证 Notification
@@ -587,5 +593,384 @@ scanner:
 	}
 	if AppConfig.Scanner.MaxQueueSize != 2000 {
 		t.Fatalf("expected fallback Scanner.MaxQueueSize == 2000, got %d", AppConfig.Scanner.MaxQueueSize)
+	}
+}
+
+func TestLoadConfig_GovernanceDirectNormalization(t *testing.T) {
+	yamlContent := `
+governance:
+  identity:
+    algorithm_version: "v2-custom"
+    max_candidates_per_observation: 128
+    strong_same_threshold: 0.95
+    assign_band: 0.70
+  arbitration:
+    context_lines: 15
+    timeout_seconds: 45
+  lifecycle:
+    resolved_rounds: 5
+    dormant_rounds: 3
+scanner:
+  worker_count: 3
+ai_fix:
+  fix_url: "https://example.invalid/fixdefect?id={defect_id}"
+  context_token: "test-token"
+  report_base_url: "https://example.invalid"
+`
+	tmpFile := filepath.Join(t.TempDir(), "config_governance.yaml")
+	if err := os.WriteFile(tmpFile, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := LoadConfig(tmpFile); err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// 验证嵌套参数原样保留，没有被默认顶层空字段覆写
+	if AppConfig.Governance.Identity.AlgorithmVersion != "v2-custom" {
+		t.Errorf("expected algorithm_version 'v2-custom', got %q", AppConfig.Governance.Identity.AlgorithmVersion)
+	}
+	if AppConfig.Governance.Identity.MaxCandidatesPerObservation != 128 {
+		t.Errorf("expected max_candidates_per_observation 128, got %d", AppConfig.Governance.Identity.MaxCandidatesPerObservation)
+	}
+	if AppConfig.Governance.Identity.StrongSameThreshold != 0.95 {
+		t.Errorf("expected strong_same_threshold 0.95, got %f", AppConfig.Governance.Identity.StrongSameThreshold)
+	}
+	if AppConfig.Governance.Identity.AssignBand != 0.70 {
+		t.Errorf("expected assign_band 0.70, got %f", AppConfig.Governance.Identity.AssignBand)
+	}
+	if AppConfig.Governance.Arbitration.ContextLines != 15 {
+		t.Errorf("expected context_lines 15, got %d", AppConfig.Governance.Arbitration.ContextLines)
+	}
+	if AppConfig.Governance.Arbitration.TimeoutSeconds != 45 {
+		t.Errorf("expected timeout_seconds 45, got %d", AppConfig.Governance.Arbitration.TimeoutSeconds)
+	}
+	if AppConfig.Governance.Lifecycle.ResolvedRounds != 5 {
+		t.Errorf("expected resolved_rounds 5, got %d", AppConfig.Governance.Lifecycle.ResolvedRounds)
+	}
+	if AppConfig.Governance.Lifecycle.DormantThreshold != 3 {
+		t.Errorf("expected dormant_rounds 3, got %d", AppConfig.Governance.Lifecycle.DormantThreshold)
+	}
+
+	// 验证未显式配置的子字段被 NormalizeDefaults 补齐
+	if AppConfig.Governance.Identity.MaxCandidateEdgesPerReport != 20000 {
+		t.Errorf("expected max_candidate_edges_per_report default 20000, got %d", AppConfig.Governance.Identity.MaxCandidateEdgesPerReport)
+	}
+	if AppConfig.Governance.Lifecycle.ObsoleteAfterDormant != 8 {
+		t.Errorf("expected obsolete_after_dormant default 8, got %d", AppConfig.Governance.Lifecycle.ObsoleteAfterDormant)
+	}
+}
+
+func TestDynamicComputeAtomicSnapshotConcurrency(t *testing.T) {
+	initial := DynamicComputeConfig{
+		LLM: LLMConfig{
+			DefaultResource: "native-1",
+			Resources: []ComputeResourceConfig{
+				{
+					ID:         "native-1",
+					Driver:     "native",
+					Concurrent: 10,
+					Endpoints: []ResourceEndpointConfig{
+						{Name: "ep-1", BaseURL: "http://localhost:8000", Concurrent: 10},
+					},
+				},
+				{
+					ID:         "agy-1",
+					Driver:     "agy",
+					Concurrent: 5,
+				},
+			},
+		},
+		Tiers: DebateTiersConfig{
+			Tier1Hunter: TierBindingConfig{
+				Resource:       "agy-1",
+				TimeoutSeconds: 1800,
+			},
+			Tier2Challenger: TierBindingConfig{
+				Resource:       "native-1",
+				TimeoutSeconds: 1200,
+			},
+		},
+		WorkerCount: 5,
+	}
+	ApplyDynamicComputeConfig(initial)
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// 启动多个并发读取协程
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = GetComputeConfig()
+					_ = AppConfig.FindResource("native-1")
+					_ = AppConfig.GetTierConfig("tier1_hunter")
+					_ = AppConfig.GetTierResources("tier2_challenger")
+					_ = GetWorkerCount()
+				}
+			}
+		}()
+	}
+
+	// 启动并发写入协程
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		workerID := i
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				next := DynamicComputeConfig{
+					LLM: LLMConfig{
+						DefaultResource: "native-1",
+						Resources: []ComputeResourceConfig{
+							{
+								ID:         "native-1",
+								Driver:     "native",
+								Concurrent: 10 + j,
+								Endpoints: []ResourceEndpointConfig{
+									{Name: "ep-1", BaseURL: "http://localhost:8000", Concurrent: 10 + j},
+								},
+							},
+							{
+								ID:         "agy-1",
+								Driver:     "agy",
+								Concurrent: 5 + workerID,
+							},
+						},
+					},
+					Tiers: DebateTiersConfig{
+						Tier1Hunter: TierBindingConfig{
+							Resources:      []string{"agy-1"},
+							TimeoutSeconds: 1800 + j,
+						},
+					},
+					WorkerCount: 5 + j%5,
+				}
+				ApplyDynamicComputeConfig(next)
+				time.Sleep(1 * time.Millisecond)
+			}
+		}()
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+}
+
+func TestToolResource_FallbackDanglingResource(t *testing.T) {
+	cfg := Config{}
+	cfg.LLM.DefaultResource = "native"
+	cfg.Scanner.Tools.Overrides = map[string]string{
+		"repair_json": "deleted-resource-id",
+	}
+
+	// 算力快照中只有 native 和 agy
+	comp := DynamicComputeConfig{
+		LLM: LLMConfig{
+			DefaultResource: "native",
+			Resources: []ComputeResourceConfig{
+				{ID: "native", Driver: "native"},
+				{ID: "agy", Driver: "agy"},
+			},
+		},
+	}
+	ApplyDynamicComputeConfig(comp)
+
+	// repair_json 指定的 deleted-resource-id 悬空，必须平滑回退至 default_resource ("native")
+	resolved := cfg.ToolResource("repair_json")
+	if resolved != "native" {
+		t.Fatalf("expected dangling resource to fallback to 'native', got %q", resolved)
+	}
+
+	// 若指定的资源为有效内置驱动名称（如 "opencode"），无需在 Resources 中显式定义也允许透传
+	cfg.Scanner.Tools.Overrides["repair_json"] = "opencode"
+	if res := cfg.ToolResource("repair_json"); res != "opencode" {
+		t.Fatalf("expected builtin driver 'opencode' to be retained, got %q", res)
+	}
+}
+
+func TestValidateComputeConfig(t *testing.T) {
+	valid := &DynamicComputeConfig{
+		LLM: LLMConfig{
+			DefaultResource: "native-1",
+			Resources: []ComputeResourceConfig{
+				{
+					ID:     "native-1",
+					Driver: "native",
+					Endpoints: []ResourceEndpointConfig{
+						{Name: "default", BaseURL: "http://localhost:8000/chat/completions"},
+					},
+				},
+				{
+					ID:     "agy-1",
+					Driver: "agy",
+				},
+			},
+		},
+		Tiers: DebateTiersConfig{
+			Tier1Hunter:     TierBindingConfig{Resource: "agy-1", TimeoutSeconds: 1800, AttemptTimeoutSeconds: 900},
+			Tier2Challenger: TierBindingConfig{Resource: "native-1", TimeoutSeconds: 1200, AttemptTimeoutSeconds: 600},
+			Tier3Judge:      TierBindingConfig{Resource: "agy-1", TimeoutSeconds: 1800, AttemptTimeoutSeconds: 900},
+			Tier4Synthesis:  TierBindingConfig{Resource: "native-1", TimeoutSeconds: 1200, AttemptTimeoutSeconds: 600},
+		},
+		WorkerCount: 5,
+	}
+
+	// 1. 合法配置校验通过
+	if err := ValidateComputeConfig(valid, nil); err != nil {
+		t.Fatalf("expected valid config to pass, got: %v", err)
+	}
+
+	// 2. 违反引擎类型强约束：Tier 1 (Hunter) 绑定了 Native
+	invalidTier1 := *valid
+	invalidTier1.Tiers.Tier1Hunter = TierBindingConfig{Resource: "native-1", TimeoutSeconds: 1800}
+	if err := ValidateComputeConfig(&invalidTier1, nil); err == nil {
+		t.Fatal("expected error when Tier 1 bound to native, got nil")
+	}
+
+	// 3. 违反引擎类型强约束：Tier 2 (Challenger) 绑定了 Thick Agent
+	invalidTier2 := *valid
+	invalidTier2.Tiers.Tier2Challenger = TierBindingConfig{Resource: "agy-1", TimeoutSeconds: 1200}
+	if err := ValidateComputeConfig(&invalidTier2, nil); err == nil {
+		t.Fatal("expected error when Tier 2 bound to agy, got nil")
+	}
+
+	// 4. 超时倒挂：单次超时大于阶段预算
+	invalidTimeout := *valid
+	invalidTimeout.Tiers.Tier1Hunter = TierBindingConfig{Resource: "agy-1", TimeoutSeconds: 600, AttemptTimeoutSeconds: 900}
+	if err := ValidateComputeConfig(&invalidTimeout, nil); err == nil {
+		t.Fatal("expected error when attempt_timeout > timeout, got nil")
+	}
+
+	// 5. Native 节点缺少 Endpoints
+	invalidNative := *valid
+	invalidNative.LLM.Resources = []ComputeResourceConfig{
+		{ID: "native-1", Driver: "native", Endpoints: nil},
+		{ID: "agy-1", Driver: "agy"},
+	}
+	if err := ValidateComputeConfig(&invalidNative, nil); err == nil {
+		t.Fatal("expected error when native node has no endpoints, got nil")
+	}
+}
+
+func TestMigrateLegacyDynamicConfigsOnce(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/test_migrate.db"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&SystemDynamicConfig{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	// 注入旧版 llm 与 scanner 记录，以及旧版 governance 和 notification
+	legacyLLM := LLMConfig{
+		DefaultResource: "legacy-native",
+		Resources: []ComputeResourceConfig{
+			{ID: "legacy-native", Driver: "native", Endpoints: []ResourceEndpointConfig{{Name: "ep", BaseURL: "http://127.0.0.1:8000"}}},
+			{ID: "legacy-agy", Driver: "agy"},
+		},
+	}
+	llmJSON, _ := json.Marshal(legacyLLM)
+
+	var legacyScanner struct {
+		WorkerCount int `json:"worker_count"`
+		Debate      struct {
+			Tiers DebateTiersConfig `json:"tiers"`
+		} `json:"debate"`
+	}
+	legacyScanner.WorkerCount = 12
+	legacyScanner.Debate.Tiers.Tier1Hunter = TierBindingConfig{Resource: "legacy-agy", TimeoutSeconds: 3600}
+	legacyScanner.Debate.Tiers.Tier2Challenger = TierBindingConfig{Resource: "legacy-native", TimeoutSeconds: 1500}
+	scannerJSON, _ := json.Marshal(legacyScanner)
+
+	now := time.Now()
+	_ = db.Create(&SystemDynamicConfig{Category: "llm", Data: datatypes.JSON(llmJSON), Version: 3, CreatedAt: now, UpdatedAt: now})
+	_ = db.Create(&SystemDynamicConfig{Category: "scanner", Data: datatypes.JSON(scannerJSON), Version: 5, CreatedAt: now, UpdatedAt: now})
+	_ = db.Create(&SystemDynamicConfig{Category: "governance", Data: datatypes.JSON([]byte(`{"identity":{}}`)), Version: 2, CreatedAt: now, UpdatedAt: now})
+	_ = db.Create(&SystemDynamicConfig{Category: "notification", Data: datatypes.JSON([]byte(`{"webhook":"http://example.com"}`)), Version: 1, CreatedAt: now, UpdatedAt: now})
+
+	// 执行迁移
+	if err := migrateLegacyDynamicConfigsOnce(db); err != nil {
+		t.Fatalf("migrateLegacyDynamicConfigsOnce failed: %v", err)
+	}
+
+	// 验证生成了唯一的 category = 'compute'
+	var computeRecord SystemDynamicConfig
+	if err := db.Where("category = ?", "compute").First(&computeRecord).Error; err != nil {
+		t.Fatalf("expected category 'compute' record created: %v", err)
+	}
+	if computeRecord.Version != 1 || computeRecord.UpdatedBy != "system_migration" {
+		t.Fatalf("unexpected version or updated_by: version=%d, updated_by=%s", computeRecord.Version, computeRecord.UpdatedBy)
+	}
+
+	var migrated DynamicComputeConfig
+	if err := json.Unmarshal(computeRecord.Data, &migrated); err != nil {
+		t.Fatalf("unmarshal migrated compute data: %v", err)
+	}
+	if migrated.WorkerCount != 12 {
+		t.Errorf("expected WorkerCount 12, got %d", migrated.WorkerCount)
+	}
+	if migrated.LLM.DefaultResource != "legacy-native" {
+		t.Errorf("expected DefaultResource 'legacy-native', got %q", migrated.LLM.DefaultResource)
+	}
+	if migrated.Tiers.Tier1Hunter.Resource != "legacy-agy" || migrated.Tiers.Tier1Hunter.TimeoutSeconds != 3600 {
+		t.Errorf("unexpected Tier1Hunter: %+v", migrated.Tiers.Tier1Hunter)
+	}
+
+	// 验证旧版 4 类配置记录已被彻底清除
+	var remainingCount int64
+	db.Model(&SystemDynamicConfig{}).Where("category IN ('llm', 'scanner', 'governance', 'notification')").Count(&remainingCount)
+	if remainingCount != 0 {
+		t.Fatalf("expected 0 legacy records remaining, got %d", remainingCount)
+	}
+
+	// 幂等性测试：再次执行不会覆盖已有 compute
+	migrated.WorkerCount = 18
+	newJSON, _ := json.Marshal(migrated)
+	db.Model(&SystemDynamicConfig{}).Where("category = ?", "compute").Updates(map[string]interface{}{
+		"data":    datatypes.JSON(newJSON),
+		"version": 2,
+	})
+	if err := migrateLegacyDynamicConfigsOnce(db); err != nil {
+		t.Fatalf("second migration failed: %v", err)
+	}
+	var afterRecord SystemDynamicConfig
+	db.Where("category = ?", "compute").First(&afterRecord)
+	if afterRecord.Version != 2 {
+		t.Fatalf("expected version 2 preserved, got %d", afterRecord.Version)
+	}
+}
+
+func TestConfigYamlExampleParsesCleanly(t *testing.T) {
+	examplePath := filepath.Join("..", "config.yaml.example")
+	cfg, err := ParseConfigFile(examplePath)
+	if err != nil {
+		t.Fatalf("ParseConfigFile(config.yaml.example) failed: %v", err)
+	}
+
+	// 验证冷配置加载
+	if cfg.Governance.Identity.AlgorithmVersion != "v2" {
+		t.Errorf("expected Governance.Identity.AlgorithmVersion 'v2', got %q", cfg.Governance.Identity.AlgorithmVersion)
+	}
+	if cfg.Governance.Lifecycle.ResolvedRounds != 3 {
+		t.Errorf("expected Governance.Lifecycle.ResolvedRounds 3, got %d", cfg.Governance.Lifecycle.ResolvedRounds)
+	}
+
+	// 验证热配置种子可正常推导并符合强约束校验
+	seed := DynamicComputeConfig{
+		LLM:         cfg.LLM,
+		Tiers:       cfg.Scanner.Debate.Tiers,
+		WorkerCount: cfg.Scanner.WorkerCount,
+	}
+	if seed.WorkerCount != 5 {
+		t.Errorf("expected WorkerCount 5, got %d", seed.WorkerCount)
+	}
+	if err := ValidateComputeConfig(&seed, &cfg); err != nil {
+		t.Fatalf("ValidateComputeConfig failed for seed: %v", err)
 	}
 }

@@ -32,61 +32,68 @@ func TestConfigSuperAdminAuthorization(t *testing.T) {
 	superAdmin := r.Group("/api")
 	superAdmin.Use(commonAuth.RequireAdmin(commonAuth.RoleSuperAdmin))
 	{
-		superAdmin.GET("/admin/config/full", func(c *gin.Context) {
+		superAdmin.GET("/admin/compute/config", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
-		superAdmin.GET("/config/full", func(c *gin.Context) {
+		superAdmin.PUT("/admin/compute/config", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
 	}
 
 	tests := []struct {
 		name         string
+		method       string
 		role         string
 		path         string
 		expectedCode int
 	}{
 		{
-			name:         "未认证用户访问 /api/admin/config/full 返回 401",
+			name:         "未认证用户访问 GET /api/admin/compute/config 返回 401",
+			method:       http.MethodGet,
 			role:         "",
-			path:         "/api/admin/config/full",
+			path:         "/api/admin/compute/config",
 			expectedCode: http.StatusUnauthorized,
 		},
 		{
-			name:         "shield_admin 访问 /api/admin/config/full 返回 403",
+			name:         "shield_admin 访问 GET /api/admin/compute/config 返回 403",
+			method:       http.MethodGet,
 			role:         commonAuth.RoleShieldAdmin,
-			path:         "/api/admin/config/full",
+			path:         "/api/admin/compute/config",
 			expectedCode: http.StatusForbidden,
 		},
 		{
-			name:         "developer 访问 /api/admin/config/full 返回 403",
+			name:         "developer 访问 GET /api/admin/compute/config 返回 403",
+			method:       http.MethodGet,
 			role:         "developer",
-			path:         "/api/admin/config/full",
+			path:         "/api/admin/compute/config",
 			expectedCode: http.StatusForbidden,
 		},
 		{
-			name:         "super_admin 访问 /api/admin/config/full 返回 200",
+			name:         "super_admin 访问 GET /api/admin/compute/config 返回 200",
+			method:       http.MethodGet,
 			role:         commonAuth.RoleSuperAdmin,
-			path:         "/api/admin/config/full",
+			path:         "/api/admin/compute/config",
 			expectedCode: http.StatusOK,
 		},
 		{
-			name:         "shield_admin 访问兼容别名 /api/config/full 返回 403",
+			name:         "shield_admin 访问 PUT /api/admin/compute/config 返回 403",
+			method:       http.MethodPut,
 			role:         commonAuth.RoleShieldAdmin,
-			path:         "/api/config/full",
+			path:         "/api/admin/compute/config",
 			expectedCode: http.StatusForbidden,
 		},
 		{
-			name:         "super_admin 访问兼容别名 /api/config/full 返回 200",
+			name:         "super_admin 访问 PUT /api/admin/compute/config 返回 200",
+			method:       http.MethodPut,
 			role:         commonAuth.RoleSuperAdmin,
-			path:         "/api/config/full",
+			path:         "/api/admin/compute/config",
 			expectedCode: http.StatusOK,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req := httptest.NewRequest(tc.method, tc.path, nil)
 			if tc.role != "" {
 				req.Header.Set("X-Test-Role", tc.role)
 			}
@@ -94,7 +101,7 @@ func TestConfigSuperAdminAuthorization(t *testing.T) {
 			r.ServeHTTP(w, req)
 
 			if w.Code != tc.expectedCode {
-				t.Fatalf("路径 %s 权限校验失败: 期望状态码 %d, 实际得到 %d", tc.path, tc.expectedCode, w.Code)
+				t.Fatalf("路径 %s %s 权限校验失败: 期望状态码 %d, 实际得到 %d", tc.method, tc.path, tc.expectedCode, w.Code)
 			}
 		})
 	}

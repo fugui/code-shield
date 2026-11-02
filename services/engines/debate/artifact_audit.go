@@ -226,7 +226,7 @@ func persistStageArtifactRepairAudit(
 	reportID, repoID, taskTypeID uint,
 	metrics *HunterArtifactRepairMetrics,
 ) {
-	if metrics == nil || models.DB == nil || reportID == 0 {
+	if metrics == nil || !models.HasDatabaseInitialized() || reportID == 0 {
 		return
 	}
 	schemaIssues, issuesErr := json.Marshal(metrics.SchemaRepairIssues)
@@ -266,7 +266,7 @@ func persistStageArtifactRepairAudit(
 		SchemaRepairIssues:     sanitizePostgreSQLJSON(schemaIssues),
 		RepairAttempts:         sanitizePostgreSQLJSON(attempts),
 	}
-	if err := models.CreateArtifactRepairAudit(models.DB, &audit); err != nil {
+	if err := models.RecordArtifactRepairAudit(&audit); err != nil {
 		log.Printf("[ArtifactContract] failed to persist repair audit report=%d bundle=%s err=%v",
 			reportID, bundleID, err)
 		return

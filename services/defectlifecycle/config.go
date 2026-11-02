@@ -4,32 +4,32 @@ import "code-shield/models"
 
 func RuntimeMatchBudget() MatchBudget {
 	return MatchBudget{
-		MaxCandidates:      models.AppConfig.Identity.MaxCandidatesPerObservation,
-		MaxEdges:           models.AppConfig.Identity.MaxCandidateEdgesPerReport,
-		MaxAICalls:         models.AppConfig.Arbitration.MaxCallsPerReport,
-		MaxAssignmentWidth: models.AppConfig.Identity.MaxAIAssignmentWidth,
+		MaxCandidates:      models.AppConfig.Governance.Identity.MaxCandidatesPerObservation,
+		MaxEdges:           models.AppConfig.Governance.Identity.MaxCandidateEdgesPerReport,
+		MaxAICalls:         models.AppConfig.Governance.Arbitration.MaxCallsPerReport,
+		MaxAssignmentWidth: models.AppConfig.Governance.Identity.MaxAIAssignmentWidth,
 	}
 }
 
 func RuntimeMatchThresholds() MatchThresholds {
 	return MatchThresholds{
-		StrongSame:         models.AppConfig.Identity.StrongSameThreshold,
-		AssignBand:         models.AppConfig.Identity.AssignBand,
-		RejectBelow:        models.AppConfig.Identity.RejectBelow,
+		StrongSame:         models.AppConfig.Governance.Identity.StrongSameThreshold,
+		AssignBand:         models.AppConfig.Governance.Identity.AssignBand,
+		RejectBelow:        models.AppConfig.Governance.Identity.RejectBelow,
 		AutoResolve:        models.AppConfig.GrayZoneAutoResolveEnabled(),
-		AIConfidence:       models.AppConfig.Identity.AIArbitrationConfidence,
-		FallbackMergeScore: models.AppConfig.Identity.GrayZoneFallbackMergeScore,
+		AIConfidence:       models.AppConfig.Governance.Identity.AIArbitrationConfidence,
+		FallbackMergeScore: models.AppConfig.Governance.Identity.GrayZoneFallbackMergeScore,
 	}
 }
 
 func RuntimeLifecyclePolicy() LifecyclePolicy {
 	return LifecyclePolicy{
-		HighRiskSeverities:   append([]string(nil), models.AppConfig.Lifecycle.HighRiskSeverities...),
-		ResolvedRounds:       models.AppConfig.Lifecycle.ResolvedRounds,
-		DormantThreshold:     models.AppConfig.Lifecycle.DormantThreshold,
-		ObsoleteAfterDormant: models.AppConfig.Lifecycle.ObsoleteAfterDormant,
-		RequireCoverage:      models.AppConfig.Lifecycle.RequireCoverage,
-		RequireChange:        models.AppConfig.Lifecycle.RequireChange,
-		AutoResolveMissing:   models.AppConfig.Lifecycle.AutoResolveMissingEnabled(),
+		HighRiskSeverities:   append([]string(nil), models.AppConfig.Governance.Lifecycle.HighRiskSeverities...),
+		ResolvedRounds:       models.AppConfig.Governance.Lifecycle.ResolvedRounds,
+		DormantThreshold:     models.AppConfig.Governance.Lifecycle.DormantThreshold,
+		ObsoleteAfterDormant: models.AppConfig.Governance.Lifecycle.ObsoleteAfterDormant,
+		RequireCoverage:      models.AppConfig.Governance.Lifecycle.RequireCoverage,
+		RequireChange:        models.AppConfig.Governance.Lifecycle.RequireChange,
+		AutoResolveMissing:   models.AppConfig.Governance.Lifecycle.AutoResolveMissingEnabled(),
 	}
 }

@@ -53,8 +53,7 @@ func setupJudgeAudit(t *testing.T, auditInvoker *judgeAuditInvoker) *gorm.DB {
 	if err := db.AutoMigrate(&models.ArtifactRepairAudit{}); err != nil {
 		t.Fatalf("migrate audit: %v", err)
 	}
-	models.DB = db
-	t.Cleanup(func() { models.DB = nil })
+	t.Cleanup(models.SetTestDB(db))
 	invoker.RegisterAIInvoker(auditInvoker.Name(), auditInvoker)
 
 	previousTier := models.AppConfig.Scanner.Debate.Tiers.Tier3Judge
@@ -70,7 +69,7 @@ func setupJudgeAudit(t *testing.T, auditInvoker *judgeAuditInvoker) *gorm.DB {
 	return db
 }
 
-func runJudgeAudit(t *testing.T, candidates []HunterCandidate) (*JudgeOutput, *gorm.DB) {
+func runJudgeAudit(t *testing.T, candidates []HunterCandidate) *JudgeOutput {
 	t.Helper()
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "src")
@@ -100,7 +99,7 @@ func runJudgeAudit(t *testing.T, candidates []HunterCandidate) (*JudgeOutput, *g
 	if err != nil {
 		t.Fatalf("runJudgeStage() error = %v", err)
 	}
-	return output, models.DB
+	return output
 }
 
 func judgeAuditCandidates(count int) []HunterCandidate {
@@ -197,7 +196,7 @@ func decodeJudgeAttempts(t *testing.T, audit models.ArtifactRepairAudit) []Artif
 func TestJudgeAuditDirectPassPersistsSchemaMetrics(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-direct", initial: validJudgeArtifact(1)}
 	db := setupJudgeAudit(t, auditInvoker)
-	output, _ := runJudgeAudit(t, judgeAuditCandidates(1))
+	output := runJudgeAudit(t, judgeAuditCandidates(1))
 	if len(output.FinalVerdicts) != 1 || output.FinalVerdicts[0].Verdict != "CONDITIONAL" {
 		t.Fatalf("business output changed: %#v", output)
 	}
@@ -225,7 +224,7 @@ func TestJudgeAuditDirectPassPersistsSchemaMetrics(t *testing.T) {
 func TestJudgeAuditLLMRepairSuccessPersistsRawArtifact(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-llm", initial: mismatchedValidJudgeArtifact(), repair: validJudgeArtifact(1)}
 	db := setupJudgeAudit(t, auditInvoker)
-	output, _ := runJudgeAudit(t, judgeAuditCandidates(1))
+	output := runJudgeAudit(t, judgeAuditCandidates(1))
 	if len(output.FinalVerdicts) != 1 || output.FinalVerdicts[0].Verdict != "CONDITIONAL" {
 		t.Fatalf("business output invalid: %#v", output)
 	}
@@ -244,7 +243,7 @@ func TestJudgeAuditLLMRepairSuccessPersistsRawArtifact(t *testing.T) {
 func TestJudgeAuditLLMFailureKeepsFailedAttempt(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-failed", initial: `{}`, repairErr: errors.New("repair unavailable")}
 	db := setupJudgeAudit(t, auditInvoker)
-	output, _ := runJudgeAudit(t, judgeAuditCandidates(1))
+	output := runJudgeAudit(t, judgeAuditCandidates(1))
 	if len(output.FinalVerdicts) != 1 || output.FinalVerdicts[0].Verdict != "CONDITIONAL" || !output.FinalVerdicts[0].EvidenceDegraded {
 		t.Fatalf("degraded output invalid: %#v", output)
 	}
@@ -259,7 +258,7 @@ func TestJudgeAuditLLMFailureKeepsFailedAttempt(t *testing.T) {
 func TestJudgeAuditRecordsBusinessDriftedRepair(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-drift", initial: mismatchedValidJudgeArtifact(), repair: businessDriftJudgeArtifact()}
 	db := setupJudgeAudit(t, auditInvoker)
-	_, _ = runJudgeAudit(t, judgeAuditCandidates(1))
+	_ = runJudgeAudit(t, judgeAuditCandidates(1))
 	audit := queryJudgeAudits(t, db)[0]
 	attempts := decodeJudgeAttempts(t, audit)
 	if !audit.RepairDrifted || audit.RepairDriftUnitRef != "H-001" || audit.RepairDriftUnchecked || len(attempts) != 3 ||
@@ -271,7 +270,7 @@ func TestJudgeAuditRecordsBusinessDriftedRepair(t *testing.T) {
 func TestJudgeAuditRecordsEvidenceDriftedRepair(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-evidence-drift", initial: mismatchedValidJudgeArtifact(), repair: evidenceDriftJudgeArtifact()}
 	db := setupJudgeAudit(t, auditInvoker)
-	_, _ = runJudgeAudit(t, judgeAuditCandidates(1))
+	_ = runJudgeAudit(t, judgeAuditCandidates(1))
 	audit := queryJudgeAudits(t, db)[0]
 	attempts := decodeJudgeAttempts(t, audit)
 	if !audit.RepairDrifted || audit.RepairDriftUnitRef != "H-001" || audit.RepairDriftUnchecked || len(attempts) != 2 || !attempts[1].Accepted {
@@ -295,7 +294,7 @@ func TestJudgeAuditRecordsEvidenceDriftedRepair(t *testing.T) {
 func TestJudgeAuditFailedRepairKeepsNormalizedRetry(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-failed-normalized", initial: mismatchedValidJudgeArtifact(), repair: failedNormalizedJudgeRepairArtifact()}
 	db := setupJudgeAudit(t, auditInvoker)
-	_, _ = runJudgeAudit(t, judgeAuditCandidates(1))
+	_ = runJudgeAudit(t, judgeAuditCandidates(1))
 	audit := queryJudgeAudits(t, db)[0]
 	attempts := decodeJudgeAttempts(t, audit)
 	if audit.FinalStatus != "failed" || len(attempts) != 3 ||
@@ -308,7 +307,7 @@ func TestJudgeAuditFailedRepairKeepsNormalizedRetry(t *testing.T) {
 func TestJudgeAuditRecordsUncheckedBaseline(t *testing.T) {
 	auditInvoker := &judgeAuditInvoker{name: "judge-audit-unchecked", initial: "not json", repair: validJudgeArtifact(1)}
 	db := setupJudgeAudit(t, auditInvoker)
-	_, _ = runJudgeAudit(t, judgeAuditCandidates(1))
+	_ = runJudgeAudit(t, judgeAuditCandidates(1))
 	audit := queryJudgeAudits(t, db)[0]
 	attempts := decodeJudgeAttempts(t, audit)
 	if !audit.RepairDriftUnchecked || len(attempts) != 3 || !attempts[1].Accepted || attempts[1].Raw == "" {
@@ -325,7 +324,7 @@ func TestJudgeAuditPersistsEveryBatch(t *testing.T) {
 		},
 	}
 	db := setupJudgeAudit(t, auditInvoker)
-	output, _ := runJudgeAudit(t, judgeAuditCandidates(6))
+	output := runJudgeAudit(t, judgeAuditCandidates(6))
 	if len(output.FinalVerdicts) != 6 {
 		t.Fatalf("business output count = %d, want 6", len(output.FinalVerdicts))
 	}

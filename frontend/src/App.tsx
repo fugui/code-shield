@@ -190,7 +190,7 @@ function MainLayout({ children, taskTypes }: { children: React.ReactNode; taskTy
                 if (relativePath.startsWith('/admin/teams') || relativePath.startsWith('/teams')) return '团队与代码仓管理';
                 if (relativePath.startsWith('/admin/users')) return '用户管理';
                 if (relativePath.startsWith('/admin/activity')) return '执行日志';
-                if (relativePath.startsWith('/admin/config')) return '系统动态配置中心';
+                if (relativePath.startsWith('/admin/config')) return '算力调度中心';
                 if (relativePath.startsWith('/admin')) return '管理中心';
                 return '报告概览';
               })()}

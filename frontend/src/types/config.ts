@@ -39,6 +39,18 @@ export interface WorkHoursConfig {
   scale: number;
 }
 
+export interface TierRecoveryConfig {
+  max_total_attempts?: number;
+  max_attempts_per_resource?: number;
+  max_candidate_failovers?: number;
+  retry_on?: string[];
+  retry_backoff_ms?: number;
+  max_backoff_seconds?: number;
+  split_on?: string[];
+  candidate_failover_on?: string[];
+  contract_repair_on?: string[];
+}
+
 export interface TierBinding {
   resource?: string;
   resources?: string[];
@@ -47,6 +59,9 @@ export interface TierBinding {
   first_byte_timeout_seconds?: number;
   idle_timeout_seconds?: number;
   max_output_bytes?: number;
+  max_split_depth?: number;
+  timeout_recovery?: string;
+  recovery?: TierRecoveryConfig;
 }
 
 export interface DebateTiers {
@@ -54,6 +69,25 @@ export interface DebateTiers {
   tier2_challenger?: TierBinding;
   tier3_judge?: TierBinding;
   tier4_synthesis?: TierBinding;
+}
+
+export interface DynamicComputeConfig {
+  llm: LLMConfig;
+  tiers: DebateTiers;
+  worker_count: number;
+}
+
+export interface ComputeConfigResponse extends DynamicComputeConfig {
+  version: number;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface UpdateComputeConfigRequest {
+  version: number;
+  llm: LLMConfig;
+  tiers: DebateTiers;
+  worker_count: number;
 }
 
 export interface DebateConfig {

@@ -1,14 +1,20 @@
 # ==============================================================================
 # Code-Shield 🛡️ 服务端配置规范模版 (config.yaml.example)
 #
-# 架构规范版本: CS-NATIVE-02
+# 架构规范版本: CS-NATIVE-05 (RFC-005 系统配置动静分离与算力管理极简化)
 #
-# ⚠️ 注意事项与动静分层：
-# 1. 基础设施层 (server, storage, database, auth)：
-#    属于静态引导冷配置，系统启动时直接从本文件加载。修改需重启服务。
-# 2. 动态业务中心层 (llm, scanner, governance, notification)：
-#    本文件中的内容仅在系统首次安装部署（数据库为空）时作为初始种子数据导入数据库；
-#    系统初始化后，以数据库 (DB SSOT) 为唯一真值源，请直接在 Web 管理界面 (/admin/config) 实时调整，无需重启服务。
+# 🧭 动静配置分层治理准则 (SSOT)：
+# 1. 静态冷配置 (Static Cold Config - 修改重启生效)：
+#    - 基础设施与存储 (server, storage, database, auth, retention, ai_fix)
+#    - 业务治理与通知 (governance, notification)
+#    - 扫描底层流控与探针 (scanner.throttling, scanner.analysis, scanner.artifact, scanner.tools...)
+#    上述全部直接从本文件读取，重启服务 100% 绝对生效，严禁写入数据库污染热运行时。
+#
+# 2. 动态热配置 (Dynamic Hot Config - 运行期实时生效)：
+#    - 仅收敛为单一权威实体 compute: { llm (算力供给池), tiers (4阶梯编排), worker_count (全局并发) }
+#    - 本文件中的 llm、scanner.debate.tiers 与 scanner.worker_count 仅在系统首次部署时作为种子导入数据库；
+#    - 运行期以数据库 system_dynamic_config (category = 'compute') 为权威真值源 (SSOT)，
+#      并在算力调度中心 (/admin/config) 支持热重载与 CAS 乐观锁防并发覆盖。
 # ==============================================================================
 
 # ==============================================================================
@@ -98,14 +104,13 @@ llm:
       max_retries: 3                   # 最大重试次数
       retry_backoff_ms: 500            # 指数退避基准时长 (毫秒)
 
-      # ── 多端点算力集群 (支持加权负载打散与故障转移，weight 为相对比例) ──
+      # ── 多端点算力集群 (支持加权负载打散与故障转移) ──
       endpoints:
         - name: "deepseek-primary"
           base_url: "https://api.deepseek.com/v1/chat/completions"
           api_key: "sk-be919fc7cb9d429abffbf7e2c0aabb3a"
           model: "deepseek-v4-flash-vision-exp"
           concurrent: 10
-          weight: 100
 
 # ==============================================================================
 # 3. 智能扫描引擎与任务调度 (Scanner & Debate Pipeline Engine - 初次导入种子模版)
@@ -189,9 +194,9 @@ scanner:
           candidate_failover_on: []          # 仅显式填入可用性类错误才生效
           contract_repair_on: ["contract_mismatch", "json_invalid"] # 合同错误先定向 repair
 
-      tier2_challenger:                # Tier 2 辩护对抗 (Challenger 角色，快速多维度寻找防御依据)
-        resource: "native"             # 推荐 Thin LLM 低延迟高吞吐
-        resources: ["native", "agy"]   # 辩护对抗候选算力池
+      tier2_challenger:                # Tier 2 辩护对抗 (Challenger 角色，必须 Native 驱动)
+        resource: "native"             # 首选 Native 节点
+        resources: ["native"]          # 辩护对抗算力池 (同类型池化调度，严禁混入 Thick Agent)
         timeout_seconds: 1200          # 辩护对抗单片超时 (秒)
         recovery:
           max_total_attempts: 3
@@ -202,9 +207,9 @@ scanner:
           retry_on: ["idle_timeout", "timeout", "output_missing", "resource_busy", "rate_limited", "network_transient"]
           candidate_failover_on: []
 
-      tier3_judge:                     # Tier 3 终审法官 (Judge 角色，旗舰模型独立权威仲裁)
-        resource: "agy"                # 推荐旗舰推理模型或旗舰 Thick Agent
-        resources: ["agy", "native"]   # 终审法官候选算力池
+      tier3_judge:                     # Tier 3 终审法官 (Judge 角色，必须 Thick Agent 驱动)
+        resource: "agy"                # 首选 Thick Agent 节点
+        resources: ["agy", "opencode"] # 终审法官算力池 (同类型池化调度，严禁混入 Native)
         timeout_seconds: 1800          # 终审裁决单片超时 (秒)
         recovery:
           max_total_attempts: 3
@@ -260,16 +265,39 @@ scanner:
     max_quarantined_candidate_ratio: 0.50
 
 # ==============================================================================
-# 4. 企业多任务治理与历史记忆闭环 (Enterprise Governance - 初次导入种子模版)
-# 职责：专注解决“质量红线、缺陷指纹防抖、范围守卫、PR门禁与知识沉淀”
+# 4. 企业多任务治理与历史记忆闭环 (Enterprise Governance - 纯静态冷配置)
+# 职责：专注解决“质量红线、缺陷指纹防抖、跨轮仲裁、生命周期判定与知识沉淀”
 # ==============================================================================
 governance:
+  # 缺陷身份指纹与去重匹配 (Identity Matching - 纯静态冷配置)
+  identity:
+    algorithm_version: "v2"             # 算法版本 (v1 / v2)
+    max_candidates_per_observation: 3   # 单个观测点最大候选关联数
+    max_candidate_edges_per_report: 5000 # 单报告最大候选边数量
+    max_assignment_width: 200           # 二分图匹配最大宽度
+    strong_same_threshold: 0.88         # 强相同确定性置信度阈值 (高于此值直接归为同一缺陷)
+    assign_band: 0.12                   # 关联判定浮动带宽
+    reject_below: 0.50                  # 拒绝判定阈值 (低于此值直接判定为不同缺陷)
+    auto_resolve_gray_zone: true        # 是否自动裁决灰度区疑似关联
+    ai_arbitration_confidence: 0.75     # AI 仲裁介入置信度门槛
+    gray_zone_fallback_merge_score: 0.65 # 灰度区兜底合并得分
+
   # 跨轮疑似重复缺陷仲裁
   arbitration:
     enabled: true
     max_calls_per_report: 20
     context_lines: 8
     timeout_seconds: 30
+
+  # 缺陷生命周期判定策略 (Lifecycle Policy - 纯静态冷配置)
+  lifecycle:
+    high_risk_severities: ["Critical", "High"] # 高危缺陷判定级别列表
+    resolved_rounds: 3                  # 连续未发现即判定为已解决的扫描轮数
+    dormant_rounds: 5                   # 未出现判定为休眠的扫描轮数
+    obsolete_after_dormant_rounds: 10   # 休眠后自动作废的扫描轮数
+    require_coverage: true              # 判定解决是否要求代码处于覆盖范围内
+    require_change: true                # 判定解决是否要求代码发生变更
+
   # 分类语义回归批处理的成本与故障保护
   category_regression_batch_size: 50
   category_regression_max_failures: 5
