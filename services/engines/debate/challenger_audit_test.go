@@ -57,8 +57,7 @@ func setupChallengerAudit(t *testing.T, auditInvoker *challengerAuditInvoker) *g
 	if err := db.AutoMigrate(&models.ArtifactRepairAudit{}); err != nil {
 		t.Fatalf("migrate audit: %v", err)
 	}
-	models.DB = db
-	t.Cleanup(func() { models.DB = nil })
+	t.Cleanup(models.SetTestDB(db))
 	invoker.RegisterAIInvoker(auditInvoker.Name(), auditInvoker)
 
 	previousTier := models.AppConfig.Scanner.Debate.Tiers.Tier2Challenger
@@ -74,7 +73,7 @@ func setupChallengerAudit(t *testing.T, auditInvoker *challengerAuditInvoker) *g
 	return db
 }
 
-func runChallengerAudit(t *testing.T, candidates []HunterCandidate) (*ChallengerOutput, *gorm.DB) {
+func runChallengerAudit(t *testing.T, candidates []HunterCandidate) *ChallengerOutput {
 	t.Helper()
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "src")
@@ -105,7 +104,7 @@ func runChallengerAudit(t *testing.T, candidates []HunterCandidate) (*Challenger
 	if err != nil {
 		t.Fatalf("runChallengerStage() error = %v", err)
 	}
-	return output, models.DB
+	return output
 }
 
 func challengerAuditCandidates(count int) []HunterCandidate {
@@ -179,7 +178,7 @@ func decodeChallengerAttempts(t *testing.T, audit models.ArtifactRepairAudit) []
 func TestChallengerAuditDirectPassPersistsSchemaMetrics(t *testing.T) {
 	auditInvoker := &challengerAuditInvoker{name: "challenger-audit-direct", initial: validChallengerArtifact(1)}
 	db := setupChallengerAudit(t, auditInvoker)
-	output, _ := runChallengerAudit(t, challengerAuditCandidates(1))
+	output := runChallengerAudit(t, challengerAuditCandidates(1))
 	if len(output.DefenseCases) != 1 || output.DefenseCases[0].DefenseVerdict != "DEFENSE_SUCCESSFUL" {
 		t.Fatalf("business output changed: %#v", output)
 	}
@@ -203,7 +202,7 @@ func TestChallengerAuditDirectPassPersistsSchemaMetrics(t *testing.T) {
 func TestChallengerAuditLocalEvidenceNormalization(t *testing.T) {
 	auditInvoker := &challengerAuditInvoker{name: "challenger-audit-local", initial: minimalChallengerArtifact(1)}
 	db := setupChallengerAudit(t, auditInvoker)
-	_, _ = runChallengerAudit(t, challengerAuditCandidates(1))
+	_ = runChallengerAudit(t, challengerAuditCandidates(1))
 	audit := queryChallengerAudits(t, db)[0]
 	attempts := decodeChallengerAttempts(t, audit)
 	if audit.LocalRepairs != 1 || len(attempts) != 2 || attempts[1].Source != "local" ||
@@ -219,7 +218,7 @@ func TestChallengerAuditLLMRepairSuccessPersistsRawArtifact(t *testing.T) {
 		repair:  validChallengerArtifact(1),
 	}
 	db := setupChallengerAudit(t, auditInvoker)
-	output, _ := runChallengerAudit(t, challengerAuditCandidates(1))
+	output := runChallengerAudit(t, challengerAuditCandidates(1))
 	if len(output.DefenseCases) != 1 || output.DefenseCases[0].DefenseVerdict != "DEFENSE_SUCCESSFUL" {
 		t.Fatalf("business output invalid: %#v", output)
 	}
@@ -239,7 +238,7 @@ func TestChallengerAuditLLMFailureKeepsFailedAttempt(t *testing.T) {
 		repairEr: errors.New("repair unavailable"),
 	}
 	db := setupChallengerAudit(t, auditInvoker)
-	output, _ := runChallengerAudit(t, challengerAuditCandidates(1))
+	output := runChallengerAudit(t, challengerAuditCandidates(1))
 	if len(output.DefenseCases) != 1 || output.DefenseCases[0].DefenseVerdict != "CHALLENGE_FAILED" {
 		t.Fatalf("degraded output invalid: %#v", output)
 	}
@@ -258,7 +257,7 @@ func TestChallengerAuditRecordsDriftedRepair(t *testing.T) {
 		repair:  validChallengerArtifact(1),
 	}
 	db := setupChallengerAudit(t, auditInvoker)
-	_, _ = runChallengerAudit(t, challengerAuditCandidates(1))
+	_ = runChallengerAudit(t, challengerAuditCandidates(1))
 	audit := queryChallengerAudits(t, db)[0]
 	attempts := decodeChallengerAttempts(t, audit)
 	if !audit.RepairDrifted || audit.RepairDriftUnitRef != "H-001" || len(attempts) != 2 ||
@@ -274,7 +273,7 @@ func TestChallengerAuditRecordsUncheckedDrift(t *testing.T) {
 		repair:  validChallengerArtifact(1),
 	}
 	db := setupChallengerAudit(t, auditInvoker)
-	_, _ = runChallengerAudit(t, challengerAuditCandidates(1))
+	_ = runChallengerAudit(t, challengerAuditCandidates(1))
 	audit := queryChallengerAudits(t, db)[0]
 	attempts := decodeChallengerAttempts(t, audit)
 	if !audit.RepairDriftUnchecked || len(attempts) != 2 || !attempts[1].Accepted {
@@ -292,7 +291,7 @@ func TestChallengerAuditPersistsEveryBatch(t *testing.T) {
 		},
 	}
 	db := setupChallengerAudit(t, auditInvoker)
-	output, _ := runChallengerAudit(t, challengerAuditCandidates(6))
+	output := runChallengerAudit(t, challengerAuditCandidates(6))
 	if len(output.DefenseCases) != 6 {
 		t.Fatalf("business output count = %d, want 6", len(output.DefenseCases))
 	}

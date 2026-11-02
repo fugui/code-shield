@@ -374,5 +374,7 @@ func (d *ModelDispatcher) ReloadResources(llmCfg models.LLMConfig) {
 	}
 
 	log.Printf("[Dispatcher] [HotReload] Dynamically reloaded %d compute resources in memory", len(d.resources))
-	d.cond.Broadcast()
+	if d.cond != nil {
+		d.cond.Broadcast()
+	}
 }

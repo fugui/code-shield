@@ -51,8 +51,12 @@ func main() {
 	// Initialize database
 	models.InitDB()
 
-	// 初始化动态配置中心并完成 Seed-Once 检查与数据库 SSOT 加载
-	models.InitDynamicConfigs(models.AppConfig)
+	// 初始化动态算力配置并完成 Seed-Once 检查与数据库 SSOT 加载
+	models.InitDynamicCompute(models.DynamicComputeConfig{
+		LLM:         models.AppConfig.LLM,
+		Tiers:       models.AppConfig.Scanner.Debate.Tiers,
+		WorkerCount: models.AppConfig.Scanner.WorkerCount,
+	})
 
 	// 初始化系统全局操作审计引擎
 	commonAudit.Init(models.DB)
@@ -62,8 +66,10 @@ func main() {
 		log.Printf("[Server] Warning: Failed to ensure seed admin: %v", err)
 	}
 
-	// 初始化多 LLM 调度分配器
+	// 初始化多 LLM 调度分配器与流控探针 (一次性注入 YAML 静态 WorkHours 与 Adaptive 配置)
 	services.InitModelDispatcher()
+	services.Dispatcher.SetWorkHoursThrottle(models.AppConfig.Scanner.Throttling.WorkHours)
+	services.Dispatcher.SetAdaptiveThrottle(models.AppConfig.Scanner.Throttling.Adaptive)
 
 	// Ensure opencode base scanner agent exists
 	if err := services.EnsureBaseAgent(); err != nil {
@@ -250,23 +256,11 @@ func main() {
 					superAdmin.GET("/admin/debug/leases/:lease_id/prompt", handlers.GetLeasePrompt)
 					superAdmin.GET("/admin/debug/leases/:lease_id/console", handlers.GetLeaseConsole)
 
-					// 动态配置中心 API (Dynamic Config Center)
-					adminConfig := superAdmin.Group("/admin/config")
-					{
-						adminConfig.GET("/full", handlers.GetFullConfig)
-						adminConfig.PUT("/full", handlers.UpdateFullConfig)
-						adminConfig.GET("/category/:category", handlers.GetCategoryConfig)
-						adminConfig.PUT("/category/:category", handlers.UpdateCategoryConfig)
-						adminConfig.POST("/ping-endpoint", handlers.PingEndpoint)
-						adminConfig.POST("/reset-to-seed", handlers.ResetCategoryConfig)
-					}
-					// 兼容直接使用 /api/config/* 别名访问
-					superAdmin.GET("/config/full", handlers.GetFullConfig)
-					superAdmin.PUT("/config/full", handlers.UpdateFullConfig)
-					superAdmin.GET("/config/category/:category", handlers.GetCategoryConfig)
-					superAdmin.PUT("/config/category/:category", handlers.UpdateCategoryConfig)
-					superAdmin.POST("/config/ping-endpoint", handlers.PingEndpoint)
-					superAdmin.POST("/config/reset-to-seed", handlers.ResetCategoryConfig)
+					// 算力调度中心专用 API (Compute Hub - CS-NATIVE-05)
+					superAdmin.GET("/admin/compute/config", handlers.GetComputeConfig)
+					superAdmin.PUT("/admin/compute/config", handlers.UpdateComputeConfig)
+					superAdmin.POST("/admin/compute/ping-endpoint", handlers.PingEndpoint)
+					superAdmin.POST("/admin/compute/reset-to-seed", handlers.ResetComputeConfigToSeed)
 				}
 			}
 

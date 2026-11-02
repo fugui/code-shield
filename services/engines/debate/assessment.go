@@ -613,7 +613,7 @@ func persistArtifactRepairAudit(
 	bundle chunker.SemanticBundle,
 	metrics assessment.ArtifactRepairMetrics,
 ) {
-	if models.DB == nil || ctx == nil || ctx.ReportID == 0 {
+	if !models.HasDatabaseInitialized() || ctx == nil || ctx.ReportID == 0 {
 		return
 	}
 	schemaIssues, issuesErr := json.Marshal(metrics.SchemaRepairIssues)
@@ -646,7 +646,7 @@ func persistArtifactRepairAudit(
 		SchemaRepairIssues:   datatypes.JSON(schemaIssues),
 		RepairAttempts:       datatypes.JSON(attempts),
 	}
-	if err := models.CreateArtifactRepairAudit(models.DB, &audit); err != nil {
+	if err := models.RecordArtifactRepairAudit(&audit); err != nil {
 		log.Printf("[AssessmentContract] failed to persist repair audit report=%d bundle=%s err=%v",
 			ctx.ReportID, bundle.Name, err)
 	}

@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
-
-	"net/url"
 
 	"gopkg.in/yaml.v3"
 )
@@ -282,23 +282,54 @@ func (c Config) SchemaRepairResource() string {
 	return "native"
 }
 
+func isBuiltinDriver(driver string) bool {
+	switch driver {
+	case "agy", "opencode", "claude", "codex", "native":
+		return true
+	default:
+		return false
+	}
+}
+
 // ToolResource 根据工具名称（如 "repair_json", "finding_match", "feedback_extraction"）解析绑定的算力资源
 func (c Config) ToolResource(toolName string) string {
+	comp := GetComputeConfig()
+	resolved := ""
 	if c.Scanner.Tools.Overrides != nil {
 		if res, ok := c.Scanner.Tools.Overrides[toolName]; ok && strings.TrimSpace(res) != "" {
-			return strings.TrimSpace(res)
+			resolved = strings.TrimSpace(res)
 		}
 	}
-	if toolName == "repair_json" && strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource) != "" {
-		return strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource)
+	if resolved == "" && toolName == "repair_json" && strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource) != "" {
+		resolved = strings.TrimSpace(c.Scanner.Artifact.SchemaRepairResource)
 	}
-	if strings.TrimSpace(c.Scanner.Tools.DefaultResource) != "" {
-		return strings.TrimSpace(c.Scanner.Tools.DefaultResource)
+	if resolved == "" && strings.TrimSpace(c.Scanner.Tools.DefaultResource) != "" {
+		resolved = strings.TrimSpace(c.Scanner.Tools.DefaultResource)
 	}
-	if strings.TrimSpace(c.LLM.DefaultResource) != "" {
-		return strings.TrimSpace(c.LLM.DefaultResource)
+	if resolved == "" && strings.TrimSpace(comp.LLM.DefaultResource) != "" {
+		resolved = strings.TrimSpace(comp.LLM.DefaultResource)
 	}
-	return "native"
+	if resolved == "" && strings.TrimSpace(c.LLM.DefaultResource) != "" {
+		resolved = strings.TrimSpace(c.LLM.DefaultResource)
+	}
+	if resolved == "" {
+		resolved = "native"
+	}
+
+	// 跨轨静态工具引用保护：若 YAML 静态指定的节点 ID 既不是内置驱动，
+	// 且在当前动态 LLM.Resources 中不存在（已被删除或重命名），
+	// 则平滑回退至 DefaultResource（若仍悬空则最终兜底 "native"），避免微任务因悬空 ID 硬崩溃。
+	if !isBuiltinDriver(resolved) && comp.LLM.FindResource(resolved) == nil {
+		defaultRes := strings.TrimSpace(comp.LLM.DefaultResource)
+		if defaultRes != "" && (isBuiltinDriver(defaultRes) || comp.LLM.FindResource(defaultRes) != nil) {
+			return defaultRes
+		}
+		if staticDefault := strings.TrimSpace(c.LLM.DefaultResource); staticDefault != "" && (isBuiltinDriver(staticDefault) || comp.LLM.FindResource(staticDefault) != nil) {
+			return staticDefault
+		}
+		return "native"
+	}
+	return resolved
 }
 
 // AssessmentJSONSchemaMode 统一约束 Specialized Assessment 输出格式，系统固化采用 auto 模式，
@@ -424,15 +455,50 @@ func (s *ScannerConfig) NormalizeDefaults() {
 
 // ValidateTierBindings 校验各阶梯绑定与流水线架构强制的引擎类型一致。
 func ValidateTierBindings(llm *LLMConfig, scanner *ScannerConfig) error {
+	comp := DynamicComputeConfig{
+		LLM:         *llm,
+		Tiers:       scanner.Debate.Tiers,
+		WorkerCount: scanner.WorkerCount,
+	}
+	return ValidateComputeConfig(&comp, nil)
+}
+
+// ValidateComputeConfig 强约束校验算力配置有效性与流水线引擎类型一致性。
+func ValidateComputeConfig(compute *DynamicComputeConfig, static *Config) error {
+	if compute == nil {
+		return errors.New("算力配置不能为空")
+	}
+
+	// 1. 默认资源合法性校验
+	defaultRes := strings.TrimSpace(compute.LLM.DefaultResource)
+	if defaultRes != "" && !isBuiltinDriver(defaultRes) && compute.LLM.FindResource(defaultRes) == nil {
+		return fmt.Errorf("llm.default_resource %q 不存在于已配置的算力资源列表中", defaultRes)
+	}
+
+	// 校验 Native 节点至少包含 1 个有效 Endpoint
+	for _, res := range compute.LLM.Resources {
+		if res.Driver == "native" {
+			if len(res.Endpoints) == 0 {
+				return fmt.Errorf("native 算力节点 %q 必须至少配置 1 个有效 Endpoint", res.ID)
+			}
+			for _, ep := range res.Endpoints {
+				if strings.TrimSpace(ep.BaseURL) == "" {
+					return fmt.Errorf("native 算力节点 %q 端点 %q 的 base_url 不能为空", res.ID, ep.Name)
+				}
+			}
+		}
+	}
+
+	// 2. 阶梯引擎类型强约束
 	tiers := map[string]struct {
 		Binding      *TierBindingConfig
 		AllowedThick bool
 		RoleTitle    string
 	}{
-		"tier1_hunter":     {Binding: &scanner.Debate.Tiers.Tier1Hunter, AllowedThick: true, RoleTitle: "Tier 1 Hunter"},
-		"tier2_challenger": {Binding: &scanner.Debate.Tiers.Tier2Challenger, AllowedThick: false, RoleTitle: "Tier 2 Challenger"},
-		"tier3_judge":      {Binding: &scanner.Debate.Tiers.Tier3Judge, AllowedThick: true, RoleTitle: "Tier 3 Judge"},
-		"tier4_synthesis":  {Binding: &scanner.Debate.Tiers.Tier4Synthesis, AllowedThick: false, RoleTitle: "Tier 4 Synthesis"},
+		"tier1_hunter":     {Binding: &compute.Tiers.Tier1Hunter, AllowedThick: true, RoleTitle: "Tier 1 Hunter"},
+		"tier2_challenger": {Binding: &compute.Tiers.Tier2Challenger, AllowedThick: false, RoleTitle: "Tier 2 Challenger"},
+		"tier3_judge":      {Binding: &compute.Tiers.Tier3Judge, AllowedThick: true, RoleTitle: "Tier 3 Judge"},
+		"tier4_synthesis":  {Binding: &compute.Tiers.Tier4Synthesis, AllowedThick: false, RoleTitle: "Tier 4 Synthesis"},
 	}
 
 	for _, tier := range tiers {
@@ -441,23 +507,35 @@ func ValidateTierBindings(llm *LLMConfig, scanner *ScannerConfig) error {
 			continue
 		}
 		for _, resourceID := range resources {
-			resource := llm.FindResource(resourceID)
+			resource := compute.LLM.FindResource(resourceID)
 			if resource == nil {
-				return fmt.Errorf("%s 绑定的算力节点 %q 不存在", tier.RoleTitle, resourceID)
-			}
-			isNative := resource.Driver == "native"
-			if isNative == tier.AllowedThick {
-				engineType := "Thick Agent"
-				if isNative {
-					engineType = "Native LLM"
+				if !isBuiltinDriver(resourceID) {
+					return fmt.Errorf("%s 绑定的算力节点 %q 不存在", tier.RoleTitle, resourceID)
 				}
-				return fmt.Errorf("%s 仅允许 %s，禁止绑定 %q", tier.RoleTitle, engineType, resourceID)
+				isNative := resourceID == "native"
+				if isNative == tier.AllowedThick {
+					engineType := "Thick Agent"
+					if isNative {
+						engineType = "Native LLM"
+					}
+					return fmt.Errorf("%s 仅允许 %s，禁止绑定 %q", tier.RoleTitle, engineType, resourceID)
+				}
+			} else {
+				isNative := resource.Driver == "native"
+				if isNative == tier.AllowedThick {
+					engineType := "Thick Agent"
+					if isNative {
+						engineType = "Native LLM"
+					}
+					return fmt.Errorf("%s 仅允许 %s，禁止绑定 %q", tier.RoleTitle, engineType, resourceID)
+				}
 			}
 		}
 		if tier.Binding.AttemptTimeoutSeconds > tier.Binding.TimeoutSeconds {
 			return fmt.Errorf("%s 的单次 AI 调用超时不能大于阶段总预算", tier.RoleTitle)
 		}
 	}
+
 	return nil
 }
 
@@ -536,6 +614,82 @@ type GovernancePolicyConfig struct {
 	CategoryRegressionMaxFailures int                   `yaml:"category_regression_max_failures" json:"category_regression_max_failures"`
 }
 
+// NormalizeDefaults 填充治理策略默认值
+func (g *GovernancePolicyConfig) NormalizeDefaults() {
+	if g.Identity.AlgorithmVersion == "" {
+		g.Identity.AlgorithmVersion = "v1"
+	}
+	if g.Identity.MaxCandidatesPerObservation <= 0 {
+		g.Identity.MaxCandidatesPerObservation = 64
+	}
+	if g.Identity.MaxCandidateEdgesPerReport <= 0 {
+		g.Identity.MaxCandidateEdgesPerReport = 20000
+	}
+	if g.Identity.MaxAIAssignmentWidth <= 0 {
+		g.Identity.MaxAIAssignmentWidth = 16
+	}
+	if g.Identity.StrongSameThreshold <= 0 {
+		g.Identity.StrongSameThreshold = 0.90
+	}
+	if g.Identity.AssignBand <= 0 {
+		g.Identity.AssignBand = 0.65
+	}
+	if g.Identity.RejectBelow <= 0 {
+		g.Identity.RejectBelow = 0.45
+	}
+	if g.Identity.AutoResolveGrayZone == nil {
+		enabled := true
+		g.Identity.AutoResolveGrayZone = &enabled
+	}
+	if g.Identity.AIArbitrationConfidence <= 0 {
+		g.Identity.AIArbitrationConfidence = 0.70
+	}
+	if g.Identity.GrayZoneFallbackMergeScore <= 0 {
+		g.Identity.GrayZoneFallbackMergeScore = 0.60
+	}
+	if g.Arbitration.Enabled == nil {
+		enabled := true
+		g.Arbitration.Enabled = &enabled
+	}
+	if g.Arbitration.MaxCallsPerReport <= 0 {
+		g.Arbitration.MaxCallsPerReport = 20
+	}
+	if g.Arbitration.ContextLines <= 0 {
+		g.Arbitration.ContextLines = 8
+	}
+	if g.Arbitration.TimeoutSeconds <= 0 {
+		g.Arbitration.TimeoutSeconds = 30
+	}
+	if len(g.Lifecycle.HighRiskSeverities) == 0 {
+		g.Lifecycle.HighRiskSeverities = []string{"致命", "严重"}
+	}
+	if g.Lifecycle.ResolvedRounds <= 0 {
+		g.Lifecycle.ResolvedRounds = 2
+	}
+	if g.Lifecycle.DormantThreshold <= 0 {
+		g.Lifecycle.DormantThreshold = 2
+	}
+	if g.Lifecycle.ObsoleteAfterDormant <= 0 {
+		g.Lifecycle.ObsoleteAfterDormant = 8
+	}
+	if g.CategoryRegressionBatchSize <= 0 {
+		g.CategoryRegressionBatchSize = 50
+	}
+	if g.CategoryRegressionMaxFailures <= 0 {
+		g.CategoryRegressionMaxFailures = 5
+	}
+	if !g.Lifecycle.RequireCoverage {
+		g.Lifecycle.RequireCoverage = true
+	}
+	if !g.Lifecycle.RequireChange {
+		g.Lifecycle.RequireChange = true
+	}
+	if g.Lifecycle.AutoResolveMissing == nil {
+		enabled := true
+		g.Lifecycle.AutoResolveMissing = &enabled
+	}
+}
+
 type IdentityConfig struct {
 	AlgorithmVersion            string  `yaml:"algorithm_version" json:"algorithm_version"`
 	MaxCandidatesPerObservation int     `yaml:"max_candidates_per_observation" json:"max_candidates_per_observation"`
@@ -557,11 +711,11 @@ type ArbitrationConfig struct {
 }
 
 func (c Config) ArbitrationEnabled() bool {
-	return c.Arbitration.Enabled == nil || *c.Arbitration.Enabled
+	return c.Governance.Arbitration.Enabled == nil || *c.Governance.Arbitration.Enabled
 }
 
 func (c Config) GrayZoneAutoResolveEnabled() bool {
-	return c.Identity.AutoResolveGrayZone == nil || *c.Identity.AutoResolveGrayZone
+	return c.Governance.Identity.AutoResolveGrayZone == nil || *c.Governance.Identity.AutoResolveGrayZone
 }
 
 type LifecyclePolicyConfig struct {
@@ -685,8 +839,8 @@ type TierConfig struct {
 // ==============================================================================
 
 type Config struct {
-	Server  ServerConfig `yaml:"server" json:"server"`
-	Storage struct {
+	Server       ServerConfig           `yaml:"server" json:"server"`
+	Storage      struct {
 		Root string `yaml:"root" json:"root"`
 	} `yaml:"storage" json:"storage"`
 	Database     DatabaseConfig         `yaml:"database" json:"database"`
@@ -694,19 +848,137 @@ type Config struct {
 	LLM          LLMConfig              `yaml:"llm" json:"llm"`
 	Scanner      ScannerConfig          `yaml:"scanner" json:"scanner"`
 	Governance   GovernancePolicyConfig `yaml:"governance" json:"governance"`
-	Identity     IdentityConfig         `yaml:"identity" json:"identity"`
-	Arbitration  ArbitrationConfig      `yaml:"arbitration" json:"arbitration"`
-	Lifecycle    LifecyclePolicyConfig  `yaml:"lifecycle" json:"lifecycle"`
 	Notification NotificationConfig     `yaml:"notification" json:"notification"`
 	AIFix        AIFixConfig            `yaml:"ai_fix" json:"-"`
 	Retention    RetentionConfig        `yaml:"retention" json:"retention"`
 }
 
+// DynamicComputeConfig 动态算力配置实体 (独立收敛为单一权威实体，Category = "compute")
+type DynamicComputeConfig struct {
+	LLM         LLMConfig         `yaml:"llm" json:"llm"`                   // 算力供给节点与 Native 集群端点
+	Tiers       DebateTiersConfig `yaml:"tiers" json:"tiers"`               // Tier 1~4 同类型多节点池化绑定与超时预算
+	WorkerCount int               `yaml:"worker_count" json:"worker_count"` // 全局扫描任务并发工作池大小 (支持热扩缩容)
+}
+
+var computeSnapshot atomic.Pointer[DynamicComputeConfig]
+
+func init() {
+	empty := DynamicComputeConfig{}
+	computeSnapshot.Store(&empty)
+}
+
+// GetComputeConfig 获取当前动态算力配置快照 (线程安全只读视图)
+func GetComputeConfig() DynamicComputeConfig {
+	ptr := computeSnapshot.Load()
+	if ptr == nil {
+		return DynamicComputeConfig{}
+	}
+	return *ptr
+}
+
+// ApplyDynamicComputeConfig 原子更新运行时动态算力配置快照并同步回 AppConfig
+func ApplyDynamicComputeConfig(next DynamicComputeConfig) {
+	NormalizeComputeDefaults(&next)
+	AppConfig.LLM = next.LLM
+	AppConfig.Scanner.Debate.Tiers = next.Tiers
+	AppConfig.Scanner.WorkerCount = next.WorkerCount
+
+	snapshotCopy := next
+	computeSnapshot.Store(&snapshotCopy)
+}
+
+// NormalizeComputeDefaults 填充动态算力配置缺省值
+func NormalizeComputeDefaults(comp *DynamicComputeConfig) {
+	if comp == nil {
+		return
+	}
+	for key, tier := range map[string]*TierBindingConfig{
+		"tier1_hunter":     &comp.Tiers.Tier1Hunter,
+		"tier2_challenger": &comp.Tiers.Tier2Challenger,
+		"tier3_judge":      &comp.Tiers.Tier3Judge,
+		"tier4_synthesis":  &comp.Tiers.Tier4Synthesis,
+	} {
+		if tier.TimeoutSeconds <= 0 {
+			tier.TimeoutSeconds = 1800
+		}
+		if tier.AttemptTimeoutSeconds <= 0 {
+			tier.AttemptTimeoutSeconds = 900
+		}
+		if tier.Recovery == nil {
+			tier.Recovery = &TierRecoveryConfig{
+				MaxTotalAttempts:       2,
+				MaxAttemptsPerResource: 2,
+				MaxCandidateFailovers:  0,
+			}
+		}
+		if key == "tier1_hunter" && tier.IdleTimeoutSeconds <= 0 {
+			tier.IdleTimeoutSeconds = 600
+		}
+		if key == "tier2_challenger" || key == "tier4_synthesis" {
+			if tier.FirstByteTimeoutSeconds <= 0 {
+				tier.FirstByteTimeoutSeconds = 180
+			}
+			if tier.IdleTimeoutSeconds <= 0 {
+				tier.IdleTimeoutSeconds = 300
+			}
+		}
+	}
+
+	if comp.WorkerCount <= 0 {
+		sumConcurrent := 0
+		for _, r := range comp.LLM.Resources {
+			sumConcurrent += r.ResourceConcurrent()
+		}
+		if sumConcurrent > 0 {
+			calculated := (sumConcurrent + 1) / 2
+			if calculated < 1 {
+				calculated = 1
+			}
+			comp.WorkerCount = calculated
+		} else {
+			comp.WorkerCount = 5
+		}
+	}
+	if strings.TrimSpace(comp.LLM.DefaultResource) == "" {
+		comp.LLM.DefaultResource = "native"
+	}
+}
+
+// GetWorkerCount 返回当前生效的全局任务并发工作池大小
+func GetWorkerCount() int {
+	comp := GetComputeConfig()
+	if comp.WorkerCount > 0 {
+		return comp.WorkerCount
+	}
+	if AppConfig.Scanner.WorkerCount > 0 {
+		return AppConfig.Scanner.WorkerCount
+	}
+	return 5
+}
+
 var AppConfig Config
 
-// FindResource 根据 ID 或 Driver 查找匹配的算力资源配置
+// FindResource 根据 ID 或 Driver 查找匹配的算力资源配置 (深拷贝返回防数据竞争)
 func (c *Config) FindResource(id string) *ComputeResourceConfig {
-	return c.LLM.FindResource(id)
+	var res *ComputeResourceConfig
+	if c != nil && c != &AppConfig && len(c.LLM.Resources) > 0 {
+		res = c.LLM.FindResource(id)
+	} else {
+		comp := GetComputeConfig()
+		res = comp.LLM.FindResource(id)
+		if res == nil && c != nil {
+			res = c.LLM.FindResource(id)
+		}
+	}
+	if res == nil {
+		return nil
+	}
+	clone := *res
+	if len(res.Endpoints) > 0 {
+		clone.Endpoints = make([]ResourceEndpointConfig, len(res.Endpoints))
+		copy(clone.Endpoints, res.Endpoints)
+	}
+	return &clone
 }
 
 func (c ComputeResourceConfig) ResourceModel() string {
@@ -745,41 +1017,102 @@ func (l *LLMConfig) FindResource(id string) *ComputeResourceConfig {
 	return nil
 }
 
-// GetTierResources 获取指定阶段阶梯配置的候选资源列表
+// GetTierResources 获取指定阶段阶梯配置的候选资源列表 (深拷贝返回防数据竞争)
 func (c *Config) GetTierResources(tier string) []string {
 	var binding TierBindingConfig
-	switch tier {
-	case "tier1_hunter":
-		binding = c.Scanner.Debate.Tiers.Tier1Hunter
-	case "tier2_challenger":
-		binding = c.Scanner.Debate.Tiers.Tier2Challenger
-	case "tier3_judge":
-		binding = c.Scanner.Debate.Tiers.Tier3Judge
-	case "tier4_synthesis":
-		binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+	if c != nil && c != &AppConfig && (c.Scanner.Debate.Tiers.Tier1Hunter.HasConfig() ||
+		c.Scanner.Debate.Tiers.Tier2Challenger.HasConfig() ||
+		c.Scanner.Debate.Tiers.Tier3Judge.HasConfig() ||
+		c.Scanner.Debate.Tiers.Tier4Synthesis.HasConfig()) {
+		switch tier {
+		case "tier1_hunter":
+			binding = c.Scanner.Debate.Tiers.Tier1Hunter
+		case "tier2_challenger":
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		case "tier3_judge":
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		case "tier4_synthesis":
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		}
+	} else {
+		comp := GetComputeConfig()
+		switch tier {
+		case "tier1_hunter":
+			binding = comp.Tiers.Tier1Hunter
+		case "tier2_challenger":
+			binding = comp.Tiers.Tier2Challenger
+		case "tier3_judge":
+			binding = comp.Tiers.Tier3Judge
+		case "tier4_synthesis":
+			binding = comp.Tiers.Tier4Synthesis
+		}
+		if !binding.HasConfig() && c != nil {
+			switch tier {
+			case "tier1_hunter":
+				binding = c.Scanner.Debate.Tiers.Tier1Hunter
+			case "tier2_challenger":
+				binding = c.Scanner.Debate.Tiers.Tier2Challenger
+			case "tier3_judge":
+				binding = c.Scanner.Debate.Tiers.Tier3Judge
+			case "tier4_synthesis":
+				binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+			}
+		}
 	}
-	return binding.GetResources()
+	resources := binding.GetResources()
+	if len(resources) == 0 {
+		return nil
+	}
+	resCopy := make([]string, len(resources))
+	copy(resCopy, resources)
+	return resCopy
 }
 
 // GetTierConfig 获取指定 Tier 的配置
 func (c *Config) GetTierConfig(tier string) TierConfig {
+	var comp DynamicComputeConfig
+	if c == &AppConfig || c == nil {
+		comp = GetComputeConfig()
+	} else {
+		comp = DynamicComputeConfig{
+			LLM:         c.LLM,
+			Tiers:       c.Scanner.Debate.Tiers,
+			WorkerCount: c.Scanner.WorkerCount,
+		}
+	}
+
 	var binding TierBindingConfig
 	switch tier {
 	case "tier1_hunter":
-		binding = c.Scanner.Debate.Tiers.Tier1Hunter
+		binding = comp.Tiers.Tier1Hunter
 	case "tier2_challenger":
-		binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		binding = comp.Tiers.Tier2Challenger
 	case "tier3_judge":
-		binding = c.Scanner.Debate.Tiers.Tier3Judge
+		binding = comp.Tiers.Tier3Judge
 	case "tier4_synthesis":
-		binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		binding = comp.Tiers.Tier4Synthesis
+	}
+	if !binding.HasConfig() && c != nil {
+		switch tier {
+		case "tier1_hunter":
+			binding = c.Scanner.Debate.Tiers.Tier1Hunter
+		case "tier2_challenger":
+			binding = c.Scanner.Debate.Tiers.Tier2Challenger
+		case "tier3_judge":
+			binding = c.Scanner.Debate.Tiers.Tier3Judge
+		case "tier4_synthesis":
+			binding = c.Scanner.Debate.Tiers.Tier4Synthesis
+		}
 	}
 
 	resources := binding.GetResources()
-	stageTimeout := c.Scanner.Debate.StageTimeoutSeconds
+	stageTimeout := 0
+	if c != nil {
+		stageTimeout = c.Scanner.Debate.StageTimeoutSeconds
+	}
 	if len(resources) > 0 {
 		primaryResID := resources[0]
-		// 在 LLM.Resources 中定位首选资源
+		// 在当前动态 LLM 资源中定位首选资源
 		if res := c.FindResource(primaryResID); res != nil {
 			recovery := binding.Recovery.normalized()
 			timeout := binding.TimeoutSeconds
@@ -842,7 +1175,10 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 	}
 
 	// 全局默认兜底
-	concurrent := c.Scanner.WorkerCount
+	concurrent := comp.WorkerCount
+	if concurrent <= 0 && c != nil {
+		concurrent = c.Scanner.WorkerCount
+	}
 	if concurrent <= 0 {
 		concurrent = 5
 	}
@@ -850,7 +1186,10 @@ func (c *Config) GetTierConfig(tier string) TierConfig {
 	if timeout <= 0 {
 		timeout = 600
 	}
-	backend := c.LLM.DefaultResource
+	backend := comp.LLM.DefaultResource
+	if backend == "" && c != nil {
+		backend = c.LLM.DefaultResource
+	}
 	if backend == "" {
 		backend = "claude"
 	}
@@ -960,15 +1299,15 @@ func (c *Config) GetAbsPath(path string) string {
 	return filepath.Join(c.GetDataDir(), path)
 }
 
-// LoadConfig reads configuration from specified YAML file
-func LoadConfig(filename string) error {
+// ParseConfigFile 纯函数解析 YAML 配置文件，无全局状态副作用
+func ParseConfigFile(filename string) (Config, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return err
+		return Config{}, err
 	}
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return err
+		return Config{}, err
 	}
 	cfg.AIFix.ContextToken = os.ExpandEnv(cfg.AIFix.ContextToken)
 
@@ -986,73 +1325,8 @@ func LoadConfig(filename string) error {
 	}
 	cfg.Storage.Root = cfg.Server.DataDir
 
-	if cfg.Identity.AlgorithmVersion == "" {
-		cfg.Identity.AlgorithmVersion = "v1"
-	}
-	if cfg.Identity.MaxCandidatesPerObservation <= 0 {
-		cfg.Identity.MaxCandidatesPerObservation = 64
-	}
-	if cfg.Identity.MaxCandidateEdgesPerReport <= 0 {
-		cfg.Identity.MaxCandidateEdgesPerReport = 20000
-	}
-	if cfg.Identity.MaxAIAssignmentWidth <= 0 {
-		cfg.Identity.MaxAIAssignmentWidth = 16
-	}
-	if cfg.Identity.StrongSameThreshold <= 0 {
-		cfg.Identity.StrongSameThreshold = 0.90
-	}
-	if cfg.Identity.AssignBand <= 0 {
-		cfg.Identity.AssignBand = 0.65
-	}
-	if cfg.Identity.RejectBelow <= 0 {
-		cfg.Identity.RejectBelow = 0.45
-	}
-	if cfg.Identity.AIArbitrationConfidence <= 0 {
-		cfg.Identity.AIArbitrationConfidence = 0.70
-	}
-	if cfg.Identity.GrayZoneFallbackMergeScore <= 0 {
-		cfg.Identity.GrayZoneFallbackMergeScore = 0.60
-	}
-	if cfg.Arbitration.MaxCallsPerReport <= 0 {
-		cfg.Arbitration.MaxCallsPerReport = 20
-	}
-	if cfg.Arbitration.ContextLines <= 0 {
-		cfg.Arbitration.ContextLines = 8
-	}
-	if cfg.Arbitration.TimeoutSeconds <= 0 {
-		cfg.Arbitration.TimeoutSeconds = 30
-	}
-	if len(cfg.Lifecycle.HighRiskSeverities) == 0 {
-		cfg.Lifecycle.HighRiskSeverities = []string{"致命", "严重"}
-	}
-	if cfg.Lifecycle.ResolvedRounds <= 0 {
-		cfg.Lifecycle.ResolvedRounds = 2
-	}
-	if cfg.Lifecycle.DormantThreshold <= 0 {
-		cfg.Lifecycle.DormantThreshold = 2
-	}
-	if cfg.Lifecycle.ObsoleteAfterDormant <= 0 {
-		cfg.Lifecycle.ObsoleteAfterDormant = 8
-	}
-	if cfg.Governance.CategoryRegressionBatchSize <= 0 {
-		cfg.Governance.CategoryRegressionBatchSize = 50
-	}
-	if cfg.Governance.CategoryRegressionMaxFailures <= 0 {
-		cfg.Governance.CategoryRegressionMaxFailures = 5
-	}
-	if !cfg.Lifecycle.RequireCoverage {
-		cfg.Lifecycle.RequireCoverage = true
-	}
-	if !cfg.Lifecycle.RequireChange {
-		cfg.Lifecycle.RequireChange = true
-	}
-	if cfg.Lifecycle.AutoResolveMissing == nil {
-		enabled := true
-		cfg.Lifecycle.AutoResolveMissing = &enabled
-	}
-	cfg.Governance.Identity = cfg.Identity
-	cfg.Governance.Arbitration = cfg.Arbitration
-	cfg.Governance.Lifecycle = cfg.Lifecycle
+	// 治理策略直接归一化，彻底根治顶层空字段反向抹零
+	cfg.Governance.NormalizeDefaults()
 
 	// 默认输出格式
 	if cfg.Scanner.OutputFormat == "" {
@@ -1174,10 +1448,24 @@ func LoadConfig(filename string) error {
 	cfg.Retention.NormalizeRetentionDefaults()
 
 	if err := cfg.AIFix.Validate(); err != nil {
-		return fmt.Errorf("invalid ai_fix config: %w", err)
+		return Config{}, fmt.Errorf("invalid ai_fix config: %w", err)
 	}
 
+	return cfg, nil
+}
+
+// LoadConfig reads configuration from specified YAML file and applies dynamic compute snapshot
+func LoadConfig(filename string) error {
+	cfg, err := ParseConfigFile(filename)
+	if err != nil {
+		return err
+	}
 	AppConfig = cfg
+	ApplyDynamicComputeConfig(DynamicComputeConfig{
+		LLM:         cfg.LLM,
+		Tiers:       cfg.Scanner.Debate.Tiers,
+		WorkerCount: cfg.Scanner.WorkerCount,
+	})
 	return nil
 }
 

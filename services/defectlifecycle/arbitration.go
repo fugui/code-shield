@@ -24,8 +24,8 @@ func NewAIInvokingArbitrator(inv invoker.AIInvoker, reportID uint, repoName, tas
 			ReportID: reportID, RepoName: repoName, TaskType: taskType,
 			Stage: "问题归并: AI仲裁", SubTask: "灰色带候选比较", TierName: "system_tool",
 		},
-		contextLines:   models.AppConfig.Arbitration.ContextLines,
-		timeoutSeconds: models.AppConfig.Arbitration.TimeoutSeconds,
+		contextLines:   models.AppConfig.Governance.Arbitration.ContextLines,
+		timeoutSeconds: models.AppConfig.Governance.Arbitration.TimeoutSeconds,
 	}
 }
 

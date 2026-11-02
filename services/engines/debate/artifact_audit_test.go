@@ -62,8 +62,7 @@ func (inv *hunterAuditInvoker) Invoke(request invoker.AIRequest) error {
 func configureHunterAudit(t *testing.T, inv *hunterAuditInvoker) {
 	t.Helper()
 	db := testdb.SetupIsolatedDB(t, "shield_hunter_repair_audit", &models.ArtifactRepairAudit{})
-	models.DB = db
-	t.Cleanup(func() { models.DB = nil })
+	t.Cleanup(models.SetTestDB(db))
 	invoker.RegisterAIInvoker(inv.Name(), inv)
 
 	previousArtifact := models.AppConfig.Scanner.Artifact
@@ -121,10 +120,7 @@ func runHunterAuditStage(t *testing.T, bundleName string, outName string, allowE
 func lastHunterAudit(t *testing.T) models.ArtifactRepairAudit {
 	t.Helper()
 	var audit models.ArtifactRepairAudit
-	if models.DB == nil {
-		t.Fatal("models.DB is nil")
-	}
-	if err := models.DB.Order("id DESC").First(&audit).Error; err != nil {
+	if err := models.GetLatestArtifactRepairAudit(&audit); err != nil {
 		t.Fatalf("query hunter audit: %v", err)
 	}
 	return audit

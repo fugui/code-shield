@@ -153,8 +153,7 @@ func setupAuditTest(t *testing.T, repairInvoker *scriptedRepairInvoker) (
 ) {
 	t.Helper()
 	db := testdb.SetupIsolatedDB(t, "shield_assessment_repair_audit", &models.AnalysisFinding{}, &models.ArtifactRepairAudit{})
-	models.DB = db
-	t.Cleanup(func() { models.DB = nil })
+	t.Cleanup(models.SetTestDB(db))
 	invoker.RegisterAIInvoker("native", repairInvoker)
 	enableAuditRepair(t)
 	engineCtx, session, err := auditTestContext("audit-bundle")
