@@ -296,6 +296,10 @@ export default function ConfigCenter() {
       driver: 'native',
       model: '',
       concurrent: 10,
+      response_format_json: false,
+      enable_thinking: false,
+      max_retries: 3,
+      retry_backoff_ms: 500,
       endpoints: [
         { name: 'deepseek-primary', base_url: 'https://api.deepseek.com/v1/chat/completions', api_key: '', model: 'deepseek-chat', concurrent: 10 }
       ]
@@ -952,6 +956,111 @@ export default function ConfigCenter() {
                     </div>
                   </div>
                 ))}
+
+                {/* Native 高级传输与协议选项 */}
+                <details className="code-config-details" style={{ marginTop: '0.85rem', border: '1px solid var(--color-border-primary)', borderRadius: 'var(--radius-sm, 6px)', padding: '0.75rem', background: 'var(--color-bg-muted)' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600, color: 'var(--color-text-secondary)', userSelect: 'none' }}>
+                    ⚙️ Native 高级协议与超时参数 (可选)
+                  </summary>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!editingResource.response_format_json}
+                          onChange={e => setEditingResource(prev => ({ ...prev, response_format_json: e.target.checked }))}
+                        />
+                        <span>强制 JSON 输出 (response_format)</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!editingResource.enable_thinking}
+                          onChange={e => setEditingResource(prev => ({ ...prev, enable_thinking: e.target.checked }))}
+                        />
+                        <span>深度思考支持 (reasoning_content)</span>
+                      </label>
+                    </div>
+
+                    <div className="code-config-grid-3">
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>生成 Tokens (max_tokens):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          placeholder="默认不限"
+                          value={editingResource.max_tokens || ''}
+                          onChange={e => setEditingResource(prev => ({ ...prev, max_tokens: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>重试次数 (max_retries):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          value={editingResource.max_retries ?? 3}
+                          onChange={e => setEditingResource(prev => ({ ...prev, max_retries: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>退避时长 (retry_backoff_ms):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step={100}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          value={editingResource.retry_backoff_ms ?? 500}
+                          onChange={e => setEditingResource(prev => ({ ...prev, retry_backoff_ms: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="code-config-grid-3">
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>单次超时 (attempt_s):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          placeholder="0 继承流水线"
+                          value={editingResource.attempt_timeout_seconds || ''}
+                          onChange={e => setEditingResource(prev => ({ ...prev, attempt_timeout_seconds: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>首包超时 (first_byte_s):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          placeholder="0 默认不限"
+                          value={editingResource.first_byte_timeout_seconds || ''}
+                          onChange={e => setEditingResource(prev => ({ ...prev, first_byte_timeout_seconds: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                      <div className="code-config-field" style={{ margin: 0 }}>
+                        <label className="code-config-label" style={{ fontSize: '0.78rem' }}>空闲超时 (idle_timeout_s):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          className="code-config-input"
+                          style={{ fontSize: '0.82rem', padding: '0.3rem 0.5rem' }}
+                          placeholder="0 默认不限"
+                          value={editingResource.idle_timeout_seconds || ''}
+                          onChange={e => setEditingResource(prev => ({ ...prev, idle_timeout_seconds: parseInt(e.target.value, 10) || 0 }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </details>
               </div>
             ) : (
               <div className="code-config-field" style={{ margin: 0 }}>

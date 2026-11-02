@@ -1,6 +1,7 @@
 package models
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	"gorm.io/datatypes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -207,7 +209,7 @@ func TestLoadConfigNewFormat(t *testing.T) {
 	if AppConfig.Governance.Lifecycle.ResolvedRounds != 2 ||
 		AppConfig.Governance.Lifecycle.DormantThreshold != 2 ||
 		AppConfig.Governance.Lifecycle.ObsoleteAfterDormant != 8 ||
-		!AppConfig.Governance.Lifecycle.RequireCoverage || !AppConfig.Governance.Lifecycle.RequireChange {
+		!AppConfig.Governance.Lifecycle.RequireCoverageEnabled() || !AppConfig.Governance.Lifecycle.RequireChangeEnabled() {
 		t.Errorf("unexpected lifecycle config: %+v", AppConfig.Governance.Lifecycle)
 	}
 
@@ -948,6 +950,19 @@ func TestMigrateLegacyDynamicConfigsOnce(t *testing.T) {
 
 func TestConfigYamlExampleParsesCleanly(t *testing.T) {
 	examplePath := filepath.Join("..", "config.yaml.example")
+	rawBytes, err := os.ReadFile(examplePath)
+	if err != nil {
+		t.Fatalf("read config.yaml.example: %v", err)
+	}
+
+	// 强约束：config.yaml.example 中严禁残留 models.Config 中不存在的废弃/空壳字段
+	var strictCfg Config
+	dec := yaml.NewDecoder(bytes.NewReader(rawBytes))
+	dec.KnownFields(true)
+	if err := dec.Decode(&strictCfg); err != nil {
+		t.Fatalf("config.yaml.example contains unknown/deprecated YAML fields: %v", err)
+	}
+
 	cfg, err := ParseConfigFile(examplePath)
 	if err != nil {
 		t.Fatalf("ParseConfigFile(config.yaml.example) failed: %v", err)
@@ -972,5 +987,243 @@ func TestConfigYamlExampleParsesCleanly(t *testing.T) {
 	}
 	if err := ValidateComputeConfig(&seed, &cfg); err != nil {
 		t.Fatalf("ValidateComputeConfig failed for seed: %v", err)
+	}
+}
+
+func TestLocalConfigYamlParsesCleanlyIfPresent(t *testing.T) {
+	baseDir := GetAppBaseDir()
+	configPath := filepath.Join(baseDir, "config.yaml")
+	rawBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skip("local config.yaml does not exist, skipping")
+		}
+		t.Fatalf("read config.yaml: %v", err)
+	}
+
+	// 强约束：本地 config.yaml 中严禁残留 models.Config 中不存在的废弃/空壳字段
+	var strictCfg Config
+	dec := yaml.NewDecoder(bytes.NewReader(rawBytes))
+	dec.KnownFields(true)
+	if err := dec.Decode(&strictCfg); err != nil {
+		t.Fatalf("local config.yaml contains unknown/deprecated YAML fields: %v", err)
+	}
+
+	cfg, err := ParseConfigFile(configPath)
+	if err != nil {
+		t.Fatalf("ParseConfigFile(config.yaml) failed: %v", err)
+	}
+
+	seed := DynamicComputeConfig{
+		LLM:         cfg.LLM,
+		Tiers:       cfg.Scanner.Debate.Tiers,
+		WorkerCount: cfg.Scanner.WorkerCount,
+	}
+	if err := ValidateComputeConfig(&seed, &cfg); err != nil {
+		t.Fatalf("ValidateComputeConfig failed for local config.yaml: %v", err)
+	}
+}
+
+func TestDynamicComputePreservesStaticYAMLFieldsOnRestart(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/test_dynamic_static.db"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&SystemDynamicConfig{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	origDB := DB
+	origAppConfig := AppConfig
+	origCompute := GetComputeConfig()
+	t.Cleanup(func() {
+		DB = origDB
+		AppConfig = origAppConfig
+		ApplyDynamicComputeConfig(origCompute)
+	})
+	DB = db
+
+	// Day 1: 首次启动加载初始 config.yaml 并执行 Seed-Once 入库
+	day1YAML := `
+llm:
+  default_resource: "native"
+  debug_logs: false
+  resources:
+    - id: "agy"
+      driver: "agy"
+      concurrent: 4
+    - id: "native"
+      driver: "native"
+      concurrent: 8
+      endpoints:
+        - name: "ep1"
+          base_url: "http://127.0.0.1:8000/v1/chat/completions"
+          model: "glm-4"
+          concurrent: 8
+scanner:
+  worker_count: 5
+  debate:
+    tiers:
+      tier1_hunter:
+        resources: ["agy"]
+        timeout_seconds: 3600
+        attempt_timeout_seconds: 1200
+        idle_timeout_seconds: 600
+        timeout_recovery: "retry"
+        max_split_depth: 4
+        recovery:
+          max_total_attempts: 2
+          max_attempts_per_resource: 2
+ai_fix:
+  fix_url: "https://example.invalid/fixdefect?id={defect_id}"
+  context_token: "test-token"
+  report_base_url: "https://example.invalid"
+`
+	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfgFile, []byte(day1YAML), 0644); err != nil {
+		t.Fatalf("write day1 yaml: %v", err)
+	}
+	if err := LoadConfig(cfgFile); err != nil {
+		t.Fatalf("LoadConfig day1: %v", err)
+	}
+	InitDynamicCompute(DynamicComputeConfig{
+		LLM:         AppConfig.LLM,
+		Tiers:       AppConfig.Scanner.Debate.Tiers,
+		WorkerCount: AppConfig.Scanner.WorkerCount,
+	})
+
+	// 模拟管理员在 Web 界面修改了动态配置（WorkerCount=16, Tier1 TimeoutSeconds=5400）并持久化至 DB
+	var rec SystemDynamicConfig
+	if err := db.Where("category = ?", "compute").First(&rec).Error; err != nil {
+		t.Fatalf("load compute record: %v", err)
+	}
+	var uiCompute DynamicComputeConfig
+	if err := json.Unmarshal(rec.Data, &uiCompute); err != nil {
+		t.Fatalf("unmarshal compute record: %v", err)
+	}
+	uiCompute.WorkerCount = 16
+	uiCompute.Tiers.Tier1Hunter.TimeoutSeconds = 5400
+	uiRaw, err := json.Marshal(uiCompute)
+	if err != nil {
+		t.Fatalf("marshal uiCompute: %v", err)
+	}
+	rec.Data = datatypes.JSON(uiRaw)
+	rec.Version = 2
+	if err := db.Save(&rec).Error; err != nil {
+		t.Fatalf("save uiCompute: %v", err)
+	}
+
+	// Day 2: 运维修改本地 config.yaml 中未暴露在界面上的静态冷字段，然后重启服务
+	day2YAML := `
+llm:
+  default_resource: "native"
+  debug_logs: true
+  resources:
+    - id: "agy"
+      driver: "agy"
+      concurrent: 4
+    - id: "native"
+      driver: "native"
+      concurrent: 8
+      endpoints:
+        - name: "ep1"
+          base_url: "http://127.0.0.1:8000/v1/chat/completions"
+          model: "glm-4"
+          concurrent: 8
+scanner:
+  worker_count: 5
+  debate:
+    tiers:
+      tier1_hunter:
+        resources: ["agy"]
+        timeout_seconds: 3600
+        attempt_timeout_seconds: 1200
+        idle_timeout_seconds: 900
+        timeout_recovery: "split"
+        max_split_depth: 10
+        recovery:
+          max_total_attempts: 5
+          max_attempts_per_resource: 5
+          split_on: ["timeout"]
+ai_fix:
+  fix_url: "https://example.invalid/fixdefect?id={defect_id}"
+  context_token: "test-token"
+  report_base_url: "https://example.invalid"
+`
+	if err := os.WriteFile(cfgFile, []byte(day2YAML), 0644); err != nil {
+		t.Fatalf("write day2 yaml: %v", err)
+	}
+	if err := LoadConfig(cfgFile); err != nil {
+		t.Fatalf("LoadConfig day2: %v", err)
+	}
+	InitDynamicCompute(DynamicComputeConfig{
+		LLM:         AppConfig.LLM,
+		Tiers:       AppConfig.Scanner.Debate.Tiers,
+		WorkerCount: AppConfig.Scanner.WorkerCount,
+	})
+
+	// 1. 验证 DB 中的动态配置（界面配置项）依然生效
+	if GetWorkerCount() != 16 {
+		t.Errorf("expected dynamic WorkerCount 16 from DB, got %d", GetWorkerCount())
+	}
+	tier1Cfg := AppConfig.GetTierConfig("tier1_hunter")
+	if tier1Cfg.TimeoutSeconds != 5400 {
+		t.Errorf("expected dynamic Tier1 TimeoutSeconds 5400 from DB, got %d", tier1Cfg.TimeoutSeconds)
+	}
+
+	// 2. 验证 config.yaml 中的静态字段（界面未暴露项）未被 DB 覆盖，重启后 100% 生效
+	if !AppConfig.LLM.DebugLogs {
+		t.Errorf("expected static llm.debug_logs=true from config.yaml to take effect, got false")
+	}
+	if tier1Cfg.IdleTimeoutSeconds != 900 {
+		t.Errorf("expected static tier1 idle_timeout_seconds=900 from config.yaml, got %d", tier1Cfg.IdleTimeoutSeconds)
+	}
+	if tier1Cfg.TimeoutRecovery != "split" {
+		t.Errorf("expected static tier1 timeout_recovery='split' from config.yaml, got %q", tier1Cfg.TimeoutRecovery)
+	}
+	if tier1Cfg.MaxSplitDepth != 10 {
+		t.Errorf("expected static tier1 max_split_depth=10 from config.yaml, got %d", tier1Cfg.MaxSplitDepth)
+	}
+	if tier1Cfg.Recovery.MaxTotalAttempts != 5 {
+		t.Errorf("expected static tier1 recovery.max_total_attempts=5 from config.yaml, got %d", tier1Cfg.Recovery.MaxTotalAttempts)
+	}
+}
+
+func TestLoadConfig_ExplicitFalseBooleansPreserved(t *testing.T) {
+	origAppConfig := AppConfig
+	origCompute := GetComputeConfig()
+	t.Cleanup(func() {
+		AppConfig = origAppConfig
+		ApplyDynamicComputeConfig(origCompute)
+	})
+
+	yamlFalse := `
+governance:
+  lifecycle:
+    require_coverage: false
+    require_change: false
+retention:
+  enable_sparse_scope: false
+ai_fix:
+  fix_url: "https://example.invalid/fixdefect?id={defect_id}"
+  context_token: "test-token"
+  report_base_url: "https://example.invalid"
+`
+	tmpFile := filepath.Join(t.TempDir(), "config_false_bools.yaml")
+	if err := os.WriteFile(tmpFile, []byte(yamlFalse), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	cfg, err := ParseConfigFile(tmpFile)
+	if err != nil {
+		t.Fatalf("ParseConfigFile failed: %v", err)
+	}
+	if cfg.Governance.Lifecycle.RequireCoverage == nil || *cfg.Governance.Lifecycle.RequireCoverage {
+		t.Errorf("expected explicit require_coverage=false to be preserved, got %v", cfg.Governance.Lifecycle.RequireCoverage)
+	}
+	if cfg.Governance.Lifecycle.RequireChange == nil || *cfg.Governance.Lifecycle.RequireChange {
+		t.Errorf("expected explicit require_change=false to be preserved, got %v", cfg.Governance.Lifecycle.RequireChange)
+	}
+	if cfg.Retention.EnableSparseScope == nil || *cfg.Retention.EnableSparseScope {
+		t.Errorf("expected explicit enable_sparse_scope=false to be preserved, got %v", cfg.Retention.EnableSparseScope)
 	}
 }

@@ -115,7 +115,7 @@ func CommitScanLedger(input LedgerInput) (*LedgerResult, error) {
 		return nil, errors.New("ledger commit requires report, repository and task type")
 	}
 	if input.AlgorithmVersion == "" {
-		input.AlgorithmVersion = AlgorithmVersion
+		input.AlgorithmVersion = RuntimeAlgorithmVersion()
 	}
 	if input.CommittedAt.IsZero() {
 		input.CommittedAt = time.Now()

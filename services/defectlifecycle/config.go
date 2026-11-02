@@ -1,6 +1,16 @@
 package defectlifecycle
 
-import "code-shield/models"
+import (
+	"code-shield/models"
+	"strings"
+)
+
+func RuntimeAlgorithmVersion() string {
+	if v := strings.TrimSpace(models.AppConfig.Governance.Identity.AlgorithmVersion); v != "" {
+		return v
+	}
+	return AlgorithmVersion
+}
 
 func RuntimeMatchBudget() MatchBudget {
 	return MatchBudget{
@@ -28,8 +38,8 @@ func RuntimeLifecyclePolicy() LifecyclePolicy {
 		ResolvedRounds:       models.AppConfig.Governance.Lifecycle.ResolvedRounds,
 		DormantThreshold:     models.AppConfig.Governance.Lifecycle.DormantThreshold,
 		ObsoleteAfterDormant: models.AppConfig.Governance.Lifecycle.ObsoleteAfterDormant,
-		RequireCoverage:      models.AppConfig.Governance.Lifecycle.RequireCoverage,
-		RequireChange:        models.AppConfig.Governance.Lifecycle.RequireChange,
+		RequireCoverage:      models.AppConfig.Governance.Lifecycle.RequireCoverageEnabled(),
+		RequireChange:        models.AppConfig.Governance.Lifecycle.RequireChangeEnabled(),
 		AutoResolveMissing:   models.AppConfig.Governance.Lifecycle.AutoResolveMissingEnabled(),
 	}
 }

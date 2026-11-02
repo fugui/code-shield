@@ -408,3 +408,100 @@ ai_fix:
 		t.Errorf("expected WorkerCount 8, got %d", curr.WorkerCount)
 	}
 }
+
+func TestUpdateComputeConfig_PreservesExistingEndpointAPIKeyWhenBlankOrMasked(t *testing.T) {
+	db := setupConfigRuntimeTest(t)
+
+	const existingKey = "sk-real-production-secret-1234"
+	now := time.Now()
+	initCompute := models.DynamicComputeConfig{
+		LLM: models.LLMConfig{
+			DefaultResource: "native-1",
+			Resources: []models.ComputeResourceConfig{
+				{
+					ID:         "native-1",
+					Driver:     "native",
+					Concurrent: 10,
+					Endpoints: []models.ResourceEndpointConfig{
+						{Name: "ep-1", BaseURL: "http://127.0.0.1:8000/chat/completions", APIKey: existingKey, Model: "glm-4-flash", Concurrent: 10},
+					},
+				},
+				{ID: "agy-1", Driver: "agy", Concurrent: 5},
+			},
+		},
+		Tiers: models.DebateTiersConfig{
+			Tier1Hunter:     models.TierBindingConfig{Resource: "agy-1", TimeoutSeconds: 1800, AttemptTimeoutSeconds: 900},
+			Tier2Challenger: models.TierBindingConfig{Resource: "native-1", TimeoutSeconds: 1200, AttemptTimeoutSeconds: 600},
+		},
+		WorkerCount: 5,
+	}
+	raw, err := json.Marshal(initCompute)
+	if err != nil {
+		t.Fatalf("marshal initCompute: %v", err)
+	}
+	if err := db.Create(&models.SystemDynamicConfig{
+		Category:  "compute",
+		Data:      datatypes.JSON(raw),
+		Version:   1,
+		UpdatedBy: "seed",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed compute: %v", err)
+	}
+
+	router := gin.New()
+	router.PUT("/admin/compute/config", UpdateComputeConfig)
+
+	// 1. 提交空字符串 APIKey ("") 及 Native 高级参数，应保留原有真实密钥并持久化高级参数
+	blankKeyPayload := validComputePayload(1, "")
+	blankKeyPayload.LLM.Resources[0].EnableThinking = true
+	blankKeyPayload.LLM.Resources[0].ResponseFormatJSON = true
+	blankKeyPayload.LLM.Resources[0].MaxTokens = 65536
+	blankKeyPayload.LLM.Resources[0].FirstByteTimeoutSeconds = 120
+	blankKeyPayload.LLM.Resources[0].IdleTimeoutSeconds = 180
+	blankKeyPayload.LLM.Resources[0].MaxOutputBytes = 131072
+	blankKeyPayload.LLM.Resources[0].MaxRetries = 5
+	blankKeyPayload.LLM.Resources[0].RetryBackoffMs = 1000
+
+	body1, err := json.Marshal(blankKeyPayload)
+	if err != nil {
+		t.Fatalf("marshal blankKeyPayload: %v", err)
+	}
+	req1 := httptest.NewRequest(http.MethodPut, "/admin/compute/config", bytes.NewReader(body1))
+	req1.Header.Set("Content-Type", "application/json")
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 for blank api_key update, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	resAfterBlank := models.AppConfig.FindResource("native-1")
+	if resAfterBlank == nil || len(resAfterBlank.Endpoints) == 0 {
+		t.Fatalf("expected native-1 resource present after update")
+	}
+	if resAfterBlank.Endpoints[0].APIKey != existingKey {
+		t.Fatalf("expected blank api_key to preserve existing key %q, got %q", existingKey, resAfterBlank.Endpoints[0].APIKey)
+	}
+	if !resAfterBlank.EnableThinking || !resAfterBlank.ResponseFormatJSON || resAfterBlank.MaxTokens != 65536 || resAfterBlank.FirstByteTimeoutSeconds != 120 {
+		t.Fatalf("expected native advanced params persisted, got %+v", *resAfterBlank)
+	}
+
+	// 2. 提交掩码形式 APIKey ("sk-****1234")，同样应保留原有真实密钥
+	maskedPayload := validComputePayload(2, maskAPIKey(existingKey))
+	body2, err := json.Marshal(maskedPayload)
+	if err != nil {
+		t.Fatalf("marshal maskedPayload: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodPut, "/admin/compute/config", bytes.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for masked api_key update, got %d: %s", w2.Code, w2.Body.String())
+	}
+	resAfterMasked := models.AppConfig.FindResource("native-1")
+	if resAfterMasked == nil || resAfterMasked.Endpoints[0].APIKey != existingKey {
+		t.Fatalf("expected masked api_key to preserve existing key %q, got %+v", existingKey, resAfterMasked)
+	}
+}

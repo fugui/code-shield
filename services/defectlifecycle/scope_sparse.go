@@ -16,7 +16,7 @@ import (
 // filterSparseScope 将全量计划范围条目裁剪为稀疏落库集合与外置压缩 Manifest 字节
 func filterSparseScope(input ScanInput, fullScope []models.ScanScopeEntry) (sparse []models.ScanScopeEntry, manifestGz []byte) {
 	// 1. 若配置中显式禁用了稀疏存储，全量落库
-	if !models.AppConfig.Retention.EnableSparseScope {
+	if !models.AppConfig.Retention.EnableSparseScopeEnabled() {
 		manifestGz, _ = compressScopeManifest(fullScope)
 		return fullScope, manifestGz
 	}
