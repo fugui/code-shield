@@ -31,14 +31,12 @@ storage:
   root: "."                             # 数据根目录，下设 codes/ (缓存) 与 reports/ (报告)
 
 database:
-  driver: "postgres"                    # 数据库驱动，固定为 postgres
   host: "127.0.0.1"                     # PostgreSQL 主机地址
   port: 5432                            # PostgreSQL 端口
   user: "postgres"                      # 数据库用户名
   password: "CodeShield618!"            # 数据库密码
   dbname: "code_shield"                 # 数据库名称
   sslmode: "disable"                    # SSL 模式: disable, require, verify-ca, verify-full
-  timezone: "Asia/Shanghai"             # 会话时区
   max_open_conns: 50                    # 连接池最大打开连接数
   max_idle_conns: 10                    # 连接池最大空闲连接数
 
@@ -92,8 +90,6 @@ llm:
       driver: "native"
       model: "deepseek-v4-flash-vision-exp"
       concurrent: 10
-      base_url: "https://api.deepseek.com/v1/chat/completions"
-      api_key: "sk-be919fc7cb9d429abffbf7e2c0aabb3a"
       response_format_json: false
       enable_thinking: false           # false 下发 "thinking": {"type":"disabled"}；true 时不下发该字段
       max_tokens: 32768                # text 流默认上限；同时仍有 MaxOutputBytes 字节保护
@@ -137,12 +133,6 @@ scanner:
     continuation:
       enabled: true                    # 默认开启；设置为 false 可完全回滚为立即失败
       max_seconds: 300                 # 单次续跑预算上限，且不超过原请求剩余预算
-
-  # 扫描 checkpoint 兼容策略
-  resume:
-    # v2 bundle checkpoint 写盘时还没有 artifact 完整性状态。
-    # 默认 reject 会重扫；确认旧 checkpoint 不含 quarantined candidate 后才可切换。
-    legacy_v2_policy: reject
 
   # 全局流控与避峰策略 (Throttling & Work Hours)
   throttling:

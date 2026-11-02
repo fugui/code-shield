@@ -11,7 +11,7 @@ import (
 
 func TestFilterSparseScopeAndManifest(t *testing.T) {
 	// 确保配置中开启稀疏存储
-	models.AppConfig.Retention.EnableSparseScope = true
+	models.AppConfig.Retention.EnableSparseScope = models.BoolPtr(true)
 
 	fullScope := []models.ScanScopeEntry{}
 	// 添加 20 个健康且未变更的文件

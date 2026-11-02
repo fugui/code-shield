@@ -73,7 +73,7 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 		input.Report.TaskTypeID = input.TaskType.ID
 	}
 	if input.AlgorithmVersion == "" {
-		input.AlgorithmVersion = AlgorithmVersion
+		input.AlgorithmVersion = RuntimeAlgorithmVersion()
 	}
 
 	findings := make([]models.AnalysisFinding, len(input.Findings))

@@ -89,6 +89,11 @@ func Float64Ptr(v float64) *float64 {
 	return &v
 }
 
+// BoolPtr 辅助函数：将 bool 转换为指针
+func BoolPtr(v bool) *bool {
+	return &v
+}
+
 func (c AdaptiveThrottlingConfig) GetIntervalSeconds() int {
 	if c.IntervalSeconds > 0 {
 		return c.IntervalSeconds
@@ -398,6 +403,9 @@ func (s *ScannerConfig) NormalizeDefaults() {
 		}
 		if tier.AttemptTimeoutSeconds <= 0 {
 			tier.AttemptTimeoutSeconds = 900
+			if tier.AttemptTimeoutSeconds > tier.TimeoutSeconds {
+				tier.AttemptTimeoutSeconds = tier.TimeoutSeconds
+			}
 		}
 		if tier.Recovery == nil {
 			tier.Recovery = &TierRecoveryConfig{
@@ -514,20 +522,20 @@ func ValidateComputeConfig(compute *DynamicComputeConfig, static *Config) error 
 				}
 				isNative := resourceID == "native"
 				if isNative == tier.AllowedThick {
-					engineType := "Thick Agent"
-					if isNative {
-						engineType = "Native LLM"
+					expectedType := "Thick Agent"
+					if !tier.AllowedThick {
+						expectedType = "Native LLM"
 					}
-					return fmt.Errorf("%s 仅允许 %s，禁止绑定 %q", tier.RoleTitle, engineType, resourceID)
+					return fmt.Errorf("%s 仅允许绑定 %s 节点，禁止绑定 %q", tier.RoleTitle, expectedType, resourceID)
 				}
 			} else {
 				isNative := resource.Driver == "native"
 				if isNative == tier.AllowedThick {
-					engineType := "Thick Agent"
-					if isNative {
-						engineType = "Native LLM"
+					expectedType := "Thick Agent"
+					if !tier.AllowedThick {
+						expectedType = "Native LLM"
 					}
-					return fmt.Errorf("%s 仅允许 %s，禁止绑定 %q", tier.RoleTitle, engineType, resourceID)
+					return fmt.Errorf("%s 仅允许绑定 %s 节点，禁止绑定 %q", tier.RoleTitle, expectedType, resourceID)
 				}
 			}
 		}
@@ -678,11 +686,13 @@ func (g *GovernancePolicyConfig) NormalizeDefaults() {
 	if g.CategoryRegressionMaxFailures <= 0 {
 		g.CategoryRegressionMaxFailures = 5
 	}
-	if !g.Lifecycle.RequireCoverage {
-		g.Lifecycle.RequireCoverage = true
+	if g.Lifecycle.RequireCoverage == nil {
+		enabled := true
+		g.Lifecycle.RequireCoverage = &enabled
 	}
-	if !g.Lifecycle.RequireChange {
-		g.Lifecycle.RequireChange = true
+	if g.Lifecycle.RequireChange == nil {
+		enabled := true
+		g.Lifecycle.RequireChange = &enabled
 	}
 	if g.Lifecycle.AutoResolveMissing == nil {
 		enabled := true
@@ -723,9 +733,17 @@ type LifecyclePolicyConfig struct {
 	ResolvedRounds       int      `yaml:"resolved_rounds" json:"resolved_rounds"`
 	DormantThreshold     int      `yaml:"dormant_rounds" json:"dormant_rounds"`
 	ObsoleteAfterDormant int      `yaml:"obsolete_after_dormant_rounds" json:"obsolete_after_dormant_rounds"`
-	RequireCoverage      bool     `yaml:"require_coverage" json:"require_coverage"`
-	RequireChange        bool     `yaml:"require_change" json:"require_change"`
+	RequireCoverage      *bool    `yaml:"require_coverage" json:"require_coverage"`
+	RequireChange        *bool    `yaml:"require_change" json:"require_change"`
 	AutoResolveMissing   *bool    `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+}
+
+func (c LifecyclePolicyConfig) RequireCoverageEnabled() bool {
+	return c.RequireCoverage == nil || *c.RequireCoverage
+}
+
+func (c LifecyclePolicyConfig) RequireChangeEnabled() bool {
+	return c.RequireChange == nil || *c.RequireChange
 }
 
 func (c LifecyclePolicyConfig) AutoResolveMissingEnabled() bool {
@@ -748,9 +766,13 @@ type RetentionConfig struct {
 	// 智能体辩论轨迹 DB 记录保留天数（默认 30 天）
 	DebateLogRetentionDays int `yaml:"debate_log_retention_days" json:"debate_log_retention_days"`
 	// 覆盖明细是否启用稀疏存储（默认 true，推荐开启）
-	EnableSparseScope bool `yaml:"enable_sparse_scope" json:"enable_sparse_scope"`
+	EnableSparseScope *bool `yaml:"enable_sparse_scope" json:"enable_sparse_scope"`
 	// 覆盖清单全量压缩产物存储目录（已废弃：现统一收敛于各报告专属目录）
 	ScopeManifestDir string `yaml:"scope_manifest_dir,omitempty" json:"scope_manifest_dir,omitempty"`
+}
+
+func (c RetentionConfig) EnableSparseScopeEnabled() bool {
+	return c.EnableSparseScope == nil || *c.EnableSparseScope
 }
 
 // NormalizeRetentionDefaults 填充保留策略默认值
@@ -767,9 +789,10 @@ func (c *RetentionConfig) NormalizeRetentionDefaults() {
 	if c.DebateLogRetentionDays <= 0 {
 		c.DebateLogRetentionDays = 30
 	}
-	if !c.EnableSparseScope {
+	if c.EnableSparseScope == nil {
 		// 若 YAML 中未显式设置，默认开启稀疏存储
-		c.EnableSparseScope = true
+		enabled := true
+		c.EnableSparseScope = &enabled
 	}
 }
 
@@ -876,10 +899,65 @@ func GetComputeConfig() DynamicComputeConfig {
 	return *ptr
 }
 
+// mergeStaticTierPreservingDynamic 合并静态 YAML 的超时/重试策略与动态算力节点绑定及预算
+func mergeStaticTierPreservingDynamic(staticTier *TierBindingConfig, dynamicTier *TierBindingConfig) {
+	if staticTier == nil || dynamicTier == nil {
+		return
+	}
+	// 动态热字段：优先使用 dynamicTier (来自 UI 或 DB 快照)
+	if dynamicTier.Resource != "" {
+		staticTier.Resource = dynamicTier.Resource
+	}
+	if len(dynamicTier.Resources) > 0 {
+		staticTier.Resources = dynamicTier.Resources
+	}
+	if dynamicTier.TimeoutSeconds > 0 {
+		staticTier.TimeoutSeconds = dynamicTier.TimeoutSeconds
+	}
+	if dynamicTier.AttemptTimeoutSeconds > 0 {
+		staticTier.AttemptTimeoutSeconds = dynamicTier.AttemptTimeoutSeconds
+	}
+
+	// 静态冷字段：若 staticTier (来自 config.yaml) 已显式配置，保持其真值并同步至 dynamicTier
+	if staticTier.IdleTimeoutSeconds > 0 {
+		dynamicTier.IdleTimeoutSeconds = staticTier.IdleTimeoutSeconds
+	}
+	if staticTier.FirstByteTimeoutSeconds > 0 {
+		dynamicTier.FirstByteTimeoutSeconds = staticTier.FirstByteTimeoutSeconds
+	}
+	if staticTier.MaxOutputBytes > 0 {
+		dynamicTier.MaxOutputBytes = staticTier.MaxOutputBytes
+	}
+	if staticTier.TimeoutRecovery != "" {
+		dynamicTier.TimeoutRecovery = staticTier.TimeoutRecovery
+	}
+	if staticTier.MaxSplitDepth > 0 {
+		dynamicTier.MaxSplitDepth = staticTier.MaxSplitDepth
+	}
+	if staticTier.Recovery != nil {
+		dynamicTier.Recovery = staticTier.Recovery
+	}
+	// 最终 staticTier 保持与 dynamicTier 完整一致
+	*staticTier = *dynamicTier
+}
+
 // ApplyDynamicComputeConfig 原子更新运行时动态算力配置快照并同步回 AppConfig
 func ApplyDynamicComputeConfig(next DynamicComputeConfig) {
 	NormalizeComputeDefaults(&next)
+
+	// 保护来自 config.yaml 的静态冷配置，防止被 DB compute 快照反向覆写
+	staticDebugLogs := AppConfig.LLM.DebugLogs
+	if staticDebugLogs {
+		next.LLM.DebugLogs = true
+	}
+
+	mergeStaticTierPreservingDynamic(&AppConfig.Scanner.Debate.Tiers.Tier1Hunter, &next.Tiers.Tier1Hunter)
+	mergeStaticTierPreservingDynamic(&AppConfig.Scanner.Debate.Tiers.Tier2Challenger, &next.Tiers.Tier2Challenger)
+	mergeStaticTierPreservingDynamic(&AppConfig.Scanner.Debate.Tiers.Tier3Judge, &next.Tiers.Tier3Judge)
+	mergeStaticTierPreservingDynamic(&AppConfig.Scanner.Debate.Tiers.Tier4Synthesis, &next.Tiers.Tier4Synthesis)
+
 	AppConfig.LLM = next.LLM
+	AppConfig.LLM.DebugLogs = staticDebugLogs
 	AppConfig.Scanner.Debate.Tiers = next.Tiers
 	AppConfig.Scanner.WorkerCount = next.WorkerCount
 
@@ -903,6 +981,9 @@ func NormalizeComputeDefaults(comp *DynamicComputeConfig) {
 		}
 		if tier.AttemptTimeoutSeconds <= 0 {
 			tier.AttemptTimeoutSeconds = 900
+			if tier.AttemptTimeoutSeconds > tier.TimeoutSeconds {
+				tier.AttemptTimeoutSeconds = tier.TimeoutSeconds
+			}
 		}
 		if tier.Recovery == nil {
 			tier.Recovery = &TierRecoveryConfig{

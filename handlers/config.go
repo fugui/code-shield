@@ -224,6 +224,34 @@ func GetComputeConfig(c *gin.Context) {
 	})
 }
 
+func preserveExistingSecrets(next *models.DynamicComputeConfig, old models.DynamicComputeConfig) {
+	if next == nil {
+		return
+	}
+	for i := range next.LLM.Resources {
+		nextRes := &next.LLM.Resources[i]
+		oldRes := old.LLM.FindResource(nextRes.ID)
+		if oldRes == nil {
+			continue
+		}
+		oldEndpoints := make(map[string]string)
+		for _, ep := range oldRes.Endpoints {
+			if strings.TrimSpace(ep.APIKey) != "" {
+				oldEndpoints[ep.Name] = ep.APIKey
+			}
+		}
+		for j := range nextRes.Endpoints {
+			nextEp := &nextRes.Endpoints[j]
+			trimmed := strings.TrimSpace(nextEp.APIKey)
+			if trimmed == "" || strings.Contains(trimmed, "****") {
+				if existingKey, ok := oldEndpoints[nextEp.Name]; ok {
+					nextEp.APIKey = existingKey
+				}
+			}
+		}
+	}
+}
+
 // UpdateComputeConfigRequest 算力配置更新请求负载
 type UpdateComputeConfigRequest struct {
 	Version     int                      `json:"version"`
@@ -246,7 +274,18 @@ func UpdateComputeConfig(c *gin.Context) {
 		WorkerCount: req.WorkerCount,
 	}
 
-	// 1. 强约束校验（默认资源合法性、Native 端点存在性、各阶段引擎类型约束）
+	// 1. 查询存量配置，防敏感 API Key 被空值或脱敏掩码意外冲刷覆盖
+	var record models.SystemDynamicConfig
+	res := models.DB.Where("category = ?", "compute").First(&record)
+	var oldCompute models.DynamicComputeConfig
+	if res.Error == nil {
+		_ = json.Unmarshal(record.Data, &oldCompute)
+	} else {
+		oldCompute = models.GetComputeConfig()
+	}
+	preserveExistingSecrets(&nextCompute, oldCompute)
+
+	// 2. 强约束校验（默认资源合法性、Native 端点存在性、各阶段引擎类型约束）
 	if err := models.ValidateComputeConfig(&nextCompute, &models.AppConfig); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -254,17 +293,13 @@ func UpdateComputeConfig(c *gin.Context) {
 
 	models.NormalizeComputeDefaults(&nextCompute)
 
-	// 2. 乐观锁校验 (CAS 防并发静默覆盖)
-	var record models.SystemDynamicConfig
-	res := models.DB.Where("category = ?", "compute").First(&record)
+	// 3. 乐观锁校验 (CAS 防并发静默覆盖)
 	now := time.Now()
-
 	operator := "admin"
 	if user := commonAuth.GetUserContext(c); user != nil && user.Username != "" {
 		operator = user.Username
 	}
 
-	var oldCompute models.DynamicComputeConfig
 	if res.Error == nil {
 		// 已存在记录，比对提交的 version 与数据库当前 version
 		if req.Version > 0 && record.Version != req.Version {
@@ -274,12 +309,9 @@ func UpdateComputeConfig(c *gin.Context) {
 			})
 			return
 		}
-		_ = json.Unmarshal(record.Data, &oldCompute)
-	} else {
-		oldCompute = models.GetComputeConfig()
 	}
 
-	// 3. 序列化并持久化至 DB (SSOT)
+	// 4. 序列化并持久化至 DB (SSOT)
 	rawJSON, err := json.Marshal(nextCompute)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "序列化配置失败: " + err.Error()})
