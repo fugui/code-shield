@@ -161,7 +161,18 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 	assert.Equal(t, 60.0, r.FixRate, "修复率应为 (3/5)*100 = 60.0%")
 	assert.Equal(t, report.ID, r.LastTaskID, "LastTaskID 应该为最新报告的 ID")
 
-	// 5. 验证 GetDynamicCampaignRepos HTTP 接口
+	// 4.1 调用 FetchCampaignDeptSummaries 验证部门维度指标汇总
+	deptSummaries, err := FetchCampaignDeptSummaries(&taskType)
+	assert.NoError(t, err)
+	assert.Len(t, deptSummaries, 1)
+	d := deptSummaries[0]
+	assert.Equal(t, dept.Name, d.Department)
+	assert.Equal(t, 5, d.TotalIssues, "部门总审计缺陷数应该是累计缺陷数 open(2) + resolved(3) = 5")
+	assert.Equal(t, 2, d.OpenIssues, "部门未整改缺陷数应该为 2")
+	assert.Equal(t, 3, d.ResolvedIssues, "部门已整改缺陷数应该为 3")
+	assert.Equal(t, 60.0, d.FixRate, "部门整改率应为 (3/5)*100 = 60.0%，而非 (3/2)*100 = 150.0%")
+
+	// 5. 验证 GetDynamicCampaignRepos 与 GetDynamicCampaignDepartments HTTP 接口
 	router := gin.New()
 	campaignGroup := router.Group("/api/analysis/:campaign")
 	campaignGroup.Use(func(c *gin.Context) {
@@ -169,6 +180,7 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 		c.Next()
 	})
 	campaignGroup.GET("/repos", GetDynamicCampaignRepos)
+	campaignGroup.GET("/departments", GetDynamicCampaignDepartments)
 
 	req, _ := http.NewRequest("GET", "/api/analysis/coredump/repos", nil)
 	resp := httptest.NewRecorder()
@@ -183,6 +195,20 @@ func TestDynamicCampaignUnclosedDefectsStats(t *testing.T) {
 	assert.Equal(t, 1, list[0].Blocking)
 	assert.Equal(t, 1, list[0].Critical)
 	assert.Equal(t, report.ID, list[0].LastTaskID, "HTTP 响应中的 LastTaskID 应该匹配最新报告 ID")
+
+	deptReq, _ := http.NewRequest("GET", "/api/analysis/coredump/departments", nil)
+	deptResp := httptest.NewRecorder()
+	router.ServeHTTP(deptResp, deptReq)
+
+	assert.Equal(t, http.StatusOK, deptResp.Code)
+	var deptList []DynamicCampaignDeptSummary
+	err = json.Unmarshal(deptResp.Body.Bytes(), &deptList)
+	assert.NoError(t, err)
+	assert.Len(t, deptList, 1)
+	assert.Equal(t, 5, deptList[0].TotalIssues, "API 返回的部门总审计缺陷数应为 5")
+	assert.Equal(t, 2, deptList[0].OpenIssues, "API 返回的部门未整改缺陷数应为 2")
+	assert.Equal(t, 3, deptList[0].ResolvedIssues, "API 返回的部门已整改缺陷数应为 3")
+	assert.Equal(t, 60.0, deptList[0].FixRate, "API 返回的部门整改率应为 60.0%")
 }
 
 func TestExportDynamicCampaignDepartments(t *testing.T) {
