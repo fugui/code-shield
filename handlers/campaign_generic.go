@@ -1018,7 +1018,7 @@ func FetchCampaignDeptSummaries(tt *models.TaskType) ([]DynamicCampaignDeptSumma
 		if !repo.LastScanTime.IsZero() {
 			metric.ScannedRepos++
 		}
-		metric.TotalIssues += repo.TotalIssues
+		metric.TotalIssues += repo.OpenIssues + repo.ResolvedIssues
 		metric.OpenIssues += repo.OpenIssues
 		metric.ResolvedIssues += repo.ResolvedIssues
 		metric.PassCount += repo.PassCount
