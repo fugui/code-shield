@@ -277,7 +277,15 @@ export default function ReportViewer({
         onClose={onClose || (() => {})}
         title={null}
         width={isFullscreen ? '100vw' : 'min(1200px, 95vw)'}
-        bodyStyle={{ padding: 0, height: '100%', background: '#f1f5f9', backgroundColor: '#f1f5f9' }}
+        bodyStyle={{
+          padding: 0,
+          overflow: 'hidden',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#f1f5f9',
+          backgroundColor: '#f1f5f9',
+        }}
         headerStyle={{ display: 'none' }}
       >
         {content}
