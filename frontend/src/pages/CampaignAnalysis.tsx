@@ -359,9 +359,19 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
   const fetchTrendsData = () => {
     setLoading(true);
     const params = new URLSearchParams({ days: '30' });
-    if (trendScope === 'repo' && trendRepoId) {
+    if (trendScope === 'repo') {
+      if (!trendRepoId) {
+        setTrends([]);
+        setLoading(false);
+        return;
+      }
       params.append('repo_id', trendRepoId);
-    } else if (trendScope === 'dept' && trendDeptName) {
+    } else if (trendScope === 'dept') {
+      if (!trendDeptName) {
+        setTrends([]);
+        setLoading(false);
+        return;
+      }
       params.append('department', trendDeptName);
     }
 
@@ -517,9 +527,25 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
   // Render SVG charts dynamically based on trends data
   const renderTrendChart = () => {
+    if (trendScope === 'repo' && !trendRepoId) {
+      return (
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+          请在上方下拉菜单中选择要查看的具体代码仓
+        </div>
+      );
+    }
+
+    if (trendScope === 'dept' && !trendDeptName) {
+      return (
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+          请在上方下拉菜单中选择要查看的具体部门
+        </div>
+      );
+    }
+
     if (!trends || trends.length === 0) {
       return (
-        <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
           暂无历史治理趋势数据，请在扫描任务完成后查看。
         </div>
       );
@@ -566,7 +592,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
               return (
                 <g key={idx}>
                   <line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke="var(--border-color)" strokeDasharray="4 4" />
-                  <text x={paddingLeft - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">
+                  <text x={paddingLeft - 8} y={y + 4} textAnchor="end" fontSize="10" fill="var(--color-text-muted)">
                     {isEntityMode ? `${val}%` : val}
                   </text>
                 </g>
@@ -600,8 +626,10 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
 
               return (
                 <g key={i}>
-                  <circle cx={x} cy={y} r="4" fill="white" stroke={themeColor} strokeWidth="2" />
-                  <text x={x} y={height - 10} textAnchor="middle" fontSize="10" fill="#64748b" transform={`rotate(-15, ${x}, ${height - 10})`}>
+                  <circle cx={x} cy={y} r="4" fill="white" stroke={themeColor} strokeWidth="2">
+                    <title>{`${t.date}: ${isEntityMode ? `合格率 ${t.pass_rate || 0}%` : `未整改缺陷 ${t.open_issues} (总存量 ${t.total_issues}, 已修复 ${t.total_issues - t.open_issues})`}`}</title>
+                  </circle>
+                  <text x={x} y={height - 10} textAnchor="middle" fontSize="10" fill="var(--color-text-secondary)" transform={`rotate(-15, ${x}, ${height - 10})`}>
                     {t.date.substring(5)}
                   </text>
                 </g>

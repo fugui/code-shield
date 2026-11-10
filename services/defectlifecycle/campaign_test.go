@@ -202,3 +202,80 @@ func TestLedgerCampaignStatsRemainBaselineWhenFiltered(t *testing.T) {
 		t.Fatalf("expected baseline category options, got %+v", page.Categories)
 	}
 }
+
+func TestLedgerTrend_GlobalAggregatesAllRepos(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_trend_global",
+		&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.User{},
+		&models.AnalysisFinding{}, &models.ScanScopeEntry{}, &models.Defect{},
+		&models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+	repoA := models.Repository{Name: "repo-a", URL: "https://example.com/repo-a.git"}
+	repoB := models.Repository{Name: "repo-b", URL: "https://example.com/repo-b.git"}
+	taskType := models.TaskType{
+		Name: "ledger-trend-global", DisplayName: "Ledger Trend Global",
+		IsCampaign: true, GovernanceMode: models.GovernanceModeFullLedger,
+	}
+	if err := db.Create(&repoA).Error; err != nil {
+		t.Fatalf("create repoA: %v", err)
+	}
+	if err := db.Create(&repoB).Error; err != nil {
+		t.Fatalf("create repoB: %v", err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("create task type: %v", err)
+	}
+	reportA := models.TaskReport{RepoID: repoA.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	reportB := models.TaskReport{RepoID: repoB.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	if err := db.Create(&reportA).Error; err != nil {
+		t.Fatalf("create reportA: %v", err)
+	}
+	if err := db.Create(&reportB).Error; err != nil {
+		t.Fatalf("create reportB: %v", err)
+	}
+
+	defectA := models.Defect{
+		RepoID: repoA.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-a", IdentityKind: "EXACT", NormPath: "src/a.go",
+		FirstReportID: reportA.ID, LastSeenReportID: reportA.ID,
+	}
+	defectB := models.Defect{
+		RepoID: repoB.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-b", IdentityKind: "EXACT", NormPath: "src/b.go",
+		FirstReportID: reportB.ID, LastSeenReportID: reportB.ID,
+	}
+	defectMerged := models.Defect{
+		RepoID: repoA.ID, TaskTypeID: taskType.ID, Status: DefectStatusMerged,
+		CanonicalFingerprint: "fp-m", IdentityKind: "EXACT", NormPath: "src/m.go",
+		FirstReportID: reportA.ID, LastSeenReportID: reportA.ID,
+	}
+	if err := db.Create(&defectA).Error; err != nil {
+		t.Fatalf("create defectA: %v", err)
+	}
+	if err := db.Create(&defectB).Error; err != nil {
+		t.Fatalf("create defectB: %v", err)
+	}
+	if err := db.Create(&defectMerged).Error; err != nil {
+		t.Fatalf("create defectMerged: %v", err)
+	}
+
+	// 1. 全平台模式 (repoIDs 为空或 nil)：应聚合 repoA 和 repoB 的缺陷，且排除 DefectStatusMerged
+	globalTrend, err := LedgerTrend(db, taskType.ID, nil)
+	if err != nil {
+		t.Fatalf("global ledger trend: %v", err)
+	}
+	if len(globalTrend) != 30 {
+		t.Fatalf("expected 30 trend points, got %d", len(globalTrend))
+	}
+	if globalTrend[29].TotalIssues != 2 || globalTrend[29].OpenIssues != 2 || globalTrend[29].ResolvedIssues != 0 {
+		t.Fatalf("unexpected global trend point: %+v", globalTrend[29])
+	}
+
+	// 2. 单代码仓过滤模式：仅统计 repoA (排除了 defectB 与 defectMerged)
+	repoATrend, err := LedgerTrend(db, taskType.ID, []uint{repoA.ID})
+	if err != nil {
+		t.Fatalf("repoA ledger trend: %v", err)
+	}
+	if repoATrend[29].TotalIssues != 1 || repoATrend[29].OpenIssues != 1 {
+		t.Fatalf("unexpected repoA trend point: %+v", repoATrend[29])
+	}
+}

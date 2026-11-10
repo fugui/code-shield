@@ -33,7 +33,8 @@ type campaignTrendCacheEntry struct {
 	expiresAt time.Time
 }
 
-func invalidateTrendCache(taskTypeID uint) {
+// InvalidateTrendCache 清理指定专项的趋势缓存
+func InvalidateTrendCache(taskTypeID uint) {
 	trendCacheLock.Lock()
 	defer trendCacheLock.Unlock()
 	prefix := fmt.Sprintf("%d_", taskTypeID)
@@ -653,7 +654,7 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 		commonAudit.SetAuditContext(c, "campaign", "audit_finding", commonModels.AuditLevelP1,
 			fmt.Sprintf("人工更新台账缺陷 #%d", id), "defect", fmt.Sprintf("%d", id),
 			fmt.Sprintf("缺陷-%d", id), nil, updated)
-		invalidateTrendCache(tt.ID)
+		InvalidateTrendCache(tt.ID)
 		c.JSON(http.StatusOK, updated)
 		return
 	}
@@ -767,7 +768,7 @@ func UpdateDynamicCampaignFinding(c *gin.Context) {
 		return
 	}
 
-	invalidateTrendCache(tt.ID)
+	InvalidateTrendCache(tt.ID)
 
 	// 注入全局操作审计打点
 	summaryText := fmt.Sprintf("人工核销了专项缺陷 #%d (状态更新为: %s)", id, input.Status)
@@ -1083,15 +1084,15 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 	trendCacheLock.RUnlock()
 
 	if models.ResolveGovernanceMode(tt.GovernanceMode) != models.GovernanceModeEntityAssessment {
-		repoIDs := make([]uint, 0)
+		var repoIDs []uint
 		if repoIDStr != "" {
 			if repoID, err := strconv.Atoi(repoIDStr); err == nil && repoID > 0 {
-				repoIDs = append(repoIDs, uint(repoID))
+				repoIDs = []uint{uint(repoID)}
 			}
 		} else if deptName != "" {
 			var dept models.Department
 			if err := models.DB.Where("name = ?", deptName).First(&dept).Error; err != nil {
-				c.JSON(http.StatusOK, []defectlifecycle.CampaignTrendPoint{})
+				c.JSON(http.StatusOK, defectlifecycle.EmptyTrend())
 				return
 			}
 			var repos []models.Repository
@@ -1099,6 +1100,10 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 				for _, repo := range repos {
 					repoIDs = append(repoIDs, repo.ID)
 				}
+			}
+			if len(repoIDs) == 0 {
+				c.JSON(http.StatusOK, defectlifecycle.EmptyTrend())
+				return
 			}
 		}
 		trend, err := defectlifecycle.LedgerTrend(models.DB, tt.ID, repoIDs)
@@ -1121,9 +1126,12 @@ func GetDynamicCampaignTrends(c *gin.Context) {
 		}
 	} else if deptName != "" {
 		var dept models.Department
-		if err := models.DB.Where("name = ?", deptName).First(&dept).Error; err == nil {
-			var repos []models.Repository
-			models.DB.Where("department_id = ?", dept.ID).Find(&repos)
+		if err := models.DB.Where("name = ?", deptName).First(&dept).Error; err != nil {
+			c.JSON(http.StatusOK, []defectlifecycle.CampaignTrendPoint{})
+			return
+		}
+		var repos []models.Repository
+		if err := models.DB.Where("department_id = ?", dept.ID).Find(&repos).Error; err == nil {
 			var repoIDs []uint
 			for _, r := range repos {
 				repoIDs = append(repoIDs, r.ID)

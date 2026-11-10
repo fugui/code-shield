@@ -422,13 +422,16 @@ func LedgerTrend(db *gorm.DB, taskTypeID uint, repoIDs []uint) ([]CampaignTrendP
 	if db == nil {
 		return nil, errors.New("database is not initialized")
 	}
-	if len(repoIDs) == 0 {
-		return emptyTrend(), nil
+	query := db.Where("task_type_id = ?", taskTypeID)
+	if len(repoIDs) > 0 {
+		query = query.Where("repo_id IN ?", repoIDs)
 	}
 	var defects []models.Defect
-	if err := db.Where("task_type_id = ? AND repo_id IN ?", taskTypeID, repoIDs).
-		Order("id").Find(&defects).Error; err != nil {
+	if err := query.Order("id").Find(&defects).Error; err != nil {
 		return nil, fmt.Errorf("load ledger trend defects: %w", err)
+	}
+	if len(defects) == 0 {
+		return EmptyTrend(), nil
 	}
 	defectIDs := make([]uint, 0, len(defects))
 	for _, defect := range defects {
@@ -446,12 +449,15 @@ func LedgerTrend(db *gorm.DB, taskTypeID uint, repoIDs []uint) ([]CampaignTrendP
 	}
 
 	now := time.Now()
-	trend := emptyTrend()
+	trend := EmptyTrend()
 	for position := 0; position < 30; position++ {
 		endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, now.Location()).AddDate(0, 0, position-29)
 		date := endOfDay.Format("2006-01-02")
 		trend[position].Date = date
 		for _, defect := range defects {
+			if defect.Status == DefectStatusMerged {
+				continue
+			}
 			if defect.CreatedAt.After(endOfDay) {
 				continue
 			}
@@ -718,6 +724,11 @@ func isLedgerDefectResolved(status string) bool {
 	default:
 		return false
 	}
+}
+
+// EmptyTrend 返回 30 天无缺陷空趋势基线数据
+func EmptyTrend() []CampaignTrendPoint {
+	return emptyTrend()
 }
 
 func emptyTrend() []CampaignTrendPoint {
