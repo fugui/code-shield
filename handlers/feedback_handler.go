@@ -65,6 +65,9 @@ func SubmitFindingFeedbackHandler(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+			if observation.TaskTypeID != 0 {
+				InvalidateTrendCache(observation.TaskTypeID)
+			}
 		}
 	}
 

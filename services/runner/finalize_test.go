@@ -64,7 +64,7 @@ func TestFinalizeUpdatesReportCreatedAtOnCompletion(t *testing.T) {
 	t.Cleanup(func() { models.DB = oldDB })
 
 	tempDir := t.TempDir()
-	createdAt := time.Now().Add(-2 * time.Second)
+	createdAt := time.Now().Add(-2 * time.Second).Truncate(time.Microsecond)
 	report := models.TaskReport{Status: models.StatusAnalyzing, CreatedAt: createdAt}
 	if err := db.Create(&report).Error; err != nil {
 		t.Fatalf("create report: %v", err)
@@ -88,11 +88,23 @@ func TestFinalizeUpdatesReportCreatedAtOnCompletion(t *testing.T) {
 		t.Fatalf("created_at = %v, want time after %v", updated.CreatedAt, createdAt)
 	}
 
-	if err := MarkFailed(ctx, "test failure"); err != nil {
+	failedReport := models.TaskReport{Status: models.StatusAnalyzing, CreatedAt: createdAt}
+	if err := db.Create(&failedReport).Error; err != nil {
+		t.Fatalf("create failed report: %v", err)
+	}
+	failedCtx := &TaskContext{
+		Report:     failedReport,
+		ReportPath: tempDir + "/failed-report.md",
+		JsonPath:   tempDir + "/failed-summary.json",
+		Summary:    TaskSummaryReport{},
+		TaskType:   models.TaskType{},
+	}
+
+	if err := MarkFailed(failedCtx, "test failure"); err != nil {
 		t.Fatalf("MarkFailed() error = %v", err)
 	}
 	var failed models.TaskReport
-	if err := db.First(&failed, report.ID).Error; err != nil {
+	if err := db.First(&failed, failedReport.ID).Error; err != nil {
 		t.Fatalf("load failed report: %v", err)
 	}
 	if !failed.CreatedAt.Equal(createdAt) {
