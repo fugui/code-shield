@@ -276,6 +276,7 @@ export default function ReportViewer({
         open={open}
         onClose={onClose || (() => {})}
         title={null}
+        scope="fullscreen"
         width={isFullscreen ? '100vw' : 'min(1200px, 95vw)'}
         bodyStyle={{
           padding: 0,
