@@ -738,6 +738,8 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 		"defect_class_major": identity.DefectClassMajor, "severity": identity.Severity,
 		"line_start": lineStart, "line_end": lineEnd,
 		"scope_body_hash":     identity.ScopeBodyHash,
+		"missed_count":        0,
+		"dormant_rounds":      0,
 		"last_seen_report_id": input.Report.ID, "last_matched_report_id": input.Report.ID,
 		"updated_at": now,
 	}
@@ -753,34 +755,46 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 			updates["detail_summary"] = group.Representative.Detail
 		}
 	}
-	// 双轨懒加载自愈：命中旧指纹时现场回填两级槽位
-	if defect.SlotKey == "" || defect.CoreSlotKey == "" {
-		scopeSymbol := defect.ScopeSymbol
-		if scopeSymbol == "" && identity.SymbolPath != "" {
-			scopeSymbol = NormalizeScopeSymbol(identity.SymbolPath)
+	// 双轨热升级自愈：命中旧 v1 指纹/槽位或缺失槽位时，原地刷新至 v2 标准两级槽位并留存旧槽位别名
+	oldSlotKey := defect.SlotKey
+	targetSlotKey := defect.SlotKey
+	needSlotUpgrade := defect.SlotKey == "" || defect.CoreSlotKey == "" ||
+		(identity.SlotKey != "" && defect.SlotKey != identity.SlotKey) ||
+		(identity.CoreSlotKey != "" && defect.CoreSlotKey != identity.CoreSlotKey)
+	if needSlotUpgrade {
+		scopeSymbol := NormalizeScopeSymbol(identity.SymbolPath)
+		if scopeSymbol == "" {
+			scopeSymbol = defect.ScopeSymbol
 		}
-		targetEntity := defect.TargetEntity
+		targetEntity := identity.TargetEntity
 		if targetEntity == "" {
+			targetEntity = defect.TargetEntity
+		}
+		if targetEntity == "" && identity.CleanToken != "" {
 			targetEntity, _ = ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
 		}
-		stmtHash := defect.StmtAnchorHash
+		stmtHash := identity.StmtAnchorHash
 		if stmtHash == "" && identity.CleanToken != "" {
 			stmtHash = ComputeStmtAnchorHash(identity.CleanToken)
 		}
-		coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
-		preciseSlot := ComputePreciseSlotKey(coreSlot, stmtHash)
+		coreSlot := identity.CoreSlotKey
+		if coreSlot == "" {
+			coreSlot = ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
+		}
+		preciseSlot := identity.SlotKey
+		if preciseSlot == "" {
+			preciseSlot = ComputePreciseSlotKey(coreSlot, stmtHash)
+		}
 
 		updates["scope_symbol"] = scopeSymbol
 		updates["target_entity"] = targetEntity
 		updates["stmt_anchor_hash"] = stmtHash
 		updates["core_slot_key"] = coreSlot
 		updates["slot_key"] = preciseSlot
-	}
-	targetSlotKey := defect.SlotKey
-	if targetSlotKey == "" {
-		if sk, ok := updates["slot_key"].(string); ok {
-			targetSlotKey = sk
+		if identity.Confidence != "" {
+			updates["confidence"] = identity.Confidence
 		}
+		targetSlotKey = preciseSlot
 	}
 
 	// 关键槽位防冲突与自愈保护：
@@ -850,8 +864,24 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 	}
 	previousStatus := defect.Status
 	defect.Status = status
+	defect.MissedCount = 0
+	defect.DormantRounds = 0
 	defect.LastSeenReportID = input.Report.ID
 	defect.LastMatchedReportID = input.Report.ID
+	if targetSlotKey != "" && status != DefectStatusMerged {
+		defect.SlotKey = targetSlotKey
+		if cs, ok := updates["core_slot_key"].(string); ok && cs != "" {
+			defect.CoreSlotKey = cs
+		}
+		if dc, ok := updates["defect_class_major"].(string); ok && dc != "" {
+			defect.DefectClassMajor = dc
+		}
+	}
+	if oldSlotKey != "" && targetSlotKey != "" && oldSlotKey != targetSlotKey && status != DefectStatusMerged {
+		if aliasErr := RecordSlotAliasSelfHealing(tx, defect.ID, defect.RepoID, defect.TaskTypeID, input.Report.ID, oldSlotKey, AliasSlotHealed); aliasErr != nil {
+			return models.Defect{}, models.DefectEvent{}, false, fmt.Errorf("record legacy slot alias during upgrade: %w", aliasErr)
+		}
+	}
 	if hasStateChange {
 		defect.RowVersion++
 	}
@@ -890,8 +920,30 @@ func identityChanged(defect models.Defect, identity Identity) bool {
 		lineStartChanged || lineEndChanged || defect.ScopeBodyHash != identity.ScopeBodyHash
 }
 
+func shouldWithholdAdvancementForBranchOrScope(input LedgerInput) bool {
+	defaultScope := strings.TrimSpace(input.TaskType.TargetScope)
+	reportScope := strings.TrimSpace(input.Report.TargetScope)
+	if reportScope != "" {
+		if (defaultScope != "" && !strings.EqualFold(reportScope, defaultScope)) ||
+			(defaultScope == "" && !strings.EqualFold(reportScope, "all")) {
+			return true
+		}
+	}
+	if input.Lifecycle.OnlyAdvanceOnDefaultBranch {
+		reportBranch := strings.TrimSpace(input.Report.Branch)
+		defaultBranch := strings.TrimSpace(input.Repo.Branch)
+		if reportBranch != "" && defaultBranch != "" && !strings.EqualFold(reportBranch, defaultBranch) {
+			return true
+		}
+	}
+	return false
+}
+
 func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[uint]bool, input LedgerInput, now time.Time) ([]models.DefectEvent, error) {
 	events := make([]models.DefectEvent, 0)
+	if shouldWithholdAdvancementForBranchOrScope(input) {
+		return events, nil
+	}
 	coverageBlocked := coverageLifecycleBlocked(input.Coverage)
 	for _, defect := range defects {
 		if matched[defect.ID] {
@@ -984,6 +1036,21 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 				reason = "file is not successfully covered"
 			}
 		} else {
+			// RequireChange 守卫：当开启代码变更要求且本轮文件 BlobHash 未变化时，冻结衰变推进，严禁误标 RESOLVED
+			if input.Lifecycle.RequireChange && defect.BlobHash != "" {
+				currentBlobHash := ""
+				if input.Evaluator != nil {
+					currentBlobHash = input.Evaluator.GetBlobHash(defect.NormPath)
+				}
+				if currentBlobHash == "" {
+					if scope := scopeEntryByPath(input.Scope, defect.NormPath); scope != nil {
+						currentBlobHash = scope.BlobHash
+					}
+				}
+				if currentBlobHash != "" && currentBlobHash == defect.BlobHash {
+					continue
+				}
+			}
 			missed++
 			severity := severityWeight(defect.Severity)
 			switch {

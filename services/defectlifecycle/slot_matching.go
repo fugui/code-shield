@@ -376,6 +376,9 @@ func MatchBatchObservations(
 }
 
 // SettleLedgerLifecycle 闭环结算存量缺陷生命周期状态机
+//
+// Deprecated: 生产对账主链路已统一收敛至 RunMatching（4-Tier 离散槽位匹配）与 ledger.commitLedger（advanceUnmatchedDefects），
+// 仅保留本纯函数供历史隔离测试引用，请勿在生产主链路调用。
 func SettleLedgerLifecycle(
 	activeDefects []models.Defect,
 	claimedDefects map[uint]bool,

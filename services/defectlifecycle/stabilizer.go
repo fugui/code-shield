@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"code-shield/models"
+	"code-shield/services/coverage"
 )
 
 // StabilizeFindingsInput 端侧定桩输入
@@ -28,10 +29,13 @@ type StabilizedFindingDTO struct {
 	StmtAnchorHash   string           `json:"stmt_anchor_hash"`   // 核心语句 Token 哈希 (绝对静止二级判歧键)
 	CoreSlotKey      string           `json:"core_slot_key"`      // 一级主槽位哈希 (不含 StmtAnchorHash)
 	SlotKey          string           `json:"slot_key"`           // 二级精准判歧槽位哈希 (含 StmtAnchorHash)
+	ScopeBodyHash    string           `json:"scope_body_hash"`    // 所在作用域代码块 SHA-256（防相邻函数污染）
+	SourceAnchored   bool             `json:"source_anchored"`    // 是否成功读取并锚定物理源码文件
 	Confidence       AnchorConfidence `json:"confidence"`         // HIGH / MEDIUM / LOW
 
 	// ── 自包含上下文快照（中央无需挂载代码仓即可纯内存判定与 AI 终审）──
 	TriggerLine string `json:"trigger_line"` // 校准后的单行触发语句
+	StmtWindow  string `json:"stmt_window"`  // 重构后的多行逻辑语句窗口
 	CleanToken  string `json:"clean_token"`  // 物理 Token
 	CodeSnippet string `json:"code_snippet"` // 局部窗口代码切片 [L-5, L+5]
 	LineStart   int    `json:"line_start"`   // 物理起始行
@@ -107,13 +111,10 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 	result := make([]StabilizedFindingDTO, len(input.Findings))
 
 	for i, f := range input.Findings {
-		normPath := filepath.ToSlash(f.FilePath)
-		for strings.HasPrefix(normPath, "./") {
-			normPath = strings.TrimPrefix(normPath, "./")
-		}
-		normPath = strings.TrimPrefix(normPath, "/")
+		relPath := coverage.NormalizeRepoPath(input.RepoRoot, f.FilePath)
+		normPath := NormalizePath(input.RepoRoot, f.FilePath)
 
-		lines := loadLines(normPath)
+		lines := loadLines(relPath)
 
 		// 1. 双轨行号校准
 		rawLineStart, rawLineEnd := ParseLineNumberRange(f.LineNumber)
@@ -134,8 +135,19 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 			lineEnd = len(lines)
 		}
 
-		// 2. 作用域规范化与反查
-		scopeSymbol := CanonicalizeScopeSymbol(f.ScopeSymbol, lines, calibratedLine, normPath)
+		// 2. 作用域与作用域代码块哈希提取（单次读盘缓存完成，消除重复 I/O）
+		scopeSymbol := strings.TrimSpace(NormalizeScopeSymbol(f.ScopeSymbol))
+		scopeBodyHash := ""
+		if len(lines) > 0 && calibratedLine > 0 {
+			detectedScope, scopeBody := ExtractScopeAndBodyFromLines(relPath, lines, calibratedLine)
+			if scopeSymbol == "" {
+				scopeSymbol = NormalizeScopeSymbol(detectedScope)
+			}
+			if scopeBody != "" {
+				h := sha256.Sum256([]byte(CleanSourceToken(scopeBody)))
+				scopeBodyHash = hex.EncodeToString(h[:])
+			}
+		}
 
 		// 3. 字典归约受控缺陷大类
 		defectClassMajor := ReduceControlledDefectClass(f.Category, f.Title)
@@ -145,10 +157,21 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 		if len(lines) > 0 {
 			stmtWindow = ReconstructStatementWindow(lines, calibratedLine)
 		} else {
-			stmtWindow = f.TriggerLine
+			stmtWindow = strings.TrimSpace(f.TriggerLine)
+			if stmtWindow == "" {
+				stmtWindow = firstCodeStatement(f)
+			}
 		}
 
 		targetEntity, conf := ExtractPhysicalTargetEntity(stmtWindow, f.TargetSymbol, defectClassMajor)
+		if targetEntity == "" && strings.TrimSpace(f.CodeSnippet) != "" {
+			if snippetEnt, snippetConf := ExtractPhysicalTargetEntity(f.CodeSnippet, f.TargetSymbol, defectClassMajor); snippetEnt != "" {
+				targetEntity = snippetEnt
+				if conf == ConfidenceLow {
+					conf = snippetConf
+				}
+			}
+		}
 
 		// 5. 局部代码切片抓取 [calibratedLine-5, calibratedLine+5]
 		var snippet string
@@ -189,6 +212,11 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 			findingIDStr = strconv.FormatUint(uint64(f.ID), 10)
 		}
 
+		triggerLine := f.TriggerLine
+		if triggerLine == "" {
+			triggerLine = firstCodeStatement(f)
+		}
+
 		result[i] = StabilizedFindingDTO{
 			OriginalIndex:    i,
 			FindingID:        findingIDStr,
@@ -199,8 +227,11 @@ func (s *DefaultIngestionStabilizer) Stabilize(input StabilizeFindingsInput) ([]
 			StmtAnchorHash:   stmtAnchorHash,
 			CoreSlotKey:      coreSlotKey,
 			SlotKey:          preciseSlotKey,
+			ScopeBodyHash:    scopeBodyHash,
+			SourceAnchored:   len(lines) > 0,
 			Confidence:       conf,
-			TriggerLine:      f.TriggerLine,
+			TriggerLine:      triggerLine,
+			StmtWindow:       stmtWindow,
 			CleanToken:       cleanToken,
 			CodeSnippet:      snippet,
 			LineStart:        lineStart,

@@ -46,14 +46,32 @@ func isKeywordOrLiteral(ident string) bool {
 	return keywordBlacklist[ident] || keywordBlacklist[strings.ToLower(ident)]
 }
 
-// hasWordBoundaryToken 检查 cleanLine 中是否存在具有独立单词边界的核心符号
+func isWordBoundaryByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+}
+
+// hasWordBoundaryToken 检查 cleanLine 中是否存在具有独立单词边界的核心符号（零正则开销）
 func hasWordBoundaryToken(line string, token string) bool {
-	if token == "" {
+	if token == "" || len(line) < len(token) {
 		return false
 	}
-	pattern := `\b` + regexp.QuoteMeta(token) + `\b`
-	matched, _ := regexp.MatchString(pattern, line)
-	return matched
+	tokenLeftWord := isWordBoundaryByte(token[0])
+	tokenRightWord := isWordBoundaryByte(token[len(token)-1])
+	offset := 0
+	for {
+		idx := strings.Index(line[offset:], token)
+		if idx < 0 {
+			return false
+		}
+		start := offset + idx
+		end := start + len(token)
+		leftOK := !tokenLeftWord || start == 0 || !isWordBoundaryByte(line[start-1])
+		rightOK := !tokenRightWord || end == len(line) || !isWordBoundaryByte(line[end])
+		if leftOK && rightOK {
+			return true
+		}
+		offset = start + 1
+	}
 }
 
 // ReconstructStatementWindow 以 targetLine 为中心，在 [targetLine-3, targetLine+3] 窗口内重构多行物理逻辑语句

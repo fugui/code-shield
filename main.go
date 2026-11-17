@@ -162,6 +162,7 @@ func main() {
 				api.GET("/tasks/:id/summary", handlers.GetReportDiagnosticsHandler) // 兼容历史别名
 				api.GET("/tasks/:id/report/aggregate", handlers.GetReportAggregateHandler)
 				api.GET("/tasks/:id/report/reconciliation", handlers.GetReportReconciliationHandler)
+				api.GET("/reports/compare", handlers.CompareReportsHandler)
 				api.GET("/reports/:id/observations/:group_uid/candidates", handlers.GetObservationCandidatesHandler)
 				api.GET("/tasks/:id/report/export", handlers.ExportReportHandler)
 				api.GET("/defects", handlers.ListDefectsHandler)

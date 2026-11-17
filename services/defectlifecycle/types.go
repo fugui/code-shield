@@ -60,36 +60,39 @@ type ScanFactsResult struct {
 }
 
 type Identity struct {
-	RepoID           uint
-	TaskTypeID       uint
-	NormPath         string
-	SymbolPath       string
-	ScopeKind        string
-	Arity            int
-	ScopeKey         string
-	StmtShape        string
-	OccurrenceIndex  int
-	DefectClassMajor string
-	LineStart        int
-	LineEnd          int
-	CleanToken       string
-	PrevShape        string
-	NextShape        string
-	ScopeBodyHash    string
-	Severity         string
-	Confidence       string
-	RootFamily       string
-	ResourceIdentity string
-	ValidationChain  string
-	TargetEntity     string
-	StmtAnchorHash   string
-	CoreSlotKey      string
-	SlotKey          string
-	K1               string
-	K2               string
-	F1               string
-	F2               string
-	F3               string
+	RepoID                 uint
+	TaskTypeID             uint
+	NormPath               string
+	SymbolPath             string
+	ScopeKind              string
+	Arity                  int
+	ScopeKey               string
+	StmtShape              string
+	OccurrenceIndex        int
+	DefectClassMajor       string
+	LineStart              int
+	LineEnd                int
+	CleanToken             string
+	PrevShape              string
+	NextShape              string
+	ScopeBodyHash          string
+	Severity               string
+	Confidence             string
+	RootFamily             string
+	ResourceIdentity       string
+	ValidationChain        string
+	TargetEntity           string
+	StmtAnchorHash         string
+	CoreSlotKey            string
+	SlotKey                string
+	LegacyDefectClassMajor string
+	LegacyCoreSlotKey      string
+	LegacySlotKey          string
+	K1                     string
+	K2                     string
+	F1                     string
+	F2                     string
+	F3                     string
 }
 
 type ObservationGroup struct {

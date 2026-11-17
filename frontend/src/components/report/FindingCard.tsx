@@ -5,6 +5,7 @@ import { isAIFixURLValid, buildAIFixURL, getAIFixURL } from '../../utils/reportU
 import { useToast } from '../Toast';
 import DebateVerdictView from './DebateVerdictView';
 import SuggestionMarkdown from './SuggestionMarkdown';
+import { matchTierLabels, verdictLabels } from './reconciliationLabels';
 
 interface FindingCardProps {
   finding: TaskFindingItem;
@@ -36,24 +37,6 @@ export default function FindingCard({
   const sevMeta = getSeverityMeta(finding.severity);
   const sourceUrl = getRepoSourceUrl(repoUrl, branch, finding.file_path, finding.line_number);
   const defectId = finding.defect_id ?? reconciliation?.defect_id;
-  const verdictLabels: Record<string, { label: string; className: string }> = {
-    NEW: { label: '本轮新增', className: 'verdict-new' },
-    EXISTED: { label: '历史存量', className: 'verdict-existed' },
-    REOPENED: { label: '修复后复发', className: 'verdict-reopened' },
-    PROBABLE: { label: '疑似存量，待确认', className: 'verdict-probable' },
-    RESOLVED: { label: '本轮判定修复', className: 'verdict-resolved' },
-    COVERAGE_GAP: { label: '覆盖缺口，不判修复', className: 'verdict-coverage-gap' },
-  };
-  const matchTierLabels: Record<string, string> = {
-    STRONG: '强身份匹配',
-    STRUCT: '结构匹配',
-    BUCKET: '弱候选匹配',
-    ASSIGN: '全局指派',
-    AI: 'AI 仲裁',
-    AI_FALLBACK: 'AI 兜底裁决',
-    HUMAN: '人工确认',
-    UNCLAIMED: '未匹配',
-  };
   const verdict = reconciliation ? verdictLabels[reconciliation.verdict] || null : null;
   const matchTierLabel = reconciliation ? matchTierLabels[reconciliation.match_tier] || reconciliation.match_tier : '';
   const confidenceLabel = reconciliation

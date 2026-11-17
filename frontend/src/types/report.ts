@@ -560,3 +560,79 @@ export interface TaskNavigationContext {
   totalTasks?: number;
   onNavigate?: (taskId: number) => void;
 }
+
+export type CompareBucket =
+  | 'COMMON_PERSISTED'
+  | 'ONLY_A_CODE_CHANGED'
+  | 'ONLY_A_CODE_UNCHANGED'
+  | 'ONLY_A_NOT_COVERED'
+  | 'ONLY_B_NEW';
+
+export interface CompareReportMeta {
+  id: number;
+  repo_id: number;
+  repo_name?: string;
+  task_type_id: number;
+  task_type_name?: string;
+  task_display_name?: string;
+  branch?: string;
+  target_scope?: string;
+  head_commit?: string;
+  coverage_state: string;
+  coverage_complete: boolean;
+  governance_mode: GovernanceMode;
+  created_at: string;
+}
+
+export interface ReportCompareSummary {
+  common_persisted: number;
+  only_a_code_changed: number;
+  only_a_code_unchanged: number;
+  only_a_not_covered: number;
+  only_b_new: number;
+  total_a: number;
+  total_b: number;
+}
+
+export interface ReportCompareItem {
+  bucket: CompareBucket;
+  defect_id?: number;
+  slot_key?: string;
+  norm_path: string;
+  line_start?: number;
+  line_end?: number;
+  severity: string;
+  category: string;
+  title: string;
+  scope_symbol?: string;
+  target_entity?: string;
+  defect_status?: string;
+  verdict_a?: string;
+  verdict_b?: string;
+  base_blob_hash?: string;
+  target_blob_hash?: string;
+  scope_outcome_b?: string;
+}
+
+export interface ReportCompareResult {
+  base_report: CompareReportMeta;
+  target_report: CompareReportMeta;
+  data_source: 'defect_observations' | 'entity_assessment_slots';
+  summary: ReportCompareSummary;
+  common_persisted: ReportCompareItem[];
+  only_a_code_changed: ReportCompareItem[];
+  only_a_code_unchanged: ReportCompareItem[];
+  only_a_not_covered: ReportCompareItem[];
+  only_b_new: ReportCompareItem[];
+}
+
+export interface TaskHistoryCandidate {
+  id: number;
+  repo_id: number;
+  task_type_id: number;
+  status: string;
+  branch?: string;
+  head_commit?: string;
+  score?: number;
+  created_at: string;
+}

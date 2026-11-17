@@ -196,10 +196,24 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	log.Printf("[TaskRunner] Starting task for ReportID: %d, URL: %s, TaskType: %s (Mode: %s)\n",
 		ctx.Report.ID, repoURL, ctx.TaskType.Name, ctx.Report.EngineMode)
 
+	effectiveBranch := strings.TrimSpace(ctx.Repo.Branch)
+	if ctx.RunParams.Branch != nil && strings.TrimSpace(*ctx.RunParams.Branch) != "" {
+		effectiveBranch = strings.TrimSpace(*ctx.RunParams.Branch)
+	}
+	if effectiveBranch == "" {
+		effectiveBranch = "master"
+	}
+	syncRepo := ctx.Repo
+	syncRepo.Branch = effectiveBranch
+	ctx.Report.Branch = effectiveBranch
+	if ctx.RunParams.TargetScope != nil && strings.TrimSpace(*ctx.RunParams.TargetScope) != "" {
+		ctx.Report.TargetScope = strings.TrimSpace(*ctx.RunParams.TargetScope)
+	}
+
 	// Stage 1: 准备与代码同步
-	ctx.AddEvent("system", "info", fmt.Sprintf("任务调度就绪，Worker 启动执行 (模式: %s)", ctx.Report.EngineMode))
+	ctx.AddEvent("system", "info", fmt.Sprintf("任务调度就绪，Worker 启动执行 (模式: %s, 分支: %s)", ctx.Report.EngineMode, effectiveBranch))
 	ctx.StartPhase("prepare", "代码拉取与环境预检", fmt.Sprintf("开始拉取代码仓: %s", repoURL))
-	codesPath, err := PrepareAndSync(ctx.Ctx, ctx.Repo, ctx.Report.ID, repoURL)
+	codesPath, err := PrepareAndSync(ctx.Ctx, syncRepo, ctx.Report.ID, repoURL)
 	if err != nil {
 		ctx.EndPhase("prepare", "failed", fmt.Sprintf("代码拉取失败: %v", err))
 		MarkFailed(ctx, err.Error())
@@ -221,7 +235,9 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	ctx.EndPhase("prepare", "completed", fmt.Sprintf("代码就绪 (Commit: %s)", commitShort))
 	if models.DB != nil {
 		if _, err := models.UpdateActiveTaskReport(models.DB, ctx.Report.ID, map[string]interface{}{
-			"head_commit": headCommit,
+			"head_commit":  headCommit,
+			"branch":       ctx.Report.Branch,
+			"target_scope": ctx.Report.TargetScope,
 		}); err != nil {
 			MarkFailed(ctx, err.Error())
 			return err
@@ -339,10 +355,15 @@ func RunTaskSync(reportID uint, repoURL string, taskTypeID uint, autoNotify bool
 	if models.DB != nil {
 		ctx.StartPhase("calibration", "严重度校准与事实入库", "执行事实持久化与确定性严重度校准")
 		stabilizer := defectlifecycle.NewIngestionStabilizer()
-		stabilizedDTOs, _ := stabilizer.Stabilize(defectlifecycle.StabilizeFindingsInput{
+		stabilizedDTOs, stabErr := stabilizer.Stabilize(defectlifecycle.StabilizeFindingsInput{
 			RepoRoot: ctx.CodesPath,
 			Findings: ctx.Findings,
 		})
+		if stabErr != nil {
+			ctx.EndPhase("calibration", "failed", fmt.Sprintf("物理稳定化失败: %v", stabErr))
+			MarkFailed(ctx, stabErr.Error())
+			return stabErr
+		}
 
 		_, persistErr := defectlifecycle.PersistScanFacts(defectlifecycle.ScanInput{
 			DB:                 models.DB,

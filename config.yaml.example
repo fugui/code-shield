@@ -262,15 +262,15 @@ governance:
   # 缺陷身份指纹与去重匹配 (Identity Matching - 纯静态冷配置)
   identity:
     algorithm_version: "v2"             # 算法版本 (v1 / v2)
-    max_candidates_per_observation: 3   # 单个观测点最大候选关联数
+    max_candidates_per_observation: 64  # 单个观测点最大候选关联数
     max_candidate_edges_per_report: 5000 # 单报告最大候选边数量
     max_assignment_width: 200           # 二分图匹配最大宽度
     strong_same_threshold: 0.88         # 强相同确定性置信度阈值 (高于此值直接归为同一缺陷)
-    assign_band: 0.12                   # 关联判定浮动带宽
+    assign_band: 0.75                   # 直接关联确认最低置信度下限
     reject_below: 0.50                  # 拒绝判定阈值 (低于此值直接判定为不同缺陷)
     auto_resolve_gray_zone: true        # 是否自动裁决灰度区疑似关联
     ai_arbitration_confidence: 0.75     # AI 仲裁介入置信度门槛
-    gray_zone_fallback_merge_score: 0.65 # 灰度区兜底合并得分
+    gray_zone_fallback_merge_score: 0.75 # 灰度区兜底合并得分
 
   # 跨轮疑似重复缺陷仲裁
   arbitration:
@@ -281,12 +281,13 @@ governance:
 
   # 缺陷生命周期判定策略 (Lifecycle Policy - 纯静态冷配置)
   lifecycle:
-    high_risk_severities: ["Critical", "High"] # 高危缺陷判定级别列表
+    high_risk_severities: ["致命", "严重"] # 高危缺陷判定级别列表
     resolved_rounds: 3                  # 连续未发现即判定为已解决的扫描轮数
     dormant_rounds: 5                   # 未出现判定为休眠的扫描轮数
     obsolete_after_dormant_rounds: 10   # 休眠后自动作废的扫描轮数
     require_coverage: true              # 判定解决是否要求代码处于覆盖范围内
     require_change: true                # 判定解决是否要求代码发生变更
+    only_advance_on_default_branch: true # 仅默认主干分支扫描推进存量生命周期衰变
 
   # 分类语义回归批处理的成本与故障保护
   category_regression_batch_size: 50

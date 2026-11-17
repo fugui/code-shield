@@ -80,7 +80,7 @@ func TestPersistScanFactsStoresRawFindingsAndScope(t *testing.T) {
 	if err := db.First(&updated, report.ID).Error; err != nil {
 		t.Fatalf("load report: %v", err)
 	}
-	if updated.CoverageState != CoveragePartial || !updated.CoverageDegraded || updated.WorktreeClean {
+	if updated.CoverageState != CoveragePartial || !updated.CoverageDegraded || !updated.WorktreeClean {
 		t.Fatalf("coverage metadata not persisted: %+v", updated)
 	}
 
@@ -318,5 +318,77 @@ func TestValidateLatestLedgerReport(t *testing.T) {
 	}
 	if err := validateLatestLedgerReport(db, newReport); err != nil {
 		t.Errorf("expected nil for newer report, got %v", err)
+	}
+}
+
+func TestPersistScanFactsEntityAssessmentBypassesLedger(t *testing.T) {
+	root := t.TempDir()
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_entity_assessment_bypass",
+		&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.AnalysisFinding{},
+		&models.ScanScopeEntry{}, &models.Defect{}, &models.DefectAlias{},
+		&models.DefectObservation{}, &models.DefectEvent{}, &models.TaskChunkExecution{},
+	)
+	repo := models.Repository{Name: "ut-eff-demo", URL: "https://example.com/ut-eff.git"}
+	taskType := models.TaskType{
+		Name: "ut-effectiveness", DisplayName: "单测有效性分析",
+		GovernanceMode: models.GovernanceModeEntityAssessment,
+	}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatal(err)
+	}
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing}
+	if err := db.Create(&report).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	findings := []models.AnalysisFinding{
+		{
+			FilePath: "tests/test_a.cpp", LineNumber: "10", Title: "空测试", Severity: "严重",
+			Category: "断言有效性-空测试", PrimaryUnitID: "TEST_F(Suite, CaseA)", AssessmentStatus: "issue",
+		},
+		{
+			FilePath: "tests/test_a.cpp", LineNumber: "30", Title: "有效测试", Severity: "合格",
+			Category: "无问题", PrimaryUnitID: "TEST_F(Suite, CaseB)", AssessmentStatus: "pass",
+		},
+	}
+	cov := &coverage.Coverage{
+		PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+		Files: []coverage.File{{Path: "tests/test_a.cpp", Hash: "ut-hash-1", Status: coverage.StatusSuccess}},
+	}
+	res, err := PersistScanFacts(ScanInput{
+		DB: db, Report: report, Repo: repo, RepoRoot: root, TaskType: taskType,
+		Findings: findings, Coverage: cov,
+	})
+	if err != nil {
+		t.Fatalf("PersistScanFacts entity_assessment error = %v", err)
+	}
+	if res.LedgerReady || len(res.Observations) != 0 || len(res.NewDefectIDs) != 0 || len(res.Events) != 0 {
+		t.Fatalf("expected entity_assessment to bypass defect ledger completely, got %+v", res)
+	}
+	if len(res.Findings) != 2 {
+		t.Fatalf("expected 2 persisted AnalysisFindings, got %d", len(res.Findings))
+	}
+
+	var findingCount, defectCount, obsCount, aliasCount, eventCount int64
+	_ = db.Model(&models.AnalysisFinding{}).Where("task_report_id = ?", report.ID).Count(&findingCount).Error
+	_ = db.Model(&models.Defect{}).Where("repo_id = ?", repo.ID).Count(&defectCount).Error
+	_ = db.Model(&models.DefectObservation{}).Where("report_id = ?", report.ID).Count(&obsCount).Error
+	_ = db.Model(&models.DefectAlias{}).Where("repo_id = ?", repo.ID).Count(&aliasCount).Error
+	_ = db.Model(&models.DefectEvent{}).Where("report_id = ?", report.ID).Count(&eventCount).Error
+	if findingCount != 2 || defectCount != 0 || obsCount != 0 || aliasCount != 0 || eventCount != 0 {
+		t.Fatalf("entity_assessment polluted ledger: findings=%d defects=%d obs=%d aliases=%d events=%d",
+			findingCount, defectCount, obsCount, aliasCount, eventCount)
+	}
+
+	var reloaded models.TaskReport
+	if err := db.First(&reloaded, report.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.LedgerCommittedAt != nil || reloaded.CoverageState != CoverageComplete {
+		t.Fatalf("unexpected report metadata for entity_assessment: ledgerAt=%v coverage=%s",
+			reloaded.LedgerCommittedAt, reloaded.CoverageState)
 	}
 }

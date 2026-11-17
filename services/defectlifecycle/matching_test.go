@@ -3,6 +3,7 @@ package defectlifecycle
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"code-shield/models"
@@ -520,5 +521,141 @@ func TestApplyEvidenceGateLineProximityTolerance(t *testing.T) {
 	}
 	if detail["evidence_veto"] == 1 {
 		t.Fatalf("expected no evidence veto for same scope and class, got veto=1")
+	}
+}
+
+func TestRunMatchingStrongAliasPrioritizedOverPathBudget(t *testing.T) {
+	obs := observation("uid-dense", "src/dense.cpp", "shape-target", "delete targetPtr")
+	obs.Identity.SlotKey = "precise-slot-target"
+	obs.Identity.DefectClassMajor = "memory_leak"
+
+	defects := make([]models.Defect, 0, 7)
+	aliases := make([]models.DefectAlias, 0, 8)
+	// 先放入 5 条同文件历史 RESOLVED / OBSOLETE 与无关 ACTIVE 缺陷，故意设置极小预算 MaxCandidates=3
+	for i := uint(1); i <= 4; i++ {
+		status := DefectStatusResolved
+		if i%2 == 0 {
+			status = DefectStatusObsolete
+		}
+		d := defect(i, status)
+		d.NormPath = "src/dense.cpp"
+		d.SlotKey = fmt.Sprintf("old-slot-%d", i)
+		defects = append(defects, d)
+		aliases = append(aliases, models.DefectAlias{
+			DefectID: i, RepoID: 1, TaskTypeID: 2,
+			AliasType: AliasPath, AliasValue: "src/dense.cpp", AliasClass: AliasBucket,
+		})
+	}
+	otherActive := defect(5, DefectStatusActive)
+	otherActive.NormPath = "src/dense.cpp"
+	otherActive.SlotKey = "other-active-slot"
+	defects = append(defects, otherActive)
+	aliases = append(aliases, models.DefectAlias{
+		DefectID: 5, RepoID: 1, TaskTypeID: 2,
+		AliasType: AliasPath, AliasValue: "src/dense.cpp", AliasClass: AliasBucket,
+	})
+
+	target := defect(42, DefectStatusActive)
+	target.NormPath = "src/dense.cpp"
+	target.SlotKey = "legacy-slot-42"
+	defects = append(defects, target)
+	aliases = append(aliases,
+		models.DefectAlias{
+			DefectID: 42, RepoID: 1, TaskTypeID: 2,
+			AliasType: AliasPath, AliasValue: "src/dense.cpp", AliasClass: AliasBucket,
+		},
+		models.DefectAlias{
+			DefectID: 42, RepoID: 1, TaskTypeID: 2,
+			AliasType: AliasSlotHealed, AliasValue: "precise-slot-target", AliasClass: AliasStrong,
+		},
+	)
+
+	res := RunMatching(MatchingInput{
+		Observations: []ObservationGroup{obs},
+		Defects:      defects,
+		Aliases:      aliases,
+		Budget:       MatchBudget{MaxCandidates: 3, MaxEdges: 100, MaxAssignmentWidth: 10, MaxAICalls: 5},
+		Thresholds:   RuntimeMatchThresholds(),
+	})
+	dec := res.Observations[0]
+	if dec.DefectID == nil || *dec.DefectID != 42 {
+		t.Fatalf("expected strong healed alias to recall defect 42 under tight budget, got %+v", dec)
+	}
+	if dec.Reason != "SLOT_HEALED" || dec.Verdict != VerdictExisted {
+		t.Fatalf("expected SLOT_HEALED & EXISTED, got reason=%s verdict=%s", dec.Reason, dec.Verdict)
+	}
+}
+
+func TestRunMatchingAddAliasEnrichmentDoesNotExceedBudget(t *testing.T) {
+	obs := observation("uid-enrich", "src/enrich.cpp", "shape-a", "delete ptr")
+	obs.Identity.SlotKey = "slot-enrich"
+	obs.Identity.RootFamily = "root-enrich"
+
+	target := defect(7, DefectStatusActive)
+	target.NormPath = "src/enrich.cpp"
+	target.SlotKey = "slot-enrich"
+
+	aliasIndex := map[string][]models.DefectAlias{
+		"slot-enrich\x001\x002": {{
+			DefectID: 7, RepoID: 1, TaskTypeID: 2,
+			AliasType: AliasSlotHealed, AliasValue: "slot-enrich", AliasClass: AliasStrong,
+		}},
+		"root-enrich\x001\x002": {{
+			DefectID: 7, RepoID: 1, TaskTypeID: 2,
+			AliasType: AliasRoot, AliasValue: "root-enrich", AliasClass: AliasBucket,
+		}},
+	}
+	cands, exceeded := retrieveCandidates(obs.Identity, aliasIndex, MatchingInput{
+		Defects: []models.Defect{target},
+	}, 1)
+	if exceeded {
+		t.Fatalf("expected enriching existing candidate under limit=1 not to flag budgetExceeded")
+	}
+	if len(cands) != 1 || !hasSource(cands[0], AliasSlotPrecise) || !hasSource(cands[0], AliasSlotHealed) || !hasSource(cands[0], AliasRoot) {
+		t.Fatalf("expected candidate 7 with enriched sources, got %+v", cands)
+	}
+}
+
+func TestRunMatchingSlotPreciseRecallsHumanClosedWithExisted(t *testing.T) {
+	obs := observation("uid-exempt", "src/exempt.cpp", "shape-exempt", "delete ptr")
+	obs.Identity.SlotKey = "slot-exempt-1"
+	obs.Identity.DefectClassMajor = "memory_leak"
+
+	closed := defect(88, DefectStatusHumanClosed)
+	closed.NormPath = "src/exempt.cpp"
+	closed.DefectClassMajor = "memory_leak"
+	closed.SlotKey = "slot-exempt-1"
+
+	res := RunMatching(MatchingInput{
+		Observations: []ObservationGroup{obs},
+		Defects:      []models.Defect{closed},
+		Thresholds:   RuntimeMatchThresholds(),
+	})
+	dec := res.Observations[0]
+	if dec.DefectID == nil || *dec.DefectID != 88 {
+		t.Fatalf("expected HUMAN_CLOSED defect 88 recalled by SLOT_PRECISE, got %+v", dec)
+	}
+	if dec.Verdict != VerdictExisted || dec.Reason != "SLOT_PRECISE" {
+		t.Fatalf("expected EXISTED / SLOT_PRECISE, got verdict=%s reason=%s", dec.Verdict, dec.Reason)
+	}
+}
+
+func TestMatchedVerdictSemantics(t *testing.T) {
+	cases := []struct {
+		status string
+		want   string
+	}{
+		{DefectStatusActive, VerdictExisted},
+		{DefectStatusCoverageGap, VerdictExisted},
+		{DefectStatusVerifiedPending, VerdictExisted},
+		{DefectStatusHumanClosed, VerdictExisted},
+		{DefectStatusResolved, VerdictReopened},
+		{DefectStatusDormant, VerdictReopened},
+		{DefectStatusObsolete, VerdictReopened},
+	}
+	for _, tc := range cases {
+		if got := matchedVerdict(tc.status); got != tc.want {
+			t.Fatalf("matchedVerdict(%s) = %s, want %s", tc.status, got, tc.want)
+		}
 	}
 }

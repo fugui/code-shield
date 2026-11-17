@@ -10,6 +10,7 @@ import ReportFindingsTab from './ReportFindingsTab';
 import ReportDiagnosticsTab from './ReportDiagnosticsTab';
 import ReportDebateTab from './ReportDebateTab';
 import ReportReconciliationTab from './ReportReconciliationTab';
+import ReportCompareTab from './ReportCompareTab';
 import './report.css';
 
 export interface ReportViewerProps {
@@ -21,7 +22,7 @@ export interface ReportViewerProps {
   onResume?: (taskId: number) => void;
 }
 
-export type ReportTab = 'summary' | 'findings' | 'reconciliation' | 'diagnostics' | 'debate';
+export type ReportTab = 'summary' | 'findings' | 'reconciliation' | 'compare' | 'diagnostics' | 'debate';
 
 export default function ReportViewer({
   taskId,
@@ -33,7 +34,7 @@ export default function ReportViewer({
 }: ReportViewerProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab');
-  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate')
+  const urlTab = (rawTab === 'findings' || rawTab === 'diagnostics' || rawTab === 'summary' || rawTab === 'debate' || rawTab === 'compare')
     ? (rawTab as ReportTab)
     : rawTab === 'reconciliation'
       ? rawTab as ReportTab
@@ -223,6 +224,13 @@ export default function ReportViewer({
             )}
           </div>
         )}
+
+        <div
+          className={`report-tab-item cs-report-tab-item ${activeTab === 'compare' ? 'active' : ''}`}
+          onClick={() => handleTabClick('compare')}
+        >
+          <span>📊 报告对比</span>
+        </div>
       </div>
 
       {/* 内容主体 (充沛页边距 + 浅灰底色衬托) */}
@@ -250,6 +258,9 @@ export default function ReportViewer({
               onRefresh={refreshGovernance}
               readonly={mode === 'readonly'}
             />
+          )}
+          {activeTab === 'compare' && (
+            <ReportCompareTab targetReportId={taskId} meta={meta} />
           )}
           {activeTab === 'diagnostics' && (
             <ReportDiagnosticsTab

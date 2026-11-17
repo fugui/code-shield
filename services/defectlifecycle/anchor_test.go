@@ -308,3 +308,48 @@ func TestExtractPhysicalCodeSnippet(t *testing.T) {
 		t.Fatalf("clamped lines exceed total file length")
 	}
 }
+
+func TestExtractScopeAndBodyFromLines_AdjacentFunctionIsolation(t *testing.T) {
+	linesV1 := []string{
+		"void upperFunc(int* ptr) {",
+		"    const char* s = \"ignored } brace\";",
+		"    *ptr = 1;",
+		"}",
+		"",
+		"void neighborLower() {",
+		"    int x = 1;",
+		"}",
+	}
+	linesV2 := []string{
+		"void upperFunc(int* ptr) {",
+		"    const char* s = \"ignored } brace\";",
+		"    *ptr = 1;",
+		"}",
+		"",
+		"void neighborLower() {",
+		"    int completelyChanged = 99;",
+		"    return;",
+		"}",
+	}
+
+	scope1, body1 := ExtractScopeAndBodyFromLines("src/a.cpp", linesV1, 3)
+	scope2, body2 := ExtractScopeAndBodyFromLines("src/a.cpp", linesV2, 3)
+	if scope1 != "upperFunc" || scope2 != "upperFunc" {
+		t.Fatalf("expected upperFunc scope, got %q and %q", scope1, scope2)
+	}
+	if body1 != body2 {
+		t.Fatalf("neighborLower edit leaked into upperFunc body:\nv1:\n%s\nv2:\n%s", body1, body2)
+	}
+	if strings.Contains(body1, "neighborLower") {
+		t.Fatalf("body must stop at closing brace of upperFunc, got:\n%s", body1)
+	}
+
+	// 验证 Python 缩进作用域隔离
+	py1 := []string{"def target_py(x):", "    return x + 1", "", "def lower_py():", "    return 1"}
+	py2 := []string{"def target_py(x):", "    return x + 1", "", "def lower_py():", "    return 999"}
+	_, pyBody1 := ExtractScopeAndBodyFromLines("src/a.py", py1, 2)
+	_, pyBody2 := ExtractScopeAndBodyFromLines("src/a.py", py2, 2)
+	if pyBody1 != pyBody2 || strings.Contains(pyBody1, "lower_py") {
+		t.Fatalf("python indent isolation failed: body1=%q body2=%q", pyBody1, pyBody2)
+	}
+}

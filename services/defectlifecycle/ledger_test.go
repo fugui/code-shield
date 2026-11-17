@@ -8,6 +8,7 @@ import (
 
 	"code-common/backend/testdb"
 	"code-shield/models"
+	"code-shield/services/coverage"
 
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func TestAdvanceUnmatchedDefectsCountsScannedRoundWithoutReproduction(t *testing
 	scannedDefect := models.Defect{
 		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
 		CanonicalFingerprint: "fingerprint-scanned", IdentityKind: "K1",
-		NormPath: "src/unchanged.cpp", Severity: "建议", BlobHash: "same-hash",
+		NormPath: "src/changed.cpp", Severity: "建议", BlobHash: "old-hash",
 		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
 	}
 	uncoveredDefect := models.Defect{
@@ -50,10 +51,16 @@ func TestAdvanceUnmatchedDefectsCountsScannedRoundWithoutReproduction(t *testing
 	}
 
 	input := LedgerInput{
-		Report: report, Repo: repo, TaskType: taskType, CoverageState: CoverageChangeFocus,
+		Report: report, Repo: repo, TaskType: taskType, CoverageState: CoverageComplete,
+		Coverage: &coverage.Coverage{
+			PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+			Files: []coverage.File{
+				{Path: scannedDefect.NormPath, Hash: "new-hash", Status: coverage.StatusSuccess},
+			},
+		},
 		Scope: []models.ScanScopeEntry{
-			{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: scannedDefect.NormPath, BlobHash: "same-hash", Outcome: ScopeScanned},
-			{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: uncoveredDefect.NormPath, BlobHash: "new-hash", Outcome: ScopeFailed},
+			{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: scannedDefect.NormPath, BlobHash: "new-hash", Outcome: ScopeScanned},
+			{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: uncoveredDefect.NormPath, BlobHash: "new-hash-2", Outcome: ScopeFailed},
 		},
 		Lifecycle: LifecyclePolicy{
 			HighRiskSeverities: []string{"致命", "严重"}, ResolvedRounds: 2,
@@ -79,8 +86,8 @@ func TestAdvanceUnmatchedDefectsCountsScannedRoundWithoutReproduction(t *testing
 	if updatedScanned.MissedCount != 1 || updatedScanned.Status != DefectStatusCoverageGap {
 		t.Fatalf("expected scanned defect to advance, got missed=%d status=%s", updatedScanned.MissedCount, updatedScanned.Status)
 	}
-	if updatedUncovered.MissedCount != 0 || updatedUncovered.Status != DefectStatusActive {
-		t.Fatalf("expected uncovered defect to stay unchanged, got missed=%d status=%s", updatedUncovered.MissedCount, updatedUncovered.Status)
+	if updatedUncovered.MissedCount != 0 || updatedUncovered.Status != DefectStatusCoverageGap {
+		t.Fatalf("expected uncovered defect to move to COVERAGE_GAP with missed=0, got missed=%d status=%s", updatedUncovered.MissedCount, updatedUncovered.Status)
 	}
 }
 
@@ -424,5 +431,329 @@ func TestAdvanceUnmatchedDefectsAutoResolvesMissingSourceFile(t *testing.T) {
 	}
 	if !foundEvent {
 		t.Fatalf("expected STATUS_CHANGED event for missing defect")
+	}
+}
+
+func TestAdvanceUnmatchedDefectsFreezesDecayWhenRequireChangeUnchanged(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_freeze_unchanged",
+		&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+	repo := models.Repository{Name: "freeze-demo", URL: "https://example.com/freeze.git"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("create task type: %v", err)
+	}
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	if err := db.Create(&report).Error; err != nil {
+		t.Fatalf("create report: %v", err)
+	}
+	defect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-freeze", IdentityKind: "K1",
+		NormPath: "src/unchanged.cpp", Severity: "严重", BlobHash: "blob-same-123",
+		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
+		RowVersion: 1,
+	}
+	if err := db.Create(&defect).Error; err != nil {
+		t.Fatalf("create defect: %v", err)
+	}
+	scopeEntries := []models.ScanScopeEntry{
+		{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: defect.NormPath, BlobHash: "blob-same-123", Outcome: ScopeScanned},
+	}
+	input := LedgerInput{
+		Report:        report,
+		Repo:          repo,
+		TaskType:      taskType,
+		CoverageState: CoverageComplete,
+		Coverage: &coverage.Coverage{
+			PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+			Files: []coverage.File{{Path: defect.NormPath, Hash: "blob-same-123", Status: coverage.StatusSuccess}},
+		},
+		Evaluator: NewMemoryScopeEvaluator(scopeEntries),
+		Lifecycle: LifecyclePolicy{
+			HighRiskSeverities: []string{"致命", "严重"}, ResolvedRounds: 2,
+			DormantThreshold: 2, ObsoleteAfterDormant: 8,
+			RequireCoverage: true, RequireChange: true,
+		},
+	}
+	var events []models.DefectEvent
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var txErr error
+		events, txErr = advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, input, time.Now())
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("advanceUnmatchedDefects() error = %v", err)
+	}
+	var reload models.Defect
+	if err := db.First(&reload, defect.ID).Error; err != nil {
+		t.Fatalf("reload defect: %v", err)
+	}
+	if reload.Status != DefectStatusActive || reload.MissedCount != 0 || len(events) != 0 {
+		t.Fatalf("expected unchanged file defect to freeze at ACTIVE missed=0 events=0, got status=%s missed=%d events=%d",
+			reload.Status, reload.MissedCount, len(events))
+	}
+}
+
+func TestUpdateMatchedDefectResetsMissedCountAndPreservesHumanClosed(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_reset_missed_exempt",
+		&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+	repo := models.Repository{Name: "reset-demo", URL: "https://example.com/reset.git"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatalf("create task type: %v", err)
+	}
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	if err := db.Create(&report).Error; err != nil {
+		t.Fatalf("create report: %v", err)
+	}
+
+	pendingDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusVerifiedPending,
+		CanonicalFingerprint: "fp-pending", IdentityKind: "K1",
+		NormPath: "src/pending.cpp", ScopeKey: "scope-p", SymbolPath: "fnP",
+		CleanToken: "delete p", DefectClassMajor: "memory_leak", Severity: "严重",
+		MissedCount: 2, DormantRounds: 3, RowVersion: 1,
+		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
+	}
+	exemptDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusHumanClosed,
+		CanonicalFingerprint: "fp-exempt", IdentityKind: "K1",
+		NormPath: "src/exempt.cpp", ScopeKey: "scope-e", SymbolPath: "fnE",
+		CleanToken: "delete e", DefectClassMajor: "memory_leak", Severity: "严重",
+		MissedCount: 0, RowVersion: 1,
+		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
+	}
+	for _, d := range []*models.Defect{&pendingDefect, &exemptDefect} {
+		if err := db.Create(d).Error; err != nil {
+			t.Fatalf("create defect: %v", err)
+		}
+	}
+
+	pendingID := pendingDefect.ID
+	pendingObs := models.DefectObservation{DefectID: &pendingID, Verdict: VerdictExisted, Reason: "SLOT_PRECISE"}
+	exemptID := exemptDefect.ID
+	exemptObs := models.DefectObservation{DefectID: &exemptID, Verdict: VerdictExisted, Reason: "SLOT_PRECISE"}
+
+	input := LedgerInput{Report: report, Repo: repo, TaskType: taskType}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		updatedPending, _, _, uErr := updateMatchedDefect(tx, pendingDefect, Identity{
+			NormPath: "src/pending.cpp", ScopeKey: "scope-p", SymbolPath: "fnP",
+			CleanToken: "delete p", DefectClassMajor: "memory_leak", Severity: "严重",
+		}, input, &pendingObs, time.Now())
+		if uErr != nil {
+			return uErr
+		}
+		if updatedPending.MissedCount != 0 || updatedPending.DormantRounds != 0 || updatedPending.Status != DefectStatusActive {
+			t.Fatalf("expected active & zero counters, got status=%s missed=%d dormant=%d",
+				updatedPending.Status, updatedPending.MissedCount, updatedPending.DormantRounds)
+		}
+
+		updatedExempt, exemptEvent, changed, eErr := updateMatchedDefect(tx, exemptDefect, Identity{
+			NormPath: "src/exempt.cpp", ScopeKey: "scope-e", SymbolPath: "fnE",
+			CleanToken: "delete e", DefectClassMajor: "memory_leak", Severity: "严重",
+		}, input, &exemptObs, time.Now())
+		if eErr != nil {
+			return eErr
+		}
+		if updatedExempt.Status != DefectStatusHumanClosed || !changed || exemptEvent.EventType != EventTypeExemptRecheck {
+			t.Fatalf("expected HUMAN_CLOSED + EXEMPT_RECHECK event, got status=%s changed=%v event=%s",
+				updatedExempt.Status, changed, exemptEvent.EventType)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("transaction failed: %v", err)
+	}
+
+	var reload models.Defect
+	if err := db.First(&reload, pendingDefect.ID).Error; err != nil {
+		t.Fatalf("reload pending defect: %v", err)
+	}
+	if reload.MissedCount != 0 || reload.DormantRounds != 0 || reload.Status != DefectStatusActive {
+		t.Fatalf("expected DB missed_count=0 & dormant_rounds=0 & ACTIVE, got missed=%d dormant=%d status=%s",
+			reload.MissedCount, reload.DormantRounds, reload.Status)
+	}
+}
+
+func TestPersistScanFactsHotUpgradesV1DefectToV2AndPreservesLegacyAlias(t *testing.T) {
+	root := t.TempDir()
+	srcPath := filepath.Join(root, "src", "upgrade.cpp")
+	if err := os.MkdirAll(filepath.Dir(srcPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "void Dispatch(Session* reqSession) {\n    if (reqSession != nullptr) {\n        reqSession->Execute();\n    }\n}\n"
+	if err := os.WriteFile(srcPath, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_v1_to_v2_upgrade",
+		&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.AnalysisFinding{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{}, &models.TaskChunkExecution{},
+	)
+	repo := models.Repository{Name: "upgrade-demo", URL: "https://example.com/upgrade.git"}
+	taskType := models.TaskType{Name: "coredump-risk", DisplayName: "Core Dump Risk", GovernanceMode: models.GovernanceModeFullLedger}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatal(err)
+	}
+	r1 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess}
+	if err := db.Create(&r1).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 模拟历史 v1 算法留存的数据库记录（v1 原始分类 + v1 单行槽位）
+	v1Class := "内存管理问题"
+	v1CoreSlot := ComputeCoreSlotKey("src/upgrade.cpp", "Dispatch", v1Class, "reqSession")
+	v1StmtHash := ComputeStmtAnchorHash("reqSession->Execute();")
+	v1Slot := ComputePreciseSlotKey(v1CoreSlot, v1StmtHash)
+	lineStart := 3
+	legacyDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: v1Slot, IdentityKind: "SLOT",
+		NormPath: "src/upgrade.cpp", ScopeKey: "legacy-scope-key",
+		ScopeSymbol: "Dispatch", SymbolPath: "Dispatch", TargetEntity: "reqSession",
+		StmtAnchorHash: v1StmtHash, CoreSlotKey: v1CoreSlot, SlotKey: v1Slot,
+		CleanToken: "reqsession->execute()", Category: "内存管理问题-空指针解引用", DefectClassMajor: v1Class, Severity: "严重",
+		LineStart: &lineStart, LineEnd: &lineStart, BlobHash: "hash-1",
+		FirstReportID: r1.ID, LastSeenReportID: r1.ID, LastMatchedReportID: r1.ID, RowVersion: 1,
+	}
+	if err := db.Create(&legacyDefect).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	r2 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing}
+	if err := db.Create(&r2).Error; err != nil {
+		t.Fatal(err)
+	}
+	v2Finding := models.AnalysisFinding{
+		FilePath: "src/upgrade.cpp", LineNumber: "2", Category: "内存管理问题-空指针解引用",
+		Severity: "严重", Title: "Unchecked reqSession",
+		TriggerLine: "if (reqSession != nullptr) {", ScopeSymbol: "Dispatch", TargetSymbol: "reqSession",
+	}
+	cov := &coverage.Coverage{
+		PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+		Files: []coverage.File{{Path: "src/upgrade.cpp", Hash: "hash-1", Status: coverage.StatusSuccess}},
+	}
+	res, err := PersistScanFacts(ScanInput{
+		DB: db, Report: r2, Repo: repo, RepoRoot: root, TaskType: taskType,
+		Findings: []models.AnalysisFinding{v2Finding}, Coverage: cov, AlgorithmVersion: "v2",
+	})
+	if err != nil {
+		t.Fatalf("v2 PersistScanFacts failed: %v", err)
+	}
+	if len(res.Observations) != 1 || res.Observations[0].DefectID == nil || *res.Observations[0].DefectID != legacyDefect.ID {
+		t.Fatalf("expected v1 defect %d matched seamlessly by v2 CORE_SLOT_SINGLETON/slot, got %+v", legacyDefect.ID, res.Observations)
+	}
+	if res.Observations[0].Verdict != VerdictExisted {
+		t.Fatalf("expected EXISTED verdict, got %s", res.Observations[0].Verdict)
+	}
+
+	var count int64
+	if err := db.Model(&models.Defect{}).Where("repo_id = ?", repo.ID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("expected 0 duplicate defects (total=1), got %d err=%v", count, err)
+	}
+
+	var upgraded models.Defect
+	if err := db.First(&upgraded, legacyDefect.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.DefectClassMajor != ClassNPD || upgraded.SlotKey == v1Slot {
+		t.Fatalf("expected defect hot-upgraded to v2 ClassNPD and new SlotKey, got class=%q slot=%q", upgraded.DefectClassMajor, upgraded.SlotKey)
+	}
+
+	var aliasCount int64
+	if err := db.Model(&models.DefectAlias{}).
+		Where("defect_id = ? AND alias_type = ? AND alias_value = ?", legacyDefect.ID, AliasSlotHealed, v1Slot).
+		Count(&aliasCount).Error; err != nil || aliasCount != 1 {
+		t.Fatalf("expected legacy v1 SlotKey preserved in defect_aliases, got count=%d err=%v", aliasCount, err)
+	}
+}
+
+func TestAdvanceUnmatchedDefectsWithholdsOnNonDefaultBranchOrScopedOverride(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_branch_scope_guard",
+		&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+	repo := models.Repository{Name: "branch-guard-demo", URL: "https://example.com/bg.git", Branch: "main"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review", TargetScope: "business"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatal(err)
+	}
+	report := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "feature/exp"}
+	if err := db.Create(&report).Error; err != nil {
+		t.Fatal(err)
+	}
+	defect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-bg", IdentityKind: "K1",
+		NormPath: "src/changed.cpp", Severity: "一般", BlobHash: "old-hash",
+		FirstReportID: report.ID, LastSeenReportID: report.ID, LastMatchedReportID: report.ID,
+		RowVersion: 1,
+	}
+	if err := db.Create(&defect).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	cov := &coverage.Coverage{
+		PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+		Files: []coverage.File{{Path: defect.NormPath, Hash: "new-hash", Status: coverage.StatusSuccess}},
+	}
+	// 1. 非默认分支扫描应冻结存量衰变
+	err := db.Transaction(func(tx *gorm.DB) error {
+		events, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+			Report: report, Repo: repo, TaskType: taskType, CoverageState: CoverageComplete, Coverage: cov,
+			Scope: []models.ScanScopeEntry{{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: defect.NormPath, BlobHash: "new-hash", Outcome: ScopeScanned}},
+			Lifecycle: LifecyclePolicy{
+				ResolvedRounds: 1, RequireCoverage: true, RequireChange: false, OnlyAdvanceOnDefaultBranch: true,
+			},
+		}, time.Now())
+		if len(events) != 0 {
+			t.Fatalf("expected 0 events on non-default branch, got %d", len(events))
+		}
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("branch guard transaction failed: %v", err)
+	}
+
+	// 2. 主干分支但 TargetScope 覆盖（只测单测 test != business）同样应冻结存量衰变
+	reportScoped := models.TaskReport{ID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, Branch: "main", TargetScope: "test"}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		events, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+			Report: reportScoped, Repo: repo, TaskType: taskType, CoverageState: CoverageComplete, Coverage: cov,
+			Scope: []models.ScanScopeEntry{{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: defect.NormPath, BlobHash: "new-hash", Outcome: ScopeScanned}},
+			Lifecycle: LifecyclePolicy{
+				ResolvedRounds: 1, RequireCoverage: true, RequireChange: false, OnlyAdvanceOnDefaultBranch: true,
+			},
+		}, time.Now())
+		if len(events) != 0 {
+			t.Fatalf("expected 0 events on scoped override, got %d", len(events))
+		}
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("scoped override transaction failed: %v", err)
+	}
+
+	var reload models.Defect
+	if err := db.First(&reload, defect.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reload.Status != DefectStatusActive || reload.MissedCount != 0 {
+		t.Fatalf("expected defect untouched by non-default branch & scoped override, got status=%s missed=%d", reload.Status, reload.MissedCount)
 	}
 }

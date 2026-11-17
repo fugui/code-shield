@@ -16,6 +16,9 @@ type ScopeCoverageEvaluator interface {
 
 	// IsFailed 判断文件是否处理失败，返回失败标识及失败原因
 	IsFailed(normPath string) (failed bool, reason string)
+
+	// GetBlobHash 获取文件在本轮扫描中的内容快照哈希（无记录返回空串）
+	GetBlobHash(normPath string) string
 }
 
 // MemoryScopeEvaluator 基于全量计划文件集构建的内存高性能覆盖判定器。
@@ -23,6 +26,7 @@ type MemoryScopeEvaluator struct {
 	plannedFiles map[string]bool   // 全量计划扫描文件集合 (所有 Planned Files)
 	failedFiles  map[string]string // 扫描失败文件及错误原因
 	touchedFiles map[string]bool   // diff_touched=true 的文件
+	blobHashes   map[string]string // norm_path -> BlobHash 快照哈希
 }
 
 // NewMemoryScopeEvaluator 从全量 ScopeEntry 切片装配内存判定器
@@ -31,6 +35,7 @@ func NewMemoryScopeEvaluator(fullEntries []models.ScanScopeEntry) *MemoryScopeEv
 		plannedFiles: make(map[string]bool, len(fullEntries)),
 		failedFiles:  make(map[string]string),
 		touchedFiles: make(map[string]bool),
+		blobHashes:   make(map[string]string, len(fullEntries)),
 	}
 	for _, entry := range fullEntries {
 		e.plannedFiles[entry.NormPath] = true
@@ -39,6 +44,9 @@ func NewMemoryScopeEvaluator(fullEntries []models.ScanScopeEntry) *MemoryScopeEv
 		}
 		if entry.DiffTouched {
 			e.touchedFiles[entry.NormPath] = true
+		}
+		if entry.BlobHash != "" {
+			e.blobHashes[entry.NormPath] = entry.BlobHash
 		}
 	}
 	return e
@@ -70,4 +78,12 @@ func (e *MemoryScopeEvaluator) IsFailed(normPath string) (bool, string) {
 	}
 	reason, failed := e.failedFiles[normPath]
 	return failed, reason
+}
+
+// GetBlobHash 返回文件在本轮扫描中的 BlobHash 快照（无记录返回空串）
+func (e *MemoryScopeEvaluator) GetBlobHash(normPath string) string {
+	if e == nil {
+		return ""
+	}
+	return e.blobHashes[normPath]
 }

@@ -22,6 +22,17 @@ type SourceAnchor struct {
 	ScopeBodyHash   string `json:"scope_body_hash"`  // 所在函数/作用域代码块的 SHA-256 (用于细粒度代码修改守卫)
 }
 
+var (
+	reSourceComments   = regexp.MustCompile(`(//.*?$|/\*.*?\*/|#.*?$)`)
+	reSourceWhitespace = regexp.MustCompile(`\s+`)
+	reLambdaScope      = regexp.MustCompile(`(operator\(\)[^:]*|<lambda[^>]*>|<lambda\(\)>)`)
+	reTemplateArgs     = regexp.MustCompile(`<.*?>`)
+	reFuncGo           = regexp.MustCompile(`func\s+(\([^)]+\)\s+)?([A-Za-z0-9_]+)`)
+	reFuncCpp          = regexp.MustCompile(`(?:[A-Za-z0-9_]+::)*[A-Za-z0-9_]+\s*\([^;)]*\)\s*(?:const)?\s*\{?`)
+	reFuncJava         = regexp.MustCompile(`(?:public|protected|private|static|\s)+[\w<>\[\]]+\s+([A-Za-z0-9_]+)\s*\([^)]*\)`)
+	reFuncPy           = regexp.MustCompile(`(?:def|class)\s+([A-Za-z0-9_]+)`)
+)
+
 // CleanSourceToken 对代码行进行 Token 级去噪清洗 (去除多语言注释、空白符、引号、分号并转小写)
 func CleanSourceToken(line string) string {
 	trimmed := strings.TrimSpace(line)
@@ -30,12 +41,10 @@ func CleanSourceToken(line string) string {
 	}
 
 	// 1. 移除 C/C++/Go/Java/Python/Shell 单行与多行注释
-	reComments := regexp.MustCompile(`(//.*?$|/\*.*?\*/|#.*?$)`)
-	clean := reComments.ReplaceAllString(trimmed, "")
+	clean := reSourceComments.ReplaceAllString(trimmed, "")
 
 	// 2. 移除所有空白符与换行符
-	reWhitespace := regexp.MustCompile(`\s+`)
-	clean = reWhitespace.ReplaceAllString(clean, "")
+	clean = reSourceWhitespace.ReplaceAllString(clean, "")
 
 	// 3. 移除单双引号与反引号及末尾分号
 	clean = strings.ReplaceAll(clean, "\"", "")
@@ -65,11 +74,11 @@ func NormalizeScopeSymbol(rawScope string) string {
 
 		// 统一将各类 lambda / operator() 描述规范化为占位符，防止被模板参数剥离误杀
 		if strings.Contains(p, "lambda") || strings.Contains(p, "operator()") {
-			p = regexp.MustCompile(`(operator\(\)[^:]*|<lambda[^>]*>|<lambda\(\)>)`).ReplaceAllString(p, "__LAMBDA__")
+			p = reLambdaScope.ReplaceAllString(p, "__LAMBDA__")
 		}
 
 		// 剥离 C++ 模板参数 <T>
-		p = regexp.MustCompile(`<.*?>`).ReplaceAllString(p, "")
+		p = reTemplateArgs.ReplaceAllString(p, "")
 
 		// 恢复为标准 <lambda>
 		p = strings.ReplaceAll(p, "__LAMBDA__", "<lambda>")
@@ -293,11 +302,6 @@ func ExtractScopeAndBodyFromLines(filePath string, lines []string, targetLine in
 		limit = 1
 	}
 
-	reFuncGo := regexp.MustCompile(`func\s+(\([^)]+\)\s+)?([A-Za-z0-9_]+)`)
-	reFuncCpp := regexp.MustCompile(`(?:[A-Za-z0-9_]+::)*[A-Za-z0-9_]+\s*\([^;)]*\)\s*(?:const)?\s*\{?`)
-	reFuncJava := regexp.MustCompile(`(?:public|protected|private|static|\s)+[\w<>\[\]]+\s+([A-Za-z0-9_]+)\s*\([^)]*\)`)
-	reFuncPy := regexp.MustCompile(`(?:def|class)\s+([A-Za-z0-9_]+)`)
-
 scanLoop:
 	for i := scanStart; i >= limit; i-- {
 		line := strings.TrimSpace(lines[i-1])
@@ -348,11 +352,8 @@ scanLoop:
 		}
 	}
 
-	// 提取函数体（从 scopeStart 向下提取至多 150 行）
-	scopeEnd := scopeStart + 150
-	if scopeEnd > len(lines) {
-		scopeEnd = len(lines)
-	}
+	// RFC-006 P1: 基于花括号/缩进闭合精确定位作用域边界（上限 300 行），隔离紧邻下方函数修改对 ScopeBodyHash 的干扰
+	scopeEnd := findScopeEndLine(ext, lines, scopeStart)
 	var bodyBuilder strings.Builder
 	for k := scopeStart; k <= scopeEnd; k++ {
 		bodyBuilder.WriteString(lines[k-1])
@@ -360,6 +361,108 @@ scanLoop:
 	}
 
 	return scopeSign, bodyBuilder.String()
+}
+
+func lineLeadingIndent(line string) int {
+	indent := 0
+	for i := 0; i < len(line); i++ {
+		if line[i] == ' ' {
+			indent++
+		} else if line[i] == '\t' {
+			indent += 4
+		} else {
+			break
+		}
+	}
+	return indent
+}
+
+// findScopeEndLine 基于语言语法追踪作用域闭合行，最多向下扫描 300 行。
+func findScopeEndLine(ext string, lines []string, scopeStart int) int {
+	const maxScopeSpan = 300
+	if scopeStart < 1 {
+		scopeStart = 1
+	}
+	maxEnd := scopeStart + maxScopeSpan
+	if maxEnd > len(lines) {
+		maxEnd = len(lines)
+	}
+
+	if ext == ".py" {
+		baseIndent := lineLeadingIndent(lines[scopeStart-1])
+		lastCodeLine := scopeStart
+		for k := scopeStart + 1; k <= maxEnd; k++ {
+			trimmed := strings.TrimSpace(lines[k-1])
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			if lineLeadingIndent(lines[k-1]) <= baseIndent {
+				return lastCodeLine
+			}
+			lastCodeLine = k
+		}
+		return lastCodeLine
+	}
+
+	depth := 0
+	seenOpen := false
+	inBlockComment := false
+	for k := scopeStart; k <= maxEnd; k++ {
+		line := lines[k-1]
+		var quote byte
+		escaped := false
+		for idx := 0; idx < len(line); idx++ {
+			ch := line[idx]
+			if inBlockComment {
+				if ch == '*' && idx+1 < len(line) && line[idx+1] == '/' {
+					inBlockComment = false
+					idx++
+				}
+				continue
+			}
+			if quote != 0 {
+				if escaped {
+					escaped = false
+					continue
+				}
+				if ch == '\\' && quote != '`' {
+					escaped = true
+					continue
+				}
+				if ch == quote {
+					quote = 0
+				}
+				continue
+			}
+			if ch == '/' && idx+1 < len(line) {
+				if line[idx+1] == '/' {
+					break
+				}
+				if line[idx+1] == '*' {
+					inBlockComment = true
+					idx++
+					continue
+				}
+			}
+			if ch == '#' {
+				break
+			}
+			if ch == '"' || ch == '\'' || ch == '`' {
+				quote = ch
+				continue
+			}
+			if ch == '{' {
+				depth++
+				seenOpen = true
+			} else if ch == '}' && depth > 0 {
+				depth--
+			}
+		}
+		if seenOpen && depth <= 0 {
+			return k
+		}
+	}
+	return maxEnd
 }
 
 // EnrichSourceAnchor 从磁盘物理源文件中提取确定性特征与物理锚点

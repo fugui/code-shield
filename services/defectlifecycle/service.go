@@ -78,7 +78,19 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 
 	findings := make([]models.AnalysisFinding, len(input.Findings))
 	copy(findings, input.Findings)
-	groups := BuildObservationGroups(input.RepoRoot, input.Report.ID, findings)
+	stabilizedFindings := input.StabilizedFindings
+	if len(stabilizedFindings) != len(findings) && len(findings) > 0 {
+		stabilizer := NewIngestionStabilizer()
+		computed, stabErr := stabilizer.Stabilize(StabilizeFindingsInput{
+			RepoRoot: input.RepoRoot,
+			Findings: findings,
+		})
+		if stabErr != nil {
+			return nil, fmt.Errorf("stabilize findings: %w", stabErr)
+		}
+		stabilizedFindings = computed
+	}
+	groups := BuildObservationGroupsWithStabilized(input.RepoRoot, input.Report.ID, findings, stabilizedFindings)
 	findings = make([]models.AnalysisFinding, 0, len(input.Findings))
 	for _, group := range groups {
 		for _, item := range group.Findings {
@@ -126,6 +138,60 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 			}
 		}
 	}()
+
+	// RFC-006 P1: entity_assessment（如 UT 有效性评估）只存储报告级评估事实与覆盖清单，彻底旁路缺陷账本
+	if models.ResolveGovernanceMode(input.TaskType.GovernanceMode) == models.GovernanceModeEntityAssessment {
+		committedAt := time.Now()
+		txErr := input.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("task_report_id = ?", input.Report.ID).Delete(&models.AnalysisFinding{}).Error; err != nil {
+				return fmt.Errorf("replace entity assessment findings: %w", err)
+			}
+			if err := tx.Where("report_id = ?", input.Report.ID).Delete(&models.ScanScopeEntry{}).Error; err != nil {
+				return fmt.Errorf("replace entity assessment scope entries: %w", err)
+			}
+			if len(findings) > 0 {
+				if err := tx.CreateInBatches(findings, 100).Error; err != nil {
+					return fmt.Errorf("persist entity assessment findings: %w", err)
+				}
+			}
+			if len(sparseEntries) > 0 {
+				if err := persistScope(tx, sparseEntries); err != nil {
+					return fmt.Errorf("persist entity assessment scope entries: %w", err)
+				}
+			}
+			updates := map[string]interface{}{
+				"coverage_complete":       summary.CoverageComplete,
+				"coverage_degraded":       summary.CoverageDegraded,
+				"coverage_not_applicable": summary.CoverageNotApplicable,
+				"coverage_state":          state,
+				"scope_hash":              hash,
+				"worktree_clean":          coverageFact.WorktreeClean,
+				"algorithm_version":       input.AlgorithmVersion,
+			}
+			if _, err := models.UpdateActiveTaskReport(tx, input.Report.ID, updates); err != nil {
+				return fmt.Errorf("persist entity assessment metadata: %w", err)
+			}
+			return nil
+		})
+		if txErr != nil {
+			return nil, txErr
+		}
+		finalPath := manifestFinalPath(&input.Report)
+		if finalPath != "" {
+			if renameErr := os.Rename(tempManifestPath, finalPath); renameErr != nil {
+				log.Printf("[Warn] Finalize manifest failed for report %d: %v (non-critical)", input.Report.ID, renameErr)
+			}
+		}
+		return &ScanFactsResult{
+			Findings:      findings,
+			Scope:         sparseEntries,
+			ScopeHash:     hash,
+			CoverageState: state,
+			WorktreeClean: coverageFact.WorktreeClean,
+			CommittedAt:   committedAt,
+			LedgerReady:   false,
+		}, nil
+	}
 
 	const maxRetries = 3
 	var lastErr error
