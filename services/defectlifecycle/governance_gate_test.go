@@ -61,12 +61,12 @@ func TestPersistScanFactsKeepsReportOnlyAssessmentsOutOfLedger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PersistScanFacts() error = %v", err)
 	}
-	if len(result.Findings) != 3 || len(result.Observations) != 1 {
+	if len(result.Findings) != 5 || len(result.Observations) != 1 {
 		t.Fatalf("unexpected result findings=%d observations=%d", len(result.Findings), len(result.Observations))
 	}
 	var findingCount, observationCount, defectCount int64
-	if err := db.Model(&models.AnalysisFinding{}).Where("task_report_id = ?", report.ID).Count(&findingCount).Error; err != nil || findingCount != 3 {
-		t.Fatalf("raw findings = %d err=%v, want 3", findingCount, err)
+	if err := db.Model(&models.AnalysisFinding{}).Where("task_report_id = ?", report.ID).Count(&findingCount).Error; err != nil || findingCount != 5 {
+		t.Fatalf("raw findings = %d err=%v, want 5", findingCount, err)
 	}
 	if err := db.Model(&models.DefectObservation{}).Where("report_id = ?", report.ID).Count(&observationCount).Error; err != nil || observationCount != 1 {
 		t.Fatalf("ledger observations = %d err=%v, want 1", observationCount, err)
@@ -112,6 +112,7 @@ func TestPersistScanFactsResolvesMatchedPassObservation(t *testing.T) {
 	defect := models.Defect{
 		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
 		StatusReason: "created from NEW observation", CanonicalFingerprint: "legacy-fingerprint",
+		NormPath: identity.NormPath, ScopeKey: identity.ScopeKey,
 		SymbolPath: identity.SymbolPath, TargetEntity: identity.TargetEntity,
 		StmtAnchorHash: identity.StmtAnchorHash, CoreSlotKey: identity.CoreSlotKey, SlotKey: identity.SlotKey,
 		CleanToken:       identity.CleanToken,

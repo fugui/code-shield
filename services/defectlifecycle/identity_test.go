@@ -30,8 +30,8 @@ func TestIdentityKeysExcludeDisplayFields(t *testing.T) {
 	if identities[0].K1 != identities[1].K1 || identities[0].K2 != identities[1].K2 {
 		t.Fatalf("expected stable identity keys: %+v %+v", identities[0], identities[1])
 	}
-	if identities[0].DefectClassMajor != "memory_leak" {
-		t.Fatalf("unexpected class major: %q", identities[0].DefectClassMajor)
+	if identities[0].DefectClassMajor != ClassMemLeak || identities[0].LegacyDefectClassMajor != "memory_leak" {
+		t.Fatalf("unexpected dual-track class majors: v2=%q v1=%q", identities[0].DefectClassMajor, identities[0].LegacyDefectClassMajor)
 	}
 }
 
@@ -113,8 +113,8 @@ func TestIdentityDistinguishesRepeatedStatementOccurrences(t *testing.T) {
 		{FilePath: "src/repeat.cpp", LineNumber: "3", Category: "resource_leak", TriggerLine: "release(b);"},
 	}
 	identities := BuildIdentities(repoRoot, 1, 2, findings)
-	if identities[0].OccurrenceIndex != 1 || identities[1].OccurrenceIndex != 1 {
-		t.Fatalf("expected one occurrence for the same statement, got %d and %d", identities[0].OccurrenceIndex, identities[1].OccurrenceIndex)
+	if identities[0].OccurrenceIndex != 1 || identities[1].OccurrenceIndex != 2 {
+		t.Fatalf("expected distinct occurrences (1 and 2) for repeated statements, got %d and %d", identities[0].OccurrenceIndex, identities[1].OccurrenceIndex)
 	}
 	if identities[0].K2 == identities[1].K2 {
 		t.Fatalf("expected distinct context keys for repeated statements")
@@ -218,5 +218,41 @@ func TestDefectClassMajorDashSplitting(t *testing.T) {
 	cls4 := defectClassMajor("安全风险-内存破坏")
 	if cls4 != "安全风险" {
 		t.Fatalf("expected '安全风险', got %q", cls4)
+	}
+}
+
+func TestBuildObservationGroupsKeepsDistinctTargetEntitiesSeparate(t *testing.T) {
+	repoRoot := t.TempDir()
+	path := filepath.Join(repoRoot, "src", "multi.cpp")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create dir: %v", err)
+	}
+	content := "void work() {\n  *ptrA = 1;\n  *ptrB = 2;\n}\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	findings := []models.AnalysisFinding{
+		{FilePath: "src/multi.cpp", LineNumber: "2", Category: "空指针解引用", TriggerLine: "*ptrA = 1;", ScopeSymbol: "work"},
+		{FilePath: "src/multi.cpp", LineNumber: "3", Category: "空指针解引用", TriggerLine: "*ptrB = 2;", ScopeSymbol: "work"},
+	}
+	groups := BuildObservationGroups(repoRoot, 10, findings)
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 distinct observation groups for ptrA and ptrB, got %d", len(groups))
+	}
+	if groups[0].Identity.TargetEntity == groups[1].Identity.TargetEntity ||
+		groups[0].Identity.OccurrenceIndex == groups[1].Identity.OccurrenceIndex {
+		t.Fatalf("expected distinct target entities and occurrences, got %+v and %+v", groups[0].Identity, groups[1].Identity)
+	}
+}
+
+func TestExtractIdentityTokenIncludesShortVariables(t *testing.T) {
+	if got := extractIdentityToken("fd=open(path)"); got != "fd" {
+		t.Fatalf("expected short variable 'fd' preserved, got %q", got)
+	}
+	if got := extractIdentityToken("buf=malloc(8)"); got != "buf" {
+		t.Fatalf("expected short variable 'buf' preserved, got %q", got)
+	}
+	if got := extractIdentityToken("*p=1"); got != "p" {
+		t.Fatalf("expected short pointer 'p' preserved, got %q", got)
 	}
 }

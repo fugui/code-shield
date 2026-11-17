@@ -1227,3 +1227,43 @@ ai_fix:
 		t.Errorf("expected explicit enable_sparse_scope=false to be preserved, got %v", cfg.Retention.EnableSparseScope)
 	}
 }
+
+func TestGovernanceNormalizeDefaults_MonotonicityAndMinCandidates(t *testing.T) {
+	cfg := GovernancePolicyConfig{
+		Identity: IdentityConfig{
+			AlgorithmVersion:            "v2",
+			MaxCandidatesPerObservation: 3,
+			StrongSameThreshold:         0.88,
+			AssignBand:                  0.12,
+			RejectBelow:                 0.50,
+		},
+	}
+	cfg.NormalizeDefaults()
+
+	if cfg.Identity.MaxCandidatesPerObservation != 64 {
+		t.Fatalf("expected MaxCandidatesPerObservation=64 after self-healing, got %d", cfg.Identity.MaxCandidatesPerObservation)
+	}
+	if cfg.Identity.AssignBand < 0.75 || cfg.Identity.AssignBand > cfg.Identity.StrongSameThreshold {
+		t.Fatalf("expected healed AssignBand in [0.75, %.2f], got %.2f", cfg.Identity.StrongSameThreshold, cfg.Identity.AssignBand)
+	}
+	if cfg.Identity.AssignBand < cfg.Identity.RejectBelow {
+		t.Fatalf("expected monotonic AssignBand >= RejectBelow, got %.2f < %.2f", cfg.Identity.AssignBand, cfg.Identity.RejectBelow)
+	}
+
+	// 验证当 StrongSameThreshold - AssignBand 低于 0.75 时保底为 0.75
+	cfgFloor := GovernancePolicyConfig{
+		Identity: IdentityConfig{
+			MaxCandidatesPerObservation: 10,
+			StrongSameThreshold:         0.85,
+			AssignBand:                  0.20,
+			RejectBelow:                 0.50,
+		},
+	}
+	cfgFloor.NormalizeDefaults()
+	if cfgFloor.Identity.AssignBand != 0.75 {
+		t.Fatalf("expected floor AssignBand=0.75, got %.2f", cfgFloor.Identity.AssignBand)
+	}
+	if cfgFloor.Identity.MaxCandidatesPerObservation != 64 {
+		t.Fatalf("expected MaxCandidatesPerObservation=64, got %d", cfgFloor.Identity.MaxCandidatesPerObservation)
+	}
+}

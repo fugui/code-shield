@@ -34,12 +34,13 @@ func RuntimeMatchThresholds() MatchThresholds {
 
 func RuntimeLifecyclePolicy() LifecyclePolicy {
 	return LifecyclePolicy{
-		HighRiskSeverities:   append([]string(nil), models.AppConfig.Governance.Lifecycle.HighRiskSeverities...),
-		ResolvedRounds:       models.AppConfig.Governance.Lifecycle.ResolvedRounds,
-		DormantThreshold:     models.AppConfig.Governance.Lifecycle.DormantThreshold,
-		ObsoleteAfterDormant: models.AppConfig.Governance.Lifecycle.ObsoleteAfterDormant,
-		RequireCoverage:      models.AppConfig.Governance.Lifecycle.RequireCoverageEnabled(),
-		RequireChange:        models.AppConfig.Governance.Lifecycle.RequireChangeEnabled(),
-		AutoResolveMissing:   models.AppConfig.Governance.Lifecycle.AutoResolveMissingEnabled(),
+		HighRiskSeverities:         append([]string(nil), models.AppConfig.Governance.Lifecycle.HighRiskSeverities...),
+		ResolvedRounds:             models.AppConfig.Governance.Lifecycle.ResolvedRounds,
+		DormantThreshold:           models.AppConfig.Governance.Lifecycle.DormantThreshold,
+		ObsoleteAfterDormant:       models.AppConfig.Governance.Lifecycle.ObsoleteAfterDormant,
+		RequireCoverage:            models.AppConfig.Governance.Lifecycle.RequireCoverageEnabled(),
+		RequireChange:              models.AppConfig.Governance.Lifecycle.RequireChangeEnabled(),
+		AutoResolveMissing:         models.AppConfig.Governance.Lifecycle.AutoResolveMissingEnabled(),
+		OnlyAdvanceOnDefaultBranch: models.AppConfig.Governance.Lifecycle.OnlyAdvanceOnDefaultBranchEnabled(),
 	}
 }

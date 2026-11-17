@@ -7,7 +7,7 @@ import { useToast } from '../Toast';
 
 interface ReportHeaderProps {
   meta?: TaskReportMeta;
-  activeTab?: 'summary' | 'findings' | 'reconciliation' | 'diagnostics' | 'debate';
+  activeTab?: 'summary' | 'findings' | 'reconciliation' | 'compare' | 'diagnostics' | 'debate';
   isFullscreen: boolean;
   onToggleFullscreen?: () => void;
   onClose?: () => void;

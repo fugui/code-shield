@@ -5,6 +5,7 @@ import (
 	commonModels "code-common/backend/models"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/url"
 	"os"
@@ -609,6 +610,20 @@ func (c Config) DeterministicTemperature() *float64 {
 	return &value
 }
 
+// DeterministicSeed returns an optional deterministic integer seed when determinism and prefer_seed are enabled.
+func (c Config) DeterministicSeed(material string) *int64 {
+	if !c.Scanner.Determinism.Enabled || !c.Scanner.Determinism.PreferSeed {
+		return nil
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.TrimSpace(c.Scanner.Determinism.SeedPolicy) + "|" + material))
+	seed := int64(h.Sum32() & 0x7fffffff)
+	if seed == 0 {
+		seed = 1
+	}
+	return &seed
+}
+
 // ==============================================================================
 // 3. 企业治理与通知配置 (Governance & Notification)
 // ==============================================================================
@@ -698,6 +713,41 @@ func (g *GovernancePolicyConfig) NormalizeDefaults() {
 		enabled := true
 		g.Lifecycle.AutoResolveMissing = &enabled
 	}
+	if g.Lifecycle.OnlyAdvanceOnDefaultBranch == nil {
+		enabled := true
+		g.Lifecycle.OnlyAdvanceOnDefaultBranch = &enabled
+	}
+
+	// RFC-006 阈值单调性与最低召回预算自愈守卫：
+	// 1. 单个观测点候选预算低于 16 会在高密度缺陷文件发生截断，自动兜底至 64；
+	// 2. AssignBand 语义为“直接关联确认最低置信度下限”，须满足 StrongSameThreshold >= AssignBand >= RejectBelow；
+	//    若检测到 AssignBand < RejectBelow（如历史误填带宽偏移量 0.12），按 StrongSameThreshold - AssignBand 换算并保底 0.75。
+	if g.Identity.MaxCandidatesPerObservation < 16 {
+		log.Printf("[GovernanceConfig] 检测到 max_candidates_per_observation=%d 过小，自动自愈为 64", g.Identity.MaxCandidatesPerObservation)
+		g.Identity.MaxCandidatesPerObservation = 64
+	}
+	if g.Identity.StrongSameThreshold > 1.0 {
+		g.Identity.StrongSameThreshold = 1.0
+	}
+	if g.Identity.RejectBelow > g.Identity.StrongSameThreshold {
+		log.Printf("[GovernanceConfig] 检测到 reject_below=%.2f 高于 strong_same_threshold=%.2f，自动钳位至 %.2f",
+			g.Identity.RejectBelow, g.Identity.StrongSameThreshold, g.Identity.StrongSameThreshold)
+		g.Identity.RejectBelow = g.Identity.StrongSameThreshold
+	}
+	if g.Identity.AssignBand < g.Identity.RejectBelow {
+		converted := g.Identity.StrongSameThreshold - g.Identity.AssignBand
+		if converted < 0.75 {
+			converted = 0.75
+		}
+		if converted > g.Identity.StrongSameThreshold {
+			converted = g.Identity.StrongSameThreshold
+		}
+		log.Printf("[GovernanceConfig] 检测到 assign_band=%.2f < reject_below=%.2f（疑似误填偏移量），自动修正为 %.2f",
+			g.Identity.AssignBand, g.Identity.RejectBelow, converted)
+		g.Identity.AssignBand = converted
+	} else if g.Identity.AssignBand > g.Identity.StrongSameThreshold {
+		g.Identity.AssignBand = g.Identity.StrongSameThreshold
+	}
 }
 
 type IdentityConfig struct {
@@ -706,11 +756,12 @@ type IdentityConfig struct {
 	MaxCandidateEdgesPerReport  int     `yaml:"max_candidate_edges_per_report" json:"max_candidate_edges_per_report"`
 	MaxAIAssignmentWidth        int     `yaml:"max_assignment_width" json:"max_assignment_width"`
 	StrongSameThreshold         float64 `yaml:"strong_same_threshold" json:"strong_same_threshold"`
-	AssignBand                  float64 `yaml:"assign_band" json:"assign_band"`
-	RejectBelow                 float64 `yaml:"reject_below" json:"reject_below"`
-	AutoResolveGrayZone         *bool   `yaml:"auto_resolve_gray_zone" json:"auto_resolve_gray_zone"`
-	AIArbitrationConfidence     float64 `yaml:"ai_arbitration_confidence" json:"ai_arbitration_confidence"`
-	GrayZoneFallbackMergeScore  float64 `yaml:"gray_zone_fallback_merge_score" json:"gray_zone_fallback_merge_score"`
+	// AssignBand 直接关联确认最低置信度下限（非偏移带宽），必须满足 StrongSameThreshold >= AssignBand >= RejectBelow。
+	AssignBand                 float64 `yaml:"assign_band" json:"assign_band"`
+	RejectBelow                float64 `yaml:"reject_below" json:"reject_below"`
+	AutoResolveGrayZone        *bool   `yaml:"auto_resolve_gray_zone" json:"auto_resolve_gray_zone"`
+	AIArbitrationConfidence    float64 `yaml:"ai_arbitration_confidence" json:"ai_arbitration_confidence"`
+	GrayZoneFallbackMergeScore float64 `yaml:"gray_zone_fallback_merge_score" json:"gray_zone_fallback_merge_score"`
 }
 
 type ArbitrationConfig struct {
@@ -729,13 +780,14 @@ func (c Config) GrayZoneAutoResolveEnabled() bool {
 }
 
 type LifecyclePolicyConfig struct {
-	HighRiskSeverities   []string `yaml:"high_risk_severities" json:"high_risk_severities"`
-	ResolvedRounds       int      `yaml:"resolved_rounds" json:"resolved_rounds"`
-	DormantThreshold     int      `yaml:"dormant_rounds" json:"dormant_rounds"`
-	ObsoleteAfterDormant int      `yaml:"obsolete_after_dormant_rounds" json:"obsolete_after_dormant_rounds"`
-	RequireCoverage      *bool    `yaml:"require_coverage" json:"require_coverage"`
-	RequireChange        *bool    `yaml:"require_change" json:"require_change"`
-	AutoResolveMissing   *bool    `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+	HighRiskSeverities         []string `yaml:"high_risk_severities" json:"high_risk_severities"`
+	ResolvedRounds             int      `yaml:"resolved_rounds" json:"resolved_rounds"`
+	DormantThreshold           int      `yaml:"dormant_rounds" json:"dormant_rounds"`
+	ObsoleteAfterDormant       int      `yaml:"obsolete_after_dormant_rounds" json:"obsolete_after_dormant_rounds"`
+	RequireCoverage            *bool    `yaml:"require_coverage" json:"require_coverage"`
+	RequireChange              *bool    `yaml:"require_change" json:"require_change"`
+	AutoResolveMissing         *bool    `yaml:"auto_resolve_missing" json:"auto_resolve_missing"`
+	OnlyAdvanceOnDefaultBranch *bool    `yaml:"only_advance_on_default_branch" json:"only_advance_on_default_branch"`
 }
 
 func (c LifecyclePolicyConfig) RequireCoverageEnabled() bool {
@@ -748,6 +800,10 @@ func (c LifecyclePolicyConfig) RequireChangeEnabled() bool {
 
 func (c LifecyclePolicyConfig) AutoResolveMissingEnabled() bool {
 	return c.AutoResolveMissing == nil || *c.AutoResolveMissing
+}
+
+func (c LifecyclePolicyConfig) OnlyAdvanceOnDefaultBranchEnabled() bool {
+	return c.OnlyAdvanceOnDefaultBranch == nil || *c.OnlyAdvanceOnDefaultBranch
 }
 
 // NotificationConfig 通知配置
@@ -862,8 +918,8 @@ type TierConfig struct {
 // ==============================================================================
 
 type Config struct {
-	Server       ServerConfig           `yaml:"server" json:"server"`
-	Storage      struct {
+	Server  ServerConfig `yaml:"server" json:"server"`
+	Storage struct {
 		Root string `yaml:"root" json:"root"`
 	} `yaml:"storage" json:"storage"`
 	Database     DatabaseConfig         `yaml:"database" json:"database"`

@@ -239,6 +239,65 @@ func TestNativeInvokerTemperatureFallbackChain(t *testing.T) {
 	}
 }
 
+func TestNativeInvokerDeterministicSeedInjection(t *testing.T) {
+	origConfig := models.AppConfig
+	defer func() { models.AppConfig = origConfig }()
+
+	var receivedSeeds []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+		}
+		receivedSeeds = append(receivedSeeds, body["seed"])
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	setTestNativeResource(models.ComputeResourceConfig{
+		Endpoints: []models.ResourceEndpointConfig{{
+			Name:       "ep-1",
+			BaseURL:    server.URL,
+			Model:      "glm-4-flash",
+			Concurrent: 1,
+		}},
+		MaxRetries: 1,
+	})
+	invoker := NewNativeInvoker()
+	models.AppConfig.Scanner.Determinism.Enabled = true
+	models.AppConfig.Scanner.Determinism.PreferSeed = true
+	models.AppConfig.Scanner.Determinism.SeedPolicy = "repo+task+commit+chunk"
+
+	workCtx := &LLMWorkContext{RepoName: "demo", TaskType: "coredump-risk", Stage: "hunter", SubTask: "chunk-1"}
+	explicitSeed := int64(4242)
+	if err := invoker.Invoke(AIRequest{PromptMsg: "s1", Seed: &explicitSeed, OutputPath: filepath.Join(t.TempDir(), "s1.txt"), TimeoutMin: 1}); err != nil {
+		t.Fatalf("Invoke explicit seed failed: %v", err)
+	}
+	if err := invoker.Invoke(AIRequest{PromptMsg: "s2", WorkContext: workCtx, OutputPath: filepath.Join(t.TempDir(), "s2.txt"), TimeoutMin: 1}); err != nil {
+		t.Fatalf("Invoke deterministic seed A failed: %v", err)
+	}
+	if err := invoker.Invoke(AIRequest{PromptMsg: "s2-again", WorkContext: workCtx, OutputPath: filepath.Join(t.TempDir(), "s3.txt"), TimeoutMin: 1}); err != nil {
+		t.Fatalf("Invoke deterministic seed B failed: %v", err)
+	}
+	models.AppConfig.Scanner.Determinism.PreferSeed = false
+	if err := invoker.Invoke(AIRequest{PromptMsg: "no-seed", WorkContext: workCtx, OutputPath: filepath.Join(t.TempDir(), "s4.txt"), TimeoutMin: 1}); err != nil {
+		t.Fatalf("Invoke without seed failed: %v", err)
+	}
+
+	if len(receivedSeeds) != 4 {
+		t.Fatalf("expected 4 requests, got %d", len(receivedSeeds))
+	}
+	if receivedSeeds[0] != float64(4242) {
+		t.Fatalf("expected explicit seed 4242, got %v", receivedSeeds[0])
+	}
+	if receivedSeeds[1] == nil || receivedSeeds[1] != receivedSeeds[2] {
+		t.Fatalf("expected reproducible identical derived seed for same workCtx, got %v and %v", receivedSeeds[1], receivedSeeds[2])
+	}
+	if receivedSeeds[3] != nil {
+		t.Fatalf("expected no seed when PreferSeed=false, got %v", receivedSeeds[3])
+	}
+}
+
 func TestNativeInvoker_BasicSuccess(t *testing.T) {
 	// 1. 启动模拟 OpenAI API 服务器
 	var receivedBody map[string]interface{}

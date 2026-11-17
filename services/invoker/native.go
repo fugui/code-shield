@@ -379,6 +379,20 @@ func (n *NativeInvoker) Invoke(req AIRequest) error {
 		if temperature != nil {
 			requestBody["temperature"] = *temperature
 		}
+		seed := req.Seed
+		if seed == nil {
+			seedMaterial := modelName
+			if req.WorkContext != nil {
+				seedMaterial = fmt.Sprintf("%s|%s|%s|%s",
+					req.WorkContext.RepoName, req.WorkContext.TaskType, req.WorkContext.Stage, req.WorkContext.SubTask)
+			} else if req.PromptMsg != "" {
+				seedMaterial = modelName + "|" + req.PromptMsg
+			}
+			seed = models.AppConfig.DeterministicSeed(seedMaterial)
+		}
+		if seed != nil {
+			requestBody["seed"] = *seed
+		}
 
 		if responseFormat := nativeResponseFormat(req, isJSONMode); responseFormat != nil {
 			requestBody["response_format"] = responseFormat

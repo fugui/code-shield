@@ -14,6 +14,7 @@ type HunterCandidate struct {
 	AdditionalLineRanges []string `json:"additional_line_ranges,omitempty"` // 非主锚点的关联位置
 	TriggerLine          string   `json:"trigger_line"`                     // 核心引发风险的关键单一语句 (用于抗漂移强指纹计算)
 	ScopeSymbol          string   `json:"scope_symbol"`                     // AST 作用域符号（函数名/类名签名）
+	TargetSymbol         string   `json:"target_symbol,omitempty"`          // 可选触发目标变量/指针/资源标识符
 	CodeSnippet          string   `json:"code_snippet"`                     // 原始代码片段
 	CWECategory          string   `json:"cwe_category,omitempty"`           // 兼容历史 CWE 字段
 	Category             string   `json:"category,omitempty"`               // 标准受控分类字段
@@ -85,8 +86,9 @@ type JudgeFinalVerdict struct {
 	FilePath                string             `json:"file_path"`
 	LineRange               string             `json:"line_range"`
 	LineNumber              string             `json:"line_number"`
-	TriggerLine             string             `json:"trigger_line"` // 核心触发行
-	ScopeSymbol             string             `json:"scope_symbol"` // 作用域符号
+	TriggerLine             string             `json:"trigger_line"`            // 核心触发行
+	ScopeSymbol             string             `json:"scope_symbol"`            // 作用域符号
+	TargetSymbol            string             `json:"target_symbol,omitempty"` // 可选目标受体标识符
 	Title                   string             `json:"title"`
 	JudgementRationale      string             `json:"judgement_rationale"` // 仲裁裁决依据与证据法理
 	CodeSnippet             string             `json:"code_snippet"`

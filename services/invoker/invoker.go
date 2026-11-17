@@ -57,6 +57,7 @@ type AIRequest struct {
 	ResourceID              string             // optional pinned dispatcher resource ID
 	TierName                string             // 逻辑 Tier 配置键，用于算力池质量统计
 	Temperature             *float64           // 可选请求级温度覆盖（如 0.0 用于绝对确定性场景）
+	Seed                    *int64             // 可选请求级随机种子覆盖（用于确定性解码）
 	ResponseFormat          string             // 请求期望输出格式："json"（强制 json_object 结构化模式）、"text"/"markdown" 或 ""
 	JSONSchema              *JSONSchemaRequest // optional native json_schema request; ignored by non-native drivers
 	Env                     []string           // 附加/覆盖环境变量（例如 XDG_DATA_HOME）

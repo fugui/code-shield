@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -645,7 +646,8 @@ func (e *DebateEngine) ProcessBundle(ctx *engines.EngineContext, bundle chunker.
 		maxCap = models.AppConfig.Scanner.Debate.MaxCandidatesPerChunk
 	}
 	if len(hunterOut.Candidates) > maxCap {
-		log.Printf("[DebateEngine] Bundle [%s]: Truncating %d candidates to top %d for debate",
+		sortHunterCandidatesForCap(hunterOut.Candidates)
+		log.Printf("[DebateEngine] Bundle [%s]: Truncating %d candidates to top %d for debate (deterministically sorted)",
 			bundle.Name, len(hunterOut.Candidates), maxCap)
 		hunterOut.Candidates = hunterOut.Candidates[:maxCap]
 	}
@@ -802,11 +804,17 @@ func assembleFindingFromJudge(
 		}
 	}
 
+	targetSymbol := strings.TrimSpace(jv.TargetSymbol)
+	if targetSymbol == "" {
+		targetSymbol = strings.TrimSpace(origCand.TargetSymbol)
+	}
+
 	return models.AnalysisFinding{
 		FilePath:                jv.FilePath,
 		LineNumber:              calibratedLine,
 		TriggerLine:             cleanTrigger,
 		ScopeSymbol:             normScope,
+		TargetSymbol:            targetSymbol,
 		CodeSnippet:             finalSnippet,
 		Category:                cleanCategory,
 		CategoryDetail:          normalizedCategory.Detail,
@@ -2410,4 +2418,49 @@ func cleanJSONOutput(raw []byte) []byte {
 		}
 	}
 	return []byte(s)
+}
+
+func hunterCandidateRiskWeight(c HunterCandidate) int {
+	cls := defectlifecycle.ReduceControlledDefectClass(c.GetCategory(), c.Title)
+	switch cls {
+	case defectlifecycle.ClassUAF, defectlifecycle.ClassDoubleFree, defectlifecycle.ClassOOB,
+		defectlifecycle.ClassNPD, defectlifecycle.ClassDataRace, defectlifecycle.ClassDeadlock,
+		defectlifecycle.ClassSecInject, defectlifecycle.ClassSignalSafe:
+		return 4
+	case defectlifecycle.ClassMemLeak, defectlifecycle.ClassResLeak, defectlifecycle.ClassUninit,
+		defectlifecycle.ClassIntOver, defectlifecycle.ClassErrHandle, defectlifecycle.ClassConcurrency,
+		defectlifecycle.ClassLifecycle:
+		return 3
+	case defectlifecycle.ClassOther:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// sortHunterCandidatesForCap 在执行 max_candidates_per_chunk 截断前按风险优先级 + 文件路径 + 行号确定性排序。
+func sortHunterCandidatesForCap(candidates []HunterCandidate) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		wi := hunterCandidateRiskWeight(candidates[i])
+		wj := hunterCandidateRiskWeight(candidates[j])
+		if wi != wj {
+			return wi > wj
+		}
+		pi := strings.ToLower(strings.TrimSpace(candidates[i].FilePath))
+		pj := strings.ToLower(strings.TrimSpace(candidates[j].FilePath))
+		if pi != pj {
+			return pi < pj
+		}
+		li, _ := defectlifecycle.ParseLineNumberRange(candidates[i].LineRange)
+		lj, _ := defectlifecycle.ParseLineNumberRange(candidates[j].LineRange)
+		if li != lj {
+			return li < lj
+		}
+		ci := candidates[i].GetCategory()
+		cj := candidates[j].GetCategory()
+		if ci != cj {
+			return ci < cj
+		}
+		return candidates[i].CandidateID < candidates[j].CandidateID
+	})
 }

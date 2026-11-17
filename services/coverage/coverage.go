@@ -682,8 +682,19 @@ func (c Coverage) Summary() Summary {
 		summary.CoverageNotApplicable = true
 		summary.NoScopeReason = ReasonNoPlannedFiles
 		summary.CoverageComplete = false
-		summary.CoverageDegraded = false
-		summary.Degraded = summary.ComparabilityDegraded
+		if len(summary.MissingAssessments) > 0 || len(summary.UnmatchedAssessments) > 0 {
+			if len(summary.MissingAssessments) > 0 {
+				summary.CoverageReasons = append(summary.CoverageReasons, "MISSING_ASSESSMENT")
+			}
+			if len(summary.UnmatchedAssessments) > 0 {
+				summary.CoverageReasons = append(summary.CoverageReasons, "UNMATCHED_ASSESSMENT")
+			}
+			summary.CoverageDegraded = true
+			summary.Degraded = true
+		} else {
+			summary.CoverageDegraded = false
+			summary.Degraded = summary.ComparabilityDegraded
+		}
 		return summary
 	}
 

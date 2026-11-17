@@ -253,11 +253,160 @@ func RunMatching(input MatchingInput) MatchingResult {
 	}
 
 	bindStrongAliases(edges, result.Observations, input.Thresholds)
+	bindCoreSlotSingletons(observations, input, edges, result.Observations, input.Thresholds)
 	assignCandidates(observations, edges, result.Observations, input.Thresholds)
 	bindPassObservations(observations, edges, result.Observations)
 	arbitrateUnclaimed(input, observations, edges, result.Observations, &result.AICalls)
 	finalizeUnclaimed(edges, result.Observations, input.Thresholds)
 	return result
+}
+
+func defectControlledClass(defect models.Defect) string {
+	if cls := ReduceControlledDefectClass(defect.DefectClassMajor, ""); cls != "" && cls != ClassOther {
+		return cls
+	}
+	if strings.TrimSpace(defect.Category) != "" {
+		return ReduceControlledDefectClass(defect.Category, defect.Title)
+	}
+	return ReduceControlledDefectClass("", defect.Title)
+}
+
+func classesCompatible(defect models.Defect, identity Identity) bool {
+	if defect.DefectClassMajor == "" || identity.DefectClassMajor == "" {
+		return false
+	}
+	if defect.DefectClassMajor == identity.DefectClassMajor {
+		return true
+	}
+	if identity.LegacyDefectClassMajor != "" && defect.DefectClassMajor == identity.LegacyDefectClassMajor {
+		return true
+	}
+	defectV2 := defectControlledClass(defect)
+	obsV2 := identity.DefectClassMajor
+	if obsV2 != "" && obsV2 != ClassOther && defectV2 == obsV2 {
+		return true
+	}
+	return false
+}
+
+func slotMatches(defect models.Defect, identity Identity) bool {
+	if defect.SlotKey == "" {
+		return false
+	}
+	if identity.SlotKey != "" && defect.SlotKey == identity.SlotKey {
+		return true
+	}
+	return identity.LegacySlotKey != "" && defect.SlotKey == identity.LegacySlotKey
+}
+
+func defectV2CoreSlot(defect models.Defect) string {
+	normPath := strings.ToLower(strings.TrimSpace(defect.NormPath))
+	if normPath == "" {
+		return ""
+	}
+	scope := NormalizeScopeSymbol(defect.ScopeSymbol)
+	if scope == "" {
+		scope = NormalizeScopeSymbol(defect.SymbolPath)
+	}
+	classV2 := defectControlledClass(defect)
+	target := defect.TargetEntity
+	if target == "" && defect.CleanToken != "" {
+		target, _ = ExtractPhysicalTargetEntity(defect.CleanToken, "", classV2)
+	}
+	if target == "" {
+		return ""
+	}
+	return ComputeCoreSlotKey(normPath, scope, classV2, target)
+}
+
+func coreSlotMatches(defect models.Defect, identity Identity) bool {
+	if identity.CoreSlotKey == "" {
+		return false
+	}
+	if defect.CoreSlotKey != "" {
+		if defect.CoreSlotKey == identity.CoreSlotKey {
+			return true
+		}
+		if identity.LegacyCoreSlotKey != "" && defect.CoreSlotKey == identity.LegacyCoreSlotKey {
+			return true
+		}
+	}
+	if v2Core := defectV2CoreSlot(defect); v2Core != "" && v2Core == identity.CoreSlotKey {
+		return true
+	}
+	return false
+}
+
+// bindCoreSlotSingletons 执行 Tier 2 (CORE_SLOT_SINGLETON) 离散孤例直接归并：
+// 当同文件内具备明确物理受体 TargetEntity 的一级核心槽位在当前未认领观测和未认领活跃/待核验/豁免缺陷中均为 1 对 1 孤例时直接绑定，
+// 免疫多行拆行或函数内无关代码增删带来的行号/StmtAnchorHash 漂移。
+func bindCoreSlotSingletons(observations []ObservationGroup, input MatchingInput, edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
+	assignedDefects := assignedDefectIDs(decisions)
+	coreSlotObsCount := make(map[string]int, len(observations))
+	for i := range observations {
+		if decisions[i].DefectID != nil || isPassOnlyObservationGroup(observations[i]) {
+			continue
+		}
+		id := observations[i].Identity
+		if id.CoreSlotKey == "" || id.TargetEntity == "" {
+			continue
+		}
+		coreSlotObsCount[id.NormPath+"\x00"+id.CoreSlotKey]++
+	}
+
+	for i := range observations {
+		if decisions[i].DefectID != nil || isPassOnlyObservationGroup(observations[i]) {
+			continue
+		}
+		id := observations[i].Identity
+		if id.CoreSlotKey == "" || id.TargetEntity == "" {
+			continue
+		}
+		if coreSlotObsCount[id.NormPath+"\x00"+id.CoreSlotKey] != 1 {
+			continue
+		}
+		renameTarget := ""
+		if input.RenameTargets != nil {
+			renameTarget = input.RenameTargets[id.NormPath]
+		}
+		var matches []models.Defect
+		for _, d := range input.Defects {
+			if d.ID == 0 || assignedDefects[d.ID] {
+				continue
+			}
+			switch d.Status {
+			case DefectStatusMerged, DefectStatusResolved, DefectStatusObsolete:
+				continue
+			}
+			if d.NormPath != id.NormPath && (renameTarget == "" || d.NormPath != renameTarget) {
+				continue
+			}
+			if !classesCompatible(d, id) || !coreSlotMatches(d, id) {
+				continue
+			}
+			matches = append(matches, d)
+		}
+		if len(matches) != 1 {
+			continue
+		}
+		target := matches[0]
+		cand := Candidate{Defect: target, Sources: map[string]struct{}{AliasRoot: {}}}
+		score, detail := scoreCandidate(id, cand)
+		detail["core_slot_singleton"] = 1
+		detail["strong_alias_equal"] = 1
+		finalScore := math.Max(score, thresholds.StrongSame)
+
+		targetID := target.ID
+		decisions[i].DefectID = &targetID
+		decisions[i].Score = finalScore
+		decisions[i].Confidence = finalScore
+		decisions[i].ScoreDetail = detail
+		decisions[i].Verdict = matchedVerdict(target.Status)
+		decisions[i].MatchTier = MatchStruct
+		decisions[i].Reason = "CORE_SLOT_SINGLETON"
+		assignedDefects[targetID] = true
+		_ = edges
+	}
 }
 
 func bindStrongAliases(edges [][]scoredCandidate, decisions []ObservationDecision, thresholds MatchThresholds) {
@@ -309,13 +458,6 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 			defectsByID[defect.ID] = defect
 		}
 	}
-	values := []struct {
-		aliasType string
-		value     string
-	}{
-		{AliasPath, identity.NormPath},
-		{AliasRoot, identity.RootFamily}, {AliasResource, identity.ResourceIdentity}, {AliasChain, identity.ValidationChain},
-	}
 	slotKey := identity.SlotKey
 	if slotKey == "" && identity.NormPath != "" && identity.DefectClassMajor != "" {
 		targetEntity, _ := ExtractPhysicalTargetEntity(identity.CleanToken, "", identity.DefectClassMajor)
@@ -324,18 +466,47 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 		coreSlot := ComputeCoreSlotKey(identity.NormPath, scopeSymbol, identity.DefectClassMajor, targetEntity)
 		slotKey = ComputePreciseSlotKey(coreSlot, stmtHash)
 	}
+	// RFC-006 P0-A: 强特征优先进入候选池，低信噪比的 AliasPath 置后，防止高密度文件候选预算被无关历史挤爆
+	values := make([]struct {
+		aliasType string
+		value     string
+	}, 0, 6)
 	if slotKey != "" {
 		values = append(values, struct {
 			aliasType string
 			value     string
 		}{AliasSlotHealed, slotKey})
 	}
+	if identity.LegacySlotKey != "" && identity.LegacySlotKey != slotKey {
+		values = append(values, struct {
+			aliasType string
+			value     string
+		}{AliasSlotHealed, identity.LegacySlotKey})
+	}
+	values = append(values,
+		struct {
+			aliasType string
+			value     string
+		}{AliasRoot, identity.RootFamily},
+		struct {
+			aliasType string
+			value     string
+		}{AliasResource, identity.ResourceIdentity},
+		struct {
+			aliasType string
+			value     string
+		}{AliasChain, identity.ValidationChain},
+	)
 	if target, ok := input.RenameTargets[identity.NormPath]; ok {
 		values = append(values, struct {
 			aliasType string
 			value     string
 		}{AliasRename, target})
 	}
+	values = append(values, struct {
+		aliasType string
+		value     string
+	}{AliasPath, identity.NormPath})
 
 	namespaceKey := func(value string) string {
 		return value + "\x00" + fmt.Sprint(identity.RepoID) + "\x00" + fmt.Sprint(identity.TaskTypeID)
@@ -352,12 +523,18 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 		if alias.DefectID == 0 {
 			return
 		}
-		if len(candidates) >= limit {
-			budgetExceeded = true
-			return
-		}
 		defect, existsDefect := defectsByID[alias.DefectID]
 		if !existsDefect || defect.ID == 0 {
+			return
+		}
+		// 若候选已存在，优先补强其命中来源而不额外占用预算配额
+		if candidate, exists := candidates[alias.DefectID]; exists {
+			candidate.Sources[alias.AliasType] = struct{}{}
+			return
+		}
+		// 纯路径弱召回跳过已终结/已并入的历史缺陷，保留候选预算给活跃或未终结缺陷
+		if alias.AliasType == AliasPath &&
+			(defect.Status == DefectStatusResolved || defect.Status == DefectStatusObsolete || defect.Status == DefectStatusMerged) {
 			return
 		}
 		// 若该缺陷不是 ACTIVE 状态，且其槽位已被其他活跃缺陷占有，则该非活跃历史记录不可作为候选被复活
@@ -366,29 +543,34 @@ func retrieveCandidates(identity Identity, aliasIndex map[string][]models.Defect
 				return
 			}
 		}
-		candidate, exists := candidates[alias.DefectID]
-		if !exists {
-			candidate = &Candidate{Defect: defect, Sources: map[string]struct{}{}}
-			candidates[alias.DefectID] = candidate
+		if len(candidates) >= limit {
+			budgetExceeded = true
+			return
 		}
-		candidate.Sources[alias.AliasType] = struct{}{}
+		candidates[alias.DefectID] = &Candidate{
+			Defect:  defect,
+			Sources: map[string]struct{}{alias.AliasType: {}},
+		}
 	}
-	if slotKey != "" {
+	if slotKey != "" || identity.LegacySlotKey != "" {
 		var activePreciseDefect *models.Defect
 		var nonActivePreciseDefect *models.Defect
 		for i := range input.Defects {
 			defect := &input.Defects[i]
-			if defect.SlotKey == "" || defect.SlotKey != slotKey ||
+			if !slotMatches(*defect, identity) ||
 				defect.NormPath != identity.NormPath ||
-				defect.DefectClassMajor != identity.DefectClassMajor {
+				!classesCompatible(*defect, identity) {
 				continue
 			}
 			if defect.Status == DefectStatusActive {
 				if activePreciseDefect == nil || defect.ID > activePreciseDefect.ID {
 					activePreciseDefect = defect
 				}
-			} else if defect.Status != DefectStatusMerged && defect.Status != DefectStatusHumanClosed {
-				if nonActivePreciseDefect == nil || defect.ID > nonActivePreciseDefect.ID {
+			} else if defect.Status != DefectStatusMerged {
+				// SLOT_PRECISE 允许召回 HUMAN_CLOSED，确保人工已豁免缺陷在精确复现时触发 EXEMPT_RECHECK 而不误新开
+				if nonActivePreciseDefect == nil ||
+					(defect.Status == DefectStatusHumanClosed && nonActivePreciseDefect.Status != DefectStatusHumanClosed) ||
+					((defect.Status == nonActivePreciseDefect.Status || nonActivePreciseDefect.Status != DefectStatusHumanClosed) && defect.ID > nonActivePreciseDefect.ID) {
 					nonActivePreciseDefect = defect
 				}
 			}
@@ -499,7 +681,7 @@ func scoreCandidate(identity Identity, candidate Candidate) (float64, map[string
 		detail["context_key_equal"] = 1
 	}
 	detail["clean_token_similarity"] = CalculateTokenJaccard(identity.CleanToken, candidate.Defect.CleanToken)
-	if identity.DefectClassMajor == candidate.Defect.DefectClassMajor && identity.DefectClassMajor != "" {
+	if classesCompatible(candidate.Defect, identity) {
 		detail["defect_class_major_equal"] = 1
 	}
 	detail["line_proximity"] = lineProximity(identity.LineStart, identity.LineEnd, derefInt(candidate.Defect.LineStart), derefInt(candidate.Defect.LineEnd))
@@ -708,10 +890,11 @@ func assignCandidates(observations []ObservationGroup, edges [][]scoredCandidate
 		}
 		obsEdges := make(map[int]map[uint]scoredCandidate, len(qualified))
 		candidateIDSet := make(map[uint]struct{})
+		alreadyAssigned := assignedDefectIDs(decisions)
 		for _, observationIndex := range qualified {
 			obsEdges[observationIndex] = make(map[uint]scoredCandidate)
 			for _, edge := range edges[observationIndex] {
-				if edge.score < thresholds.AssignBand {
+				if edge.score < thresholds.AssignBand || alreadyAssigned[edge.candidate.Defect.ID] {
 					continue
 				}
 				obsEdges[observationIndex][edge.candidate.Defect.ID] = edge
@@ -797,9 +980,9 @@ func bestCandidate(edges []scoredCandidate) *scoredCandidate {
 
 func matchedVerdict(status string) string {
 	switch status {
-	case "ACTIVE", "COVERAGE_GAP":
+	case DefectStatusActive, DefectStatusCoverageGap, DefectStatusVerifiedPending, DefectStatusHumanClosed:
 		return VerdictExisted
-	case "VERIFIED_PENDING", "RESOLVED", "DORMANT", "OBSOLETE":
+	case DefectStatusResolved, DefectStatusDormant, DefectStatusObsolete:
 		return VerdictReopened
 	default:
 		return VerdictProbable
@@ -887,7 +1070,11 @@ func applyGrayZoneFallback(edge *scoredCandidate, decision *ObservationDecision,
 	if (decision.DefectID != nil && *decision.DefectID > 0) || !thresholds.AutoResolve {
 		return
 	}
-	if allowMerge && edge.score >= thresholds.FallbackMergeScore {
+	hasEvidence := edge.detail["evidence_gate"] == 1 ||
+		edge.detail["strong_alias_equal"] == 1 ||
+		hasSource(edge.candidate, AliasHuman) ||
+		hasSource(edge.candidate, AliasRename)
+	if allowMerge && hasEvidence && edge.score >= thresholds.FallbackMergeScore {
 		if edge.candidate.Defect.ID == 0 {
 			return
 		}

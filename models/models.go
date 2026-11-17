@@ -218,6 +218,7 @@ func GetAllDomainFamilies() []DomainFamilyInfo {
 
 type RunParams struct {
 	TargetScope *string `json:"target_scope,omitempty"` // nil = 不覆盖，使用 TaskType 默认 ("all", "business", "test")
+	Branch      *string `json:"branch,omitempty"`       // nil = 不覆盖，使用仓库默认主干分支
 }
 
 // TaskType 任务类型定义（管理员可配置）
@@ -776,6 +777,8 @@ type TaskReport struct {
 	Metrics          datatypes.JSON `json:"metrics"` // {"blocking":0,"critical":3,...}
 	BaseCommit       string         `json:"base_commit"`
 	HeadCommit       string         `json:"head_commit"`
+	Branch           string         `gorm:"size:128;not null;default:''" json:"branch"`
+	TargetScope      string         `gorm:"size:32;not null;default:''" json:"target_scope"`
 	ChangeCutoffAt   *time.Time     `json:"change_cutoff_at"`
 	BaseCommitTime   *time.Time     `json:"base_commit_time"`
 	DiffManifestHash string         `gorm:"size:72" json:"diff_manifest_hash"`

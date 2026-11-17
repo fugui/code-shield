@@ -3429,4 +3429,237 @@
   border: 1px solid var(--color-danger-border, rgba(239, 68, 68, 0.25));
 }
 
+/* ==============================================================================
+ * 双报告比对视图 (.cs-report-compare*) — 严格采用语义 Design Tokens
+ * ============================================================================== */
+
+.report-viewer-container .cs-report-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.report-viewer-container .cs-report-compare-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+}
+
+.report-viewer-container .cs-report-compare-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.report-viewer-container .cs-report-compare-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.report-viewer-container .cs-report-compare-field label,
+.report-viewer-container .cs-report-compare-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.report-viewer-container .cs-report-compare-select,
+.report-viewer-container .cs-report-compare-input {
+  padding: 0.45rem 0.75rem;
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.report-viewer-container .cs-report-compare-select:focus-visible,
+.report-viewer-container .cs-report-compare-input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.report-viewer-container .cs-report-compare-arrow {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  padding-top: 1rem;
+}
+
+.report-viewer-container .cs-report-compare-target {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+}
+
+.report-viewer-container .cs-report-compare-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.report-viewer-container .cs-report-compare-source-pill {
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-primary);
+}
+
+.report-viewer-container .cs-report-compare-buckets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 0.75rem;
+}
+
+.report-viewer-container .cs-report-compare-bucket {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.report-viewer-container .cs-report-compare-bucket:hover {
+  background: var(--color-bg-hover);
+}
+
+.report-viewer-container .cs-report-compare-bucket.is-selected {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.report-viewer-container .cs-report-compare-bucket-title {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.report-viewer-container .cs-report-compare-bucket-count {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.report-viewer-container .cs-report-compare-bucket--warning .cs-report-compare-bucket-count {
+  color: var(--color-warning);
+}
+
+.report-viewer-container .cs-report-compare-bucket--danger .cs-report-compare-bucket-count {
+  color: var(--color-danger);
+}
+
+.report-viewer-container .cs-report-compare-bucket--success .cs-report-compare-bucket-count {
+  color: var(--color-success);
+}
+
+.report-viewer-container .cs-report-compare-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+}
+
+.report-viewer-container .cs-report-compare-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.report-viewer-container .cs-report-compare-meta-strip strong {
+  color: var(--color-text-primary);
+}
+
+.report-viewer-container .cs-report-compare-input {
+  min-width: 260px;
+}
+
+.report-viewer-container .cs-report-compare-table-wrap {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.report-viewer-container .cs-report-compare-empty {
+  padding: 2rem;
+  text-align: center;
+  background: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.report-viewer-container .cs-report-compare-id,
+.report-viewer-container .cs-report-compare-item-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.report-viewer-container .cs-report-compare-subtext {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.report-viewer-container .cs-report-compare-tag--neutral {
+  background: var(--color-bg-muted);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-primary);
+}
+
+.report-viewer-container .cs-report-compare-tag--success {
+  background: var(--color-success-subtle, rgba(16, 185, 129, 0.1));
+  color: var(--color-success);
+  border: 1px solid var(--color-border-primary);
+}
+
+.report-viewer-container .cs-report-compare-tag--warning {
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.1));
+  color: var(--color-warning);
+  border: 1px solid var(--color-border-primary);
+}
+
+.report-viewer-container .cs-report-compare-tag--danger {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.1));
+  color: var(--color-danger);
+  border: 1px solid var(--color-border-primary);
+}
+
+.report-viewer-container .cs-report-compare-tag--muted {
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-primary);
+}
+
 

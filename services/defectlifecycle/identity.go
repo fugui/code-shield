@@ -16,6 +16,8 @@ var (
 	identityTokenPattern = regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*|0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?|[^\sA-Za-z0-9_$]+`)
 	identifierPattern    = regexp.MustCompile(`^[a-z_$][a-z0-9_$]*$`)
 	numericPattern       = regexp.MustCompile(`^\d+(?:\.\d+)?$`)
+	statementCommentPat  = regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*|#[^\n]*`)
+	statementLiteralPat  = regexp.MustCompile(`(?s)"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|` + "`(?:\\\\.|[^`\\\\])*`")
 )
 
 var validationChainKeywords = map[string]bool{
@@ -69,10 +71,8 @@ func statementTokens(raw string) []string {
 	if cleaned == "" {
 		return nil
 	}
-	commentPattern := regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*|#[^\n]*`)
-	cleaned = commentPattern.ReplaceAllString(cleaned, " ")
-	literalPattern := regexp.MustCompile(`(?s)"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|` + "`(?:\\\\.|[^`\\\\])*`")
-	cleaned = literalPattern.ReplaceAllString(cleaned, " $LIT ")
+	cleaned = statementCommentPat.ReplaceAllString(cleaned, " ")
+	cleaned = statementLiteralPat.ReplaceAllString(cleaned, " $LIT ")
 
 	matches := identityTokenPattern.FindAllString(cleaned, -1)
 	tokens := make([]string, 0, len(matches))
@@ -184,54 +184,137 @@ func defectClassMajor(category string) string {
 }
 
 func BuildIdentities(repoRoot string, repoID, taskTypeID uint, findings []models.AnalysisFinding) []Identity {
+	return BuildIdentitiesWithStabilized(repoRoot, repoID, taskTypeID, findings, nil)
+}
+
+// BuildIdentitiesWithStabilized 基于单次物理稳定化结果生成 v2 主轨道 + v1 兼容轨道双份标识。
+// 当 stabilized 与 findings 长度一致时直接复用而不二次读盘。
+func BuildIdentitiesWithStabilized(repoRoot string, repoID, taskTypeID uint, findings []models.AnalysisFinding, stabilized []StabilizedFindingDTO) []Identity {
+	if len(stabilized) != len(findings) && len(findings) > 0 {
+		stabilizer := NewIngestionStabilizer()
+		computed, err := stabilizer.Stabilize(StabilizeFindingsInput{
+			RepoRoot: repoRoot,
+			Findings: findings,
+		})
+		if err == nil && len(computed) == len(findings) {
+			stabilized = computed
+		}
+	}
+
 	identities := make([]Identity, 0, len(findings))
-	for _, finding := range findings {
+	for i, finding := range findings {
+		var dto *StabilizedFindingDTO
+		if len(stabilized) == len(findings) {
+			dto = &stabilized[i]
+		}
+
 		normPath := NormalizePath(repoRoot, finding.FilePath)
 		rawStatement := firstCodeStatement(finding)
-		shape := statementShape(rawStatement)
+		stmtWindow := rawStatement
 		cleanToken := CleanSourceToken(rawStatement)
-		symbolPath := strings.TrimSpace(NormalizeScopeSymbol(finding.ScopeSymbol))
-		scopeKind := "FUNCTION"
-		arity := 0
+		rawScope := strings.TrimSpace(NormalizeScopeSymbol(finding.ScopeSymbol))
 		scopeBodyHash := ""
 		startLine, endLine := ParseLineNumberRange(finding.LineNumber)
 		confidence := anchorConfidence(finding)
 
-		if normPath != "" && repoRoot != "" {
-			if anchor, err := EnrichSourceAnchor(repoRoot, normPath, finding.LineNumber, rawStatement); err == nil {
-				normPath = NormalizePath("", anchor.NormalizedPath)
-				if symbolPath == "" {
-					symbolPath = anchor.NormalizedScope
-				}
-				cleanToken = anchor.PhysicalToken
-				shape = statementShape(anchor.PhysicalToken)
-				startLine, endLine = anchor.StartLine, anchor.EndLine
-				scopeBodyHash = anchor.ScopeBodyHash
+		if dto != nil {
+			if dto.NormPath != "" {
+				normPath = NormalizePath("", dto.NormPath)
+			}
+			if dto.ScopeSymbol != "" && rawScope == "" {
+				rawScope = NormalizeScopeSymbol(dto.ScopeSymbol)
+			}
+			if dto.StmtWindow != "" {
+				stmtWindow = dto.StmtWindow
+			} else if dto.TriggerLine != "" {
+				stmtWindow = dto.TriggerLine
+			}
+			if dto.CleanToken != "" {
+				cleanToken = dto.CleanToken
+			}
+			if dto.ScopeBodyHash != "" {
+				scopeBodyHash = dto.ScopeBodyHash
+			}
+			if dto.SourceAnchored {
+				startLine, endLine = dto.LineStart, dto.LineEnd
 				confidence = AnchorHigh
+			} else if strings.TrimSpace(finding.LineNumber) != "" && dto.LineStart > 0 {
+				startLine, endLine = dto.LineStart, dto.LineEnd
 			}
 		}
 
-		symbolPath, scopeKind, arity, scopeKey := scopeIdentity(normPath, symbolPath)
-		class := defectClassMajor(finding.Category)
-		targetEntity, _ := ExtractPhysicalTargetEntity(finding.CodeSnippet, finding.TargetSymbol, class)
-		if targetEntity == "" && cleanToken != "" {
-			targetEntity, _ = ExtractPhysicalTargetEntity(cleanToken, "", class)
+		shape := statementShape(stmtWindow)
+		if shape == "" && cleanToken != "" {
+			shape = statementShape(cleanToken)
 		}
-		stmtHash := ComputeStmtAnchorHash(cleanToken)
+
+		symbolPath, scopeKind, arity, scopeKey := scopeIdentity(normPath, rawScope)
+
+		// v2 主轨道：受控分类词典 + 多行窗口重构 + 物理词法受体 + 作用域代码块防溢出哈希
+		classV2 := ReduceControlledDefectClass(finding.Category, finding.Title)
+		targetEntity := ""
+		stmtHashV2 := ""
+		coreSlotV2 := ""
+		slotV2 := ""
+		if dto != nil {
+			if dto.DefectClassMajor != "" {
+				classV2 = dto.DefectClassMajor
+			}
+			targetEntity = dto.TargetEntity
+			stmtHashV2 = dto.StmtAnchorHash
+			coreSlotV2 = dto.CoreSlotKey
+			slotV2 = dto.SlotKey
+		}
+		if targetEntity == "" {
+			targetEntity, _ = ExtractPhysicalTargetEntity(stmtWindow, finding.TargetSymbol, classV2)
+			if targetEntity == "" && cleanToken != "" {
+				targetEntity, _ = ExtractPhysicalTargetEntity(cleanToken, "", classV2)
+			}
+		}
+		if stmtHashV2 == "" {
+			stmtHashV2 = ComputeStmtAnchorHash(cleanToken)
+		}
 		scopeSymbol := NormalizeScopeSymbol(symbolPath)
-		coreSlotKey := ComputeCoreSlotKey(normPath, scopeSymbol, class, targetEntity)
-		slotKey := ComputePreciseSlotKey(coreSlotKey, stmtHash)
+		if coreSlotV2 == "" {
+			coreSlotV2 = ComputeCoreSlotKey(normPath, scopeSymbol, classV2, targetEntity)
+		}
+		if slotV2 == "" {
+			slotV2 = ComputePreciseSlotKey(coreSlotV2, stmtHashV2)
+		}
+
+		// v1 兼容轨道：供存量 v1 缺陷平滑热升级识别，不丢历史账本连续性
+		legacyClass := defectClassMajor(finding.Category)
+		legacyToken := CleanSourceToken(rawStatement)
+		if legacyToken == "" {
+			legacyToken = cleanToken
+		}
+		legacyTarget, _ := ExtractPhysicalTargetEntity(finding.CodeSnippet, finding.TargetSymbol, legacyClass)
+		if legacyTarget == "" && legacyToken != "" {
+			legacyTarget, _ = ExtractPhysicalTargetEntity(legacyToken, "", legacyClass)
+		}
+		legacyStmtHash := ComputeStmtAnchorHash(legacyToken)
+		legacyCoreSlot := ComputeCoreSlotKey(normPath, scopeSymbol, legacyClass, legacyTarget)
+		legacySlot := ComputePreciseSlotKey(legacyCoreSlot, legacyStmtHash)
+
+		resourceIdentity := strings.ToLower(strings.TrimSpace(targetEntity))
+		if resourceIdentity == "" {
+			resourceIdentity = extractIdentityToken(cleanToken)
+		}
+
 		identity := Identity{
 			RepoID: repoID, TaskTypeID: taskTypeID, NormPath: normPath,
 			SymbolPath: symbolPath, ScopeKind: scopeKind, Arity: arity,
 			ScopeKey: scopeKey, StmtShape: shape,
-			OccurrenceIndex: 0, DefectClassMajor: class,
+			OccurrenceIndex: 0, DefectClassMajor: classV2,
 			LineStart: startLine, LineEnd: endLine, CleanToken: cleanToken,
 			ScopeBodyHash: scopeBodyHash, Severity: finding.Severity, Confidence: confidence,
-			TargetEntity: targetEntity, StmtAnchorHash: stmtHash,
-			CoreSlotKey: coreSlotKey, SlotKey: slotKey,
+			TargetEntity: targetEntity, StmtAnchorHash: stmtHashV2,
+			CoreSlotKey: coreSlotV2, SlotKey: slotV2,
+			LegacyDefectClassMajor: legacyClass,
+			LegacyCoreSlotKey:      legacyCoreSlot,
+			LegacySlotKey:          legacySlot,
+			ResourceIdentity:       resourceIdentity,
 		}
-		identity.ResourceIdentity = extractIdentityToken(identity.CleanToken)
 		identity.ValidationChain = validationChainIdentity(identity.CleanToken)
 		identity.RootFamily = rootFamilyHash(identity.StmtShape, identity.ResourceIdentity, identity.ValidationChain)
 		identities = append(identities, identity)
@@ -277,9 +360,6 @@ func validationChainIdentity(cleanToken string) string {
 func extractIdentityToken(cleanToken string) string {
 	tokens := identityTokenPattern.FindAllString(strings.ToLower(cleanToken), -1)
 	for _, token := range tokens {
-		if len(token) < 4 {
-			continue
-		}
 		if identityKeywords[token] {
 			continue
 		}
@@ -322,7 +402,19 @@ func assignOccurrenceIndexes(identities []Identity) {
 			return identities[indexes[i]].LineEnd < identities[indexes[j]].LineEnd
 		})
 		occurrence := 1
-		for _, index := range indexes {
+		for idxPos, index := range indexes {
+			if idxPos > 0 {
+				prev := identities[indexes[idxPos-1]]
+				curr := identities[index]
+				// 同一物理位置重叠且代码文本及受影响实体一致时保留相同 occurrence，维持重复去重；
+				// 互不重叠或目标实体/清洗语句不同时递增 occurrence，防止同类语句 K1/K2 哈希碰撞误并
+				samePhysicalSpan := linesOverlapOrNear(prev.LineStart, prev.LineEnd, curr.LineStart, curr.LineEnd, 0) &&
+					prev.CleanToken == curr.CleanToken &&
+					(prev.TargetEntity == "" || curr.TargetEntity == "" || prev.TargetEntity == curr.TargetEntity)
+				if !samePhysicalSpan {
+					occurrence++
+				}
+			}
 			identities[index].OccurrenceIndex = occurrence
 		}
 	}
@@ -371,7 +463,11 @@ func linesOverlapOrNear(leftStart, leftEnd, rightStart, rightEnd int, maxGap int
 }
 
 func BuildObservationGroups(repoRoot string, reportID uint, findings []models.AnalysisFinding) []ObservationGroup {
-	identities := BuildIdentities(repoRoot, 0, 0, findings)
+	return BuildObservationGroupsWithStabilized(repoRoot, reportID, findings, nil)
+}
+
+func BuildObservationGroupsWithStabilized(repoRoot string, reportID uint, findings []models.AnalysisFinding, stabilized []StabilizedFindingDTO) []ObservationGroup {
+	identities := BuildIdentitiesWithStabilized(repoRoot, 0, 0, findings, stabilized)
 	type candidate struct {
 		identity Identity
 		finding  models.AnalysisFinding
@@ -402,6 +498,10 @@ func BuildObservationGroups(repoRoot string, reportID uint, findings []models.An
 			existing := group.Identity
 			incoming := item.identity
 			if existing.DefectClassMajor != incoming.DefectClassMajor {
+				continue
+			}
+			// 目标受体明确且不一致时（如同函数不同变量 ptrA vs ptrB，或 fd vs buf），严禁合并
+			if existing.TargetEntity != "" && incoming.TargetEntity != "" && existing.TargetEntity != incoming.TargetEntity {
 				continue
 			}
 			strong := existing.Confidence == AnchorHigh && incoming.Confidence == AnchorHigh &&

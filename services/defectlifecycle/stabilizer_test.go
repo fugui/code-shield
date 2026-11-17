@@ -1,6 +1,7 @@
 package defectlifecycle
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -388,5 +389,75 @@ func TestStabilize_OutOfBoundsLineNumber(t *testing.T) {
 	}
 	if dtos[1].CodeSnippet == "" {
 		t.Errorf("expected non-empty CodeSnippet for DTO[1]")
+	}
+}
+
+func TestReduceControlledDefectClassDanglingPointerAndNoTitleHijack(t *testing.T) {
+	// 1. 悬空指针/悬垂指针/野指针必须归入 UAF，绝不能误归为 NPD
+	uafCases := []string{
+		"悬空指针",
+		"悬垂指针",
+		"野指针与悬空指针",
+		"生命周期管理问题-悬挂指针与引用",
+		"数据安全-悬空引用",
+		"dangling pointer dereference",
+	}
+	for _, cat := range uafCases {
+		if got := ReduceControlledDefectClass(cat, ""); got != ClassUAF {
+			t.Errorf("ReduceControlledDefectClass(%q, \"\") = %q, want %q", cat, got, ClassUAF)
+		}
+	}
+
+	// 2. 一旦提供了明确的非空 category，即使未命中词典，也严禁被 title 自由文本串类劫持
+	if got := ReduceControlledDefectClass("自定义未收录分类", "函数内存在空指针解引用和内存泄漏风险"); got != ClassOther {
+		t.Errorf("expected ClassOther without title hijack when category is non-empty, got %q", got)
+	}
+	// 只有 category 为空时才允许降级参考 title
+	if got := ReduceControlledDefectClass("", "空指针解引用风险"); got != ClassNPD {
+		t.Errorf("expected fallback to title ClassNPD when category is empty, got %q", got)
+	}
+}
+
+func TestTaxonomyCoversAllBuiltInTasksCategories(t *testing.T) {
+	metaPaths, err := filepath.Glob(filepath.Join("..", "..", "tasks", "*", "meta.json"))
+	if err != nil {
+		t.Fatalf("glob tasks meta.json: %v", err)
+	}
+	if len(metaPaths) < 10 {
+		t.Fatalf("expected at least 10 built-in task meta.json files, got %d", len(metaPaths))
+	}
+
+	type taskMeta struct {
+		Categories []string `json:"categories"`
+	}
+	isExplicitFallback := func(cat string) bool {
+		return strings.HasPrefix(cat, "其它") || strings.HasPrefix(cat, "其他")
+	}
+
+	for _, metaPath := range metaPaths {
+		data, readErr := os.ReadFile(metaPath)
+		if readErr != nil {
+			t.Fatalf("read %s: %v", metaPath, readErr)
+		}
+		var meta taskMeta
+		if jsonErr := json.Unmarshal(data, &meta); jsonErr != nil {
+			t.Fatalf("unmarshal %s: %v", metaPath, jsonErr)
+		}
+		taskName := filepath.Base(filepath.Dir(metaPath))
+		if len(meta.Categories) == 0 {
+			t.Fatalf("task %s has no categories in meta.json", taskName)
+		}
+		for _, cat := range meta.Categories {
+			got := ReduceControlledDefectClass(cat, "")
+			if isExplicitFallback(cat) {
+				if got != ClassOther {
+					t.Errorf("task %s fallback category %q mapped to %q, want %q", taskName, cat, got, ClassOther)
+				}
+				continue
+			}
+			if got == ClassOther {
+				t.Errorf("task %s non-fallback category %q unexpectedly fell back to ClassOther", taskName, cat)
+			}
+		}
 	}
 }

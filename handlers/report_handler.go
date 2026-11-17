@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"code-shield/models"
+	"code-shield/services/defectlifecycle"
 	"code-shield/services/reports"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -161,4 +164,36 @@ func ExportReportHandler(c *gin.Context) {
 		fmt.Printf("[ExportReportHandler] Failed to export report %d: %v\n", taskID, err)
 		return
 	}
+}
+
+// CompareReportsHandler 提供基于 SSOT 账本的双报告比对接口
+func CompareReportsHandler(c *gin.Context) {
+	baseStr := strings.TrimSpace(c.Query("base_report_id"))
+	targetStr := strings.TrimSpace(c.Query("target_report_id"))
+	baseID, err := strconv.ParseUint(baseStr, 10, 64)
+	if err != nil || baseID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid base_report_id parameter"})
+		return
+	}
+	targetID, err := strconv.ParseUint(targetStr, 10, 64)
+	if err != nil || targetID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid target_report_id parameter"})
+		return
+	}
+
+	res, compareErr := defectlifecycle.CompareReports(models.DB, uint(baseID), uint(targetID))
+	if compareErr != nil {
+		switch {
+		case errors.Is(compareErr, defectlifecycle.ErrCompareInvalidArgs),
+			errors.Is(compareErr, defectlifecycle.ErrCompareRepoMismatch),
+			errors.Is(compareErr, defectlifecycle.ErrCompareTaskTypeMismatch):
+			c.JSON(http.StatusBadRequest, gin.H{"error": compareErr.Error()})
+		case errors.Is(compareErr, defectlifecycle.ErrCompareReportNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": compareErr.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": compareErr.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pagination } from '@code/common';
 import { apiUrl } from '../../config';
 import DefectDetailPanel from '../defects/DefectDetailPanel';
+import { matchTierLabels, verdictLabels } from './reconciliationLabels';
 import {
   DefectCandidate,
   DefectDetailData,
@@ -41,26 +42,6 @@ interface FileIssueItem {
   finding?: TaskFindingItem | ObservationSourceFinding | null;
   defect?: ReconciliationUnmatchedDefect;
 }
-
-const verdictMeta: Record<string, { label: string; className: string }> = {
-  NEW: { label: '本轮新增', className: 'verdict-new' },
-  EXISTED: { label: '本轮复现', className: 'verdict-existed' },
-  REOPENED: { label: '修复后复发', className: 'verdict-reopened' },
-  PROBABLE: { label: '疑似存量，待确认', className: 'verdict-probable' },
-  RESOLVED: { label: '本轮判定修复', className: 'verdict-resolved' },
-  COVERAGE_GAP: { label: '覆盖缺口，不判修复', className: 'verdict-coverage-gap' },
-};
-
-const matchTierLabels: Record<string, string> = {
-  STRONG: '强身份匹配',
-  STRUCT: '结构匹配',
-  BUCKET: '弱候选匹配',
-  ASSIGN: '全局指派',
-  AI: 'AI 仲裁',
-  AI_FALLBACK: 'AI 兜底裁决',
-  HUMAN: '人工确认',
-  UNCLAIMED: '未匹配',
-};
 
 const reasonLabels: Record<string, string> = {
   GRAY_BAND_CANDIDATE: '结果落在灰区，需要人工裁决',
@@ -185,7 +166,7 @@ function observationToDetail(
     code_snippet: findingRecord?.code_snippet || '',
     suggestion: findingRecord?.suggestion || '',
     status: observation.verdict,
-    status_label: verdictMeta[observation.verdict]?.label || observation.verdict,
+    status_label: verdictLabels[observation.verdict]?.label || observation.verdict,
     status_reason: observation.reason,
   };
 }
@@ -402,12 +383,13 @@ export default function ReportReconciliationTab({
         {error && <div className="reconciliation-alert">{error}</div>}
         <div className="reconciliation-stat-row">
           {[
-            ['NEW', '本轮新增'],
-            ['EXISTED', '本轮复现'],
-            ['REOPENED', '修复后复发'],
-            ['PROBABLE', '疑似重复'],
-            ['RESOLVED', '本轮修复'],
-            ['COVERAGE_GAP', '覆盖缺口'],
+            ['NEW', verdictLabels.NEW.label],
+            ['EXISTED', verdictLabels.EXISTED.label],
+            ['REOPENED', verdictLabels.REOPENED.label],
+            ['PROBABLE', verdictLabels.PROBABLE.label],
+            ['RESOLVED', verdictLabels.RESOLVED.label],
+            ['PASS', verdictLabels.PASS.label],
+            ['COVERAGE_GAP', verdictLabels.COVERAGE_GAP.label],
           ].map(([key, label]) => (
             <div key={key} className={`reconciliation-stat ${Number(stats[key] || 0) > 0 ? 'active' : ''}`}>
               <strong>{stats[key] || 0}</strong>
@@ -665,7 +647,7 @@ export default function ReportReconciliationTab({
                       {group.observations.length > 0 && (
                         <span className="file-group-tag neutral">本轮 {group.observations.length}</span>
                       )}
-                      {(['NEW', 'EXISTED', 'REOPENED', 'PROBABLE', 'RESOLVED', 'COVERAGE_GAP'] as const).map(verdict => {
+                      {(['NEW', 'EXISTED', 'REOPENED', 'PROBABLE', 'RESOLVED', 'PASS', 'COVERAGE_GAP'] as const).map(verdict => {
                         const count = observationCounts[verdict] || 0;
                         if (!count) return null;
                         return (
@@ -673,7 +655,7 @@ export default function ReportReconciliationTab({
                             key={verdict}
                             className={`file-group-tag ${verdict === 'PROBABLE' ? 'warn' : 'neutral'}`}
                           >
-                            {verdictMeta[verdict]?.label || verdict} {count}
+                            {verdictLabels[verdict]?.label || verdict} {count}
                           </span>
                         );
                       })}
@@ -695,7 +677,7 @@ export default function ReportReconciliationTab({
                         const finding = issue.finding;
                         const origin = issueOriginMeta(issue.origin);
                         const verdict = observation
-                          ? verdictMeta[observation.verdict] || { label: observation.verdict, className: 'verdict-probable' }
+                          ? verdictLabels[observation.verdict] || { label: observation.verdict, className: 'verdict-probable' }
                           : null;
                         const findingSeverity = finding && 'severity_display' in finding
                           ? finding.severity_display
