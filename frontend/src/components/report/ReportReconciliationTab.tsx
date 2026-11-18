@@ -388,14 +388,17 @@ export default function ReportReconciliationTab({
             ['REOPENED', verdictLabels.REOPENED.label],
             ['PROBABLE', verdictLabels.PROBABLE.label],
             ['RESOLVED', verdictLabels.RESOLVED.label],
-            ['PASS', verdictLabels.PASS.label],
+            ['CLEARED', verdictLabels.CLEARED.label],
             ['COVERAGE_GAP', verdictLabels.COVERAGE_GAP.label],
-          ].map(([key, label]) => (
-            <div key={key} className={`reconciliation-stat ${Number(stats[key] || 0) > 0 ? 'active' : ''}`}>
-              <strong>{stats[key] || 0}</strong>
-              <span>{label}</span>
-            </div>
-          ))}
+          ].map(([key, label]) => {
+            const count = Number((key === 'CLEARED' ? (stats.CLEARED ?? stats.PASS) : stats[key]) || 0);
+            return (
+              <div key={key} className={`reconciliation-stat ${count > 0 ? 'active' : ''}`}>
+                <strong>{count}</strong>
+                <span>{label}</span>
+              </div>
+            );
+          })}
         </div>
         <div className="reconciliation-meta-row">
           <span className={reconciliation?.ledger_ready ? 'status-good' : 'status-warn'}>
@@ -647,7 +650,7 @@ export default function ReportReconciliationTab({
                       {group.observations.length > 0 && (
                         <span className="file-group-tag neutral">本轮 {group.observations.length}</span>
                       )}
-                      {(['NEW', 'EXISTED', 'REOPENED', 'PROBABLE', 'RESOLVED', 'PASS', 'COVERAGE_GAP'] as const).map(verdict => {
+                      {(['NEW', 'EXISTED', 'REOPENED', 'PROBABLE', 'RESOLVED', 'CLEARED', 'COVERAGE_GAP'] as const).map(verdict => {
                         const count = observationCounts[verdict] || 0;
                         if (!count) return null;
                         return (

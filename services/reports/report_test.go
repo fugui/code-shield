@@ -197,3 +197,23 @@ func TestCalculateRiskScoreFromFindings(t *testing.T) {
 		t.Errorf("expected score 47 for 7 fatal + 3 critical + 21 suggestion, got %d", score31)
 	}
 }
+
+func TestBuildMetaDTOPrefersReportBranchOverRepoDefault(t *testing.T) {
+	repFeature := &models.TaskReport{
+		ID:     10,
+		Branch: "feature/rfc006-fix",
+		Repo:   models.Repository{Name: "demo", Branch: "main"},
+	}
+	if meta := BuildMetaDTO(repFeature); meta.Branch != "feature/rfc006-fix" {
+		t.Fatalf("expected report branch 'feature/rfc006-fix', got %q", meta.Branch)
+	}
+
+	repFallback := &models.TaskReport{
+		ID:     11,
+		Branch: "",
+		Repo:   models.Repository{Name: "demo", Branch: "main"},
+	}
+	if meta := BuildMetaDTO(repFallback); meta.Branch != "main" {
+		t.Fatalf("expected fallback repo branch 'main', got %q", meta.Branch)
+	}
+}

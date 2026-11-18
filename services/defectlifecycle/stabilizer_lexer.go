@@ -267,7 +267,8 @@ func ExtractPhysicalTargetEntity(physicalSnippet string, promptTargetSymbol stri
 			return callee, ConfidenceHigh
 		}
 	case "LOGIC_RISK":
-		if strings.Contains(cleanLine, "while") || strings.Contains(cleanLine, "for") {
+		if (hasWordBoundaryToken(cleanLine, "while") || hasWordBoundaryToken(cleanLine, "for")) &&
+			len(extractLexicalCandidates(cleanLine)) == 0 {
 			return "CONTROL:loop", ConfidenceMedium
 		}
 	}

@@ -23,7 +23,7 @@ type SourceAnchor struct {
 }
 
 var (
-	reSourceComments   = regexp.MustCompile(`(//.*?$|/\*.*?\*/|#.*?$)`)
+	reSourceComments   = regexp.MustCompile(`(?s)/\*.*?\*/|(?m)(?://|#).*?$`)
 	reSourceWhitespace = regexp.MustCompile(`\s+`)
 	reLambdaScope      = regexp.MustCompile(`(operator\(\)[^:]*|<lambda[^>]*>|<lambda\(\)>)`)
 	reTemplateArgs     = regexp.MustCompile(`<.*?>`)
@@ -295,9 +295,9 @@ func ExtractScopeAndBodyFromLines(filePath string, lines []string, targetLine in
 	var scopeSign string
 	scopeStart := 1
 
-	// 从目标行向上逆向扫描最多 200 行寻找函数声明
+	// 从目标行向上逆向扫描最多 300 行寻找函数声明
 	scanStart := targetLine
-	limit := targetLine - 200
+	limit := targetLine - 300
 	if limit < 1 {
 		limit = 1
 	}
@@ -334,18 +334,23 @@ scanLoop:
 		default:
 			// C / C++
 			trimmed := line
-			if strings.HasSuffix(trimmed, ";") || strings.Contains(trimmed, "=") ||
+			if strings.HasSuffix(trimmed, ";") || hasTopLevelAssignment(trimmed) ||
 				strings.HasPrefix(trimmed, "return ") || strings.HasPrefix(trimmed, "throw ") ||
 				strings.HasPrefix(trimmed, "delete ") {
 				continue
 			}
-			if m := reFuncCpp.FindString(line); m != "" && !strings.HasPrefix(line, "if") && !strings.HasPrefix(line, "while") && !strings.HasPrefix(line, "for") && !strings.HasPrefix(line, "switch") && !strings.HasPrefix(line, "catch") {
+			if m := reFuncCpp.FindString(line); m != "" {
 				idx := strings.Index(m, "(")
+				var cand string
 				if idx != -1 {
-					scopeSign = strings.TrimSpace(m[:idx])
+					cand = strings.TrimSpace(m[:idx])
 				} else {
-					scopeSign = strings.TrimSpace(m)
+					cand = strings.TrimSpace(m)
 				}
+				if isCppControlKeywordHead(cand) {
+					continue
+				}
+				scopeSign = cand
 				scopeStart = i
 				break scanLoop
 			}
@@ -361,6 +366,60 @@ scanLoop:
 	}
 
 	return scopeSign, bodyBuilder.String()
+}
+
+// hasTopLevelAssignment 仅在括号深度为 0 时检测赋值运算符，
+// 过滤局部赋值语句（如 auto x = foo()），同时放行函数默认参数（int x = 0）与 operator=。
+func hasTopLevelAssignment(line string) bool {
+	if strings.Contains(line, "operator=") {
+		return false
+	}
+	parenDepth := 0
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '=':
+			if parenDepth > 0 {
+				continue
+			}
+			var prev, next byte
+			if i > 0 {
+				prev = line[i-1]
+			}
+			if i+1 < len(line) {
+				next = line[i+1]
+			}
+			if prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '=' || next == '>' {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func isCppControlKeywordHead(cand string) bool {
+	head := strings.TrimSpace(cand)
+	if head == "" {
+		return true
+	}
+	if idx := strings.LastIndex(head, "::"); idx != -1 {
+		head = strings.TrimSpace(head[idx+2:])
+	}
+	if fields := strings.Fields(head); len(fields) > 0 {
+		head = fields[len(fields)-1]
+	}
+	switch strings.ToLower(head) {
+	case "if", "else", "for", "while", "switch", "catch", "return", "sizeof", "typeof", "alignof", "decltype", "throw", "delete":
+		return true
+	default:
+		return false
+	}
 }
 
 func lineLeadingIndent(line string) int {

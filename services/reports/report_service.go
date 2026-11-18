@@ -71,12 +71,17 @@ func BuildMetaDTO(report *models.TaskReport) ReportMetaDTO {
 		_ = json.Unmarshal(report.ScanProfile, &scanProfile)
 	}
 
+	branch := strings.TrimSpace(report.Branch)
+	if branch == "" {
+		branch = report.Repo.Branch
+	}
+
 	return ReportMetaDTO{
 		ID:                       report.ID,
 		RepoID:                   report.RepoID,
 		RepoName:                 report.Repo.Name,
 		RepoURL:                  report.Repo.URL,
-		Branch:                   report.Repo.Branch,
+		Branch:                   branch,
 		TaskTypeID:               report.TaskTypeID,
 		TaskTypeName:             report.TaskType.Name,
 		TaskTypeDisplay:          report.TaskType.DisplayName,
@@ -282,7 +287,7 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 		}
 	} else if models.DB != nil {
 		var dbFindings []models.AnalysisFinding
-		if err := models.DB.Where("task_report_id = ?", report.ID).Find(&dbFindings).Error; err == nil {
+		if err := models.DB.Where("task_report_id = ?", report.ID).Order("id").Find(&dbFindings).Error; err == nil {
 			for _, dbf := range dbFindings {
 				k := makeFindingKey(dbf.FilePath, dbf.LineNumber, dbf.Title)
 				statusMap[k] = "open"
@@ -300,6 +305,14 @@ func loadAllFindingsRaw(report *models.TaskReport) ([]FindingItemDTO, error) {
 				if useAnalysisFallback {
 					rawList = append(rawList, analysisFindingToRawMap(dbf))
 				}
+			}
+		}
+	}
+	if len(rawList) == 0 && models.DB != nil && isEntityMode {
+		var dbFindings []models.AnalysisFinding
+		if err := models.DB.Where("task_report_id = ?", report.ID).Order("id").Find(&dbFindings).Error; err == nil {
+			for _, dbf := range dbFindings {
+				rawList = append(rawList, analysisFindingToRawMap(dbf))
 			}
 		}
 	}

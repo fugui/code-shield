@@ -12,6 +12,7 @@ export const verdictLabels: Record<string, VerdictLabelMeta> = {
   REOPENED: { label: '修复后复发', className: 'verdict-reopened' },
   PROBABLE: { label: '疑似存量，待确认', className: 'verdict-probable' },
   RESOLVED: { label: '本轮判定修复', className: 'verdict-resolved' },
+  CLEARED: { label: '显式通过清理', className: 'verdict-cleared' },
   PASS: { label: '显式通过清理', className: 'verdict-cleared' },
   COVERAGE_GAP: { label: '覆盖缺口，不判修复', className: 'verdict-coverage-gap' },
 };

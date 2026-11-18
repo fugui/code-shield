@@ -353,3 +353,29 @@ func TestExtractScopeAndBodyFromLines_AdjacentFunctionIsolation(t *testing.T) {
 		t.Fatalf("python indent isolation failed: body1=%q body2=%q", pyBody1, pyBody2)
 	}
 }
+
+func TestCleanSourceTokenAndCppScopeHardening(t *testing.T) {
+	cleanA := CleanSourceToken("void f() {\n  /* block\n     comment */\n  int x = 1; // inline\n}")
+	cleanB := CleanSourceToken("void f() {\n  int x = 1;\n}")
+	if cleanA == "" || cleanA != cleanB {
+		t.Fatalf("expected multiline comments and inline comments stripped identically: cleanA=%q cleanB=%q", cleanA, cleanB)
+	}
+
+	// "} else if (...) {" 与函数默认参数 "= 0"、220 行远跨度声明处理
+	var lines []string
+	lines = append(lines, "void if_ready(int timeout = 0) {")
+	lines = append(lines, "  if (timeout > 0) {")
+	lines = append(lines, "    run();")
+	lines = append(lines, "  } else if (timeout == 0) {")
+	for i := 0; i < 220; i++ {
+		lines = append(lines, "    tick();")
+	}
+	lines = append(lines, "    danger();")
+	lines = append(lines, "  }")
+	lines = append(lines, "}")
+
+	scope, _ := ExtractScopeAndBodyFromLines("src/long.cpp", lines, len(lines)-2)
+	if scope != "if_ready" {
+		t.Fatalf("expected scope 'if_ready' skipping '} else if' and spanning >200 lines, got %q", scope)
+	}
+}

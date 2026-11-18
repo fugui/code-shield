@@ -659,3 +659,55 @@ func TestMatchedVerdictSemantics(t *testing.T) {
 		}
 	}
 }
+
+func TestRunMatching_CrossScopeEntitySingletonAndResourceGate(t *testing.T) {
+	obs := observation("uid-extracted", "src/refactor.cpp", "scope-new-helper", "memcpy(reqbuf,input,n)")
+	obs.Identity.SymbolPath = "extractedCopy"
+	obs.Identity.DefectClassMajor = ClassOOB
+	obs.Identity.TargetEntity = "reqBuf"
+	obs.Identity.ResourceIdentity = "reqbuf"
+	obs.Identity.CoreSlotKey = ComputeCoreSlotKey("src/refactor.cpp", "extractedCopy", ClassOOB, "reqBuf")
+	obs.Identity.SlotKey = ComputePreciseSlotKey(obs.Identity.CoreSlotKey, obs.Identity.StmtAnchorHash)
+	obs.Identity.LineStart = 180
+	obs.Identity.LineEnd = 180
+
+	existing := defect(401, DefectStatusActive)
+	existing.NormPath = "src/refactor.cpp"
+	existing.ScopeKey = "scope-old-fn"
+	existing.SymbolPath = "legacyCopy"
+	existing.ScopeSymbol = "legacyCopy"
+	existing.DefectClassMajor = ClassOOB
+	existing.TargetEntity = "reqBuf"
+	existing.CleanToken = "memcpy(reqbuf,src,n)"
+	existing.CoreSlotKey = ComputeCoreSlotKey("src/refactor.cpp", "legacyCopy", ClassOOB, "reqBuf")
+	existing.SlotKey = ComputePreciseSlotKey(existing.CoreSlotKey, "oldstmt")
+	ls := 12
+	existing.LineStart = &ls
+	existing.LineEnd = &ls
+
+	res := RunMatching(MatchingInput{
+		Observations: []ObservationGroup{obs},
+		Defects:      []models.Defect{existing},
+		Thresholds:   RuntimeMatchThresholds(),
+	})
+	dec := res.Observations[0]
+	if dec.DefectID == nil || *dec.DefectID != 401 {
+		t.Fatalf("expected renamed/extracted singleton to match defect 401, got %+v", dec)
+	}
+	if dec.Verdict != VerdictExisted || dec.Reason != "CROSS_SCOPE_ENTITY_SINGLETON" {
+		t.Fatalf("expected EXISTED / CROSS_SCOPE_ENTITY_SINGLETON, got verdict=%s reason=%s", dec.Verdict, dec.Reason)
+	}
+
+	// 验证 applyEvidenceGate 直接消费 Candidate.Defect.TargetEntity
+	detail := map[string]float64{
+		"scope_key_equal":          1,
+		"clean_token_similarity":   0.9,
+		"line_proximity":           1,
+		"defect_class_major_equal": 1,
+	}
+	cand := Candidate{Defect: models.Defect{ID: 500, TargetEntity: "reqBuf", CleanToken: "if(size>0){work()}"}}
+	applyEvidenceGate(obs.Identity, cand, detail)
+	if detail["resource_gate"] != 1 {
+		t.Fatalf("expected resource_gate=1 derived from TargetEntity, got detail=%+v", detail)
+	}
+}

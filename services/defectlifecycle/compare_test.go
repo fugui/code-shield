@@ -294,4 +294,84 @@ func TestCompareReports_EntityAssessmentFallback(t *testing.T) {
 	if cmp.Summary.CommonPersisted != 1 || cmp.Summary.OnlyACodeChanged != 1 || cmp.Summary.OnlyBNew != 1 {
 		t.Fatalf("unexpected entity compare summary: %+v", cmp.Summary)
 	}
+
+	// 回归：B 报告前置插入额外条目引发全局索引偏移时，compareByEntitySlots 不得因全局下标错位
+	rBShift := models.TaskReport{RepoID: repo.ID, TaskTypeID: tt.ID, Status: models.StatusAnalyzing}
+	if err := db.Create(&rBShift).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = PersistScanFacts(ScanInput{
+		DB: db, Report: rBShift, Repo: repo, RepoRoot: root, TaskType: tt,
+		Findings: []models.AnalysisFinding{
+			{FilePath: "tests/d_test.cpp", LineNumber: "15", Title: "前置新增项", Severity: "严重", Category: "提前返回-静默跳过", TriggerLine: "return;", ScopeSymbol: "TEST_F"},
+			{FilePath: "tests/a_test.cpp", LineNumber: "18", Title: "空测试 A", Severity: "严重", Category: "断言有效性-空测试", TriggerLine: "TEST_F(S, A) {}", ScopeSymbol: "TEST_F"},
+			{FilePath: "tests/b_test.cpp", LineNumber: "20", Title: "永真断言 B", Severity: "一般", Category: "断言有效性-永真断言", TriggerLine: "EXPECT_TRUE(true);", ScopeSymbol: "TEST_F"},
+			{FilePath: "tests/c_test.cpp", LineNumber: "31", Title: "退化告警 C", Severity: "严重", Category: "提前返回-静默跳过", TriggerLine: "return;", ScopeSymbol: "TEST_F"},
+		},
+		Coverage: &coverage.Coverage{
+			PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+			Files: []coverage.File{
+				{Path: "tests/a_test.cpp", Hash: "h1", Status: coverage.StatusSuccess},
+				{Path: "tests/b_test.cpp", Hash: "h2", Status: coverage.StatusSuccess},
+				{Path: "tests/c_test.cpp", Hash: "h3-new", Status: coverage.StatusSuccess, DiffTouched: true},
+				{Path: "tests/d_test.cpp", Hash: "h4", Status: coverage.StatusSuccess, DiffTouched: true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmpShift, err := CompareReports(db, rA.ID, rBShift.ID)
+	if err != nil {
+		t.Fatalf("CompareReports entity shifted failed: %v", err)
+	}
+	if cmpShift.Summary.CommonPersisted != 2 || cmpShift.Summary.OnlyBNew != 2 {
+		t.Fatalf("expected CommonPersisted=2 OnlyBNew=2 after index shift, got %+v", cmpShift.Summary)
+	}
+	var foundA bool
+	for _, item := range cmpShift.CommonPersisted {
+		if item.NormPath == "tests/a_test.cpp" {
+			foundA = true
+			if item.BaseLineStart == nil || *item.BaseLineStart != 10 || item.LineStart == nil || *item.LineStart != 18 {
+				t.Fatalf("expected BaseLineStart=10 & LineStart=18 preserved on COMMON_PERSISTED, got base=%v target=%v", item.BaseLineStart, item.LineStart)
+			}
+		}
+	}
+	if !foundA {
+		t.Fatalf("expected tests/a_test.cpp in CommonPersisted")
+	}
+	// 验证 ONLY_B_NEW 在已有文件上也能从 scopeA 带出 base_blob_hash
+	var foundCNew bool
+	for _, item := range cmpShift.OnlyBNew {
+		if item.NormPath == "tests/c_test.cpp" {
+			foundCNew = true
+			if item.BaseBlobHash != "h3" || item.TargetBlobHash != "h3-new" {
+				t.Fatalf("expected ONLY_B_NEW c_test base=h3 target=h3-new, got base=%q target=%q", item.BaseBlobHash, item.TargetBlobHash)
+			}
+		}
+	}
+	if !foundCNew {
+		t.Fatalf("expected tests/c_test.cpp in OnlyBNew, got %+v", cmpShift.OnlyBNew)
+	}
+
+	// 验证 RecordSlotAliasSelfHealing 使用 AliasStrong 类别
+	healedDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: tt.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-alias-strong", IdentityKind: "SLOT",
+		NormPath: "src/alias.cpp", CoreSlotKey: "core-a", SlotKey: "slot-new-a",
+		FirstReportID: rA.ID, LastSeenReportID: rA.ID, LastMatchedReportID: rA.ID, RowVersion: 1,
+	}
+	if err := db.Create(&healedDefect).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordSlotAliasSelfHealing(db, healedDefect.ID, repo.ID, tt.ID, rBShift.ID, "legacy-slot-1", AliasSlotHealed); err != nil {
+		t.Fatalf("RecordSlotAliasSelfHealing failed: %v", err)
+	}
+	var aliasRec models.DefectAlias
+	if err := db.Where("alias_value = ?", "legacy-slot-1").First(&aliasRec).Error; err != nil {
+		t.Fatal(err)
+	}
+	if aliasRec.AliasClass != AliasStrong {
+		t.Fatalf("expected AliasClass=%s, got %q", AliasStrong, aliasRec.AliasClass)
+	}
 }
