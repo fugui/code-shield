@@ -3,6 +3,7 @@ package defectlifecycle
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"code-shield/models"
@@ -254,5 +255,48 @@ func TestExtractIdentityTokenIncludesShortVariables(t *testing.T) {
 	}
 	if got := extractIdentityToken("*p=1"); got != "p" {
 		t.Fatalf("expected short pointer 'p' preserved, got %q", got)
+	}
+}
+
+func TestBuildIdentities_RepeatedIdenticalStatementsDistinctSlots(t *testing.T) {
+	repoRoot := t.TempDir()
+	path := filepath.Join(repoRoot, "src", "repeat.cpp")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create dir: %v", err)
+	}
+	content := strings.Join([]string{
+		"void work(bool cond, char* buf) {",
+		"  if (cond) {",
+		"    strcpy(buf, src);",
+		"  }",
+		"  if (!cond) {",
+		"    strcpy(buf, src);",
+		"  }",
+		"}",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	findings := []models.AnalysisFinding{
+		{FilePath: "src/repeat.cpp", LineNumber: "3", Category: "缓冲区溢出", Severity: "严重", TriggerLine: "strcpy(buf, src);", ScopeSymbol: "work", TargetSymbol: "buf"},
+		{FilePath: "src/repeat.cpp", LineNumber: "6", Category: "缓冲区溢出", Severity: "严重", TriggerLine: "strcpy(buf, src);", ScopeSymbol: "work", TargetSymbol: "buf"},
+	}
+	groups := BuildObservationGroups(repoRoot, 22, findings)
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 observation groups for repeated identical statements, got %d", len(groups))
+	}
+	if groups[0].Identity.SlotKey == "" || groups[0].Identity.SlotKey == groups[1].Identity.SlotKey {
+		t.Fatalf("expected distinct SlotKeys for repeated statements, got %q and %q", groups[0].Identity.SlotKey, groups[1].Identity.SlotKey)
+	}
+}
+
+func TestExtractPhysicalTargetEntity_LogicRiskWordBoundary(t *testing.T) {
+	gotEntity, _ := ExtractPhysicalTargetEntity("format(ptrA)", "", "LOGIC_RISK")
+	if gotEntity == "CONTROL:loop" || gotEntity != "format" {
+		t.Fatalf("expected format(ptrA) not to hit CONTROL:loop and instead extract 'format', got %q", gotEntity)
+	}
+	gotLoop, _ := ExtractPhysicalTargetEntity("while (1) {", "", "LOGIC_RISK")
+	if gotLoop != "CONTROL:loop" {
+		t.Fatalf("expected actual loop statement to extract CONTROL:loop, got %q", gotLoop)
 	}
 }

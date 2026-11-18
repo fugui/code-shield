@@ -756,4 +756,156 @@ func TestAdvanceUnmatchedDefectsWithholdsOnNonDefaultBranchOrScopedOverride(t *t
 	if reload.Status != DefectStatusActive || reload.MissedCount != 0 {
 		t.Fatalf("expected defect untouched by non-default branch & scoped override, got status=%s missed=%d", reload.Status, reload.MissedCount)
 	}
+
+	// 3. 验证 Repo.Branch 为空时默认回退到 master：feature 分支应被拦截，master 分支才放行
+	repoEmptyBranch := repo
+	repoEmptyBranch.Branch = ""
+	err = db.Transaction(func(tx *gorm.DB) error {
+		events, txErr := advanceUnmatchedDefects(tx, []models.Defect{reload}, map[uint]bool{}, LedgerInput{
+			Report: report, Repo: repoEmptyBranch, TaskType: taskType, CoverageState: CoverageComplete, Coverage: cov,
+			Scope: []models.ScanScopeEntry{{ReportID: report.ID, RepoID: repo.ID, TaskTypeID: taskType.ID, NormPath: reload.NormPath, BlobHash: "new-hash", Outcome: ScopeScanned}},
+			Lifecycle: LifecyclePolicy{
+				ResolvedRounds: 1, RequireCoverage: true, RequireChange: false, OnlyAdvanceOnDefaultBranch: true,
+			},
+		}, time.Now())
+		if len(events) != 0 {
+			t.Fatalf("expected feature branch withheld when default branch falls back to master, got %d", len(events))
+		}
+		return txErr
+	})
+	if err != nil {
+		t.Fatalf("empty default branch fallback transaction failed: %v", err)
+	}
+}
+
+func TestAdvanceUnmatchedDefects_SingleCommitFixAndHighRiskConverge(t *testing.T) {
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_require_change_high_risk",
+		&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+		&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+	)
+	repo := models.Repository{Name: "rc-demo", URL: "https://example.com/rc.git", Branch: "main"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatal(err)
+	}
+	r0 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "main"}
+	if err := db.Create(&r0).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	normalDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-normal", IdentityKind: "SLOT",
+		NormPath: "src/fix.cpp", Severity: "一般", BlobHash: "h1",
+		FirstReportID: r0.ID, LastSeenReportID: r0.ID, LastMatchedReportID: r0.ID, RowVersion: 1,
+	}
+	highRiskDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-high", IdentityKind: "SLOT",
+		NormPath: "src/fix.cpp", Severity: "严重", BlobHash: "h1",
+		FirstReportID: r0.ID, LastSeenReportID: r0.ID, LastMatchedReportID: r0.ID, RowVersion: 1,
+	}
+	noBaselineDefect := models.Defect{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+		CanonicalFingerprint: "fp-legacy", IdentityKind: "SLOT",
+		NormPath: "src/unchanged.cpp", Severity: "一般", BlobHash: "",
+		FirstReportID: r0.ID, LastSeenReportID: r0.ID, LastMatchedReportID: r0.ID, RowVersion: 1,
+	}
+	for _, d := range []*models.Defect{&normalDefect, &highRiskDefect, &noBaselineDefect} {
+		if err := db.Create(d).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	policy := LifecyclePolicy{
+		ResolvedRounds:             3,
+		RequireCoverage:            true,
+		RequireChange:              true,
+		OnlyAdvanceOnDefaultBranch: true,
+		HighRiskSeverities:         []string{"致命", "严重"},
+	}
+
+	// 第 1 轮（无代码变更 h1 -> h1）：应冻结 normal/highRisk 衰变，并静默回填 noBaselineDefect 基线而不衰变
+	r1 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "main"}
+	if err := db.Create(&r1).Error; err != nil {
+		t.Fatal(err)
+	}
+	covSame := &coverage.Coverage{
+		PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+		Files: []coverage.File{
+			{Path: "src/fix.cpp", Hash: "h1", Status: coverage.StatusSuccess},
+			{Path: "src/unchanged.cpp", Hash: "u1", Status: coverage.StatusSuccess},
+		},
+	}
+	evalSame := NewMemoryScopeEvaluator([]models.ScanScopeEntry{
+		{NormPath: "src/fix.cpp", BlobHash: "h1", Outcome: ScopeScanned, DiffTouched: false},
+		{NormPath: "src/unchanged.cpp", BlobHash: "u1", Outcome: ScopeScanned, DiffTouched: false},
+	})
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, txErr := advanceUnmatchedDefects(tx, []models.Defect{normalDefect, highRiskDefect, noBaselineDefect}, map[uint]bool{}, LedgerInput{
+			Report: r1, Repo: repo, TaskType: taskType, CoverageState: CoverageComplete, Coverage: covSame, Evaluator: evalSame, Lifecycle: policy,
+		}, time.Now())
+		return txErr
+	}); err != nil {
+		t.Fatalf("unchanged round failed: %v", err)
+	}
+
+	var backfilled models.Defect
+	if err := db.First(&backfilled, noBaselineDefect.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if backfilled.BlobHash != "u1" || backfilled.MissedCount != 0 || backfilled.Status != DefectStatusActive {
+		t.Fatalf("expected silent blob hash backfill without decay, got blob=%q missed=%d status=%s", backfilled.BlobHash, backfilled.MissedCount, backfilled.Status)
+	}
+
+	// 第 2~5 轮：单次提交修复（h1 -> h2），之后保持 h2 不再改动；不应因覆盖 BlobHash 而冻结在 missed=1
+	var finalReportID uint
+	for round := 1; round <= 4; round++ {
+		rep := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "main"}
+		if err := db.Create(&rep).Error; err != nil {
+			t.Fatal(err)
+		}
+		finalReportID = rep.ID
+		var currentDefects []models.Defect
+		if err := db.Where("id IN ?", []uint{normalDefect.ID, highRiskDefect.ID}).Order("id").Find(&currentDefects).Error; err != nil {
+			t.Fatal(err)
+		}
+		covFix := &coverage.Coverage{
+			PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+			Files: []coverage.File{
+				{Path: "src/fix.cpp", Hash: "h2", Status: coverage.StatusSuccess, DiffTouched: round == 1},
+			},
+		}
+		evalFix := NewMemoryScopeEvaluator([]models.ScanScopeEntry{
+			{NormPath: "src/fix.cpp", BlobHash: "h2", Outcome: ScopeScanned, DiffTouched: round == 1},
+		})
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, currentDefects, map[uint]bool{}, LedgerInput{
+				Report: rep, Repo: repo, TaskType: taskType, CoverageState: CoverageComplete, Coverage: covFix, Evaluator: evalFix, Lifecycle: policy,
+			}, time.Now())
+			return txErr
+		}); err != nil {
+			t.Fatalf("post-fix round %d failed: %v", round, err)
+		}
+	}
+
+	var resolvedNormal, resolvedHigh models.Defect
+	if err := db.First(&resolvedNormal, normalDefect.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resolvedHigh, highRiskDefect.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resolvedNormal.Status != DefectStatusResolved || resolvedNormal.MissedCount != 3 || resolvedNormal.ResolvedReportID == nil {
+		t.Fatalf("expected normal defect resolved at missed=3 with resolved_report_id, got %+v", resolvedNormal)
+	}
+	if resolvedNormal.StatusReason != "file scanned but defect not reproduced for 3 rounds" {
+		t.Fatalf("unexpected normal status reason: %q", resolvedNormal.StatusReason)
+	}
+	if resolvedHigh.Status != DefectStatusResolved || resolvedHigh.MissedCount != 4 || resolvedHigh.ResolvedReportID == nil || *resolvedHigh.ResolvedReportID != finalReportID {
+		t.Fatalf("expected high-risk defect converged to RESOLVED on round 4 (report %d), got %+v", finalReportID, resolvedHigh)
+	}
 }

@@ -543,6 +543,29 @@ func passObservationCovered(input LedgerInput, identity Identity) bool {
 	return scope != nil && scope.Outcome == ScopeScanned
 }
 
+func resolveCurrentBlobHash(input LedgerInput, normPath string) string {
+	normPath = filepath.ToSlash(strings.TrimSpace(normPath))
+	if normPath == "" {
+		return ""
+	}
+	if input.Evaluator != nil {
+		if hash := strings.TrimSpace(input.Evaluator.GetBlobHash(normPath)); hash != "" {
+			return strings.ToLower(hash)
+		}
+	}
+	if scope := scopeEntryByPath(input.Scope, normPath); scope != nil && strings.TrimSpace(scope.BlobHash) != "" {
+		return strings.ToLower(strings.TrimSpace(scope.BlobHash))
+	}
+	if input.Coverage != nil {
+		for _, file := range input.Coverage.Files {
+			if NormalizePath(input.RepoRoot, file.Path) == normPath && strings.TrimSpace(file.Hash) != "" {
+				return strings.ToLower(strings.TrimSpace(file.Hash))
+			}
+		}
+	}
+	return ""
+}
+
 func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *models.AnalysisFinding) (models.Defect, error) {
 	if tx.Dialector.Name() == "postgres" {
 		lockKey := fmt.Sprintf("%d:%d", input.Repo.ID, input.TaskType.ID)
@@ -550,7 +573,6 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 			return models.Defect{}, fmt.Errorf("acquire defect namespace lock: %w", err)
 		}
 	}
-	scope := scopeEntryByPath(input.Scope, identity.NormPath)
 	lineStart, lineEnd := identity.LineStart, identity.LineEnd
 
 	// 计算并归一化两级槽位坐标
@@ -626,8 +648,8 @@ func createDefect(tx *gorm.DB, input LedgerInput, identity Identity, finding *mo
 		defect.Suggestion = finding.Suggestion
 		defect.DetailSummary = finding.Detail
 	}
-	if scope != nil {
-		defect.BlobHash = scope.BlobHash
+	if blobHash := resolveCurrentBlobHash(input, identity.NormPath); blobHash != "" {
+		defect.BlobHash = blobHash
 	}
 	if err := tx.Create(&defect).Error; err != nil {
 		if (strings.Contains(err.Error(), "uq_defect_active_slot_idx") || strings.Contains(err.Error(), "uq_defect_active_slot_sqlite")) && slotKey != "" {
@@ -718,7 +740,6 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 			CreatedAt: now,
 		}, true, nil
 	}
-	scope := scopeEntryByPath(input.Scope, identity.NormPath)
 	status := defect.Status
 	switch observation.Verdict {
 	case VerdictExisted, VerdictReopened:
@@ -743,8 +764,9 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 		"last_seen_report_id": input.Report.ID, "last_matched_report_id": input.Report.ID,
 		"updated_at": now,
 	}
-	if scope != nil {
-		updates["blob_hash"] = scope.BlobHash
+	if blobHash := resolveCurrentBlobHash(input, identity.NormPath); blobHash != "" {
+		updates["blob_hash"] = blobHash
+		defect.BlobHash = blobHash
 	}
 	if defect.Title == "" {
 		if group := findObservationGroup(input.Observations, observation.ObservationGroupUID); group != nil {
@@ -868,6 +890,10 @@ func updateMatchedDefect(tx *gorm.DB, defect models.Defect, identity Identity, i
 	defect.DormantRounds = 0
 	defect.LastSeenReportID = input.Report.ID
 	defect.LastMatchedReportID = input.Report.ID
+	if status == DefectStatusResolved {
+		resolvedID := input.Report.ID
+		defect.ResolvedReportID = &resolvedID
+	}
 	if targetSlotKey != "" && status != DefectStatusMerged {
 		defect.SlotKey = targetSlotKey
 		if cs, ok := updates["core_slot_key"].(string); ok && cs != "" {
@@ -932,7 +958,10 @@ func shouldWithholdAdvancementForBranchOrScope(input LedgerInput) bool {
 	if input.Lifecycle.OnlyAdvanceOnDefaultBranch {
 		reportBranch := strings.TrimSpace(input.Report.Branch)
 		defaultBranch := strings.TrimSpace(input.Repo.Branch)
-		if reportBranch != "" && defaultBranch != "" && !strings.EqualFold(reportBranch, defaultBranch) {
+		if defaultBranch == "" {
+			defaultBranch = "master"
+		}
+		if reportBranch != "" && !strings.EqualFold(reportBranch, defaultBranch) {
 			return true
 		}
 	}
@@ -961,10 +990,11 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 				status := DefectStatusResolved
 				reason := "source file does not exist"
 				updates := map[string]interface{}{
-					"row_version":   gorm.Expr("row_version + 1"),
-					"updated_at":    now,
-					"status":        status,
-					"status_reason": reason,
+					"row_version":        gorm.Expr("row_version + 1"),
+					"updated_at":         now,
+					"status":             status,
+					"status_reason":      reason,
+					"resolved_report_id": input.Report.ID,
 				}
 				query := tx.Model(&models.Defect{}).Where("id = ? AND row_version = ?", defect.ID, defect.RowVersion)
 				if err := query.Updates(updates).Error; err != nil {
@@ -1036,18 +1066,28 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 				reason = "file is not successfully covered"
 			}
 		} else {
-			// RequireChange 守卫：当开启代码变更要求且本轮文件 BlobHash 未变化时，冻结衰变推进，严禁误标 RESOLVED
-			if input.Lifecycle.RequireChange && defect.BlobHash != "" {
-				currentBlobHash := ""
-				if input.Evaluator != nil {
-					currentBlobHash = input.Evaluator.GetBlobHash(defect.NormPath)
-				}
-				if currentBlobHash == "" {
-					if scope := scopeEntryByPath(input.Scope, defect.NormPath); scope != nil {
-						currentBlobHash = scope.BlobHash
+			currentBlobHash := resolveCurrentBlobHash(input, defect.NormPath)
+			isChanged := input.Evaluator != nil && input.Evaluator.IsChanged(defect.NormPath)
+			// RequireChange 守卫：
+			// 1. 若存量缺陷尚未记录基线 BlobHash 且当前未发生代码变更，仅静默回填基线快照并冻结衰变；
+			// 2. 若已存在基线 BlobHash 且本轮文件 BlobHash 未变化，冻结衰变推进，严禁误标 RESOLVED。
+			if input.Lifecycle.RequireChange {
+				if defect.BlobHash == "" && currentBlobHash != "" && !isChanged {
+					updates := map[string]interface{}{
+						"row_version": gorm.Expr("row_version + 1"),
+						"updated_at":  now,
+						"blob_hash":   currentBlobHash,
 					}
+					query := tx.Model(&models.Defect{}).Where("id = ? AND row_version = ?", defect.ID, defect.RowVersion)
+					if err := query.Updates(updates).Error; err != nil {
+						return nil, fmt.Errorf("backfill defect blob hash: %w", err)
+					}
+					if query.RowsAffected == 0 {
+						return nil, fmt.Errorf("defect %d changed during blob hash backfill", defect.ID)
+					}
+					continue
 				}
-				if currentBlobHash != "" && currentBlobHash == defect.BlobHash {
+				if defect.BlobHash != "" && currentBlobHash != "" && currentBlobHash == defect.BlobHash {
 					continue
 				}
 			}
@@ -1055,12 +1095,21 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 			severity := severityWeight(defect.Severity)
 			switch {
 			case containsString(input.Lifecycle.HighRiskSeverities, defect.Severity):
-				status = DefectStatusVerifiedPending
-				reason = "file scanned but defect not reproduced"
+				highRiskResolveRounds := input.Lifecycle.ResolvedRounds + 1
+				if highRiskResolveRounds < 2 {
+					highRiskResolveRounds = 2
+				}
+				if missed >= highRiskResolveRounds {
+					status = DefectStatusResolved
+					reason = fmt.Sprintf("high-risk defect not reproduced for %d covered rounds", missed)
+				} else {
+					status = DefectStatusVerifiedPending
+					reason = "file scanned but defect not reproduced"
+				}
 			case severity >= 3:
 				if missed >= input.Lifecycle.ResolvedRounds {
 					status = DefectStatusResolved
-					reason = "file scanned but defect not reproduced for two rounds"
+					reason = fmt.Sprintf("file scanned but defect not reproduced for %d rounds", missed)
 				} else {
 					status = DefectStatusCoverageGap
 					reason = "file scanned but defect not reproduced"
@@ -1090,6 +1139,9 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 		if status != defect.Status {
 			updates["status"] = status
 			updates["status_reason"] = reason
+			if status == DefectStatusResolved {
+				updates["resolved_report_id"] = input.Report.ID
+			}
 		}
 		query := tx.Model(&models.Defect{}).Where("id = ? AND row_version = ?", defect.ID, defect.RowVersion)
 		if err := query.Updates(updates).Error; err != nil {

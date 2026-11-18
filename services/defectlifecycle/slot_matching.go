@@ -1,6 +1,8 @@
 package defectlifecycle
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -445,22 +447,29 @@ func RecordSlotAliasSelfHealing(tx *gorm.DB, defectID uint, repoID uint, taskTyp
 		repoID, taskTypeID, aliasType, aliasSlotKey).First(&existing).Error
 	if err == nil {
 		return tx.Model(&existing).Updates(map[string]interface{}{
+			"defect_id":      defectID,
+			"alias_class":    AliasStrong,
 			"hit_count":      existing.HitCount + 1,
 			"last_report_id": reportID,
+			"updated_at":     time.Now(),
 		}).Error
 	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("lookup slot alias %s: %w", aliasSlotKey, err)
+	}
+	now := time.Now()
 	alias := models.DefectAlias{
 		DefectID:      defectID,
 		RepoID:        repoID,
 		TaskTypeID:    taskTypeID,
 		AliasType:     aliasType,
 		AliasValue:    aliasSlotKey,
-		AliasClass:    "SLOT",
+		AliasClass:    AliasStrong,
 		FirstReportID: reportID,
 		LastReportID:  reportID,
 		HitCount:      1,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	return tx.Create(&alias).Error
 }

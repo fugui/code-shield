@@ -289,7 +289,7 @@ func GetObservationCandidates(db *gorm.DB, reportID uint, groupUID string) ([]Ca
 		return nil, errors.New("database is not initialized")
 	}
 	var report models.TaskReport
-	if err := db.First(&report, reportID).Error; err != nil {
+	if err := db.Preload("Repo").First(&report, reportID).Error; err != nil {
 		return nil, fmt.Errorf("load report: %w", err)
 	}
 	var observation models.DefectObservation
@@ -305,7 +305,7 @@ func GetObservationCandidates(db *gorm.DB, reportID uint, groupUID string) ([]Ca
 	if err := db.Where("task_report_id = ?", reportID).Order("id").Find(&findings).Error; err != nil {
 		return nil, fmt.Errorf("load findings: %w", err)
 	}
-	group := findObservationGroup(BuildObservationGroups("", reportID, findings), groupUID)
+	group := findObservationGroup(BuildObservationGroups(repositoryRoot(report.Repo), reportID, findings), groupUID)
 	if group == nil {
 		return nil, fmt.Errorf("rebuild observation group %s", groupUID)
 	}

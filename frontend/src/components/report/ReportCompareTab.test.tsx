@@ -64,8 +64,11 @@ const sampleComparePayload: ReportCompareResult = {
       bucket: 'COMMON_PERSISTED',
       defect_id: 101,
       norm_path: 'src/keep.cpp',
-      line_start: 12,
-      line_end: 12,
+      base_norm_path: 'src/keep.cpp',
+      line_start: 18,
+      line_end: 18,
+      base_line_start: 12,
+      base_line_end: 12,
       severity: '严重',
       category: 'NPD',
       title: 'Keep pointer deref',
@@ -129,23 +132,24 @@ describe('reconciliationLabels SSOT & ReportCompareTab', () => {
     vi.unstubAllGlobals();
   });
 
-  it('unifies EXISTED, PROBABLE, and PASS labels cleanly', () => {
+  it('unifies EXISTED, PROBABLE, CLEARED, and PASS labels cleanly', () => {
     expect(verdictLabels.EXISTED.label).toBe('本轮复现');
     expect(verdictLabels.PROBABLE.label).toBe('疑似存量，待确认');
+    expect(verdictLabels.CLEARED.label).toBe('显式通过清理');
     expect(verdictLabels.PASS.label).toBe('显式通过清理');
     expect(matchTierLabels.PASS).toBe('显式通过清理');
   });
 
-  it('auto-selects baseline report, renders 5 buckets, and filters by bucket', async () => {
+  it('auto-selects baseline report, renders 5 buckets with line drift, and filters by bucket', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes('/api/tasks?')) {
+      if (url.includes('/api/tasks?') && url.includes('status=success%2Cdegraded')) {
         return {
           ok: true,
           json: async () => ({
             items: [
               { id: 20, repo_id: 5, task_type_id: 2, status: 'success', branch: 'main', head_commit: 'abc123456', created_at: '2026-11-17T10:00:00Z' },
-              { id: 10, repo_id: 5, task_type_id: 2, status: 'success', branch: 'main', head_commit: '000aaa111', created_at: '2026-11-16T10:00:00Z' },
+              { id: 10, repo_id: 5, task_type_id: 2, status: 'degraded', branch: 'main', head_commit: '000aaa111', created_at: '2026-11-16T10:00:00Z' },
             ],
           }),
         } as Response;
@@ -161,13 +165,15 @@ describe('reconciliationLabels SSOT & ReportCompareTab', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(
-      <MemoryRouter initialEntries={['/reports/20?tab=compare']}>
+      <MemoryRouter initialEntries={['/reports/20?tab=compare&baseReportId=10']}>
         <ReportCompareTab targetReportId={20} meta={sampleMeta} />
       </MemoryRouter>,
     );
 
     await waitFor(() => {
       expect(screen.getByText('Keep pointer deref')).toBeTruthy();
+      expect(screen.getByText('src/keep.cpp:18')).toBeTruthy();
+      expect(screen.getByText('基线 A：src/keep.cpp:12')).toBeTruthy();
       expect(screen.getByText('Unchanged uaf silent miss')).toBeTruthy();
       expect(screen.getByText('New oob in B')).toBeTruthy();
     });

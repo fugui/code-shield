@@ -64,7 +64,7 @@ function itemsForBucket(result: ReportCompareResult, bucket: CompareBucket | 'AL
 export default function ReportCompareTab({ targetReportId, meta }: ReportCompareTabProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const rawBaseParam = Number.parseInt(searchParams.get('cmpBase') || '', 10);
+  const rawBaseParam = Number.parseInt(searchParams.get('cmpBase') || searchParams.get('baseReportId') || '', 10);
   const urlBaseId = Number.isFinite(rawBaseParam) && rawBaseParam > 0 ? rawBaseParam : null;
 
   const rawBucketParam = searchParams.get('cmpBucket') || 'ALL';
@@ -111,7 +111,7 @@ export default function ReportCompareTab({ targetReportId, meta }: ReportCompare
     const query = new URLSearchParams({
       repo_id: String(meta.repo_id),
       task_type_id: String(meta.task_type_id),
-      status: 'success',
+      status: 'success,degraded',
       pageSize: '30',
       page: '1',
     });
@@ -352,6 +352,11 @@ export default function ReportCompareTab({ targetReportId, meta }: ReportCompare
                       : item.verdict_a
                         ? verdictLabels[item.verdict_a]
                         : undefined;
+                    const hasLocationDrift = item.bucket === 'COMMON_PERSISTED' && Boolean(
+                      (item.base_norm_path && item.base_norm_path !== item.norm_path) ||
+                      (item.base_line_start && item.base_line_start !== item.line_start) ||
+                      (item.base_line_end && item.base_line_end !== item.line_end)
+                    );
                     return (
                       <tr key={`${item.bucket}-${item.defect_id ?? item.slot_key ?? item.norm_path}-${idx}`}>
                         <td>
@@ -373,6 +378,11 @@ export default function ReportCompareTab({ targetReportId, meta }: ReportCompare
                         </td>
                         <td className="col-mono">
                           <div>{item.norm_path}:{formatLineSpan(item.line_start, item.line_end)}</div>
+                          {hasLocationDrift && (
+                            <div className="cs-report-compare-subtext">
+                              基线 A：{item.base_norm_path || item.norm_path}:{formatLineSpan(item.base_line_start, item.base_line_end)}
+                            </div>
+                          )}
                           {item.scope_symbol && (
                             <div className="cs-report-compare-subtext">作用域：{item.scope_symbol}</div>
                           )}

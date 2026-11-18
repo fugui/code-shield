@@ -324,6 +324,9 @@ func BuildIdentitiesWithStabilized(repoRoot string, repoID, taskTypeID uint, fin
 
 	for i := range identities {
 		identity := &identities[i]
+		if identity.OccurrenceIndex > 1 && identity.CoreSlotKey != "" {
+			identity.SlotKey = ComputePreciseSlotKey(identity.CoreSlotKey, fmt.Sprintf("%s#%d", identity.StmtAnchorHash, identity.OccurrenceIndex))
+		}
 		identity.K1 = identityHash(
 			fmt.Sprintf("%d", identity.RepoID), fmt.Sprintf("%d", identity.TaskTypeID),
 			identity.NormPath, identity.ScopeKey, identity.StmtShape,

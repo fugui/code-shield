@@ -193,6 +193,7 @@ export default function ReportFindingsTab({
             <span>复发 {reconciliation.stats?.REOPENED || 0}</span>
             <span>疑似 {reconciliation.stats?.PROBABLE || 0}</span>
             <span>修复 {reconciliation.stats?.RESOLVED || 0}</span>
+            <span>已清理 {reconciliation.stats?.CLEARED ?? reconciliation.stats?.PASS ?? 0}</span>
             <span>覆盖缺口 {reconciliation.stats?.COVERAGE_GAP || 0}</span>
           </div>
           <div className="reconciliation-strip-meta">

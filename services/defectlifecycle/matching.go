@@ -254,6 +254,7 @@ func RunMatching(input MatchingInput) MatchingResult {
 
 	bindStrongAliases(edges, result.Observations, input.Thresholds)
 	bindCoreSlotSingletons(observations, input, edges, result.Observations, input.Thresholds)
+	bindCrossScopeEntitySingletons(observations, input, result.Observations, input.Thresholds)
 	assignCandidates(observations, edges, result.Observations, input.Thresholds)
 	bindPassObservations(observations, edges, result.Observations)
 	arbitrateUnclaimed(input, observations, edges, result.Observations, &result.AICalls)
@@ -390,22 +391,117 @@ func bindCoreSlotSingletons(observations []ObservationGroup, input MatchingInput
 			continue
 		}
 		target := matches[0]
-		cand := Candidate{Defect: target, Sources: map[string]struct{}{AliasRoot: {}}}
-		score, detail := scoreCandidate(id, cand)
-		detail["core_slot_singleton"] = 1
-		detail["strong_alias_equal"] = 1
-		finalScore := math.Max(score, thresholds.StrongSame)
-
-		targetID := target.ID
-		decisions[i].DefectID = &targetID
-		decisions[i].Score = finalScore
-		decisions[i].Confidence = finalScore
-		decisions[i].ScoreDetail = detail
-		decisions[i].Verdict = matchedVerdict(target.Status)
-		decisions[i].MatchTier = MatchStruct
-		decisions[i].Reason = "CORE_SLOT_SINGLETON"
-		assignedDefects[targetID] = true
+		applySingletonMatch(&decisions[i], id, target, thresholds, "core_slot_singleton", "CORE_SLOT_SINGLETON", AliasRoot)
+		assignedDefects[target.ID] = true
 		_ = edges
+	}
+}
+
+func applySingletonMatch(decision *ObservationDecision, id Identity, target models.Defect, thresholds MatchThresholds, flagKey string, reason string, sources ...string) {
+	candSources := make(map[string]struct{}, len(sources))
+	for _, s := range sources {
+		candSources[s] = struct{}{}
+	}
+	cand := Candidate{Defect: target, Sources: candSources}
+	score, detail := scoreCandidate(id, cand)
+	detail[flagKey] = 1
+	detail["strong_alias_equal"] = 1
+	finalScore := math.Max(score, thresholds.StrongSame)
+
+	targetID := target.ID
+	decision.DefectID = &targetID
+	decision.Score = finalScore
+	decision.Confidence = finalScore
+	decision.ScoreDetail = detail
+	decision.Verdict = matchedVerdict(target.Status)
+	decision.MatchTier = MatchStruct
+	decision.Reason = reason
+}
+
+func canonicalSingletonTargetEntity(raw string) string {
+	norm := strings.ToLower(strings.TrimSpace(raw))
+	if norm == "" || strings.HasPrefix(norm, "control:") {
+		return ""
+	}
+	return norm
+}
+
+func defectSingletonTargetEntity(d models.Defect) string {
+	target := d.TargetEntity
+	if target == "" && d.CleanToken != "" {
+		target, _ = ExtractPhysicalTargetEntity(d.CleanToken, "", defectControlledClass(d))
+	}
+	return canonicalSingletonTargetEntity(target)
+}
+
+// bindCrossScopeEntitySingletons 执行跨函数作用域重命名/提取时的物理受体孤例自愈归并：
+// 当函数重命名或代码块提取导致 ScopeKey 与行号同时变化，但同文件（或重命名源路径）内
+// (NormPath, DefectClassMajor, TargetEntity) 在剩余未认领观测与未认领存量缺陷中均呈唯一 1 对 1，
+// 且清洗源码语句保持有效相似度（Jaccard >= 0.45）时，直接完成结构自愈绑定，防止跌破 AssignBand 误报 NEW。
+func bindCrossScopeEntitySingletons(observations []ObservationGroup, input MatchingInput, decisions []ObservationDecision, thresholds MatchThresholds) {
+	assignedDefects := assignedDefectIDs(decisions)
+	entityObsCount := make(map[string]int, len(observations))
+	for i := range observations {
+		if decisions[i].DefectID != nil || isPassOnlyObservationGroup(observations[i]) {
+			continue
+		}
+		id := observations[i].Identity
+		targetEntity := canonicalSingletonTargetEntity(id.TargetEntity)
+		if id.NormPath == "" || id.DefectClassMajor == "" || targetEntity == "" {
+			continue
+		}
+		key := id.NormPath + "\x00" + id.DefectClassMajor + "\x00" + targetEntity
+		entityObsCount[key]++
+	}
+
+	for i := range observations {
+		if decisions[i].DefectID != nil || isPassOnlyObservationGroup(observations[i]) {
+			continue
+		}
+		id := observations[i].Identity
+		targetEntity := canonicalSingletonTargetEntity(id.TargetEntity)
+		if id.NormPath == "" || id.DefectClassMajor == "" || targetEntity == "" {
+			continue
+		}
+		key := id.NormPath + "\x00" + id.DefectClassMajor + "\x00" + targetEntity
+		if entityObsCount[key] != 1 {
+			continue
+		}
+		renameTarget := ""
+		if input.RenameTargets != nil {
+			renameTarget = input.RenameTargets[id.NormPath]
+		}
+		var matches []models.Defect
+		for _, d := range input.Defects {
+			if d.ID == 0 || assignedDefects[d.ID] {
+				continue
+			}
+			switch d.Status {
+			case DefectStatusMerged, DefectStatusResolved, DefectStatusObsolete:
+				continue
+			}
+			if d.NormPath != id.NormPath && (renameTarget == "" || d.NormPath != renameTarget) {
+				continue
+			}
+			if !classesCompatible(d, id) || defectSingletonTargetEntity(d) != targetEntity {
+				continue
+			}
+			matches = append(matches, d)
+		}
+		if len(matches) != 1 {
+			continue
+		}
+		target := matches[0]
+		if id.CleanToken != "" && target.CleanToken != "" {
+			if CalculateTokenJaccard(id.CleanToken, target.CleanToken) < 0.45 {
+				continue
+			}
+		} else if id.CleanToken != target.CleanToken {
+			// 一方有代码词元而另一方完全缺失时不盲目跨越函数归并
+			continue
+		}
+		applySingletonMatch(&decisions[i], id, target, thresholds, "cross_scope_entity_singleton", "CROSS_SCOPE_ENTITY_SINGLETON", AliasRoot, AliasResource)
+		assignedDefects[target.ID] = true
 	}
 }
 
@@ -719,7 +815,10 @@ func applyEvidenceGate(identity Identity, candidate Candidate, detail map[string
 	rootAliasGate := hasSource(candidate, AliasRoot)
 	resourceAliasGate := hasSource(candidate, AliasResource)
 	chainAliasGate := hasSource(candidate, AliasChain)
-	candidateResource := extractIdentityToken(candidate.Defect.CleanToken)
+	candidateResource := strings.ToLower(strings.TrimSpace(candidate.Defect.TargetEntity))
+	if candidateResource == "" {
+		candidateResource = extractIdentityToken(candidate.Defect.CleanToken)
+	}
 	candidateChain := validationChainIdentity(candidate.Defect.CleanToken)
 	derivedResourceEqual := identity.ResourceIdentity != "" &&
 		identity.ResourceIdentity == candidateResource && detail["defect_class_major_equal"] == 1

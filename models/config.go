@@ -594,11 +594,12 @@ func (c Config) GetAnalysisRetryConfig() AnalysisRetryConfig {
 }
 
 type DeterminismConfig struct {
-	Enabled          bool    `yaml:"enabled" json:"enabled"`
-	Temperature      float64 `yaml:"temperature" json:"temperature"`
-	BindModelPerTask bool    `yaml:"bind_model_per_task" json:"bind_model_per_task"`
-	PreferSeed       bool    `yaml:"prefer_seed" json:"prefer_seed"`
-	SeedPolicy       string  `yaml:"seed_policy" json:"seed_policy"`
+	Enabled     bool    `yaml:"enabled" json:"enabled"`
+	Temperature float64 `yaml:"temperature" json:"temperature"`
+	// BindModelPerTask 保留配置结构与前端设置页契约兼容（当前通过 engine_config_hash 与单模型固定配置保证任务级一致性）
+	BindModelPerTask bool   `yaml:"bind_model_per_task" json:"bind_model_per_task"`
+	PreferSeed       bool   `yaml:"prefer_seed" json:"prefer_seed"`
+	SeedPolicy       string `yaml:"seed_policy" json:"seed_policy"`
 }
 
 // DeterministicTemperature returns an optional request-level override.

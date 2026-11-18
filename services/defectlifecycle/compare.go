@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -66,8 +65,11 @@ type ReportCompareItem struct {
 	DefectID       *uint  `json:"defect_id,omitempty"`
 	SlotKey        string `json:"slot_key,omitempty"`
 	NormPath       string `json:"norm_path"`
+	BaseNormPath   string `json:"base_norm_path,omitempty"`
 	LineStart      *int   `json:"line_start,omitempty"`
 	LineEnd        *int   `json:"line_end,omitempty"`
+	BaseLineStart  *int   `json:"base_line_start,omitempty"`
+	BaseLineEnd    *int   `json:"base_line_end,omitempty"`
 	Severity       string `json:"severity"`
 	Category       string `json:"category"`
 	Title          string `json:"title"`
@@ -268,8 +270,10 @@ func loadCanonicalReportObservations(db *gorm.DB, report models.TaskReport) (map
 
 		if existing, exists := result[key]; exists {
 			// 同报告合并后如遇多个观测同归一个主缺陷，保留更明确的复现状态与较早元信息
-			if existing.item.VerdictA == "" {
+			if existing.item.VerdictA == "" && obs.Verdict != "" {
 				existing.item.VerdictA = obs.Verdict
+				existing.item.VerdictB = obs.Verdict
+				result[key] = existing
 			}
 			continue
 		}
@@ -321,7 +325,7 @@ func loadCanonicalReportObservations(db *gorm.DB, report models.TaskReport) (map
 				ScopeSymbol:    scopeSymbol,
 				TargetEntity:   resolvedDefect.TargetEntity,
 				DefectStatus:   resolvedDefect.Status,
-				BaseBlobHash:   resolvedDefect.BlobHash,
+				BaseBlobHash:   "",
 				VerdictA:       obs.Verdict,
 				VerdictB:       obs.Verdict,
 				TargetBlobHash: "",
@@ -398,15 +402,12 @@ func compareByLedgerObservations(
 		if entryB, ok := entriesB[key]; ok {
 			merged := entryB.item
 			merged.Bucket = CompareBucketCommonPersisted
+			merged.BaseNormPath = entryA.item.NormPath
+			merged.BaseLineStart = entryA.item.LineStart
+			merged.BaseLineEnd = entryA.item.LineEnd
 			merged.VerdictA = entryA.item.VerdictA
 			merged.VerdictB = entryB.item.VerdictB
-			if sa, exists := scopeA[merged.NormPath]; exists && sa.BlobHash != "" {
-				merged.BaseBlobHash = sa.BlobHash
-			}
-			if sb, exists := scopeB[merged.NormPath]; exists {
-				merged.TargetBlobHash = sb.BlobHash
-				merged.ScopeOutcomeB = sb.Outcome
-			}
+			populateCompareScopeFields(&merged, entryA.item.NormPath, scopeA, scopeB)
 			result.CommonPersisted = append(result.CommonPersisted, merged)
 			continue
 		}
@@ -424,10 +425,7 @@ func compareByLedgerObservations(
 		item := entryB.item
 		item.VerdictA = ""
 		item.Bucket = CompareBucketOnlyBNew
-		if sb, exists := scopeB[item.NormPath]; exists {
-			item.TargetBlobHash = sb.BlobHash
-			item.ScopeOutcomeB = sb.Outcome
-		}
+		populateCompareScopeFields(&item, item.NormPath, scopeA, scopeB)
 		result.OnlyBNew = append(result.OnlyBNew, item)
 	}
 	return nil
@@ -452,6 +450,7 @@ func compareByEntitySlots(
 		}
 		identities := BuildIdentities("", report.RepoID, report.TaskTypeID, issues)
 		items := make(map[string]ReportCompareItem, len(issues))
+		slotSeq := make(map[string]int, len(issues))
 		for i, f := range issues {
 			id := identities[i]
 			slotKey := id.SlotKey
@@ -461,10 +460,11 @@ func compareByEntitySlots(
 			if slotKey == "" {
 				slotKey = fmt.Sprintf("finding:%d", f.ID)
 			}
-			// 对同报告内同槽位重复输出做确定性去重后缀
+			// 对同报告内同槽位重复输出按本槽位出现序号做确定性去重后缀，避免受无关前序项增删扰动
+			slotSeq[slotKey]++
 			uniqueKey := slotKey
-			if _, exists := items[uniqueKey]; exists {
-				uniqueKey = slotKey + "#" + strconv.Itoa(i)
+			if slotSeq[slotKey] > 1 {
+				uniqueKey = fmt.Sprintf("%s#%d", slotKey, slotSeq[slotKey])
 			}
 			ls, le := ParseLineNumberRange(f.LineNumber)
 			var lsPtr, lePtr *int
@@ -498,13 +498,10 @@ func compareByEntitySlots(
 	for key, itemA := range itemsA {
 		if itemB, ok := itemsB[key]; ok {
 			itemB.Bucket = CompareBucketCommonPersisted
-			if sa, exists := scopeA[itemB.NormPath]; exists {
-				itemB.BaseBlobHash = sa.BlobHash
-			}
-			if sb, exists := scopeB[itemB.NormPath]; exists {
-				itemB.TargetBlobHash = sb.BlobHash
-				itemB.ScopeOutcomeB = sb.Outcome
-			}
+			itemB.BaseNormPath = itemA.NormPath
+			itemB.BaseLineStart = itemA.LineStart
+			itemB.BaseLineEnd = itemA.LineEnd
+			populateCompareScopeFields(&itemB, itemA.NormPath, scopeA, scopeB)
 			result.CommonPersisted = append(result.CommonPersisted, itemB)
 			continue
 		}
@@ -517,13 +514,25 @@ func compareByEntitySlots(
 			continue
 		}
 		itemB.Bucket = CompareBucketOnlyBNew
-		if sb, exists := scopeB[itemB.NormPath]; exists {
-			itemB.TargetBlobHash = sb.BlobHash
-			itemB.ScopeOutcomeB = sb.Outcome
-		}
+		populateCompareScopeFields(&itemB, itemB.NormPath, scopeA, scopeB)
 		result.OnlyBNew = append(result.OnlyBNew, itemB)
 	}
 	return nil
+}
+
+func populateCompareScopeFields(item *ReportCompareItem, basePath string, scopeA, scopeB map[string]models.ScanScopeEntry) {
+	if basePath == "" {
+		basePath = item.NormPath
+	}
+	if sa, exists := scopeA[basePath]; exists && sa.BlobHash != "" {
+		item.BaseBlobHash = sa.BlobHash
+	} else if sa, exists := scopeA[item.NormPath]; exists && sa.BlobHash != "" {
+		item.BaseBlobHash = sa.BlobHash
+	}
+	if sb, exists := scopeB[item.NormPath]; exists {
+		item.TargetBlobHash = sb.BlobHash
+		item.ScopeOutcomeB = sb.Outcome
+	}
 }
 
 func classifyOnlyInABucket(item *ReportCompareItem, scopeA, scopeB map[string]models.ScanScopeEntry) {

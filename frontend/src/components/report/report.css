@@ -797,6 +797,12 @@
   border-color: #a7f3d0;
 }
 
+.report-viewer-container .reconciliation-badge.verdict-cleared {
+  color: var(--color-success, #0f766e);
+  background: var(--color-success-subtle, rgba(16, 185, 129, 0.1));
+  border-color: var(--color-success-border, rgba(16, 185, 129, 0.28));
+}
+
 .report-viewer-container .reconciliation-badge.verdict-coverage-gap {
   color: #4c1d95;
   background: #ede9fe;

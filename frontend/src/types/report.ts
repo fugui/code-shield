@@ -282,6 +282,7 @@ export type ReconciliationVerdict =
   | 'REOPENED'
   | 'PROBABLE'
   | 'RESOLVED'
+  | 'CLEARED'
   | 'COVERAGE_GAP';
 
 export interface ReconciliationQuality {
@@ -599,8 +600,11 @@ export interface ReportCompareItem {
   defect_id?: number;
   slot_key?: string;
   norm_path: string;
+  base_norm_path?: string;
   line_start?: number;
   line_end?: number;
+  base_line_start?: number;
+  base_line_end?: number;
   severity: string;
   category: string;
   title: string;
