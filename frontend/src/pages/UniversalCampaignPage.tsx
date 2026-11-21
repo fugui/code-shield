@@ -57,7 +57,7 @@ export default function UniversalCampaignPage() {
       <div style={{ textAlign: 'center', padding: '5rem 2rem', color: '#64748b' }}>
         <h2 style={{ fontSize: '1.25rem', color: 'var(--text-color)', marginBottom: '0.5rem' }}>未找到对应的专项分析治理任务</h2>
         <p style={{ fontSize: '0.875rem', marginBottom: '1.5rem' }}>可能该专项已被停用或 URL 别名已更改（{campaignKey}）</p>
-        <a href={appNavigatePath('/reports')} className="btn" style={{ padding: '0.5rem 1.25rem', textDecoration: 'none' }}>
+        <a href={appNavigatePath('/reports')} className="btn btn-primary" style={{ padding: '0.5rem 1.25rem', textDecoration: 'none' }}>
           返回报告中心
         </a>
       </div>

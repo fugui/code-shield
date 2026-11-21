@@ -723,7 +723,7 @@ function ScanManagement() {
               </svg>
               定时任务策略配置
             </h3>
-            <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }} style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}>
+            <button className="btn btn-primary" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }} style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}>
               + 新增策略
             </button>
           </div>
@@ -749,7 +749,7 @@ function ScanManagement() {
                     title="暂无可用的定时任务策略"
                     description="配置定时任务策略后，系统将自动按时拉取最新代码并触发代码检视与分析任务。"
                     action={
-                      <button className="btn" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }} style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}>
+                      <button className="btn btn-primary" onClick={() => { setEditingSchedule(null); setIsSidebarOpen(true); }} style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}>
                         新建定时策略
                       </button>
                     }
