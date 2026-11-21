@@ -773,7 +773,7 @@ export default function Workbench() {
 									</button>
 									<button
 										type="submit"
-										className="btn"
+										className="btn btn-primary"
 										disabled={saving}
 										style={{ padding: '0.45rem 1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
 									>

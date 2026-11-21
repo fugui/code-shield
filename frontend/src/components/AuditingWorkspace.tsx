@@ -1029,7 +1029,7 @@ export default function AuditingWorkspace({
 
                   <button
                     type="submit"
-                    className="btn"
+                    className="btn btn-primary"
                     disabled={submitting}
                     style={{ alignSelf: 'flex-end', padding: '0.5rem 1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
                   >

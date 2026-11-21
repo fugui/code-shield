@@ -796,7 +796,7 @@ export default function CampaignAnalysis({ campaign, title, description, taskTyp
               ))}
             </select>
             <button
-              className="btn"
+              className="btn btn-primary"
               onClick={() => {
                 setRepoPage(1);
                 fetchReposData();
