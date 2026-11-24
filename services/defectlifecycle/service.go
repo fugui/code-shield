@@ -123,6 +123,12 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 	// 基于全量计划文件集构建内存覆盖判定器（对账专用，与稀疏落库解耦）
 	evaluator := NewMemoryScopeEvaluator(fullScopeEntries)
 
+	// 在事务外基于 Commit Tree / 目录快照构建只读文件存在性索引，避免事务内逐条 os.Stat 与并发/大小写误关
+	var repoFiles *repoFileIndex
+	if input.RepoRoot != "" {
+		repoFiles = buildRepoFileIndex(input.RepoRoot, input.Report.HeadCommit)
+	}
+
 	// 计算稀疏入库切片与 Manifest 压缩数据
 	sparseEntries, manifestBytes := filterSparseScope(input, fullScopeEntries)
 
@@ -288,6 +294,7 @@ func PersistScanFacts(input ScanInput) (*ScanFactsResult, error) {
 				Lifecycle:     RuntimeLifecyclePolicy(),
 				CommittedAt:   committedAt,
 				RepoRoot:      input.RepoRoot,
+				RepoFiles:     repoFiles,
 			})
 			if ledgerErr != nil {
 				return ledgerErr

@@ -6,6 +6,9 @@ import "code-shield/models"
 // 该接口基于本次扫描的全量计划文件集（Planned Files）在内存中构建，
 // 与数据库稀疏落库行为完全解耦。生命周期状态机推进代码仅通过此接口判定覆盖。
 type ScopeCoverageEvaluator interface {
+	// HasPlanned 判断文件是否在本次扫描的计划文件集合内（即使后续分片失败也代表文件在仓库中存在）
+	HasPlanned(normPath string) bool
+
 	// IsCovered 精确判断文件是否在本次扫描的计划且成功覆盖范围内
 	// 对于全量扫描：所有计划文件中未失败的均视为已覆盖
 	// 对于局部扫描：仅扫描计划内的文件视为已覆盖，计划外文件返回 false
@@ -50,6 +53,14 @@ func NewMemoryScopeEvaluator(fullEntries []models.ScanScopeEntry) *MemoryScopeEv
 		}
 	}
 	return e
+}
+
+// HasPlanned 判定文件是否在本次扫描的计划文件集合内
+func (e *MemoryScopeEvaluator) HasPlanned(normPath string) bool {
+	if e == nil {
+		return false
+	}
+	return e.plannedFiles[normPath]
 }
 
 // IsCovered 判定文件是否在计划集内且未失败

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"code-shield/services/coverage"
 )
 
 // SourceAnchor 确定性物理源码锚点（缺陷的绝对物理身份证）
@@ -526,8 +528,9 @@ func findScopeEndLine(ext string, lines []string, scopeStart int) int {
 
 // EnrichSourceAnchor 从磁盘物理源文件中提取确定性特征与物理锚点
 func EnrichSourceAnchor(repoRoot string, filePath string, rawLine string, rawTrigger string) (*SourceAnchor, error) {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	fullPath := filepath.Join(repoRoot, normPath)
+	relPath := coverage.NormalizeRepoPath(repoRoot, filePath)
+	normPath := NormalizePath(repoRoot, filePath)
+	fullPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
 
 	contentBytes, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -585,7 +588,7 @@ func EnrichSourceAnchor(repoRoot string, filePath string, rawLine string, rawTri
 	}
 
 	// 3. 逆向提取作用域并规范化命名空间
-	rawScope, scopeBody := ExtractScopeAndBodyFromLines(normPath, lines, targetLine)
+	rawScope, scopeBody := ExtractScopeAndBodyFromLines(relPath, lines, targetLine)
 	normScope := NormalizeScopeSymbol(rawScope)
 	if normScope == "" {
 		normScope = filepath.Base(normPath)
@@ -612,14 +615,15 @@ func EnrichSourceAnchor(repoRoot string, filePath string, rawLine string, rawTri
 // used when a model emits a numeric trigger anchor and the caller wants to
 // recover the real source statement deterministically.
 func ReadSourceLine(repoRoot string, filePath string, line int) (string, error) {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	if normPath == "" || line <= 0 {
+	relPath := coverage.NormalizeRepoPath(repoRoot, filePath)
+	if relPath == "" || line <= 0 {
 		return "", fmt.Errorf("invalid source line path=%q line=%d", filePath, line)
 	}
 
-	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, normPath))
+	fullPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
+	contentBytes, err := os.ReadFile(fullPath)
 	if err != nil {
-		return "", fmt.Errorf("read source file error (%s): %w", filepath.Join(repoRoot, normPath), err)
+		return "", fmt.Errorf("read source file error (%s): %w", fullPath, err)
 	}
 
 	lines := strings.Split(string(contentBytes), "\n")
@@ -651,11 +655,11 @@ func ResolvePhysicalTriggerLine(repoRoot string, filePath string, rawLine string
 // 当 startLine 与 endLine 跨度过窄（如小于 5 行或单行）时，自动向前后扩展窗口（默认前回溯 5 行、后延伸 8 行），
 // 确保提取的代码包含完整的函数/控制流上下文。
 func ExtractPhysicalCodeSnippet(repoRoot string, filePath string, startLine, endLine int, paddingBefore, paddingAfter int) string {
-	normPath := strings.ToLower(filepath.ToSlash(strings.TrimSpace(filePath)))
-	if normPath == "" || repoRoot == "" {
+	relPath := coverage.NormalizeRepoPath(repoRoot, filePath)
+	if relPath == "" || repoRoot == "" {
 		return ""
 	}
-	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, normPath))
+	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(relPath)))
 	if err != nil {
 		return ""
 	}

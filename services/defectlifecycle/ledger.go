@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -98,6 +97,7 @@ type LedgerInput struct {
 	Lifecycle        LifecyclePolicy
 	CommittedAt      time.Time
 	RepoRoot         string
+	RepoFiles        *repoFileIndex
 }
 
 type LedgerResult struct {
@@ -968,12 +968,83 @@ func shouldWithholdAdvancementForBranchOrScope(input LedgerInput) bool {
 	return false
 }
 
+func fileKnownPresentInScan(input LedgerInput, normPath string) bool {
+	norm := NormalizePath("", normPath)
+	if norm == "" {
+		return false
+	}
+	if input.Evaluator != nil {
+		if input.Evaluator.HasPlanned(norm) || input.Evaluator.IsCovered(norm) || strings.TrimSpace(input.Evaluator.GetBlobHash(norm)) != "" {
+			return true
+		}
+	}
+	if scopeEntryByPath(input.Scope, norm) != nil {
+		return true
+	}
+	if resolveCurrentBlobHash(input, norm) != "" {
+		return true
+	}
+	return false
+}
+
+func loadReportHeadCommits(tx *gorm.DB, defects []models.Defect, matched map[uint]bool) map[uint]string {
+	commits := make(map[uint]string)
+	if tx == nil {
+		return commits
+	}
+	seen := make(map[uint]bool)
+	reportIDs := make([]uint, 0)
+	for _, defect := range defects {
+		if matched[defect.ID] || defect.LastMatchedReportID == 0 {
+			continue
+		}
+		switch defect.Status {
+		case DefectStatusActive, DefectStatusCoverageGap, DefectStatusVerifiedPending, DefectStatusDormant:
+		default:
+			continue
+		}
+		if !seen[defect.LastMatchedReportID] {
+			seen[defect.LastMatchedReportID] = true
+			reportIDs = append(reportIDs, defect.LastMatchedReportID)
+		}
+	}
+	if len(reportIDs) == 0 {
+		return commits
+	}
+	var rows []struct {
+		ID         uint
+		HeadCommit string
+	}
+	if err := tx.Model(&models.TaskReport{}).
+		Select("id", "head_commit").
+		Where("id IN ?", reportIDs).
+		Find(&rows).Error; err != nil {
+		return commits
+	}
+	for _, row := range rows {
+		commits[row.ID] = strings.TrimSpace(row.HeadCommit)
+	}
+	return commits
+}
+
 func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[uint]bool, input LedgerInput, now time.Time) ([]models.DefectEvent, error) {
 	events := make([]models.DefectEvent, 0)
 	if shouldWithholdAdvancementForBranchOrScope(input) {
 		return events, nil
 	}
 	coverageBlocked := coverageLifecycleBlocked(input.Coverage)
+	hasExplicitDegradedCoverage := input.Coverage != nil && coverageBlocked
+
+	fileIndex := input.RepoFiles
+	if fileIndex == nil && input.Lifecycle.AutoResolveMissing && !hasExplicitDegradedCoverage && input.RepoRoot != "" {
+		fileIndex = buildRepoFileIndex(input.RepoRoot, input.Report.HeadCommit)
+	}
+	currentHeadCommit := strings.TrimSpace(input.Report.HeadCommit)
+	var lastHeadByReportID map[uint]string
+	if input.Lifecycle.AutoResolveMissing && !hasExplicitDegradedCoverage && currentHeadCommit != "" {
+		lastHeadByReportID = loadReportHeadCommits(tx, defects, matched)
+	}
+
 	for _, defect := range defects {
 		if matched[defect.ID] {
 			continue
@@ -984,9 +1055,12 @@ func advanceUnmatchedDefects(tx *gorm.DB, defects []models.Defect, matched map[u
 			continue
 		}
 
-		if input.Lifecycle.AutoResolveMissing && input.RepoRoot != "" && defect.NormPath != "" {
-			fullPath := filepath.Join(input.RepoRoot, filepath.Clean(defect.NormPath))
-			if _, err := os.Stat(fullPath); errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+		if input.Lifecycle.AutoResolveMissing && !hasExplicitDegradedCoverage && fileIndex != nil && defect.NormPath != "" {
+			sameCommitAsLastMatched := currentHeadCommit != "" &&
+				defect.LastMatchedReportID > 0 &&
+				strings.EqualFold(lastHeadByReportID[defect.LastMatchedReportID], currentHeadCommit)
+
+			if !sameCommitAsLastMatched && !fileKnownPresentInScan(input, defect.NormPath) && fileIndex.IsDefinitelyMissing(defect.NormPath) {
 				status := DefectStatusResolved
 				reason := "source file does not exist"
 				updates := map[string]interface{}{

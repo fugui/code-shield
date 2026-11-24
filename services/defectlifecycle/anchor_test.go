@@ -379,3 +379,40 @@ func TestCleanSourceTokenAndCppScopeHardening(t *testing.T) {
 		t.Fatalf("expected scope 'if_ready' skipping '} else if' and spanning >200 lines, got %q", scope)
 	}
 }
+
+func TestAnchorFunctionsPreserveUppercaseFilePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	relPath := "src/OrderService.cpp"
+	fullPath := filepath.Join(tmpDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "void OrderService::Process() {\n    int* ptr = nullptr;\n    *ptr = 42;\n}\n"
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	anchor, err := EnrichSourceAnchor(tmpDir, relPath, "3", "*ptr = 42;")
+	if err != nil {
+		t.Fatalf("EnrichSourceAnchor failed on mixed-case path: %v", err)
+	}
+	if anchor.NormalizedPath != "src/orderservice.cpp" {
+		t.Fatalf("expected NormalizedPath src/orderservice.cpp, got %q", anchor.NormalizedPath)
+	}
+	if anchor.PhysicalToken != "*ptr=42" {
+		t.Fatalf("expected PhysicalToken *ptr=42, got %q", anchor.PhysicalToken)
+	}
+
+	lineText, err := ReadSourceLine(tmpDir, relPath, 3)
+	if err != nil {
+		t.Fatalf("ReadSourceLine failed on mixed-case path: %v", err)
+	}
+	if strings.TrimSpace(lineText) != "*ptr = 42;" {
+		t.Fatalf("unexpected ReadSourceLine output: %q", lineText)
+	}
+
+	snippet := ExtractPhysicalCodeSnippet(tmpDir, relPath, 3, 3, 1, 1)
+	if !strings.Contains(snippet, "*ptr = 42;") {
+		t.Fatalf("expected snippet to contain '*ptr = 42;', got %q", snippet)
+	}
+}

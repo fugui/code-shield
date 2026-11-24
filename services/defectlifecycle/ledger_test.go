@@ -2,7 +2,9 @@ package defectlifecycle
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -908,4 +910,445 @@ func TestAdvanceUnmatchedDefects_SingleCommitFixAndHighRiskConverge(t *testing.T
 	if resolvedHigh.Status != DefectStatusResolved || resolvedHigh.MissedCount != 4 || resolvedHigh.ResolvedReportID == nil || *resolvedHigh.ResolvedReportID != finalReportID {
 		t.Fatalf("expected high-risk defect converged to RESOLVED on round 4 (report %d), got %+v", finalReportID, resolvedHigh)
 	}
+}
+
+func runGitTestCmd(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\noutput: %s", args, err, string(out))
+	}
+	return string(out)
+}
+
+func initGitTestRepo(t *testing.T, dir string) {
+	t.Helper()
+	runGitTestCmd(t, dir, "init")
+	runGitTestCmd(t, dir, "config", "user.email", "test@example.com")
+	runGitTestCmd(t, dir, "config", "user.name", "Test User")
+}
+
+func TestAdvanceUnmatchedDefectsDoesNotFalseResolveUppercasePath(t *testing.T) {
+	runCase := func(t *testing.T, withGit bool) {
+		t.Helper()
+		db := testdb.SetupIsolatedDB(t, "defectlifecycle_uppercase_path_"+map[bool]string{true: "git", false: "fs"}[withGit],
+			&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+			&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+		)
+		repo := models.Repository{Name: "upper-demo", URL: "https://example.com/upper.git", Branch: "master"}
+		taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+		if err := db.Create(&repo).Error; err != nil {
+			t.Fatalf("create repo: %v", err)
+		}
+		if err := db.Create(&taskType).Error; err != nil {
+			t.Fatalf("create task type: %v", err)
+		}
+
+		tempDir := t.TempDir()
+		upperFile := filepath.Join(tempDir, "src", "OrderService.cpp")
+		if err := os.MkdirAll(filepath.Dir(upperFile), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(upperFile, []byte("void process() { int* p = nullptr; *p = 1; }\n"), 0644); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+
+		var headCommit string
+		if withGit {
+			initGitTestRepo(t, tempDir)
+			runGitTestCmd(t, tempDir, "add", ".")
+			runGitTestCmd(t, tempDir, "commit", "-m", "initial")
+			headCommit = strings.TrimSpace(runGitTestCmd(t, tempDir, "rev-parse", "HEAD"))
+		}
+
+		report1 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "master", HeadCommit: headCommit}
+		if err := db.Create(&report1).Error; err != nil {
+			t.Fatalf("create report1: %v", err)
+		}
+		report2 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "master", HeadCommit: headCommit}
+		if err := db.Create(&report2).Error; err != nil {
+			t.Fatalf("create report2: %v", err)
+		}
+
+		defect := models.Defect{
+			RepoID: repo.ID, TaskTypeID: taskType.ID, Status: DefectStatusActive,
+			CanonicalFingerprint: "fp-upper-case", IdentityKind: "SLOT",
+			NormPath: "src/orderservice.cpp", Severity: "严重", BlobHash: "blob-upper-1",
+			FirstReportID: report1.ID, LastSeenReportID: report1.ID, LastMatchedReportID: report1.ID,
+			RowVersion: 1,
+		}
+		if err := db.Create(&defect).Error; err != nil {
+			t.Fatalf("create defect: %v", err)
+		}
+
+		cov := &coverage.Coverage{
+			PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+			Files: []coverage.File{
+				{Path: "src/OrderService.cpp", Hash: "blob-upper-1", Status: coverage.StatusSuccess},
+			},
+		}
+		eval := NewMemoryScopeEvaluator([]models.ScanScopeEntry{
+			{NormPath: "src/orderservice.cpp", BlobHash: "blob-upper-1", Outcome: ScopeScanned},
+		})
+		input := LedgerInput{
+			Report: report2, Repo: repo, TaskType: taskType, RepoRoot: tempDir,
+			CoverageState: CoverageComplete,
+			Coverage:      cov,
+			Evaluator:     eval,
+			Lifecycle: LifecyclePolicy{
+				AutoResolveMissing: true,
+				RequireCoverage:    true,
+				RequireChange:      true,
+				HighRiskSeverities: []string{"致命", "严重"},
+				ResolvedRounds:     2,
+			},
+		}
+		err := db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, input, time.Now())
+			return txErr
+		})
+		if err != nil {
+			t.Fatalf("advanceUnmatchedDefects() error = %v", err)
+		}
+
+		var updated models.Defect
+		if err := db.First(&updated, defect.ID).Error; err != nil {
+			t.Fatalf("reload defect: %v", err)
+		}
+		if updated.Status != DefectStatusActive {
+			t.Fatalf("uppercase existing file defect must stay ACTIVE, got status=%s reason=%q", updated.Status, updated.StatusReason)
+		}
+
+		// 即使 Evaluator 为空且仅其他文件在覆盖清单中，也不能把存在的大写路径误判为文件不存在
+		covOther := &coverage.Coverage{
+			PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+			Files: []coverage.File{{Path: "src/Other.cpp", Hash: "blob-other-1", Status: coverage.StatusSuccess}},
+		}
+		err = db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+				Report: report2, Repo: repo, TaskType: taskType, RepoRoot: tempDir,
+				CoverageState: CoverageComplete,
+				Coverage:      covOther,
+				Lifecycle:     input.Lifecycle,
+			}, time.Now())
+			return txErr
+		})
+		if err != nil {
+			t.Fatalf("advanceUnmatchedDefects(no evaluator) error = %v", err)
+		}
+		if err := db.First(&updated, defect.ID).Error; err != nil {
+			t.Fatalf("reload defect: %v", err)
+		}
+		if updated.Status == DefectStatusResolved || updated.StatusReason == "source file does not exist" {
+			t.Fatalf("uppercase existing file must never resolve as missing without Evaluator, got status=%s reason=%q", updated.Status, updated.StatusReason)
+		}
+	}
+
+	t.Run("non-git directory", func(t *testing.T) { runCase(t, false) })
+	t.Run("git commit tree", func(t *testing.T) { runCase(t, true) })
+}
+
+func TestPersistScanFactsUnchangedUppercaseFileNotAutoClosedThenResolvesOnGitRm(t *testing.T) {
+	origDataDir := models.AppConfig.Server.DataDir
+	models.AppConfig.Server.DataDir = t.TempDir()
+	t.Cleanup(func() {
+		models.AppConfig.Server.DataDir = origDataDir
+	})
+	models.AppConfig.Governance.NormalizeDefaults()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	upperSource := "int calculate(int* ptr) {\n    *ptr = 42;\n    return *ptr;\n}\n"
+	keepSource := "int ok() { return 0; }\n"
+	if err := os.WriteFile(filepath.Join(root, "src", "OrderService.cpp"), []byte(upperSource), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "KeepHelper.cpp"), []byte(keepSource), 0644); err != nil {
+		t.Fatal(err)
+	}
+	initGitTestRepo(t, root)
+	runGitTestCmd(t, root, "add", ".")
+	runGitTestCmd(t, root, "commit", "-m", "commit c1")
+	commit1 := strings.TrimSpace(runGitTestCmd(t, root, "rev-parse", "HEAD"))
+
+	db := testdb.SetupIsolatedDB(t, "defectlifecycle_persist_uppercase_e2e",
+		&models.TaskReport{}, &models.Repository{}, &models.TaskType{}, &models.AnalysisFinding{}, &models.ScanScopeEntry{},
+		&models.User{}, &models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{}, &models.TaskChunkExecution{},
+	)
+	repo := models.Repository{Name: "demo", URL: "https://example.com/demo.git", Branch: "master"}
+	taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+	if err := db.Create(&repo).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&taskType).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Round 1: 识别出 src/OrderService.cpp 中的缺陷
+	report1 := models.TaskReport{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing,
+		Branch: "master", HeadCommit: commit1,
+	}
+	if err := db.Create(&report1).Error; err != nil {
+		t.Fatal(err)
+	}
+	finding1 := models.AnalysisFinding{
+		FilePath: "src/OrderService.cpp", LineNumber: "2", Title: "null pointer deref", Severity: "严重",
+		TriggerLine: "*ptr = 42;", ScopeSymbol: "calculate",
+	}
+	cov1 := &coverage.Coverage{
+		PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+		Files: []coverage.File{
+			{Path: "src/OrderService.cpp", Hash: "hash-order-1", Status: coverage.StatusSuccess},
+			{Path: "src/KeepHelper.cpp", Hash: "hash-keep-1", Status: coverage.StatusSuccess},
+		},
+	}
+	res1, err := PersistScanFacts(ScanInput{
+		DB: db, Report: report1, Repo: repo, RepoRoot: root, TaskType: taskType,
+		Findings: []models.AnalysisFinding{finding1}, Coverage: cov1,
+	})
+	if err != nil {
+		t.Fatalf("round 1 PersistScanFacts: %v", err)
+	}
+	if len(res1.NewDefectIDs) != 1 {
+		t.Fatalf("expected 1 new defect, got %+v", res1.NewDefectIDs)
+	}
+	defectID := res1.NewDefectIDs[0]
+
+	// Round 2: 代码未变化，相同 commit，模拟大模型概率漏报（Findings 为空）
+	report2 := models.TaskReport{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing,
+		Branch: "master", HeadCommit: commit1,
+	}
+	if err := db.Create(&report2).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PersistScanFacts(ScanInput{
+		DB: db, Report: report2, Repo: repo, RepoRoot: root, TaskType: taskType,
+		Findings: nil, Coverage: cov1,
+	}); err != nil {
+		t.Fatalf("round 2 PersistScanFacts: %v", err)
+	}
+
+	var afterRound2 models.Defect
+	if err := db.First(&afterRound2, defectID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if afterRound2.Status != DefectStatusActive {
+		t.Fatalf("round 2 unchanged code must keep defect ACTIVE, got status=%s reason=%q", afterRound2.Status, afterRound2.StatusReason)
+	}
+
+	// Round 3: 真正 git rm 删除 src/OrderService.cpp 并提交新 commit C2
+	runGitTestCmd(t, root, "rm", "src/OrderService.cpp")
+	runGitTestCmd(t, root, "commit", "-m", "remove OrderService.cpp")
+	commit2 := strings.TrimSpace(runGitTestCmd(t, root, "rev-parse", "HEAD"))
+
+	report3 := models.TaskReport{
+		RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusAnalyzing,
+		Branch: "master", HeadCommit: commit2,
+	}
+	if err := db.Create(&report3).Error; err != nil {
+		t.Fatal(err)
+	}
+	cov3 := &coverage.Coverage{
+		PolicyVersion: "v1", CommitVerified: true, WorktreeClean: true, AnalysisComplete: true,
+		Files: []coverage.File{
+			{Path: "src/KeepHelper.cpp", Hash: "hash-keep-1", Status: coverage.StatusSuccess},
+		},
+	}
+	if _, err := PersistScanFacts(ScanInput{
+		DB: db, Report: report3, Repo: repo, RepoRoot: root, TaskType: taskType,
+		Findings: nil, Coverage: cov3,
+	}); err != nil {
+		t.Fatalf("round 3 PersistScanFacts: %v", err)
+	}
+
+	var afterRound3 models.Defect
+	if err := db.First(&afterRound3, defectID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if afterRound3.Status != DefectStatusResolved || afterRound3.StatusReason != "source file does not exist" {
+		t.Fatalf("round 3 after git rm expected RESOLVED with 'source file does not exist', got status=%s reason=%q",
+			afterRound3.Status, afterRound3.StatusReason)
+	}
+	if afterRound3.ResolvedReportID == nil || *afterRound3.ResolvedReportID != report3.ID {
+		t.Fatalf("expected resolved_report_id=%d, got %v", report3.ID, afterRound3.ResolvedReportID)
+	}
+}
+
+func TestAdvanceUnmatchedDefectsAutoResolveMissingGuards(t *testing.T) {
+	setup := func(t *testing.T, name string) (*gorm.DB, models.Repository, models.TaskType, models.TaskReport, models.TaskReport) {
+		t.Helper()
+		db := testdb.SetupIsolatedDB(t, name,
+			&models.Repository{}, &models.TaskType{}, &models.TaskReport{}, &models.ScanScopeEntry{},
+			&models.Defect{}, &models.DefectAlias{}, &models.DefectObservation{}, &models.DefectEvent{},
+		)
+		repo := models.Repository{Name: "guard-demo", URL: "https://example.com/guard.git", Branch: "master"}
+		taskType := models.TaskType{Name: "cpp-review", DisplayName: "C++ Review"}
+		if err := db.Create(&repo).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&taskType).Error; err != nil {
+			t.Fatal(err)
+		}
+		r1 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "master", HeadCommit: "commit-111"}
+		r2 := models.TaskReport{RepoID: repo.ID, TaskTypeID: taskType.ID, Status: models.StatusSuccess, Branch: "master", HeadCommit: "commit-111"}
+		if err := db.Create(&r1).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&r2).Error; err != nil {
+			t.Fatal(err)
+		}
+		return db, repo, taskType, r1, r2
+	}
+
+	policy := LifecyclePolicy{
+		AutoResolveMissing: true,
+		RequireCoverage:    true,
+		RequireChange:      true,
+		HighRiskSeverities: []string{"致命", "严重"},
+		ResolvedRounds:     2,
+	}
+
+	t.Run("non-existent RepoRoot must fail closed", func(t *testing.T) {
+		db, repo, tt, r1, r2 := setup(t, "guard_bad_root")
+		defect := models.Defect{
+			RepoID: repo.ID, TaskTypeID: tt.ID, Status: DefectStatusActive,
+			CanonicalFingerprint: "fp-1", IdentityKind: "K1", NormPath: "src/a.cpp", Severity: "严重",
+			FirstReportID: r1.ID, LastSeenReportID: r1.ID, LastMatchedReportID: r1.ID, RowVersion: 1,
+		}
+		if err := db.Create(&defect).Error; err != nil {
+			t.Fatal(err)
+		}
+		err := db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+				Report: r2, Repo: repo, TaskType: tt,
+				RepoRoot:  filepath.Join(t.TempDir(), "does-not-exist"),
+				Lifecycle: policy,
+			}, time.Now())
+			return txErr
+		})
+		if err != nil {
+			t.Fatalf("advanceUnmatchedDefects error = %v", err)
+		}
+		var reload models.Defect
+		if err := db.First(&reload, defect.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if reload.Status == DefectStatusResolved {
+			t.Fatalf("must not resolve when RepoRoot does not exist")
+		}
+	})
+
+	t.Run("degraded coverage must block auto resolve missing", func(t *testing.T) {
+		db, repo, tt, r1, r2 := setup(t, "guard_degraded_cov")
+		tempDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tempDir, "other.cpp"), []byte("int x=1;"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		defect := models.Defect{
+			RepoID: repo.ID, TaskTypeID: tt.ID, Status: DefectStatusActive,
+			CanonicalFingerprint: "fp-2", IdentityKind: "K1", NormPath: "src/missing.cpp", Severity: "严重",
+			FirstReportID: r1.ID, LastSeenReportID: r1.ID, LastMatchedReportID: r1.ID, RowVersion: 1,
+		}
+		if err := db.Create(&defect).Error; err != nil {
+			t.Fatal(err)
+		}
+		degradedCov := &coverage.Coverage{
+			PolicyVersion:      "v1",
+			PlanReconciliation: &coverage.PlanReconciliation{MissingUnits: []string{"chunk-1"}},
+		}
+		err := db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+				Report: r2, Repo: repo, TaskType: tt, RepoRoot: tempDir,
+				Coverage: degradedCov, Lifecycle: policy,
+			}, time.Now())
+			return txErr
+		})
+		if err != nil {
+			t.Fatalf("advanceUnmatchedDefects error = %v", err)
+		}
+		var reload models.Defect
+		if err := db.First(&reload, defect.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if reload.Status == DefectStatusResolved {
+			t.Fatalf("must not resolve missing during degraded coverage, got %+v", reload)
+		}
+	})
+
+	t.Run("same HeadCommit as last matched report must block auto resolve missing", func(t *testing.T) {
+		db, repo, tt, r1, r2 := setup(t, "guard_same_commit")
+		tempDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tempDir, "other.cpp"), []byte("int x=1;"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		defect := models.Defect{
+			RepoID: repo.ID, TaskTypeID: tt.ID, Status: DefectStatusActive,
+			CanonicalFingerprint: "fp-3", IdentityKind: "K1", NormPath: "src/missing.cpp", Severity: "严重",
+			FirstReportID: r1.ID, LastSeenReportID: r1.ID, LastMatchedReportID: r1.ID, RowVersion: 1,
+		}
+		if err := db.Create(&defect).Error; err != nil {
+			t.Fatal(err)
+		}
+		err := db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+				Report: r2, Repo: repo, TaskType: tt, RepoRoot: tempDir,
+				RepoFiles: &repoFileIndex{source: "fs_walk", files: map[string]bool{"other.cpp": true}},
+				Lifecycle: policy,
+			}, time.Now())
+			return txErr
+		})
+		if err != nil {
+			t.Fatalf("advanceUnmatchedDefects error = %v", err)
+		}
+		var reload models.Defect
+		if err := db.First(&reload, defect.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if reload.Status == DefectStatusResolved {
+			t.Fatalf("must not auto-resolve missing when HeadCommit equals last matched report's HeadCommit")
+		}
+	})
+
+	t.Run("file present in Evaluator must block auto resolve missing", func(t *testing.T) {
+		db, repo, tt, r1, r2 := setup(t, "guard_evaluator")
+		r2.HeadCommit = "commit-222"
+		if err := db.Save(&r2).Error; err != nil {
+			t.Fatal(err)
+		}
+		defect := models.Defect{
+			RepoID: repo.ID, TaskTypeID: tt.ID, Status: DefectStatusActive,
+			CanonicalFingerprint: "fp-4", IdentityKind: "K1", NormPath: "src/planned.cpp", Severity: "严重",
+			FirstReportID: r1.ID, LastSeenReportID: r1.ID, LastMatchedReportID: r1.ID, RowVersion: 1,
+		}
+		if err := db.Create(&defect).Error; err != nil {
+			t.Fatal(err)
+		}
+		eval := NewMemoryScopeEvaluator([]models.ScanScopeEntry{
+			{NormPath: "src/planned.cpp", Outcome: ScopeFailed, FailReason: "timeout"},
+		})
+		err := db.Transaction(func(tx *gorm.DB) error {
+			_, txErr := advanceUnmatchedDefects(tx, []models.Defect{defect}, map[uint]bool{}, LedgerInput{
+				Report: r2, Repo: repo, TaskType: tt,
+				Evaluator: eval,
+				RepoFiles: &repoFileIndex{source: "git_tree", files: map[string]bool{"other.cpp": true}},
+				Lifecycle: policy,
+			}, time.Now())
+			return txErr
+		})
+		if err != nil {
+			t.Fatalf("advanceUnmatchedDefects error = %v", err)
+		}
+		var reload models.Defect
+		if err := db.First(&reload, defect.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if reload.Status == DefectStatusResolved {
+			t.Fatalf("must not auto-resolve missing when Evaluator knows file is in planned scan scope")
+		}
+	})
 }
