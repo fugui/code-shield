@@ -63,10 +63,15 @@ type OpenCodeInvoker struct{}
 
 func (o *OpenCodeInvoker) Name() string { return "opencode" }
 
-// buildArgs 构建 opencode 命令行参数。超过内联限制的 Prompt 通过临时附件文件
+// buildArgs 构建 opencode 命令行参数（新会话）。超过内联限制的 Prompt 通过临时附件文件
 // 传输，避免 fork/exec 阶段触发 Linux 的 argument list too long。调用方必须
 // 在进程退出后执行返回的 cleanup。
 func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, func(), error) {
+	return o.buildArgsForSession(req, "")
+}
+
+// buildArgsForSession 构建 opencode v2.x 兼容命令行参数；sessionID 非空时走 --session 续跑。
+func (o *OpenCodeInvoker) buildArgsForSession(req AIRequest, sessionID string) ([]string, func(), error) {
 	userPrompt, err := BuildReadOnlyPromptPayload(req, true)
 	if err != nil {
 		return nil, func() {}, err
@@ -91,16 +96,18 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, func(), error) {
 	}
 
 	args := []string{
-		"run", promptMessage,
+		"run",
+		"--standalone",
 		"--agent", BaseScannerAgentName,
 		"--format", formatVal,
 	}
+	if sessionID == "" {
+		args = append(args, "--archived")
+	} else {
+		args = append(args, "--session", sessionID)
+	}
 	if promptFilePath != "" {
 		args = append(args, "--file", promptFilePath)
-	}
-
-	if req.WorkDir != "" {
-		args = append(args, "--dir", req.WorkDir)
 	}
 
 	if req.ModelName != "" {
@@ -108,8 +115,10 @@ func (o *OpenCodeInvoker) buildArgs(req AIRequest) ([]string, func(), error) {
 	}
 
 	if models.AppConfig.LLM.DebugLogs {
-		args = append(args, "--print-logs", "--log-level", "INFO")
+		args = append(args, "--print-logs", "--log-level", "info")
 	}
+
+	args = append(args, "--", promptMessage)
 
 	return args, promptFileCleanup, nil
 }
@@ -158,6 +167,33 @@ func writeOpenCodePromptFile(payload string) (string, func(), error) {
 	return path, cleanup, nil
 }
 
+// inheritOpenCodeAuthFile 将宿主机 auth.json 认证凭据安全继承到目标隔离目录。
+func inheritOpenCodeAuthFile(destOpenCodeDir string) {
+	srcAuthPath := ""
+	if xdgData := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgData != "" {
+		candidate := filepath.Join(xdgData, "opencode", "auth.json")
+		if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+			srcAuthPath = candidate
+		}
+	}
+	if srcAuthPath == "" {
+		if home, hErr := os.UserHomeDir(); hErr == nil {
+			candidate := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+			if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+				srcAuthPath = candidate
+			}
+		}
+	}
+	if srcAuthPath != "" {
+		destAuthPath := filepath.Join(destOpenCodeDir, "auth.json")
+		if symErr := os.Symlink(srcAuthPath, destAuthPath); symErr != nil {
+			if content, rErr := os.ReadFile(srcAuthPath); rErr == nil {
+				_ = os.WriteFile(destAuthPath, content, 0600)
+			}
+		}
+	}
+}
+
 // prepareIsolatedDataDir 为 OpenCode 准备独立的 XDG_DATA_HOME 目录，避免多进程并发调用时的 SQLite 数据库锁（database is locked）冲突
 func prepareIsolatedDataDir() (string, func(), error) {
 	tempDataDir, err := os.MkdirTemp("", "opencode-data-*")
@@ -174,32 +210,61 @@ func prepareIsolatedDataDir() (string, func(), error) {
 		return "", func() {}, fmt.Errorf("failed to create isolated opencode dir: %w", err)
 	}
 
-	// 共享/继承原有 auth.json 认证凭据
-	srcAuthPath := ""
-	if xdgData := os.Getenv("XDG_DATA_HOME"); xdgData != "" {
-		candidate := filepath.Join(xdgData, "opencode", "auth.json")
-		if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
-			srcAuthPath = candidate
-		}
+	inheritOpenCodeAuthFile(opencodeDir)
+	return tempDataDir, cleanup, nil
+}
+
+// prepareOpenCodeRuntimeEnv 为 OpenCode v2.x 准备完全隔离的 XDG_DATA_HOME/XDG_STATE_HOME/XDG_CACHE_HOME、
+// 沙箱净化环境变量以及对齐 cmd.Dir 的 PWD（OpenCode v2 通过 process.env.PWD ?? process.cwd() 定位工作区）。
+func prepareOpenCodeRuntimeEnv(workDir string) ([]string, func(), error) {
+	tempRoot, err := os.MkdirTemp("", "opencode-runtime-*")
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("failed to create temp opencode runtime dir: %w", err)
 	}
-	if srcAuthPath == "" {
-		if home, hErr := os.UserHomeDir(); hErr == nil {
-			candidate := filepath.Join(home, ".local", "share", "opencode", "auth.json")
-			if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
-				srcAuthPath = candidate
-			}
-		}
+	cleanup := func() {
+		_ = os.RemoveAll(tempRoot)
 	}
-	if srcAuthPath != "" {
-		destAuthPath := filepath.Join(opencodeDir, "auth.json")
-		if symErr := os.Symlink(srcAuthPath, destAuthPath); symErr != nil {
-			if content, rErr := os.ReadFile(srcAuthPath); rErr == nil {
-				_ = os.WriteFile(destAuthPath, content, 0600)
-			}
+	if chmodErr := os.Chmod(tempRoot, 0700); chmodErr != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("failed to chmod temp opencode runtime dir: %w", chmodErr)
+	}
+
+	dataDir := filepath.Join(tempRoot, "xdg_data")
+	opencodeDataDir := filepath.Join(dataDir, "opencode")
+	stateDir := filepath.Join(tempRoot, "xdg_state")
+	cacheDir := filepath.Join(tempRoot, "xdg_cache")
+	for _, dir := range []string{opencodeDataDir, stateDir, cacheDir} {
+		if mkErr := os.MkdirAll(dir, 0700); mkErr != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("failed to create isolated opencode dir %s: %w", dir, mkErr)
 		}
 	}
 
-	return tempDataDir, cleanup, nil
+	inheritOpenCodeAuthFile(opencodeDataDir)
+
+	env := []string{
+		"XDG_DATA_HOME=" + dataDir,
+		"XDG_STATE_HOME=" + stateDir,
+		"XDG_CACHE_HOME=" + cacheDir,
+		"CI=true",
+		"NO_COLOR=1",
+		"TERM=dumb",
+		"OPENCODE_DISABLE_PROJECT_CONFIG=1",
+		"OPENCODE_CONFIG_PROJECT_DISABLE=1",
+		"OPENCODE_DISABLE_CLAUDE_CODE=1",
+		"OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1",
+		"OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1",
+		"OPENCODE_DISABLE_AUTOUPDATE=1",
+		"OPENCODE_DISABLE_MODELS_FETCH=1",
+		"OPENCODE_FILEWATCHER_DISABLE=1",
+		"OPENCODE_DISABLE_FILEWATCHER=1",
+	}
+	if trimmedDir := strings.TrimSpace(workDir); trimmedDir != "" {
+		if absDir, absErr := filepath.Abs(trimmedDir); absErr == nil {
+			env = append(env, "PWD="+absDir)
+		}
+	}
+	return env, cleanup, nil
 }
 
 // Invoke 调用 opencode run 执行 AI 任务
@@ -215,13 +280,16 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 	}
 	defer promptFileCleanup()
 
-	tempDataDir, cleanup, err := prepareIsolatedDataDir()
+	runtimeEnv, cleanup, err := prepareOpenCodeRuntimeEnv(req.WorkDir)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	req.Env = append(req.Env, fmt.Sprintf("XDG_DATA_HOME=%s", tempDataDir))
+	mergedEnv := make([]string, 0, len(runtimeEnv)+len(req.Env))
+	mergedEnv = append(mergedEnv, runtimeEnv...)
+	mergedEnv = append(mergedEnv, req.Env...)
+	req.Env = mergedEnv
 
 	result, firstErr := RunCLIProcessWithResult(
 		"opencode", args, req, "模拟报告：OpenCode AI 引擎未安装",
@@ -268,13 +336,12 @@ func (o *OpenCodeInvoker) Invoke(req AIRequest) error {
 		retryReq.TimeoutMin++
 	}
 
-	retryArgs, retryPromptFileCleanup, err := o.buildArgs(retryReq)
+	retryArgs, retryPromptFileCleanup, err := o.buildArgsForSession(retryReq, result.SessionID)
 	if err != nil {
 		openCodeContinuationFailed.Add(1)
 		return wrapOpenCodeContinuationError(err, firstErr)
 	}
 	defer retryPromptFileCleanup()
-	retryArgs = append(retryArgs, "--session", result.SessionID)
 
 	if _, retryErr := RunCLIProcessWithResult(
 		"opencode", retryArgs, retryReq, "模拟报告：OpenCode AI 引擎未安装",
@@ -371,51 +438,176 @@ func buildOpenCodeContinuationPrompt() string {
 2. 不得包含 Markdown 代码围栏、解释文字、日志或思考过程。`
 }
 
-func extractOpenCodeFinalMessage(path string) (string, error) {
+type openCodeEventSummary struct {
+	SessionID    string
+	FinalMessage string
+	Errors       []string
+	TokenUsage   *TokenUsage
+}
+
+func parseOpenCodeEventStream(path string) (openCodeEventSummary, error) {
+	var summary openCodeEventSummary
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return summary, err
 	}
 	defer file.Close()
 
 	var messageOrder []string
 	messages := make(map[string]*strings.Builder)
+	var inputTokens, outputTokens, reasoningTokens, rawCacheRead int64
+
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
 	for scanner.Scan() {
 		var event struct {
-			Type string `json:"type"`
+			Type      string `json:"type"`
+			SessionID string `json:"sessionID"`
+			Message   string `json:"message"`
+			Error     *struct {
+				Type    string `json:"type"`
+				Name    string `json:"name"`
+				Message string `json:"message"`
+				Data    *struct {
+					Message string `json:"message"`
+				} `json:"data"`
+			} `json:"error"`
 			Part *struct {
 				Type      string `json:"type"`
 				Text      string `json:"text"`
 				MessageID string `json:"messageID"`
+				Tokens    *struct {
+					Input     int64 `json:"input"`
+					Output    int64 `json:"output"`
+					Reasoning int64 `json:"reasoning"`
+					Cache     *struct {
+						Read  int64 `json:"read"`
+						Write int64 `json:"write"`
+					} `json:"cache"`
+				} `json:"tokens"`
 			} `json:"part"`
+			Usage *struct {
+				InputTokens        int64 `json:"input_tokens"`
+				OutputTokens       int64 `json:"output_tokens"`
+				CachedInputTokens  int64 `json:"cached_input_tokens"`
+				PromptTokens       int64 `json:"prompt_tokens"`
+				CompletionTokens   int64 `json:"completion_tokens"`
+				PromptCachedTokens int64 `json:"cached_tokens"`
+			} `json:"usage"`
 		}
 		if jsonErr := json.Unmarshal(scanner.Bytes(), &event); jsonErr != nil {
 			continue
 		}
-		if event.Type != "text" || event.Part == nil || event.Part.Type != "text" || strings.TrimSpace(event.Part.Text) == "" {
-			continue
+		if sid := strings.TrimSpace(event.SessionID); sid != "" {
+			summary.SessionID = sid
 		}
-		messageID := event.Part.MessageID
-		if messageID == "" {
-			messageID = "__last__"
+
+		switch event.Type {
+		case "text":
+			if event.Part == nil || event.Part.Type != "text" || strings.TrimSpace(event.Part.Text) == "" {
+				continue
+			}
+			messageID := event.Part.MessageID
+			if messageID == "" {
+				messageID = "__last__"
+			}
+			builder, exists := messages[messageID]
+			if !exists {
+				builder = &strings.Builder{}
+				messages[messageID] = builder
+				messageOrder = append(messageOrder, messageID)
+			}
+			builder.WriteString(event.Part.Text)
+
+		case "step_finish":
+			if event.Part != nil && event.Part.Tokens != nil {
+				inputTokens += event.Part.Tokens.Input
+				outputTokens += event.Part.Tokens.Output
+				reasoningTokens += event.Part.Tokens.Reasoning
+				if event.Part.Tokens.Cache != nil && event.Part.Tokens.Cache.Read > 0 {
+					rawCacheRead += event.Part.Tokens.Cache.Read
+				}
+			}
+			if event.Usage != nil {
+				inTok := event.Usage.InputTokens
+				if inTok == 0 {
+					inTok = event.Usage.PromptTokens
+				}
+				outTok := event.Usage.OutputTokens
+				if outTok == 0 {
+					outTok = event.Usage.CompletionTokens
+				}
+				cached := event.Usage.CachedInputTokens
+				if cached == 0 {
+					cached = event.Usage.PromptCachedTokens
+				}
+				inputTokens += inTok
+				outputTokens += outTok
+				rawCacheRead += cached
+			}
+
+		case "error":
+			msg := strings.TrimSpace(event.Message)
+			errType := ""
+			if event.Error != nil {
+				errType = strings.TrimSpace(event.Error.Type)
+				if event.Error.Data != nil && strings.TrimSpace(event.Error.Data.Message) != "" {
+					msg = strings.TrimSpace(event.Error.Data.Message)
+				} else if strings.TrimSpace(event.Error.Message) != "" {
+					msg = strings.TrimSpace(event.Error.Message)
+				} else if strings.TrimSpace(event.Error.Name) != "" {
+					msg = strings.TrimSpace(event.Error.Name)
+				} else if errType != "" {
+					msg = errType
+				}
+			}
+			if msg != "" {
+				if errType != "" && errType != msg && !strings.Contains(msg, errType) {
+					msg = fmt.Sprintf("%s: %s", errType, msg)
+				}
+				summary.Errors = append(summary.Errors, msg)
+			}
 		}
-		builder, exists := messages[messageID]
-		if !exists {
-			builder = &strings.Builder{}
-			messages[messageID] = builder
-			messageOrder = append(messageOrder, messageID)
-		}
-		builder.WriteString(event.Part.Text)
 	}
 	if scanErr := scanner.Err(); scanErr != nil {
-		return "", scanErr
+		return summary, scanErr
 	}
-	if len(messageOrder) == 0 {
+	if len(messageOrder) > 0 {
+		summary.FinalMessage = strings.TrimSpace(messages[messageOrder[len(messageOrder)-1]].String())
+	}
+
+	var cachedTokens int64
+	if rawCacheRead > 0 {
+		if rawCacheRead > inputTokens {
+			inputTokens += rawCacheRead
+		}
+		cachedTokens = rawCacheRead
+		if cachedTokens > inputTokens {
+			cachedTokens = inputTokens
+		}
+	}
+	if inputTokens > 0 || outputTokens > 0 || cachedTokens > 0 || reasoningTokens > 0 {
+		summary.TokenUsage = &TokenUsage{
+			InputTokens:           inputTokens,
+			CachedInputTokens:     cachedTokens,
+			OutputTokens:          outputTokens,
+			ReasoningOutputTokens: reasoningTokens,
+			TotalTokens:           inputTokens + outputTokens,
+			Source:                "event_stream",
+		}
+	}
+	return summary, nil
+}
+
+func extractOpenCodeFinalMessage(path string) (string, error) {
+	summary, err := parseOpenCodeEventStream(path)
+	if err != nil {
+		return "", err
+	}
+	if summary.FinalMessage == "" {
 		return "", io.ErrUnexpectedEOF
 	}
-	return strings.TrimSpace(messages[messageOrder[len(messageOrder)-1]].String()), nil
+	return summary.FinalMessage, nil
 }
 
 func canContinueAfterOpenCodeFailure(err error, result CLIProcessResult) bool {
@@ -490,10 +682,15 @@ func isAuthOrModelUnavailableError(message string) bool {
 	for _, marker := range []string{
 		"unauthorized",
 		"authentication",
+		"authentication_error",
 		"invalid api key",
+		"invalid_api_key",
 		"api key",
 		"model not found",
+		"model unavailable",
 		"provider not found",
+		"provider.no-route",
+		"provider.auth",
 		"quota exceeded",
 		"billing",
 	} {

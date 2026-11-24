@@ -1,10 +1,8 @@
 package invoker
 
 import (
-	"bufio"
 	"code-shield/models"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -262,24 +260,11 @@ func (e *OpenCodeOutputMissingError) Error() string {
 // extractOpenCodeSessionID scans the bounded stdout mirror without loading the
 // entire thick-agent transcript into memory.
 func extractOpenCodeSessionID(path string) string {
-	file, err := os.Open(path)
+	summary, err := parseOpenCodeEventStream(path)
 	if err != nil {
 		return ""
 	}
-	defer file.Close()
-
-	var sessionID string
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		var event struct {
-			SessionID string `json:"sessionID"`
-		}
-		if json.Unmarshal(scanner.Bytes(), &event) == nil && event.SessionID != "" {
-			sessionID = event.SessionID
-		}
-	}
-	return sessionID
+	return summary.SessionID
 }
 
 // RunCLIProcess keeps the historical convenience API used by other drivers and
@@ -475,7 +460,16 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 	if req.Observability != nil {
 		req.Observability.FlushConsole()
 	}
-	result.SessionID = extractOpenCodeSessionID(cliOutputPath)
+	var openCodeStreamErr string
+	if filepath.Base(cliName) == "opencode" {
+		if ocSummary, parseErr := parseOpenCodeEventStream(cliOutputPath); parseErr == nil {
+			result.SessionID = ocSummary.SessionID
+			result.TokenUsage = ocSummary.TokenUsage
+			openCodeStreamErr = strings.Join(ocSummary.Errors, "; ")
+		}
+	} else {
+		result.SessionID = extractOpenCodeSessionID(cliOutputPath)
+	}
 	if result.SessionID == "" {
 		result.SessionID = extractCodexSessionID(stderrBuf.String())
 	}
@@ -484,22 +478,27 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 	}
 	result.ExitCode = exitCodeFromWaitError(runErr)
 
+	diagStderr := stderrBuf.String()
+	if strings.TrimSpace(diagStderr) == "" && openCodeStreamErr != "" {
+		diagStderr = openCodeStreamErr
+	}
+
 	if terminated {
 		if ctxRun.Err() == context.Canceled {
 			appendMetaError(cliName, metaFile, "AI execution cancelled by parent context")
 			result.TerminationReason = "parent_canceled"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassCanceled, result.TerminationReason, runErr)
+			applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassCanceled, result.TerminationReason, runErr)
 			return result, NewClassifiedError(ErrorClassCanceled, "AI execution cancelled")
 		}
 		if parentCtx.Err() == context.DeadlineExceeded {
 			appendMetaError(cliName, metaFile, "AI execution stopped by parent deadline")
 			result.TerminationReason = "parent_deadline"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassTimeout, result.TerminationReason, runErr)
+			applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassTimeout, result.TerminationReason, runErr)
 			return result, NewClassifiedError(ErrorClassTimeout, "AI execution stopped by parent deadline")
 		}
 		appendMetaError(cliName, metaFile, fmt.Sprintf("AI execution timed out after %v", timeout))
 		result.TerminationReason = "attempt_timeout"
-		applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassTimeout, result.TerminationReason, runErr)
+		applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassTimeout, result.TerminationReason, runErr)
 		return result, NewClassifiedError(ErrorClassTimeout, "AI execution timed out after %v", timeout)
 	}
 	if idleTerminated {
@@ -509,7 +508,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 			"AI execution idle timed out after %v without stdout/stderr activity", idleTimeout,
 		)
 		result.TerminationReason = "idle_timeout"
-		applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassIdleTimeout, result.TerminationReason, runErr)
+		applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassIdleTimeout, result.TerminationReason, runErr)
 		return result, idleErr
 	}
 
@@ -518,18 +517,18 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 			if parentCtx.Err() == context.DeadlineExceeded {
 				appendMetaError(cliName, metaFile, "AI execution stopped by parent deadline")
 				result.TerminationReason = "parent_deadline"
-				applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassTimeout, result.TerminationReason, runErr)
+				applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassTimeout, result.TerminationReason, runErr)
 				return result, NewClassifiedError(ErrorClassTimeout, "AI execution stopped by parent deadline")
 			}
 			appendMetaError(cliName, metaFile, fmt.Sprintf("AI execution timed out after %v", timeout))
 			result.TerminationReason = "attempt_timeout"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassTimeout, result.TerminationReason, runErr)
+			applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassTimeout, result.TerminationReason, runErr)
 			return result, NewClassifiedError(ErrorClassTimeout, "AI execution timed out after %v", timeout)
 		}
 		if ctxRun.Err() == context.Canceled {
 			appendMetaError(cliName, metaFile, "AI execution cancelled by parent context")
 			result.TerminationReason = "parent_canceled"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassCanceled, result.TerminationReason, runErr)
+			applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassCanceled, result.TerminationReason, runErr)
 			return result, NewClassifiedError(ErrorClassCanceled, "AI execution cancelled")
 		}
 
@@ -537,6 +536,13 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 		if rawErrMsg == "" {
 			if content, readErr := os.ReadFile(cliOutputPath); readErr == nil {
 				rawErrMsg = strings.TrimSpace(string(content))
+			}
+		}
+		if openCodeStreamErr != "" {
+			if rawErrMsg == "" {
+				rawErrMsg = openCodeStreamErr
+			} else if !strings.Contains(rawErrMsg, openCodeStreamErr) {
+				rawErrMsg = rawErrMsg + "; " + openCodeStreamErr
 			}
 		}
 		if rawErrMsg == "" {
@@ -549,38 +555,12 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 		errMsg := compactErrorMessage(fmt.Sprintf("AI execution failed: %s exit code %d", cliName, exitCode))
 
 		appendMetaError(cliName, metaFile, fmt.Sprintf("AI execution failed: %s", errMsg))
-		if blocked, reason := isSafetyFilterBlocked(rawErrMsg); blocked {
-			classifiedErr := NewClassifiedError(
-				ErrorClassContentFiltered,
-				"AI execution failed: content filter triggered (%s)", truncateString(reason, 500),
-			)
-			result.TerminationReason = "cli_failure"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassContentFiltered, result.TerminationReason, runErr)
-			return result, classifiedErr
-		}
-		if isRateLimitedError(rawErrMsg) {
-			rawSummary := truncateString(strings.Join(strings.Fields(rawErrMsg), " "), 200)
-			classifiedErr := NewClassifiedError(ErrorClassRateLimited, "%s: rate limited (%s)", errMsg, rawSummary)
-			result.TerminationReason = "rate_limited"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassRateLimited, result.TerminationReason, runErr)
-			return result, classifiedErr
-		}
-		if isAuthOrModelUnavailableError(strings.ToLower(rawErrMsg)) {
-			classifiedErr := NewClassifiedError(ErrorClassAuth, "%s", errMsg)
-			result.TerminationReason = "cli_failure"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassAuth, result.TerminationReason, runErr)
-			return result, classifiedErr
-		}
-		if isNetworkTransientError(rawErrMsg) {
-			rawSummary := truncateString(strings.Join(strings.Fields(rawErrMsg), " "), 200)
-			classifiedErr := NewClassifiedError(ErrorClassNetworkTransient, "%s: network error (%s)", errMsg, rawSummary)
-			result.TerminationReason = "network_transient"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassNetworkTransient, result.TerminationReason, runErr)
-			return result, classifiedErr
+		if classified := classifyCLIErrorText(req, cliName, &result, metaFile, diagStderr, runErr, rawErrMsg, errMsg, true); classified != nil {
+			return result, classified
 		}
 		classifiedErr := NewClassifiedError(ErrorClassUnknown, "%s", errMsg)
 		result.TerminationReason = "cli_failure"
-		applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassUnknown, result.TerminationReason, runErr)
+		applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassUnknown, result.TerminationReason, runErr)
 		return result, classifiedErr
 	}
 
@@ -598,7 +578,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 				"AI model content filter triggered (%s): %s", cliName, truncateString(reason, 500),
 			)
 			result.TerminationReason = "cli_failure"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassContentFiltered, result.TerminationReason, runErr)
+			applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassContentFiltered, result.TerminationReason, runErr)
 			return result, classifiedErr
 		}
 	}
@@ -638,6 +618,12 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 		}
 
 		if !hasOutput {
+			if filepath.Base(cliName) == "opencode" && openCodeStreamErr != "" {
+				if classified := classifyCLIErrorText(req, cliName, &result, metaFile, diagStderr, runErr, openCodeStreamErr, "AI execution failed: "+cliName, false); classified != nil {
+					return result, classified
+				}
+			}
+
 			sample := "(no output produced)"
 			if filepath.Base(cliName) != "codex" {
 				if content, readErr := os.ReadFile(cliOutputPath); readErr == nil {
@@ -663,7 +649,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 			appendMetaError(cliName, metaFile, errDetail)
 			if filepath.Base(cliName) == "opencode" {
 				result.TerminationReason = "output_missing"
-				applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassOutputMissing, result.TerminationReason, runErr)
+				applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassOutputMissing, result.TerminationReason, runErr)
 				return result, WrapClassifiedError(
 					ErrorClassOutputMissing,
 					&OpenCodeOutputMissingError{
@@ -675,7 +661,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 				)
 			}
 			result.TerminationReason = "output_missing"
-			applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassOutputMissing, result.TerminationReason, runErr)
+			applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassOutputMissing, result.TerminationReason, runErr)
 			return result, NewClassifiedError(ErrorClassOutputMissing, "%s", compactDetail)
 		}
 	}
@@ -692,7 +678,7 @@ func RunCLIProcessWithResult(cliName string, args []string, req AIRequest, mockS
 	}
 
 	result.TerminationReason = "cli_exit"
-	applyCLIDiagnostics(req, cliName, result, stderrBuf.String(), ErrorClassNone, result.TerminationReason, runErr)
+	applyCLIDiagnostics(req, cliName, result, diagStderr, ErrorClassNone, result.TerminationReason, runErr)
 
 	return result, nil
 }
@@ -795,6 +781,62 @@ func replaceWithRegularFile(srcPath, dstPath string) error {
 	if err = os.Rename(tmpName, dstPath); err != nil {
 		_ = os.Remove(tmpName)
 		return err
+	}
+	return nil
+}
+
+// classifyCLIErrorText classifies stderr/stream error text into typed ErrorClass
+// and records corresponding CLI diagnostics. When compactAuth is true, ErrorClassAuth
+// returns errPrefix verbatim to preserve compact CLI failure messages.
+func classifyCLIErrorText(
+	req AIRequest,
+	cliName string,
+	result *CLIProcessResult,
+	metaFile *os.File,
+	diagStderr string,
+	runErr error,
+	rawText string,
+	errPrefix string,
+	compactAuth bool,
+) error {
+	if blocked, reason := isSafetyFilterBlocked(rawText); blocked {
+		if !compactAuth {
+			appendMetaError(cliName, metaFile, fmt.Sprintf("AI content safety filter triggered: %s", reason))
+		}
+		result.TerminationReason = "cli_failure"
+		applyCLIDiagnostics(req, cliName, *result, diagStderr, ErrorClassContentFiltered, result.TerminationReason, runErr)
+		if compactAuth {
+			return NewClassifiedError(ErrorClassContentFiltered, "AI execution failed: content filter triggered (%s)", truncateString(reason, 500))
+		}
+		return NewClassifiedError(ErrorClassContentFiltered, "AI model content filter triggered (%s): %s", cliName, truncateString(reason, 500))
+	}
+	rawSummary := truncateString(strings.Join(strings.Fields(rawText), " "), 200)
+	if isRateLimitedError(rawText) {
+		if !compactAuth {
+			appendMetaError(cliName, metaFile, fmt.Sprintf("AI execution failed: %s", rawSummary))
+		}
+		result.TerminationReason = "rate_limited"
+		applyCLIDiagnostics(req, cliName, *result, diagStderr, ErrorClassRateLimited, result.TerminationReason, runErr)
+		return NewClassifiedError(ErrorClassRateLimited, "%s: rate limited (%s)", errPrefix, rawSummary)
+	}
+	if isAuthOrModelUnavailableError(strings.ToLower(rawText)) {
+		if !compactAuth {
+			appendMetaError(cliName, metaFile, fmt.Sprintf("AI execution failed: %s", rawSummary))
+		}
+		result.TerminationReason = "cli_failure"
+		applyCLIDiagnostics(req, cliName, *result, diagStderr, ErrorClassAuth, result.TerminationReason, runErr)
+		if compactAuth {
+			return NewClassifiedError(ErrorClassAuth, "%s", errPrefix)
+		}
+		return NewClassifiedError(ErrorClassAuth, "%s (%s)", errPrefix, rawSummary)
+	}
+	if isNetworkTransientError(rawText) {
+		if !compactAuth {
+			appendMetaError(cliName, metaFile, fmt.Sprintf("AI execution failed: %s", rawSummary))
+		}
+		result.TerminationReason = "network_transient"
+		applyCLIDiagnostics(req, cliName, *result, diagStderr, ErrorClassNetworkTransient, result.TerminationReason, runErr)
+		return NewClassifiedError(ErrorClassNetworkTransient, "%s: network error (%s)", errPrefix, rawSummary)
 	}
 	return nil
 }
