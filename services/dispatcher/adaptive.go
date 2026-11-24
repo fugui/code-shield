@@ -246,13 +246,12 @@ func (d *ModelDispatcher) handleProbeFailureLocked(err error) {
 		d.adaptiveState = "fallback"
 		d.adaptiveMessage = fmt.Sprintf("⚠️ 探针异常：哨兵节点连续 %d 次探测失败，已平滑回退至静态保底模式 (%v)",
 			d.adaptiveConsecutiveFailCount, err)
-		log.Printf("[Dispatcher] Adaptive probe continuous failure (count=%d): %v. Fallback to static mode.\n",
-			d.adaptiveConsecutiveFailCount, err)
+		if d.adaptiveConsecutiveFailCount == 3 {
+			log.Printf("[Dispatcher] Adaptive probe failed 3 consecutive times (%v). Fallback to static mode (further failure logs suppressed until recovery).\n", err)
+		}
 	} else {
 		d.adaptiveMessage = fmt.Sprintf("⚠️ 探针抖动：哨兵节点探测失败（第 %d/3 次），维持当前流控状态",
 			d.adaptiveConsecutiveFailCount)
-		log.Printf("[Dispatcher] Adaptive probe transient error (attempt %d/3): %v\n",
-			d.adaptiveConsecutiveFailCount, err)
 	}
 }
 
@@ -338,21 +337,17 @@ func (d *ModelDispatcher) probeOnce() {
 	if err != nil {
 		d.handleProbeFailureLocked(err)
 	} else {
-		wasFallback := d.adaptiveConsecutiveFailCount >= 3
+		prevFailCount := d.adaptiveConsecutiveFailCount
 		d.adaptiveConsecutiveFailCount = 0
-		if wasFallback {
-			log.Printf("[Dispatcher] Adaptive probe recovered from failures. Resuming adaptive control.\n")
+		if prevFailCount >= 3 {
+			log.Printf("[Dispatcher] Adaptive probe recovered after %d consecutive failures. Resuming adaptive control.\n", prevFailCount)
 		}
-		newScale, state, msg := d.adjustAIMDLocked(active, waiting)
-		if newScale != oldScale {
-			log.Printf("[Dispatcher] Adaptive AIMD adjusted scale: %.2f -> %.2f (state=%s: %s)\n",
-				oldScale, newScale, state, msg)
-		}
+		d.adjustAIMDLocked(active, waiting)
 	}
 
 	info := d.getEffectiveScaleInfoLocked(time.Now())
 	if info.EffectiveScale != d.lastEffectiveScale || info.ThrottleMode != d.lastThrottleMode {
-		// 仅在流控模式发生跨模态切换或非自适应模式调速时记录，避免与前面的 Adaptive AIMD adjusted scale 重复刷屏
+		// 仅在流控模式发生跨模态切换或非自适应模式调速时记录，避免自适应微调刷屏
 		if info.ThrottleMode != d.lastThrottleMode || (info.ThrottleMode != "adaptive" && d.lastThrottleMode != "adaptive") {
 			log.Printf("[Dispatcher] Throttle status switched: mode=%s, scale=%.2f (was mode=%s, scale=%.2f)\n",
 				info.ThrottleMode, info.EffectiveScale, d.lastThrottleMode, d.lastEffectiveScale)

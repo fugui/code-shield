@@ -1,10 +1,13 @@
 package dispatcher
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -449,5 +452,96 @@ func TestAdaptive_MinScaleZeroPauseAndResume(t *testing.T) {
 	limitRecovered := calculateLimit(10, scale)
 	if limitRecovered != 1 {
 		t.Fatalf("expected calculateLimit == 1 after recovery to 0.10, got %d", limitRecovered)
+	}
+}
+
+// TestAdaptive_EdgeTriggeredLogging 验证自适应探针日志仅在降级/恢复边沿触发，平时探测与AIMD调速不刷屏
+func TestAdaptive_EdgeTriggeredLogging(t *testing.T) {
+	var shouldFail int32 = 0
+	var activeVal int32 = 18
+	var waitingVal int32 = 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.LoadInt32(&shouldFail) == 1 {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		resp := map[string]interface{}{
+			"active_requests":  atomic.LoadInt32(&activeVal),
+			"waiting_requests": atomic.LoadInt32(&waitingVal),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	d := setupAdaptiveTestDispatcher(10)
+	defer d.Close()
+
+	d.mu.Lock()
+	d.adaptiveCfg.ProbeURL = server.URL
+	d.adaptiveCfg.Enabled = true
+	d.lastThrottleMode = "adaptive"
+	d.lastEffectiveScale = 1.0
+	d.mu.Unlock()
+
+	origOut := log.Writer()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(origOut)
+
+	// 1. 正常探测 + AIMD 调速（过载削峰、温和退避、恢复观测）不应产生任何探针或调速日志
+	atomic.StoreInt32(&activeVal, 25)
+	atomic.StoreInt32(&waitingVal, 5) // overload: 1.0 -> 0.40
+	d.probeOnce()
+	atomic.StoreInt32(&waitingVal, 2) // warning: 0.40 -> 0.32
+	d.probeOnce()
+	atomic.StoreInt32(&activeVal, 10)
+	atomic.StoreInt32(&waitingVal, 0) // boost cycle 1/2/3: 0.32 -> 0.42
+	d.probeOnce()
+	d.probeOnce()
+	d.probeOnce()
+
+	if got := buf.String(); got != "" {
+		t.Fatalf("expected zero logs during normal probes and AIMD adjustments, got:\n%s", got)
+	}
+
+	// 2. 瞬态失败 1/3 和 2/3 不应产生日志
+	atomic.StoreInt32(&shouldFail, 1)
+	d.probeOnce()
+	d.probeOnce()
+	if got := buf.String(); got != "" {
+		t.Fatalf("expected zero logs for transient probe failures (1/3 and 2/3), got:\n%s", got)
+	}
+
+	// 3. 第 3 次连续失败进入降级：应精确产生 1 条 Fallback to static mode 日志
+	d.probeOnce()
+	out3 := buf.String()
+	if count := strings.Count(out3, "Fallback to static mode"); count != 1 {
+		t.Fatalf("expected 1 fallback log on 3rd failure, got %d in:\n%s", count, out3)
+	}
+	buf.Reset()
+
+	// 4. 持续失败第 4~7 次：完全静默
+	for i := 4; i <= 7; i++ {
+		d.probeOnce()
+	}
+	if got := buf.String(); got != "" {
+		t.Fatalf("expected zero logs for continued probe failures (4..7), got:\n%s", got)
+	}
+
+	// 5. 恢复正常：应精确产生 1 条包含 recovered after 7 consecutive failures 的日志
+	atomic.StoreInt32(&shouldFail, 0)
+	d.probeOnce()
+	outRecover := buf.String()
+	if count := strings.Count(outRecover, "recovered after 7 consecutive failures"); count != 1 {
+		t.Fatalf("expected 1 recovery log after 7 failures, got %d in:\n%s", count, outRecover)
+	}
+	buf.Reset()
+
+	// 6. 恢复后的后续正常探测：完全静默
+	d.probeOnce()
+	if got := buf.String(); got != "" {
+		t.Fatalf("expected zero logs on normal probe after recovery, got:\n%s", got)
 	}
 }
