@@ -76,4 +76,5 @@ lint-arch:
 		echo "❌ [ArchGuard Failed] Runner must not circularly depend on root services package!"; \
 		exit 1; \
 	fi
+	node ../code-common/scripts/check-overlay-guard.mjs $(FRONTEND_DIR)/src
 	@echo "✅ [ArchGuard Passed] All architectural boundaries are clean and valid."

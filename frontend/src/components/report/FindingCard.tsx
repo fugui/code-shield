@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Modal } from '@code/common';
 import { TaskFindingItem, GovernanceMode, ObservationProjection } from '../../types/report';
 import { getSeverityMeta, getRepoSourceUrl, copyToClipboardWithFallback, extractFirstLineNumber } from '../../utils/reportUtils';
 import { isAIFixURLValid, buildAIFixURL, getAIFixURL } from '../../utils/reportUtils';
@@ -380,88 +381,82 @@ export default function FindingCard({
       )}
 
       {/* 标记反馈对话框 Modal */}
-      {showFeedbackModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-          onClick={() => setShowFeedbackModal(false)}
-        >
-          <div
+      <Modal
+        open={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        width={480}
+        destroyOnClose
+        title="🛡️ 提交研发排查反馈与沉淀例外规则"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowFeedbackModal(false)}
+              disabled={submittingFeedback}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleSubmitFeedback}
+              disabled={submittingFeedback}
+            >
+              {submittingFeedback ? '提交中...' : '确认并沉淀知识'}
+            </button>
+          </>
+        }
+      >
+        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem', marginTop: 0 }}>
+          标记为误报或不予修复后，系统将永久记住此负样本特征，并在下次扫描时自动规避，杜绝重复上报。
+        </p>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '0.35rem' }}>
+            反馈处理类型:
+          </label>
+          <select
+            value={feedbackStatus}
+            onChange={(e) => setFeedbackStatus(e.target.value)}
             style={{
-              background: 'var(--color-bg-surface, #ffffff)',
-              borderRadius: '12px',
-              padding: '1.5rem',
-              width: '480px',
-              maxWidth: '90vw',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-              border: '1px solid var(--color-border-primary, #e2e8f0)',
+              width: '100%',
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: '1px solid var(--color-border-primary)',
+              backgroundColor: 'var(--color-bg-input)',
+              color: 'var(--color-text-primary)',
+              fontSize: '0.88rem',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#0f172a' }}>
-              🛡️ 提交研发排查反馈与沉淀例外规则
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
-              标记为误报或不予修复后，系统将永久记住此负样本特征，并在下次扫描时自动规避，杜绝重复上报。
-            </p>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>
-                反馈处理类型:
-              </label>
-              <select
-                value={feedbackStatus}
-                onChange={(e) => setFeedbackStatus(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
-              >
-                <option value="FALSE_POSITIVE">标记误报 (False Positive) - 自动沉淀过滤规则</option>
-                <option value="WONT_FIX">不予修复 (Won't Fix) - 业务设计/已知豁免</option>
-                <option value="CONFIRMED">确认真实缺陷 (Confirmed) - 纳入攻坚计划</option>
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.35rem' }}>
-                排查与豁免说明理由 (必填):
-              </label>
-              <textarea
-                value={feedbackReason}
-                onChange={(e) => setFeedbackReason(e.target.value)}
-                placeholder="例如：该函数仅在内部受限测试驱动中调用，外部入参已在上层网关做过非空校验..."
-                rows={4}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.88rem', resize: 'vertical' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowFeedbackModal(false)}
-                disabled={submittingFeedback}
-              >
-                取消
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleSubmitFeedback}
-                disabled={submittingFeedback}
-              >
-                {submittingFeedback ? '提交中...' : '确认并沉淀知识'}
-              </button>
-            </div>
-          </div>
+            <option value="FALSE_POSITIVE">标记误报 (False Positive) - 自动沉淀过滤规则</option>
+            <option value="WONT_FIX">不予修复 (Won't Fix) - 业务设计/已知豁免</option>
+            <option value="CONFIRMED">确认真实缺陷 (Confirmed) - 纳入攻坚计划</option>
+          </select>
         </div>
-      )}
+
+        <div>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '0.35rem' }}>
+            排查与豁免说明理由 (必填):
+          </label>
+          <textarea
+            value={feedbackReason}
+            onChange={(e) => setFeedbackReason(e.target.value)}
+            placeholder="例如：该函数仅在内部受限测试驱动中调用，外部入参已在上层网关做过非空校验..."
+            rows={4}
+            style={{
+              width: '100%',
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: '1px solid var(--color-border-primary)',
+              backgroundColor: 'var(--color-bg-input)',
+              color: 'var(--color-text-primary)',
+              fontSize: '0.88rem',
+              resize: 'vertical',
+            }}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

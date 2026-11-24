@@ -433,6 +433,7 @@ function ScanManagement() {
                 </button>
                 {openBatchMenu && selectedRepoIds.length > 0 && (
                   <>
+                    {/* overlay-guard-ignore: 批量操作下拉菜单透明点击关闭层 */}
                     <div onClick={() => setOpenBatchMenu(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} />
                     <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: '4px', background: 'var(--card-bg, #ffffff)', border: '1px solid var(--border-color)', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, minWidth: '160px', overflow: 'hidden' }}>
                       {taskTypes.map(tt => (
