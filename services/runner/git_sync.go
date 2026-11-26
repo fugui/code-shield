@@ -3,18 +3,16 @@ package runner
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"code-common/backend/gitsync"
 	"code-shield/models"
 )
 
-// GetRepoSyncLock 获取指定仓库物理路径对应的互斥锁，确保同一代码仓的 Git 同步操作严格串行排队。
-func GetRepoSyncLock(repoPath string) *sync.Mutex {
+// GetRepoSyncLock 获取指定仓库物理路径对应的读写锁，确保同一代码仓的 Git 同步操作与只读访问跨协同排队。
+func GetRepoSyncLock(repoPath string) *sync.RWMutex {
 	return gitsync.GetPathLock(repoPath)
 }
 
@@ -33,17 +31,12 @@ func ExecCommandWithProcessGroup(ctx context.Context, dir string, name string, a
 	return gitsync.ExecCommandWithProcessGroup(ctx, dir, name, args...)
 }
 
-// PrepareAndSync 解析 URL，委托公共包 code-common/backend/gitsync 执行受锁保护的 Git 同步，并回写任务状态。
+// PrepareAndSync 解析 URL，委托公共包 code-common/backend/gitsync 执行受两层锁保护的 Git 同步，并回写任务状态。
 func PrepareAndSync(ctx context.Context, repo models.Repository, reportID uint, repoURL string) (string, error) {
-	u, err := url.Parse(repoURL)
+	codesRoot := models.AppConfig.GetCodesDir()
+	codesPath, err := gitsync.ResolveRepoLocalPath(codesRoot, repoURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid repository URL: %w", err)
-	}
-
-	rawPath := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
-	codesPath := filepath.Join(models.AppConfig.GetDataDir(), "codes", rawPath)
-	if absCodesPath, absErr := filepath.Abs(codesPath); absErr == nil {
-		codesPath = absCodesPath
 	}
 
 	if err := os.MkdirAll(filepath.Dir(codesPath), 0755); err != nil {
@@ -52,14 +45,12 @@ func PrepareAndSync(ctx context.Context, repo models.Repository, reportID uint, 
 
 	UpdateTaskStatus(reportID, models.StatusCloning)
 
-	branch := strings.TrimSpace(repo.Branch)
-	if branch == "" {
-		branch = "master"
-	}
+	branch := gitsync.ResolveBranchDefault(repo.Branch)
 
 	_, gitErr := gitsync.Sync(ctx, gitsync.SyncOptions{
 		RepoURL:        repoURL,
 		LocalPath:      codesPath,
+		CodesRoot:      codesRoot,
 		Branch:         branch,
 		Depth:          0,
 		AutoHealCache:  true,

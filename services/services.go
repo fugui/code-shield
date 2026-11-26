@@ -653,7 +653,7 @@ func cleanStaleGitLocks(codesPath string) {
 	runner.CleanStaleGitLocks(codesPath)
 }
 
-func getRepoSyncLock(repoPath string) *sync.Mutex {
+func getRepoSyncLock(repoPath string) *sync.RWMutex {
 	return runner.GetRepoSyncLock(repoPath)
 }
 

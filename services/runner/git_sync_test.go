@@ -2,12 +2,14 @@ package runner
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"code-common/backend/gitsync"
 	"code-shield/models"
 )
 
@@ -279,5 +281,29 @@ func TestPrepareAndSync_CorruptedCacheAutoHealing(t *testing.T) {
 
 	if got := readFileForTest(t, filepath.Join(healedPath, "hello.txt")); got != "hello world\n" {
 		t.Fatalf("expected auto-healed repo to have hello world, got %q", got)
+	}
+}
+
+func TestResolveRepoLocalPath_MatchesLegacyShieldMapping(t *testing.T) {
+	codesRoot := filepath.Join(t.TempDir(), "codes")
+	samples := []string{
+		"https://gitlab.corp.local/biz/order-service.git",
+		"http://git.corp.local/infra/common",
+		"ssh://git@gitlab.corp.local:2222/team/sub/payment.git",
+	}
+	for _, raw := range samples {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		legacyRawPath := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
+		want := filepath.Join(codesRoot, legacyRawPath)
+		got, err := gitsync.ResolveRepoLocalPath(codesRoot, raw)
+		if err != nil {
+			t.Fatalf("ResolveRepoLocalPath(%q) error: %v", raw, err)
+		}
+		if got != want {
+			t.Fatalf("mapping mismatch for %q: got=%q want=%q", raw, got, want)
+		}
 	}
 }
