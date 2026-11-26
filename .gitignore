@@ -41,6 +41,7 @@ recon-*.json
 *-raw-findings.json
 
 # Binary executables
+code-shield
 code-shield-server
 *.exe
 
