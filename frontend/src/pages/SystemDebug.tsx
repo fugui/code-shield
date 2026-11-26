@@ -319,7 +319,6 @@ export default function SystemDebug() {
   const [gcTriggering, setGcTriggering] = useState(false);
   const [resettingSlots, setResettingSlots] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [selectedLease, setSelectedLease] = useState<LLMSlotLease | null>(null);
   const [leaseTab, setLeaseTab] = useState<'active' | 'recent'>('active');
   const [recordSuccessfulLeases, setRecordSuccessfulLeases] = useState(false);
@@ -380,15 +379,6 @@ export default function SystemDebug() {
   useEffect(() => {
     fetchOverview();
   }, [fetchOverview]);
-
-  useEffect(() => {
-    fetch('/api/me')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((user) => {
-        setIsSuperAdmin(Array.isArray(user?.roles) && user.roles.includes('super_admin'));
-      })
-      .catch(() => setIsSuperAdmin(false));
-  }, []);
 
   // 自动刷新定时器
   useEffect(() => {
@@ -1167,7 +1157,7 @@ export default function SystemDebug() {
                   <th style={{ width: '140px' }}>执行环节 / 阶段</th>
                   <th>当前微任务内容</th>
                   <th style={{ width: '130px' }}>已工作持续时长</th>
-                  {isSuperAdmin && <th style={{ width: '80px', textAlign: 'center' }}>诊断</th>}
+                  <th style={{ width: '80px', textAlign: 'center' }}>诊断</th>
                 </tr>
               </thead>
               <tbody>
@@ -1297,17 +1287,15 @@ export default function SystemDebug() {
                           )}
                         </div>
                       </td>
-                      {isSuperAdmin && (
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            className="code-debug-lease-detail-button"
-                            onClick={() => openLeaseDetails(lease)}
-                            title="只读查看 Prompt、Console 和业务输出文件"
-                          >
-                            详情
-                          </button>
-                        </td>
-                      )}
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          className="code-debug-lease-detail-button"
+                          onClick={() => openLeaseDetails(lease)}
+                          title="只读查看 Prompt、Console 和业务输出文件"
+                        >
+                          详情
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -1344,12 +1332,12 @@ export default function SystemDebug() {
                 gap: '0.35rem',
                 fontSize: '0.82rem',
                 color: 'var(--color-text-secondary, #64748b)',
-                cursor: isSuperAdmin ? 'pointer' : 'not-allowed'
+                cursor: savingLeaseHistoryOption ? 'not-allowed' : 'pointer'
               }}>
                 <input
                   type="checkbox"
                   checked={recordSuccessfulLeases}
-                  disabled={!isSuperAdmin || savingLeaseHistoryOption}
+                  disabled={savingLeaseHistoryOption}
                   onChange={(event) => updateRecordSuccessfulLeases(event.target.checked)}
                 />
                 记录成功任务
@@ -1380,7 +1368,7 @@ export default function SystemDebug() {
                   <th style={{ width: '90px' }}>状态</th>
                   <th style={{ width: '120px' }}>耗时</th>
                   <th style={{ width: '110px' }}>完成时间</th>
-                  {isSuperAdmin && <th style={{ width: '80px', textAlign: 'center' }}>诊断</th>}
+                  <th style={{ width: '80px', textAlign: 'center' }}>诊断</th>
                 </tr>
               </thead>
               <tbody>
@@ -1482,17 +1470,15 @@ export default function SystemDebug() {
                           {lease.end_time ? new Date(lease.end_time).toLocaleTimeString() : '-'}
                         </span>
                       </td>
-                      {isSuperAdmin && (
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            className="code-debug-lease-detail-button"
-                            onClick={() => openLeaseDetails(lease)}
-                            title="只读查看 Console 和业务输出文件"
-                          >
-                            详情
-                          </button>
-                        </td>
-                      )}
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          className="code-debug-lease-detail-button"
+                          onClick={() => openLeaseDetails(lease)}
+                          title="只读查看 Console 和业务输出文件"
+                        >
+                          详情
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}

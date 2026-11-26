@@ -237,26 +237,13 @@ func main() {
 					admin.DELETE("/tasks/:id", handlers.DeleteTaskReport)
 					admin.PATCH("/config", handlers.UpdateConfig)
 					// 系统性能与堆栈诊断 (Admin Debug & PProf)
-					debugGroup := admin.Group("/admin/debug")
-					{
-						debugGroup.GET("/overview", handlers.GetDebugOverview)
-						debugGroup.POST("/gc", handlers.TriggerGC)
-						debugGroup.POST("/reset-slots", handlers.ResetActiveSlots)
-						handlers.RegisterPProfRoutes(debugGroup)
-					}
+					handlers.RegisterDebugRoutes(admin.Group("/admin/debug"))
 				}
 
 				// Super Admin only routes (包含明文密码、API Key 等敏感凭据的系统配置中心，严格仅限 super_admin 查看与修改)
 				superAdmin := api.Group("/")
 				superAdmin.Use(commonAuth.RequireAdmin(commonAuth.RoleSuperAdmin))
 				{
-					// LLM 算力槽位只读透视（Prompt/Console/Output，严格仅限 super_admin）
-					superAdmin.GET("/admin/debug/leases/recent", handlers.GetRecentLeases)
-					superAdmin.POST("/admin/debug/leases/recent-options", handlers.UpdateRecentLeaseOptions)
-					superAdmin.GET("/admin/debug/leases/:lease_id", handlers.GetLeaseDetail)
-					superAdmin.GET("/admin/debug/leases/:lease_id/prompt", handlers.GetLeasePrompt)
-					superAdmin.GET("/admin/debug/leases/:lease_id/console", handlers.GetLeaseConsole)
-
 					// 算力调度中心专用 API (Compute Hub - CS-NATIVE-05)
 					superAdmin.GET("/admin/compute/config", handlers.GetComputeConfig)
 					superAdmin.PUT("/admin/compute/config", handlers.UpdateComputeConfig)

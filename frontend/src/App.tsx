@@ -25,40 +25,47 @@ const PrivateRoute = ({ children }: { children: JSX.Element }) => {
   return children;
 };
 
-const SuperAdminRoute = ({ children }: { children: JSX.Element }) => {
+interface RoleRouteProps {
+  allowedRoles: string[];
+  loadingText: string;
+  deniedTitle: string;
+  deniedDescription: React.ReactNode;
+  children: JSX.Element;
+}
+
+const RoleRoute = ({ allowedRoles, loadingText, deniedTitle, deniedDescription, children }: RoleRouteProps) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
-  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean | null>(null);
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!token) {
-      setIsSuperAdmin(false);
+      setAuthorized(false);
       return;
     }
     fetch('/api/me')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (data && Array.isArray(data.roles) && data.roles.includes('super_admin')) {
-          setIsSuperAdmin(true);
-        } else {
-          setIsSuperAdmin(false);
-        }
+        const hasRole = Boolean(
+          data && Array.isArray(data.roles) && allowedRoles.some(role => data.roles.includes(role))
+        );
+        setAuthorized(hasRole);
       })
-      .catch(() => setIsSuperAdmin(false));
-  }, [token]);
+      .catch(() => setAuthorized(false));
+  }, [token, allowedRoles]);
 
   if (!token) return <Navigate to={appNavigatePath("/login")} replace />;
 
-  if (isSuperAdmin === null) {
-    return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-color-secondary, #64748b)' }}>正在鉴权超级管理员权限...</div>;
+  if (authorized === null) {
+    return <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-color-secondary, #64748b)' }}>{loadingText}</div>;
   }
 
-  if (!isSuperAdmin) {
+  if (!authorized) {
     return (
       <div style={{ padding: '4rem 2rem', textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-color, #1e293b)', marginBottom: '0.75rem' }}>无权访问系统配置</h2>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-color, #1e293b)', marginBottom: '0.75rem' }}>{deniedTitle}</h2>
         <p style={{ color: 'var(--text-color-secondary, #64748b)', lineHeight: 1.6, marginBottom: '2rem' }}>
-          系统配置中包含大模型 API 密钥、算力端点凭据等敏感信息，仅限系统超级管理员（<strong>super_admin</strong>）查看与修改。
+          {deniedDescription}
         </p>
         <Link to={appNavigatePath('/reports')} className="btn btn-primary" style={{ padding: '0.6rem 1.5rem', textDecoration: 'none', borderRadius: '6px', background: 'var(--primary-color, #2563eb)', color: '#fff' }}>
           返回报告中心
@@ -69,6 +76,39 @@ const SuperAdminRoute = ({ children }: { children: JSX.Element }) => {
 
   return children;
 };
+
+const SUPER_ADMIN_ROLES = ['super_admin'];
+const SHIELD_ADMIN_ROLES = ['super_admin', 'shield_admin'];
+
+const SuperAdminRoute = ({ children }: { children: JSX.Element }) => (
+  <RoleRoute
+    allowedRoles={SUPER_ADMIN_ROLES}
+    loadingText="正在鉴权超级管理员权限..."
+    deniedTitle="无权访问系统配置"
+    deniedDescription={
+      <>
+        系统配置中包含大模型 API 密钥、算力端点凭据等敏感信息，仅限系统超级管理员（<strong>super_admin</strong>）查看与修改。
+      </>
+    }
+  >
+    {children}
+  </RoleRoute>
+);
+
+const ShieldAdminRoute = ({ children }: { children: JSX.Element }) => (
+  <RoleRoute
+    allowedRoles={SHIELD_ADMIN_ROLES}
+    loadingText="正在鉴权模块管理员权限..."
+    deniedTitle="无权访问系统诊断"
+    deniedDescription={
+      <>
+        系统性能与堆栈诊断仅限模块管理员（<strong>shield_admin</strong>）或超级管理员（<strong>super_admin</strong>）查看与操作。
+      </>
+    }
+  >
+    {children}
+  </RoleRoute>
+);
 
 function Sidebar({ taskTypes }: { taskTypes: TaskTypeMenuMeta[] }) {
   const location = useLocation();
@@ -285,7 +325,7 @@ function AppContent() {
             <Route path="/admin/task-types" element={<PrivateRoute><TaskTypeManagement /></PrivateRoute>} />
             <Route path="/admin/config" element={<SuperAdminRoute><ConfigCenter /></SuperAdminRoute>} />
             <Route path="/admin/config/:tab" element={<SuperAdminRoute><ConfigCenter /></SuperAdminRoute>} />
-            <Route path="/admin/debug" element={<PrivateRoute><SystemDebug /></PrivateRoute>} />
+            <Route path="/admin/debug" element={<ShieldAdminRoute><SystemDebug /></ShieldAdminRoute>} />
             <Route path="/admin/activity" element={<Navigate to={appNavigatePath("/admin/scan/logs")} replace />} />
 
             {/* 报告独立视图路由（受保护） */}

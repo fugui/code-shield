@@ -19,6 +19,19 @@ import (
 
 var serverStartTime = time.Now()
 
+// RegisterDebugRoutes 将系统性能、堆栈与 LLM 算力槽位诊断路由统一挂载到管理员路由组下
+func RegisterDebugRoutes(rg *gin.RouterGroup) {
+	rg.GET("/overview", GetDebugOverview)
+	rg.POST("/gc", TriggerGC)
+	rg.POST("/reset-slots", ResetActiveSlots)
+	rg.GET("/leases/recent", GetRecentLeases)
+	rg.POST("/leases/recent-options", UpdateRecentLeaseOptions)
+	rg.GET("/leases/:lease_id", GetLeaseDetail)
+	rg.GET("/leases/:lease_id/prompt", GetLeasePrompt)
+	rg.GET("/leases/:lease_id/console", GetLeaseConsole)
+	RegisterPProfRoutes(rg)
+}
+
 // RegisterPProfRoutes 将标准 pprof 调试端点安全挂载在传入的 RouterGroup 下
 func RegisterPProfRoutes(rg *gin.RouterGroup) {
 	p := rg.Group("/pprof")
@@ -255,8 +268,8 @@ func UpdateRecentLeaseOptions(c *gin.Context) {
 	})
 }
 
-// GetLeaseDetail returns the super-admin-only diagnostic metadata for one LLM
-// slot lease. It performs no mutation and never executes a model request.
+// GetLeaseDetail returns the admin-only (shield_admin / super_admin) diagnostic metadata
+// for one LLM slot lease. It performs no mutation and never executes a model request.
 func GetLeaseDetail(c *gin.Context) {
 	if services.Dispatcher == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "dispatcher is not initialized"})
